@@ -5,10 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "redmine"
 version = "0.1.0"
-description = "Python project for Redmine integration"
+description = "Python backend for Redmine integration"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "sqlalchemy>=2.0.30",
+    "psycopg[binary]>=3.1.19",
     "requests>=2.31.0",
     "python-dotenv>=1.0.0",
 ]

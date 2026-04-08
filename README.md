@@ -1,6 +1,14 @@
 # Redmine
 
-Python-проект для работы с Redmine.
+Python backend для интеграции с Redmine, готовый к деплою на Render.
+
+## Что есть в проекте
+
+- FastAPI-приложение
+- PostgreSQL через SQLAlchemy
+- healthcheck endpoint
+- конфигурация через переменные окружения
+- `render.yaml` для деплоя на Render
 
 ## Структура проекта
 
@@ -9,59 +17,57 @@ Redmine/
 ├─ src/
 │  └─ redmine/
 │     ├─ __init__.py
-│     ├─ main.py
-│     └─ config.py
+│     ├─ app.py
+│     ├─ config.py
+│     ├─ db.py
+│     └─ main.py
 ├─ tests/
 │  └─ test_basic.py
+├─ .env.example
 ├─ .gitignore
 ├─ pyproject.toml
+├─ render.yaml
 ├─ requirements.txt
 └─ README.md
 ```
 
-## Быстрый старт
-
-### 1. Создать виртуальное окружение
+## Локальный запуск
 
 ```bash
 python -m venv .venv
+source .venv/bin/activate  # Linux / macOS
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn src.redmine.app:app --reload
 ```
 
-### 2. Активировать окружение
-
-**Windows**
+Для Windows:
 
 ```bash
 .venv\Scripts\activate
 ```
 
-**Linux / macOS**
+## Переменные окружения
 
-```bash
-source .venv/bin/activate
+```env
+APP_ENV=development
+APP_HOST=0.0.0.0
+APP_PORT=8000
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/redmine
+REDMINE_URL=https://redmine.sms-it.ru
+REDMINE_API_KEY=your_api_key
 ```
 
-### 3. Установить зависимости
+## Полезные endpoints
 
-```bash
-pip install -r requirements.txt
-```
+- `GET /` — базовый ответ API
+- `GET /health` — проверка доступности сервиса
+- `GET /db-health` — проверка подключения к PostgreSQL
 
-### 4. Запустить проект
+## Деплой на Render
 
-```bash
-python -m src.redmine.main
-```
-
-### 5. Запустить тесты
-
-```bash
-pytest
-```
-
-## Планы
-
-- интеграция с API Redmine
-- работа с задачами и проектами
-- конфигурация через переменные окружения
-- покрытие тестами
+1. Подключить репозиторий GitHub в Render.
+2. Создать PostgreSQL.
+3. Создать Web Service.
+4. Убедиться, что переменная `DATABASE_URL` передаётся в сервис.
+5. Render запустит приложение командой из `render.yaml`.
