@@ -14,7 +14,7 @@ from src.redmine.db import (
     storeMissingProjects,
 )
 from src.redmine.redmine_client import fetchAllProjectsFromRedmine
-from src.redmine.snapshots import captureAllIssueSnapshots
+from src.redmine.snapshots import captureAllIssueSnapshots, getIssueSnapshotCaptureStatus
 
 
 config = loadConfig()
@@ -74,7 +74,7 @@ PAGE_HTML = """<!doctype html>
       margin-bottom: 24px;
       padding: 24px;
       border: 1px solid var(--line);
-      border-radius: 28px;
+      border-radius: 8px;
       background:
         linear-gradient(140deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 248, 250, 0.96) 58%, rgba(232, 243, 250, 0.98) 100%);
       box-shadow: var(--shadow);
@@ -93,31 +93,31 @@ PAGE_HTML = """<!doctype html>
 
     .brand-bar {
       display: flex;
-      align-items: flex-start;
+      align-items: stretch;
       justify-content: space-between;
-      gap: 20px;
-      margin-bottom: 22px;
+      gap: 24px;
+      margin-bottom: 18px;
     }
 
     .brand {
       display: inline-flex;
       align-items: center;
-      gap: 16px;
+      gap: 0;
       text-decoration: none;
       color: inherit;
+      flex: 0 0 auto;
     }
 
     .brand-logo-wrap {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 74px;
-      height: 74px;
-      padding: 14px;
-      border-radius: 22px;
-      background: #fff;
-      border: 1px solid rgba(23, 119, 200, 0.12);
-      box-shadow: var(--shadow-soft);
+      width: 220px;
+      min-height: 118px;
+      padding: 18px 22px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid var(--line);
     }
 
     .brand-logo {
@@ -126,47 +126,11 @@ PAGE_HTML = """<!doctype html>
       height: auto;
     }
 
-    .brand-copy {
+    .hero-nav {
       display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding-top: 4px;
-    }
-
-    .brand-kicker {
-      color: var(--accent-deep);
-      font-size: 0.82rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
-    .brand-title {
-      font-size: 1.15rem;
-      font-weight: 700;
-      line-height: 1.2;
-    }
-
-    .brand-subtitle {
-      color: var(--muted);
-      font-size: 0.95rem;
-      max-width: 420px;
-      line-height: 1.45;
-    }
-
-    .brand-note {
-      display: inline-flex;
       align-items: center;
-      justify-content: center;
-      min-height: 44px;
-      padding: 10px 16px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.92);
-      border: 1px solid var(--line);
-      color: var(--accent-deep);
-      font-weight: 600;
-      text-align: center;
-      box-shadow: var(--shadow-soft);
+      justify-content: flex-end;
+      flex: 1 1 auto;
     }
 
     h1 {
@@ -176,19 +140,12 @@ PAGE_HTML = """<!doctype html>
       letter-spacing: -0.03em;
     }
 
-    .lead {
-      margin: 0 0 28px;
-      max-width: 760px;
-      color: var(--muted);
-      font-size: 1.06rem;
-      line-height: 1.6;
-    }
-
     .quick-links {
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
-      margin: 0 0 24px;
+      margin: 0;
+      justify-content: flex-end;
     }
 
     .quick-links a {
@@ -196,7 +153,7 @@ PAGE_HTML = """<!doctype html>
       align-items: center;
       justify-content: center;
       padding: 10px 16px;
-      border-radius: 999px;
+      border-radius: 6px;
       border: 1px solid var(--line);
       background: rgba(255, 255, 255, 0.94);
       color: var(--text);
@@ -221,7 +178,7 @@ PAGE_HTML = """<!doctype html>
     .panel {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 22px;
+      border-radius: 8px;
       padding: 20px;
       box-shadow: var(--shadow-soft);
     }
@@ -246,7 +203,7 @@ PAGE_HTML = """<!doctype html>
 
     button {
       border: 0;
-      border-radius: 999px;
+      border-radius: 6px;
       padding: 11px 18px;
       font: inherit;
       font-weight: 600;
@@ -273,7 +230,7 @@ PAGE_HTML = """<!doctype html>
 
     input[type="date"] {
       border: 1px solid var(--line);
-      border-radius: 12px;
+      border-radius: 6px;
       padding: 10px 12px;
       font: inherit;
       color: var(--text);
@@ -308,8 +265,12 @@ PAGE_HTML = """<!doctype html>
       width: 100%;
       border-collapse: collapse;
       background: var(--panel);
-      border-radius: 18px;
+      border-radius: 8px;
       overflow: hidden;
+    }
+
+    .table-wrap {
+      overflow: auto;
     }
 
     th,
@@ -337,6 +298,20 @@ PAGE_HTML = """<!doctype html>
       font-size: 0.95rem;
     }
 
+    .identifier-col {
+      width: 13ch;
+    }
+
+    .project-link {
+      color: var(--accent-deep);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .project-link:hover {
+      text-decoration: underline;
+    }
+
     @media (max-width: 700px) {
       main {
         padding: 24px 14px 40px;
@@ -351,13 +326,14 @@ PAGE_HTML = """<!doctype html>
         align-items: flex-start;
       }
 
-      .brand {
-        align-items: flex-start;
+      .hero-nav,
+      .quick-links {
+        justify-content: flex-start;
       }
 
       .brand-logo-wrap {
-        width: 62px;
-        height: 62px;
+        width: 180px;
+        min-height: 96px;
       }
 
       th,
@@ -380,32 +356,20 @@ PAGE_HTML = """<!doctype html>
               alt="СМС-ИТ"
             >
           </span>
-          <span class="brand-copy">
-            <span class="brand-kicker">СМС-ИТ</span>
-            <span class="brand-title">Внутренний обзор проектов и ежедневных срезов</span>
-            <span class="brand-subtitle">
-              Панель для синхронизации проектов из Redmine, получения срезов задач и контроля оценок и трудозатрат.
-            </span>
-          </span>
         </a>
-        <div class="brand-note">Продуктовая разработка и сопровождение</div>
+        <nav class="hero-nav" aria-label="Быстрый переход по разделам">
+          <div class="quick-links">
+            <a href="#server-time">Время сервера</a>
+            <a href="#project-actions">Проекты</a>
+            <a href="#snapshot-actions">Срезы</a>
+            <a href="#delete-snapshot">Удаление</a>
+            <a href="#projects-table">Таблица проектов</a>
+            <a href="#snapshot-runs-table">Таблица срезов</a>
+          </div>
+        </nav>
       </div>
 
-      <h1>Проекты Redmine в фирменной подаче</h1>
-      <p class="lead">
-        Страница визуально приведена ближе к стилю
-        <a href="https://sms-it.ru" target="_blank" rel="noreferrer">sms-it.ru</a>:
-        светлая корпоративная палитра, мягкие карточки, округлая навигация и логотип в левом верхнем углу для чистых скриншотов.
-      </p>
-
-      <nav class="quick-links" aria-label="Быстрый переход по разделам">
-        <a href="#server-time">Время сервера</a>
-        <a href="#project-actions">Проекты</a>
-        <a href="#snapshot-actions">Срезы</a>
-        <a href="#delete-snapshot">Удаление</a>
-        <a href="#projects-table">Таблица проектов</a>
-        <a href="#snapshot-runs-table">Таблица срезов</a>
-      </nav>
+      <h1>Анализ проектов Redmine</h1>
     </section>
 
     <section class="grid">
@@ -450,13 +414,13 @@ PAGE_HTML = """<!doctype html>
     <section class="panel table-panel" id="projects-table">
       <h2>Проекты в базе данных</h2>
       <p class="meta" id="projectsCount">Загрузка списка проектов...</p>
-      <div style="overflow:auto;">
+      <div class="table-wrap">
         <table>
           <thead>
             <tr>
               <th>ID</th>
               <th>Название</th>
-              <th>Идентификатор</th>
+              <th class="identifier-col">Идентификатор</th>
               <th>Статус</th>
               <th>Дата последнего среза</th>
               <th>Базовая оценка, ч</th>
@@ -476,7 +440,7 @@ PAGE_HTML = """<!doctype html>
     <section class="panel table-panel" id="snapshot-runs-table">
       <h2>Последние срезы задач</h2>
       <p class="meta" id="snapshotRunsCount">Загрузка списка срезов...</p>
-      <div style="overflow:auto;">
+      <div class="table-wrap">
         <table>
           <thead>
             <tr>
@@ -510,6 +474,7 @@ PAGE_HTML = """<!doctype html>
     const refreshProjectsButton = document.getElementById("refreshProjectsButton");
     const captureSnapshotsButton = document.getElementById("captureSnapshotsButton");
     const deleteSnapshotsButton = document.getElementById("deleteSnapshotsButton");
+    let captureStatusPollTimer = null;
 
     function setStatus(element, message, kind = "") {
       element.textContent = message;
@@ -524,6 +489,49 @@ PAGE_HTML = """<!doctype html>
       return String(value).replace("T", " ").replace("+00:00", " UTC");
     }
 
+    function formatHours(value) {
+      const number = Number(value ?? 0);
+      if (!Number.isFinite(number)) {
+        return "0.0";
+      }
+
+      return number.toFixed(1);
+    }
+
+    async function loadCaptureProgress() {
+      try {
+        const response = await fetch("/api/issues/snapshots/capture-status");
+        const payload = await response.json();
+
+        if (!payload.is_running) {
+          return;
+        }
+
+        const projectName = payload.current_project_name || payload.last_completed_project_name || "без названия";
+        const processedProjects = Number(payload.processed_projects ?? 0);
+        const totalProjects = Number(payload.total_projects ?? 0);
+        setStatus(
+          captureStatus,
+          `Получаем срезы задач по проекту ${projectName}... ${processedProjects}/${totalProjects}`
+        );
+      } catch (error) {
+        // Keep the last visible status if polling temporarily fails.
+      }
+    }
+
+    function startCaptureProgressPolling() {
+      stopCaptureProgressPolling();
+      loadCaptureProgress();
+      captureStatusPollTimer = window.setInterval(loadCaptureProgress, 1500);
+    }
+
+    function stopCaptureProgressPolling() {
+      if (captureStatusPollTimer !== null) {
+        window.clearInterval(captureStatusPollTimer);
+        captureStatusPollTimer = null;
+      }
+    }
+
     function renderProjects(projects) {
       projectsTableBody.innerHTML = "";
       projectsCount.textContent = `Проектов в базе: ${projects.length}`;
@@ -534,18 +542,22 @@ PAGE_HTML = """<!doctype html>
       }
 
       for (const project of projects) {
+        const identifier = project.identifier ?? "";
+        const identifierHtml = identifier
+          ? `<a class="project-link mono" href="https://redmine.sms-it.ru/projects/${encodeURIComponent(identifier)}/issues" target="_blank" rel="noreferrer">${identifier}</a>`
+          : "—";
         const row = document.createElement("tr");
         row.innerHTML = `
           <td class="mono">${project.redmine_id ?? "—"}</td>
           <td>${project.name ?? "—"}</td>
-          <td class="mono">${project.identifier ?? "—"}</td>
+          <td>${identifierHtml}</td>
           <td>${project.status ?? "—"}</td>
           <td class="mono">${project.latest_snapshot_date ?? "—"}</td>
-          <td>${project.baseline_estimate_hours ?? 0}</td>
-          <td>${project.development_estimate_hours ?? 0}</td>
-          <td>${project.development_spent_hours_year ?? 0}</td>
-          <td>${project.bug_estimate_hours ?? 0}</td>
-          <td>${project.bug_spent_hours_year ?? 0}</td>
+          <td>${formatHours(project.baseline_estimate_hours)}</td>
+          <td>${formatHours(project.development_estimate_hours)}</td>
+          <td>${formatHours(project.development_spent_hours_year)}</td>
+          <td>${formatHours(project.bug_estimate_hours)}</td>
+          <td>${formatHours(project.bug_spent_hours_year)}</td>
           <td>${formatDate(project.updated_on)}</td>
           <td>${formatDate(project.synced_at)}</td>
         `;
@@ -570,9 +582,9 @@ PAGE_HTML = """<!doctype html>
           <td>${run.project_name ?? "—"}</td>
           <td class="mono">${run.project_identifier ?? "—"}</td>
           <td>${run.total_issues ?? 0}</td>
-          <td>${run.total_estimated_hours ?? 0}</td>
-          <td>${run.total_spent_hours ?? 0}</td>
-          <td>${run.total_spent_hours_year ?? 0}</td>
+          <td>${formatHours(run.total_estimated_hours)}</td>
+          <td>${formatHours(run.total_spent_hours)}</td>
+          <td>${formatHours(run.total_spent_hours_year)}</td>
           <td>${formatDate(run.captured_at)}</td>
         `;
         snapshotRunsTableBody.appendChild(row);
@@ -639,6 +651,7 @@ PAGE_HTML = """<!doctype html>
     async function captureSnapshots() {
       captureSnapshotsButton.disabled = true;
       setStatus(captureStatus, "Получаем срезы задач...");
+      startCaptureProgressPolling();
 
       try {
         const response = await fetch("/api/issues/snapshots/capture", { method: "POST" });
@@ -661,6 +674,7 @@ PAGE_HTML = """<!doctype html>
       } catch (error) {
         setStatus(captureStatus, error.message, "error");
       } finally {
+        stopCaptureProgressPolling();
         captureSnapshotsButton.disabled = false;
       }
     }
@@ -798,6 +812,11 @@ def captureIssueSnapshots() -> dict[str, object]:
         return captureAllIssueSnapshots()
     except RuntimeError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get("/api/issues/snapshots/capture-status")
+def getIssueSnapshotCaptureProgress() -> dict[str, object]:
+    return getIssueSnapshotCaptureStatus()
 
 
 @app.get("/health")
