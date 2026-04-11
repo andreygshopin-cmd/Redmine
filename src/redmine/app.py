@@ -1,35 +1,40 @@
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
 from src.redmine.config import loadConfig
-from src.redmine.db import checkDatabaseConnection
+from src.redmine.db import (
+    checkDatabaseConnection,
+    ensureProjectsTable,
+    listStoredProjects,
+    storeMissingProjects,
+)
+from src.redmine.redmine_client import fetchAllProjectsFromRedmine
 
 
 config = loadConfig()
 app = FastAPI(title="Redmine API", version="0.1.0")
 
 
-@app.get("/")
-def readRoot() -> HTMLResponse:
-    return HTMLResponse(
-        """
+PAGE_HTML = """
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Server Time</title>
+    <title>Redmine Projects</title>
     <style>
       :root {
         color-scheme: light;
         --bg: #f4efe6;
         --panel: #fffaf2;
+        --panel-strong: #ffffff;
         --text: #1f2937;
         --muted: #6b7280;
         --accent: #14532d;
         --accent-2: #d97706;
+        --line: rgba(31, 41, 55, 0.08);
       }
 
       * {
@@ -39,9 +44,7 @@ def readRoot() -> HTMLResponse:
       body {
         margin: 0;
         min-height: 100vh;
-        display: grid;
-        place-items: center;
-        font-family: Georgia, "Times New Roman", serif;
+        font-family: Georgia, \"Times New Roman\", serif;
         background:
           radial-gradient(circle at top left, rgba(217, 119, 6, 0.18), transparent 32%),
           radial-gradient(circle at bottom right, rgba(20, 83, 45, 0.18), transparent 30%),
@@ -49,27 +52,45 @@ def readRoot() -> HTMLResponse:
         color: var(--text);
       }
 
+      .shell {
+        width: min(1120px, calc(100vw - 32px));
+        margin: 32px auto;
+        display: grid;
+        gap: 24px;
+      }
+
       .card {
-        width: min(92vw, 680px);
-        padding: 32px;
-        border: 1px solid rgba(31, 41, 55, 0.08);
+        padding: 28px;
+        border: 1px solid var(--line);
         border-radius: 24px;
         background: var(--panel);
         box-shadow: 0 24px 60px rgba(31, 41, 55, 0.12);
       }
 
+      .hero {
+        display: grid;
+        gap: 16px;
+      }
+
       .eyebrow {
-        margin: 0 0 12px;
+        margin: 0;
         color: var(--accent-2);
         font-size: 13px;
         letter-spacing: 0.12em;
         text-transform: uppercase;
       }
 
-      h1 {
-        margin: 0 0 12px;
-        font-size: clamp(32px, 6vw, 56px);
+      h1, h2 {
+        margin: 0;
         line-height: 0.95;
+      }
+
+      h1 {
+        font-size: clamp(34px, 7vw, 64px);
+      }
+
+      h2 {
+        font-size: clamp(24px, 4vw, 34px);
       }
 
       p {
@@ -81,7 +102,6 @@ def readRoot() -> HTMLResponse:
       .actions {
         display: flex;
         gap: 12px;
-        margin-top: 28px;
         flex-wrap: wrap;
       }
 
@@ -97,6 +117,10 @@ def readRoot() -> HTMLResponse:
         transition: transform 120ms ease, opacity 120ms ease;
       }
 
+      button.secondary {
+        background: var(--accent-2);
+      }
+
       button:hover {
         transform: translateY(-1px);
       }
@@ -107,12 +131,17 @@ def readRoot() -> HTMLResponse:
         transform: none;
       }
 
-      .time-box {
-        margin-top: 26px;
+      .grid {
+        display: grid;
+        gap: 24px;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      }
+
+      .info-box {
         padding: 22px;
         border-radius: 18px;
-        background: white;
-        border: 1px solid rgba(31, 41, 55, 0.08);
+        background: var(--panel-strong);
+        border: 1px solid var(--line);
       }
 
       .label {
@@ -123,7 +152,7 @@ def readRoot() -> HTMLResponse:
         letter-spacing: 0.1em;
       }
 
-      .time {
+      .value {
         margin-top: 10px;
         font-size: clamp(28px, 5vw, 42px);
         font-weight: 700;
@@ -134,22 +163,146 @@ def readRoot() -> HTMLResponse:
         font-size: 14px;
         color: var(--muted);
       }
+
+      .projects-head {
+        display: flex;
+        gap: 16px;
+        align-items: end;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+
+      .status {
+        min-height: 22px;
+        color: var(--muted);
+        font-size: 15px;
+      }
+
+      .status.error {
+        color: #b91c1c;
+      }
+
+      .status.success {
+        color: #166534;
+      }
+
+      .table-wrap {
+        overflow: auto;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: var(--panel-strong);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 720px;
+      }
+
+      th, td {
+        padding: 14px 16px;
+        text-align: left;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+
+      th {
+        font-size: 13px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      td {
+        font-size: 15px;
+      }
+
+      tbody tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .empty {
+        padding: 22px;
+        color: var(--muted);
+      }
+
+      @media (max-width: 640px) {
+        .shell {
+          width: min(100vw - 20px, 1120px);
+          margin: 10px auto 20px;
+        }
+
+        .card {
+          padding: 20px;
+          border-radius: 20px;
+        }
+
+        p {
+          font-size: 16px;
+        }
+      }
     </style>
   </head>
   <body>
-    <main class="card">
-      <p class="eyebrow">FastAPI client page</p>
-      <h1>Server time</h1>
-      <p>This page calls the Python backend and requests the current server time.</p>
+    <main class="shell">
+      <section class="card hero">
+        <p class="eyebrow">Redmine dashboard</p>
+        <h1>Projects and server time</h1>
+        <p>This page can request server time and synchronize projects from Redmine into PostgreSQL.</p>
+      </section>
 
-      <div class="actions">
-        <button id="load-time" type="button">Get current time</button>
-      </div>
+      <section class="grid">
+        <article class="card">
+          <h2>Server time</h2>
+          <p>Fetch the current time from the Python backend.</p>
+          <div class="actions" style="margin-top: 20px;">
+            <button id="load-time" type="button">Get current time</button>
+          </div>
+          <section class="info-box" style="margin-top: 22px;" aria-live="polite">
+            <span class="label">Current server time</span>
+            <div id="time-value" class="value">--:--:--</div>
+            <div id="time-meta" class="meta">Click the button to load the current time.</div>
+          </section>
+        </article>
 
-      <section class="time-box" aria-live="polite">
-        <span class="label">Current server time</span>
-        <div id="time-value" class="time">--:--:--</div>
-        <div id="time-meta" class="meta">Click the button to load the current time.</div>
+        <article class="card">
+          <h2>Projects sync</h2>
+          <p>Load projects from Redmine and store only the ones that are not yet in the database.</p>
+          <div class="actions" style="margin-top: 20px;">
+            <button id="refresh-projects" class="secondary" type="button">Refresh projects</button>
+          </div>
+          <div id="projects-status" class="status" style="margin-top: 22px;">Project list is loading from the database.</div>
+        </article>
+      </section>
+
+      <section class="card">
+        <div class="projects-head">
+          <div>
+            <p class="eyebrow">Stored data</p>
+            <h2>Projects in database</h2>
+          </div>
+          <div id="projects-count" class="meta">0 projects</div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Identifier</th>
+                <th>Parent</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody id="projects-table-body">
+              <tr>
+                <td colspan="5" class="empty">No projects loaded yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
     </main>
 
@@ -157,6 +310,36 @@ def readRoot() -> HTMLResponse:
       const button = document.getElementById("load-time");
       const timeValue = document.getElementById("time-value");
       const timeMeta = document.getElementById("time-meta");
+      const refreshProjectsButton = document.getElementById("refresh-projects");
+      const projectsStatus = document.getElementById("projects-status");
+      const projectsCount = document.getElementById("projects-count");
+      const projectsTableBody = document.getElementById("projects-table-body");
+
+      function setProjectsStatus(message, tone = "") {
+        projectsStatus.textContent = message;
+        projectsStatus.className = tone ? `status ${tone}` : "status";
+      }
+
+      function renderProjects(projects) {
+        projectsCount.textContent = `${projects.length} projects`;
+
+        if (!projects.length) {
+          projectsTableBody.innerHTML = '<tr><td colspan="5" class="empty">No projects in the database yet.</td></tr>';
+          return;
+        }
+
+        const rows = projects.map((project) => `
+          <tr>
+            <td>${project.redmine_id}</td>
+            <td>${project.name}</td>
+            <td>${project.identifier || ""}</td>
+            <td>${project.parent_redmine_id || ""}</td>
+            <td>${project.updated_on || ""}</td>
+          </tr>
+        `);
+
+        projectsTableBody.innerHTML = rows.join("");
+      }
 
       async function loadServerTime() {
         button.disabled = true;
@@ -179,12 +362,70 @@ def readRoot() -> HTMLResponse:
         }
       }
 
+      async function loadProjects() {
+        setProjectsStatus("Loading projects from the database...");
+
+        try {
+          const response = await fetch("/api/projects");
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.detail || `HTTP ${response.status}`);
+          }
+
+          renderProjects(payload.projects);
+          setProjectsStatus(`Loaded ${payload.projects.length} projects from the database.`, "success");
+        } catch (error) {
+          renderProjects([]);
+          setProjectsStatus(`Could not load projects: ${error.message}`, "error");
+        }
+      }
+
+      async function refreshProjects() {
+        refreshProjectsButton.disabled = true;
+        setProjectsStatus("Requesting projects from Redmine and saving missing rows...");
+
+        try {
+          const response = await fetch("/api/projects/refresh", { method: "POST" });
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.detail || `HTTP ${response.status}`);
+          }
+
+          renderProjects(payload.projects);
+          setProjectsStatus(
+            `Stored ${payload.projects.length} projects. Added ${payload.added_count} new rows from Redmine.`,
+            "success"
+          );
+        } catch (error) {
+          setProjectsStatus(`Could not refresh projects: ${error.message}`, "error");
+        } finally {
+          refreshProjectsButton.disabled = false;
+        }
+      }
+
       button.addEventListener("click", loadServerTime);
+      refreshProjectsButton.addEventListener("click", refreshProjects);
+      loadProjects();
     </script>
   </body>
 </html>
-        """
-    )
+"""
+
+
+def requireProjectSyncConfig() -> None:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not set")
+    if not config.redmineUrl:
+        raise HTTPException(status_code=500, detail="REDMINE_URL is not set")
+    if not config.apiKey:
+        raise HTTPException(status_code=500, detail="REDMINE_API_KEY is not set")
+
+
+@app.get("/")
+def readRoot() -> HTMLResponse:
+    return HTMLResponse(PAGE_HTML)
 
 
 @app.get("/api/time")
@@ -193,6 +434,30 @@ def getTime() -> dict[str, str]:
     return {
         "current_time": now.strftime("%Y-%m-%d %H:%M:%S UTC"),
         "current_time_utc": now.isoformat(),
+    }
+
+
+@app.get("/api/projects")
+def getProjects() -> dict[str, list[dict[str, object]]]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not set")
+
+    ensureProjectsTable()
+    return {"projects": listStoredProjects()}
+
+
+@app.post("/api/projects/refresh")
+def refreshProjects() -> dict[str, object]:
+    requireProjectSyncConfig()
+
+    ensureProjectsTable()
+    projects = fetchAllProjectsFromRedmine(config.redmineUrl, config.apiKey)
+    addedCount = storeMissingProjects(projects)
+    storedProjects = listStoredProjects()
+
+    return {
+        "added_count": addedCount,
+        "projects": storedProjects,
     }
 
 
@@ -211,3 +476,4 @@ def dbHealth() -> dict[str, str]:
         return {"status": "ok"}
     except Exception as error:
         return {"status": "error", "details": str(error)}
+
