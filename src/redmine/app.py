@@ -6,11 +6,17 @@ from fastapi.responses import HTMLResponse
 from src.redmine.config import loadConfig
 from src.redmine.db import (
     checkDatabaseConnection,
+    createIssueSnapshotRun,
+    ensureIssueSnapshotTables,
     ensureProjectsTable,
+    listRecentIssueSnapshotRuns,
     listStoredProjects,
     storeMissingProjects,
 )
-from src.redmine.redmine_client import fetchAllProjectsFromRedmine
+from src.redmine.redmine_client import (
+    fetchAllIssuesForProject,
+    fetchAllProjectsFromRedmine,
+)
 
 
 config = loadConfig()
@@ -164,7 +170,7 @@ PAGE_HTML = """
         color: var(--muted);
       }
 
-      .projects-head {
+      .section-head {
         display: flex;
         gap: 16px;
         align-items: end;
@@ -248,8 +254,8 @@ PAGE_HTML = """
     <main class="shell">
       <section class="card hero">
         <p class="eyebrow">Redmine dashboard</p>
-        <h1>Projects and server time</h1>
-        <p>This page can request server time and synchronize projects from Redmine into PostgreSQL.</p>
+        <h1>Projects, issues, and server time</h1>
+        <p>This page can synchronize projects from Redmine and capture issue snapshots for burn and growth charts.</p>
       </section>
 
       <section class="grid">
@@ -274,10 +280,19 @@ PAGE_HTML = """
           </div>
           <div id="projects-status" class="status" style="margin-top: 22px;">Project list is loading from the database.</div>
         </article>
+
+        <article class="card">
+          <h2>Issue snapshots</h2>
+          <p>Capture a full issue slice for every stored project and save it to a dedicated history table.</p>
+          <div class="actions" style="margin-top: 20px;">
+            <button id="capture-snapshots" type="button">Capture issue snapshot</button>
+          </div>
+          <div id="snapshots-status" class="status" style="margin-top: 22px;">Recent snapshot runs are loading.</div>
+        </article>
       </section>
 
       <section class="card">
-        <div class="projects-head">
+        <div class="section-head">
           <div>
             <p class="eyebrow">Stored data</p>
             <h2>Projects in database</h2>
@@ -304,6 +319,36 @@ PAGE_HTML = """
           </table>
         </div>
       </section>
+
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Historical data</p>
+            <h2>Recent issue snapshot runs</h2>
+          </div>
+          <div id="snapshots-count" class="meta">0 runs</div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Captured At</th>
+                <th>Project</th>
+                <th>Identifier</th>
+                <th>Issues</th>
+                <th>Estimated Hours</th>
+                <th>Spent Hours</th>
+              </tr>
+            </thead>
+            <tbody id="snapshots-table-body">
+              <tr>
+                <td colspan="6" class="empty">No snapshot runs yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </main>
 
     <script>
@@ -311,13 +356,17 @@ PAGE_HTML = """
       const timeValue = document.getElementById("time-value");
       const timeMeta = document.getElementById("time-meta");
       const refreshProjectsButton = document.getElementById("refresh-projects");
+      const captureSnapshotsButton = document.getElementById("capture-snapshots");
       const projectsStatus = document.getElementById("projects-status");
+      const snapshotsStatus = document.getElementById("snapshots-status");
       const projectsCount = document.getElementById("projects-count");
+      const snapshotsCount = document.getElementById("snapshots-count");
       const projectsTableBody = document.getElementById("projects-table-body");
+      const snapshotsTableBody = document.getElementById("snapshots-table-body");
 
-      function setProjectsStatus(message, tone = "") {
-        projectsStatus.textContent = message;
-        projectsStatus.className = tone ? `status ${tone}` : "status";
+      function setStatus(target, message, tone = "") {
+        target.textContent = message;
+        target.className = tone ? `status ${tone}` : "status";
       }
 
       function renderProjects(projects) {
@@ -339,6 +388,28 @@ PAGE_HTML = """
         `);
 
         projectsTableBody.innerHTML = rows.join("");
+      }
+
+      function renderSnapshotRuns(runs) {
+        snapshotsCount.textContent = `${runs.length} runs`;
+
+        if (!runs.length) {
+          snapshotsTableBody.innerHTML = '<tr><td colspan="6" class="empty">No snapshot runs yet.</td></tr>';
+          return;
+        }
+
+        const rows = runs.map((run) => `
+          <tr>
+            <td>${run.captured_at}</td>
+            <td>${run.project_name}</td>
+            <td>${run.project_identifier}</td>
+            <td>${run.total_issues}</td>
+            <td>${run.total_estimated_hours}</td>
+            <td>${run.total_spent_hours}</td>
+          </tr>
+        `);
+
+        snapshotsTableBody.innerHTML = rows.join("");
       }
 
       async function loadServerTime() {
@@ -363,7 +434,7 @@ PAGE_HTML = """
       }
 
       async function loadProjects() {
-        setProjectsStatus("Loading projects from the database...");
+        setStatus(projectsStatus, "Loading projects from the database...");
 
         try {
           const response = await fetch("/api/projects");
@@ -374,16 +445,35 @@ PAGE_HTML = """
           }
 
           renderProjects(payload.projects);
-          setProjectsStatus(`Loaded ${payload.projects.length} projects from the database.`, "success");
+          setStatus(projectsStatus, `Loaded ${payload.projects.length} projects from the database.`, "success");
         } catch (error) {
           renderProjects([]);
-          setProjectsStatus(`Could not load projects: ${error.message}`, "error");
+          setStatus(projectsStatus, `Could not load projects: ${error.message}`, "error");
+        }
+      }
+
+      async function loadSnapshotRuns() {
+        setStatus(snapshotsStatus, "Loading recent snapshot runs...");
+
+        try {
+          const response = await fetch("/api/issues/snapshots/runs");
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.detail || `HTTP ${response.status}`);
+          }
+
+          renderSnapshotRuns(payload.snapshot_runs);
+          setStatus(snapshotsStatus, `Loaded ${payload.snapshot_runs.length} recent snapshot runs.`, "success");
+        } catch (error) {
+          renderSnapshotRuns([]);
+          setStatus(snapshotsStatus, `Could not load snapshot runs: ${error.message}`, "error");
         }
       }
 
       async function refreshProjects() {
         refreshProjectsButton.disabled = true;
-        setProjectsStatus("Requesting projects from Redmine and saving missing rows...");
+        setStatus(projectsStatus, "Requesting projects from Redmine and saving missing rows...");
 
         try {
           const response = await fetch("/api/projects/refresh", { method: "POST" });
@@ -394,20 +484,48 @@ PAGE_HTML = """
           }
 
           renderProjects(payload.projects);
-          setProjectsStatus(
+          setStatus(
+            projectsStatus,
             `Stored ${payload.projects.length} projects. Added ${payload.added_count} new rows from Redmine.`,
             "success"
           );
         } catch (error) {
-          setProjectsStatus(`Could not refresh projects: ${error.message}`, "error");
+          setStatus(projectsStatus, `Could not refresh projects: ${error.message}`, "error");
         } finally {
           refreshProjectsButton.disabled = false;
         }
       }
 
+      async function captureSnapshots() {
+        captureSnapshotsButton.disabled = true;
+        setStatus(snapshotsStatus, "Requesting full issue slices from Redmine and saving snapshot history...");
+
+        try {
+          const response = await fetch("/api/issues/snapshots/capture", { method: "POST" });
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.detail || `HTTP ${response.status}`);
+          }
+
+          renderSnapshotRuns(payload.snapshot_runs);
+          setStatus(
+            snapshotsStatus,
+            `Created ${payload.created_runs} snapshot runs and stored ${payload.captured_issues} issues.`,
+            "success"
+          );
+        } catch (error) {
+          setStatus(snapshotsStatus, `Could not capture snapshots: ${error.message}`, "error");
+        } finally {
+          captureSnapshotsButton.disabled = false;
+        }
+      }
+
       button.addEventListener("click", loadServerTime);
       refreshProjectsButton.addEventListener("click", refreshProjects);
+      captureSnapshotsButton.addEventListener("click", captureSnapshots);
       loadProjects();
+      loadSnapshotRuns();
     </script>
   </body>
 </html>
@@ -458,6 +576,50 @@ def refreshProjects() -> dict[str, object]:
     return {
         "added_count": addedCount,
         "projects": storedProjects,
+    }
+
+
+@app.get("/api/issues/snapshots/runs")
+def getIssueSnapshotRuns() -> dict[str, list[dict[str, object]]]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+    return {"snapshot_runs": listRecentIssueSnapshotRuns()}
+
+
+@app.post("/api/issues/snapshots/capture")
+def captureIssueSnapshots() -> dict[str, object]:
+    requireProjectSyncConfig()
+
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+    projects = listStoredProjects()
+    if not projects:
+        raise HTTPException(status_code=400, detail="No projects in the database. Refresh projects first.")
+
+    createdRuns = 0
+    capturedIssues = 0
+
+    for project in projects:
+        identifier = project.get("identifier")
+        if not identifier:
+            continue
+
+        issues = fetchAllIssuesForProject(
+            config.redmineUrl,
+            config.apiKey,
+            str(identifier),
+            int(project["redmine_id"]),
+        )
+        createIssueSnapshotRun(project, issues)
+        createdRuns += 1
+        capturedIssues += len(issues)
+
+    return {
+        "created_runs": createdRuns,
+        "captured_issues": capturedIssues,
+        "snapshot_runs": listRecentIssueSnapshotRuns(),
     }
 
 

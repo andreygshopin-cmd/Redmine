@@ -55,6 +55,92 @@ def ensureProjectsTable() -> None:
         )
 
 
+def ensureIssueSnapshotTables() -> None:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS issue_snapshot_runs (
+                    id BIGSERIAL PRIMARY KEY,
+                    project_redmine_id INTEGER NOT NULL,
+                    project_name TEXT NOT NULL,
+                    project_identifier TEXT NOT NULL,
+                    captured_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    total_issues INTEGER NOT NULL DEFAULT 0,
+                    total_estimated_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    total_spent_hours DOUBLE PRECISION NOT NULL DEFAULT 0
+                )
+                """
+            )
+        )
+
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS issue_snapshot_items (
+                    id BIGSERIAL PRIMARY KEY,
+                    snapshot_run_id BIGINT NOT NULL REFERENCES issue_snapshot_runs(id) ON DELETE CASCADE,
+                    project_redmine_id INTEGER NOT NULL,
+                    issue_redmine_id INTEGER NOT NULL,
+                    subject TEXT,
+                    tracker_id INTEGER,
+                    tracker_name TEXT,
+                    status_id INTEGER,
+                    status_name TEXT,
+                    priority_id INTEGER,
+                    priority_name TEXT,
+                    author_id INTEGER,
+                    author_name TEXT,
+                    assigned_to_id INTEGER,
+                    assigned_to_name TEXT,
+                    parent_issue_redmine_id INTEGER,
+                    fixed_version_id INTEGER,
+                    fixed_version_name TEXT,
+                    done_ratio INTEGER,
+                    is_private BOOLEAN NOT NULL DEFAULT FALSE,
+                    estimated_hours DOUBLE PRECISION,
+                    spent_hours DOUBLE PRECISION,
+                    start_date DATE NULL,
+                    due_date DATE NULL,
+                    created_on TIMESTAMPTZ NULL,
+                    updated_on TIMESTAMPTZ NULL,
+                    closed_on TIMESTAMPTZ NULL
+                )
+                """
+            )
+        )
+
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_issue_snapshot_runs_project_captured
+                ON issue_snapshot_runs(project_redmine_id, captured_at DESC)
+                """
+            )
+        )
+
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_issue_snapshot_items_run
+                ON issue_snapshot_items(snapshot_run_id)
+                """
+            )
+        )
+
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_issue_snapshot_items_issue
+                ON issue_snapshot_items(project_redmine_id, issue_redmine_id)
+                """
+            )
+        )
+
+
 def listStoredProjects() -> list[dict[str, object]]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
@@ -77,6 +163,34 @@ def listStoredProjects() -> list[dict[str, object]]:
                 ORDER BY LOWER(name), redmine_id
                 """
             )
+        )
+
+        return [dict(row._mapping) for row in rows]
+
+
+def listRecentIssueSnapshotRuns(limit: int = 20) -> list[dict[str, object]]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    project_redmine_id,
+                    project_name,
+                    project_identifier,
+                    captured_at,
+                    total_issues,
+                    total_estimated_hours,
+                    total_spent_hours
+                FROM issue_snapshot_runs
+                ORDER BY captured_at DESC, id DESC
+                LIMIT :limit_value
+                """
+            ),
+            {"limit_value": limit},
         )
 
         return [dict(row._mapping) for row in rows]
@@ -132,4 +246,117 @@ def storeMissingProjects(projects: Sequence[dict[str, object]]) -> int:
             addedCount += 1
 
     return addedCount
+
+
+def createIssueSnapshotRun(project: dict[str, object], issues: Sequence[dict[str, object]]) -> int:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    totalEstimatedHours = sum(float(issue.get("estimated_hours") or 0) for issue in issues)
+    totalSpentHours = sum(float(issue.get("spent_hours") or 0) for issue in issues)
+
+    with engine.begin() as connection:
+        runRow = connection.execute(
+            text(
+                """
+                INSERT INTO issue_snapshot_runs (
+                    project_redmine_id,
+                    project_name,
+                    project_identifier,
+                    total_issues,
+                    total_estimated_hours,
+                    total_spent_hours
+                ) VALUES (
+                    :project_redmine_id,
+                    :project_name,
+                    :project_identifier,
+                    :total_issues,
+                    :total_estimated_hours,
+                    :total_spent_hours
+                )
+                RETURNING id
+                """
+            ),
+            {
+                "project_redmine_id": project["redmine_id"],
+                "project_name": project["name"],
+                "project_identifier": project["identifier"],
+                "total_issues": len(issues),
+                "total_estimated_hours": totalEstimatedHours,
+                "total_spent_hours": totalSpentHours,
+            },
+        ).first()
+
+        snapshotRunId = int(runRow.id)
+
+        if issues:
+            insertStatement = text(
+                """
+                INSERT INTO issue_snapshot_items (
+                    snapshot_run_id,
+                    project_redmine_id,
+                    issue_redmine_id,
+                    subject,
+                    tracker_id,
+                    tracker_name,
+                    status_id,
+                    status_name,
+                    priority_id,
+                    priority_name,
+                    author_id,
+                    author_name,
+                    assigned_to_id,
+                    assigned_to_name,
+                    parent_issue_redmine_id,
+                    fixed_version_id,
+                    fixed_version_name,
+                    done_ratio,
+                    is_private,
+                    estimated_hours,
+                    spent_hours,
+                    start_date,
+                    due_date,
+                    created_on,
+                    updated_on,
+                    closed_on
+                ) VALUES (
+                    :snapshot_run_id,
+                    :project_redmine_id,
+                    :issue_redmine_id,
+                    :subject,
+                    :tracker_id,
+                    :tracker_name,
+                    :status_id,
+                    :status_name,
+                    :priority_id,
+                    :priority_name,
+                    :author_id,
+                    :author_name,
+                    :assigned_to_id,
+                    :assigned_to_name,
+                    :parent_issue_redmine_id,
+                    :fixed_version_id,
+                    :fixed_version_name,
+                    :done_ratio,
+                    :is_private,
+                    :estimated_hours,
+                    :spent_hours,
+                    :start_date,
+                    :due_date,
+                    :created_on,
+                    :updated_on,
+                    :closed_on
+                )
+                """
+            )
+
+            payload = []
+            for issue in issues:
+                item = dict(issue)
+                item["snapshot_run_id"] = snapshotRunId
+                payload.append(item)
+
+            connection.execute(insertStatement, payload)
+
+    return snapshotRunId
 

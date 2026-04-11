@@ -4,7 +4,7 @@ from src.redmine import app as app_module
 from src.redmine.app import app, getTime, readRoot
 from src.redmine.config import loadConfig
 from src.redmine.db import normalizeDatabaseUrl
-from src.redmine.redmine_client import normalizeProject, parseRedmineDate
+from src.redmine.redmine_client import normalizeIssue, normalizeProject, parseRedmineDate
 
 
 client = TestClient(app)
@@ -20,7 +20,7 @@ def testReadRootReturnsHtmlPage() -> None:
     response = readRoot()
 
     assert response.media_type == "text/html"
-    assert "Refresh projects" in response.body.decode("utf-8")
+    assert "Capture issue snapshot" in response.body.decode("utf-8")
 
 
 def testGetTimeReturnsServerTimePayload() -> None:
@@ -59,6 +59,37 @@ def testNormalizeProjectMapsFields() -> None:
     assert project["parent_redmine_id"] == 7
     assert project["created_on"] == "2026-04-01T10:00:00+00:00"
     assert project["updated_on"] == "2026-04-02T11:00:00+00:00"
+
+
+def testNormalizeIssueMapsFields() -> None:
+    issue = normalizeIssue(
+        {
+            "id": 501,
+            "subject": "Add chart",
+            "tracker": {"id": 2, "name": "Feature"},
+            "status": {"id": 3, "name": "In Progress"},
+            "priority": {"id": 4, "name": "Normal"},
+            "author": {"id": 10, "name": "Ann"},
+            "assigned_to": {"id": 20, "name": "Bob"},
+            "parent": {"id": 400},
+            "fixed_version": {"id": 8, "name": "Sprint 1"},
+            "done_ratio": 50,
+            "estimated_hours": 12.5,
+            "spent_hours": 3.0,
+            "start_date": "2026-04-01",
+            "due_date": "2026-04-05",
+            "created_on": "2026-04-01T10:00:00Z",
+            "updated_on": "2026-04-02T11:00:00Z",
+            "closed_on": None,
+        },
+        42,
+    )
+
+    assert issue["project_redmine_id"] == 42
+    assert issue["issue_redmine_id"] == 501
+    assert issue["tracker_name"] == "Feature"
+    assert issue["fixed_version_name"] == "Sprint 1"
+    assert issue["created_on"] == "2026-04-01T10:00:00+00:00"
 
 
 def testParseRedmineDateAllowsEmptyValue() -> None:
@@ -108,4 +139,59 @@ def testRefreshProjectsEndpointStoresOnlyMissingRows(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["added_count"] == 2
     assert len(response.json()["projects"]) == 2
+
+
+def testGetIssueSnapshotRunsEndpointReturnsRows(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
+    monkeypatch.setattr(
+        app_module,
+        "listRecentIssueSnapshotRuns",
+        lambda: [{"project_name": "Alpha", "total_issues": 5}],
+    )
+
+    response = client.get("/api/issues/snapshots/runs")
+
+    assert response.status_code == 200
+    assert response.json()["snapshot_runs"][0]["project_name"] == "Alpha"
+
+
+def testCaptureIssueSnapshotsEndpointCreatesRuns(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module.config, "redmineUrl", "https://redmine.example.com")
+    monkeypatch.setattr(app_module.config, "apiKey", "secret")
+    monkeypatch.setattr(app_module, "ensureProjectsTable", lambda: None)
+    monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
+    monkeypatch.setattr(
+        app_module,
+        "listStoredProjects",
+        lambda: [{"redmine_id": 1, "name": "Alpha", "identifier": "alpha"}],
+    )
+    monkeypatch.setattr(
+        app_module,
+        "fetchAllIssuesForProject",
+        lambda redmineUrl, apiKey, projectIdentifier, projectRedmineId: [
+            {"issue_redmine_id": 11, "project_redmine_id": projectRedmineId}
+        ],
+    )
+
+    created = []
+
+    def fakeCreateIssueSnapshotRun(project, issues):
+        created.append((project, issues))
+        return 100
+
+    monkeypatch.setattr(app_module, "createIssueSnapshotRun", fakeCreateIssueSnapshotRun)
+    monkeypatch.setattr(
+        app_module,
+        "listRecentIssueSnapshotRuns",
+        lambda: [{"id": 100, "project_name": "Alpha", "total_issues": 1}],
+    )
+
+    response = client.post("/api/issues/snapshots/capture")
+
+    assert response.status_code == 200
+    assert response.json()["created_runs"] == 1
+    assert response.json()["captured_issues"] == 1
+    assert created[0][0]["identifier"] == "alpha"
 
