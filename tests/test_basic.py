@@ -2,7 +2,7 @@ from fastapi.responses import HTMLResponse
 
 from src.redmine.app import getTime, readRoot
 from src.redmine.config import loadConfig
-
+from src.redmine.db import normalizeDatabaseUrl
 
 def testLoadConfigReturnsObject() -> None:
     config = loadConfig()
@@ -22,3 +22,15 @@ def testGetTimeReturnsServerTimePayload() -> None:
 
     assert "current_time" in payload
     assert "current_time_utc" in payload
+
+
+def testNormalizeDatabaseUrlUsesPsycopgDriver() -> None:
+    assert (
+        normalizeDatabaseUrl("postgresql://user:pass@host/db")
+        == "postgresql+psycopg://user:pass@host/db"
+    )
+    assert (
+        normalizeDatabaseUrl("postgresql+psycopg://user:pass@host/db")
+        == "postgresql+psycopg://user:pass@host/db"
+    )
+

@@ -5,9 +5,17 @@ from src.redmine.config import loadConfig
 
 
 config = loadConfig()
-engine = create_engine(config.databaseUrl, pool_pre_ping=True) if config.databaseUrl else None
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if engine else None
 
+
+def normalizeDatabaseUrl(databaseUrl: str) -> str:
+    if databaseUrl.startswith("postgresql://") and "+psycopg" not in databaseUrl:
+        return databaseUrl.replace("postgresql://", "postgresql+psycopg://", 1)
+    return databaseUrl
+
+
+normalizedDatabaseUrl = normalizeDatabaseUrl(config.databaseUrl)
+engine = create_engine(normalizedDatabaseUrl, pool_pre_ping=True) if normalizedDatabaseUrl else None
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if engine else None
 
 def checkDatabaseConnection() -> bool:
     if engine is None:
