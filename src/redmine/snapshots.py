@@ -4,19 +4,19 @@ from requests import HTTPError
 
 from src.redmine.config import loadConfig
 from src.redmine.db import (
-    createIssueSnapshotBatch,
     createIssueSnapshotRun,
     ensureIssueSnapshotTables,
     ensureProjectsTable,
-    finalizeIssueSnapshotBatch,
-    listRecentIssueSnapshotBatches,
     listRecentIssueSnapshotRuns,
+    listProjectsWithoutSnapshotForDate,
     listStoredProjects,
     storeMissingProjects,
 )
 from src.redmine.redmine_client import (
+    applySpentHoursYearByIssue,
     fetchAllIssuesForProject,
     fetchAllProjectsFromRedmine,
+    fetchSpentHoursByIssueForProjectYear,
 )
 
 
@@ -39,14 +39,14 @@ def captureAllIssueSnapshots() -> dict[str, object]:
         raise RuntimeError("No projects in the database. Refresh projects first.")
 
     capturedForDate = datetime.now(UTC).date().isoformat()
-    snapshotBatchId = createIssueSnapshotBatch(capturedForDate, len(projects))
+    captureYear = int(capturedForDate[:4])
+    pendingProjects = listProjectsWithoutSnapshotForDate(capturedForDate)
     createdRuns = 0
     capturedIssues = 0
-    totalEstimatedHours = 0.0
-    totalSpentHours = 0.0
     skippedProjects = []
+    alreadyCapturedProjects = len(projects) - len(pendingProjects)
 
-    for project in projects:
+    for project in pendingProjects:
         identifier = project.get("identifier")
         if not identifier:
             skippedProjects.append(
@@ -65,6 +65,12 @@ def captureAllIssueSnapshots() -> dict[str, object]:
                 str(identifier),
                 int(project["redmine_id"]),
             )
+            spentHoursByIssue = fetchSpentHoursByIssueForProjectYear(
+                config.redmineUrl,
+                config.apiKey,
+                str(identifier),
+                captureYear,
+            )
         except HTTPError as error:
             skippedProjects.append(
                 {
@@ -75,27 +81,20 @@ def captureAllIssueSnapshots() -> dict[str, object]:
             )
             continue
 
-        createIssueSnapshotRun(snapshotBatchId, capturedForDate, project, issues)
+        applySpentHoursYearByIssue(issues, spentHoursByIssue)
+        snapshotRunId = createIssueSnapshotRun(capturedForDate, project, issues)
+        if snapshotRunId is None:
+            continue
+
         createdRuns += 1
         capturedIssues += len(issues)
-        totalEstimatedHours += sum(float(issue.get("estimated_hours") or 0) for issue in issues)
-        totalSpentHours += sum(float(issue.get("spent_hours") or 0) for issue in issues)
-
-    finalizeIssueSnapshotBatch(
-        snapshotBatchId,
-        completedProjects=createdRuns,
-        skippedProjects=len(skippedProjects),
-        totalIssues=capturedIssues,
-        totalEstimatedHours=totalEstimatedHours,
-        totalSpentHours=totalSpentHours,
-    )
 
     return {
-        "snapshot_batch_id": snapshotBatchId,
         "captured_for_date": capturedForDate,
         "created_runs": createdRuns,
         "captured_issues": capturedIssues,
+        "already_captured_projects": alreadyCapturedProjects,
+        "remaining_projects": len(listProjectsWithoutSnapshotForDate(capturedForDate)),
         "skipped_projects": skippedProjects,
-        "snapshot_batches": listRecentIssueSnapshotBatches(),
         "snapshot_runs": listRecentIssueSnapshotRuns(),
     }

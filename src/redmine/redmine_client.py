@@ -55,12 +55,23 @@ def normalizeIssue(issue: dict[str, object], projectRedmineId: int) -> dict[str,
         "is_private": bool(issue.get("is_private", False)),
         "estimated_hours": issue.get("estimated_hours"),
         "spent_hours": issue.get("spent_hours"),
+        "spent_hours_year": 0.0,
         "start_date": issue.get("start_date"),
         "due_date": issue.get("due_date"),
         "created_on": parseRedmineDate(issue.get("created_on")),
         "updated_on": parseRedmineDate(issue.get("updated_on")),
         "closed_on": parseRedmineDate(issue.get("closed_on")),
     }
+
+
+def applySpentHoursYearByIssue(
+    issues: list[dict[str, object]],
+    spentHoursByIssue: dict[int, float],
+) -> list[dict[str, object]]:
+    for issue in issues:
+        issue["spent_hours_year"] = spentHoursByIssue.get(int(issue["issue_redmine_id"]), 0.0)
+
+    return issues
 
 
 def buildSession(apiKey: str) -> requests.Session:
@@ -132,3 +143,49 @@ def fetchAllIssuesForProject(
     issues.sort(key=lambda issue: int(issue["issue_redmine_id"]))
     return issues
 
+
+def fetchSpentHoursByIssueForProjectYear(
+    redmineUrl: str,
+    apiKey: str,
+    projectIdentifier: str,
+    year: int,
+) -> dict[int, float]:
+    spentHoursByIssue: dict[int, float] = {}
+    offset = 0
+    limit = 100
+    session = buildSession(apiKey)
+    fromDate = f"{year}-01-01"
+    toDate = f"{year}-12-31"
+
+    while True:
+        response = session.get(
+            f"{redmineUrl.rstrip('/')}/time_entries.json",
+            params={
+                "project_id": projectIdentifier,
+                "from": fromDate,
+                "to": toDate,
+                "offset": offset,
+                "limit": limit,
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        rawEntries = payload.get("time_entries", [])
+
+        for entry in rawEntries:
+            issue = entry.get("issue") or {}
+            issueId = issue.get("id")
+            if issueId is None:
+                continue
+
+            spentHoursByIssue[int(issueId)] = spentHoursByIssue.get(int(issueId), 0.0) + float(
+                entry.get("hours") or 0.0
+            )
+
+        offset += len(rawEntries)
+        totalCount = payload.get("total_count", offset)
+        if offset >= totalCount or not rawEntries:
+            break
+
+    return spentHoursByIssue

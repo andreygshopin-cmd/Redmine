@@ -4,7 +4,12 @@ from src.redmine import app as app_module
 from src.redmine.app import app, getTime, readRoot
 from src.redmine.config import loadConfig
 from src.redmine.db import normalizeDatabaseUrl
-from src.redmine.redmine_client import normalizeIssue, normalizeProject, parseRedmineDate
+from src.redmine.redmine_client import (
+    applySpentHoursYearByIssue,
+    normalizeIssue,
+    normalizeProject,
+    parseRedmineDate,
+)
 
 
 client = TestClient(app)
@@ -20,8 +25,8 @@ def testReadRootReturnsHtmlPage() -> None:
     response = readRoot()
 
     assert response.media_type == "text/html"
-    assert "Capture issue snapshot" in response.body.decode("utf-8")
-    assert "Recent snapshot batches" in response.body.decode("utf-8")
+    assert "Получение срезов задач" in response.body.decode("utf-8")
+    assert "Удаление среза по дате" in response.body.decode("utf-8")
 
 
 def testGetTimeReturnsServerTimePayload() -> None:
@@ -97,6 +102,18 @@ def testParseRedmineDateAllowsEmptyValue() -> None:
     assert parseRedmineDate(None) is None
 
 
+def testApplySpentHoursYearByIssueOverridesWithYearValue() -> None:
+    issues = [
+        {"issue_redmine_id": 10, "spent_hours_year": 99.0},
+        {"issue_redmine_id": 11, "spent_hours_year": 88.0},
+    ]
+
+    result = applySpentHoursYearByIssue(issues, {10: 5.5})
+
+    assert result[0]["spent_hours_year"] == 5.5
+    assert result[1]["spent_hours_year"] == 0.0
+
+
 def testGetProjectsEndpointReturnsStoredProjects(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
     monkeypatch.setattr(app_module, "ensureProjectsTable", lambda: None)
@@ -148,7 +165,7 @@ def testGetIssueSnapshotRunsEndpointReturnsRows(monkeypatch) -> None:
     monkeypatch.setattr(
         app_module,
         "listRecentIssueSnapshotRuns",
-        lambda: [{"project_name": "Alpha", "total_issues": 5}],
+        lambda: [{"project_name": "Alpha", "total_issues": 5, "total_spent_hours_year": 2.0}],
     )
 
     response = client.get("/api/issues/snapshots/runs")
@@ -157,19 +174,40 @@ def testGetIssueSnapshotRunsEndpointReturnsRows(monkeypatch) -> None:
     assert response.json()["snapshot_runs"][0]["project_name"] == "Alpha"
 
 
-def testGetIssueSnapshotBatchesEndpointReturnsRows(monkeypatch) -> None:
+def testDeleteIssueSnapshotsByDateEndpointDeletesRows(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
     monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
     monkeypatch.setattr(
         app_module,
-        "listRecentIssueSnapshotBatches",
-        lambda: [{"id": 7, "captured_for_date": "2026-04-11", "total_projects": 3}],
+        "deleteIssueSnapshotsForDate",
+        lambda capturedForDate: {
+            "captured_for_date": capturedForDate,
+            "deleted_items": 12,
+            "deleted_runs": 3,
+        },
+    )
+    monkeypatch.setattr(
+        app_module,
+        "listRecentIssueSnapshotRuns",
+        lambda: [{"id": 200, "project_name": "Beta", "total_issues": 10, "total_spent_hours_year": 4.0}],
     )
 
-    response = client.get("/api/issues/snapshots/batches")
+    response = client.delete("/api/issues/snapshots/by-date?captured_for_date=2026-04-11")
 
     assert response.status_code == 200
-    assert response.json()["snapshot_batches"][0]["id"] == 7
+    assert response.json()["deleted_items"] == 12
+    assert response.json()["deleted_runs"] == 3
+    assert response.json()["snapshot_runs"][0]["id"] == 200
+
+
+def testDeleteIssueSnapshotsByDateEndpointValidatesDate(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
+
+    response = client.delete("/api/issues/snapshots/by-date?captured_for_date=11-04-2026")
+
+    assert response.status_code == 400
+    assert "YYYY-MM-DD" in response.json()["detail"]
 
 
 def testCaptureIssueSnapshotsEndpointCreatesRuns(monkeypatch) -> None:
@@ -180,23 +218,77 @@ def testCaptureIssueSnapshotsEndpointCreatesRuns(monkeypatch) -> None:
         app_module,
         "captureAllIssueSnapshots",
         lambda: {
-            "snapshot_batch_id": 55,
             "captured_for_date": "2026-04-11",
             "created_runs": 1,
             "captured_issues": 1,
+            "already_captured_projects": 4,
+            "remaining_projects": 12,
             "skipped_projects": [],
-            "snapshot_batches": [{"id": 55, "captured_for_date": "2026-04-11"}],
-            "snapshot_runs": [{"id": 100, "project_name": "Alpha", "total_issues": 1}],
+            "snapshot_runs": [{"id": 100, "project_name": "Alpha", "total_issues": 1, "total_spent_hours_year": 5.5}],
         },
     )
 
     response = client.post("/api/issues/snapshots/capture")
 
     assert response.status_code == 200
-    assert response.json()["snapshot_batch_id"] == 55
+    assert response.json()["captured_for_date"] == "2026-04-11"
     assert response.json()["created_runs"] == 1
     assert response.json()["captured_issues"] == 1
-    assert response.json()["snapshot_batches"][0]["id"] == 55
+    assert response.json()["remaining_projects"] == 12
+
+
+def testCaptureIssueSnapshotsUsesCurrentYearSpentHours(monkeypatch) -> None:
+    from src.redmine import snapshots as snapshots_module
+
+    monkeypatch.setattr(snapshots_module.loadConfig, lambda: app_module.config)
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module.config, "redmineUrl", "https://redmine.example.com")
+    monkeypatch.setattr(app_module.config, "apiKey", "secret")
+    monkeypatch.setattr(snapshots_module, "ensureProjectsTable", lambda: None)
+    monkeypatch.setattr(snapshots_module, "ensureIssueSnapshotTables", lambda: None)
+    monkeypatch.setattr(
+        snapshots_module,
+        "fetchAllProjectsFromRedmine",
+        lambda redmineUrl, apiKey: [{"redmine_id": 1, "name": "Alpha", "identifier": "alpha"}],
+    )
+    monkeypatch.setattr(snapshots_module, "storeMissingProjects", lambda projects: 1)
+    monkeypatch.setattr(
+        snapshots_module,
+        "listStoredProjects",
+        lambda: [{"redmine_id": 1, "name": "Alpha", "identifier": "alpha"}],
+    )
+    monkeypatch.setattr(
+        snapshots_module,
+        "listProjectsWithoutSnapshotForDate",
+        lambda capturedForDate: [{"redmine_id": 1, "name": "Alpha", "identifier": "alpha"}],
+    )
+    monkeypatch.setattr(
+        snapshots_module,
+        "fetchAllIssuesForProject",
+        lambda redmineUrl, apiKey, projectIdentifier, projectRedmineId: [
+            {"issue_redmine_id": 10, "spent_hours": 99.0, "spent_hours_year": 0.0, "estimated_hours": 1.0}
+        ],
+    )
+    year_calls = []
+    monkeypatch.setattr(
+        snapshots_module,
+        "fetchSpentHoursByIssueForProjectYear",
+        lambda redmineUrl, apiKey, projectIdentifier, year: year_calls.append(year) or {10: 5.5},
+    )
+    created_payloads = []
+    monkeypatch.setattr(
+        snapshots_module,
+        "createIssueSnapshotRun",
+        lambda capturedForDate, project, issues: created_payloads.append(issues) or 101,
+    )
+    monkeypatch.setattr(snapshots_module, "listRecentIssueSnapshotRuns", lambda: [])
+
+    result = snapshots_module.captureAllIssueSnapshots()
+
+    assert result["created_runs"] == 1
+    assert year_calls[0] == 2026
+    assert created_payloads[0][0]["spent_hours"] == 99.0
+    assert created_payloads[0][0]["spent_hours_year"] == 5.5
 
 
 def testCaptureIssueSnapshotsEndpointSkipsForbiddenProject(monkeypatch) -> None:
@@ -207,12 +299,12 @@ def testCaptureIssueSnapshotsEndpointSkipsForbiddenProject(monkeypatch) -> None:
         app_module,
         "captureAllIssueSnapshots",
         lambda: {
-            "snapshot_batch_id": 77,
             "captured_for_date": "2026-04-11",
             "created_runs": 0,
             "captured_issues": 0,
+            "already_captured_projects": 10,
+            "remaining_projects": 5,
             "skipped_projects": [{"project_name": "Alpha", "reason": "403 Client Error: Forbidden"}],
-            "snapshot_batches": [{"id": 77}],
             "snapshot_runs": [],
         },
     )
@@ -220,9 +312,10 @@ def testCaptureIssueSnapshotsEndpointSkipsForbiddenProject(monkeypatch) -> None:
     response = client.post("/api/issues/snapshots/capture")
 
     assert response.status_code == 200
-    assert response.json()["snapshot_batch_id"] == 77
+    assert response.json()["captured_for_date"] == "2026-04-11"
     assert response.json()["created_runs"] == 0
     assert response.json()["captured_issues"] == 0
+    assert response.json()["already_captured_projects"] == 10
     assert response.json()["skipped_projects"][0]["project_name"] == "Alpha"
 
 

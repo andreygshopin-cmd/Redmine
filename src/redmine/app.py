@@ -1,13 +1,14 @@
 from datetime import UTC, datetime
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
+
 from src.redmine.config import loadConfig
 from src.redmine.db import (
     checkDatabaseConnection,
+    deleteIssueSnapshotsForDate,
     ensureIssueSnapshotTables,
     ensureProjectsTable,
-    listRecentIssueSnapshotBatches,
     listRecentIssueSnapshotRuns,
     listStoredProjects,
     storeMissingProjects,
@@ -17,617 +18,725 @@ from src.redmine.snapshots import captureAllIssueSnapshots
 
 
 config = loadConfig()
-app = FastAPI(title="Redmine API", version="0.1.0")
+app = FastAPI(title="Redmine Snapshot Viewer")
 
 
-PAGE_HTML = """
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Redmine Projects</title>
-    <style>
-      :root {
-        color-scheme: light;
-        --bg: #f4efe6;
-        --panel: #fffaf2;
-        --panel-strong: #ffffff;
-        --text: #1f2937;
-        --muted: #6b7280;
-        --accent: #14532d;
-        --accent-2: #d97706;
-        --line: rgba(31, 41, 55, 0.08);
-      }
+PAGE_HTML = """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Redmine: проекты и срезы</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f8fb;
+      --panel: #ffffff;
+      --panel-soft: #eef6f7;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --accent: #00a99d;
+      --accent-2: #1777c8;
+      --accent-deep: #0d4b8f;
+      --danger: #c84a3e;
+      --shadow: 0 18px 40px rgba(22, 50, 74, 0.08);
+      --shadow-soft: 0 12px 24px rgba(22, 50, 74, 0.06);
+    }
 
-      * {
-        box-sizing: border-box;
-      }
+    * {
+      box-sizing: border-box;
+    }
 
-      body {
-        margin: 0;
-        min-height: 100vh;
-        font-family: Georgia, "Times New Roman", serif;
-        background:
-          radial-gradient(circle at top left, rgba(217, 119, 6, 0.18), transparent 32%),
-          radial-gradient(circle at bottom right, rgba(20, 83, 45, 0.18), transparent 30%),
-          var(--bg);
-        color: var(--text);
-      }
+    html {
+      scroll-behavior: smooth;
+    }
 
-      .shell {
-        width: min(1120px, calc(100vw - 32px));
-        margin: 32px auto;
-        display: grid;
-        gap: 24px;
-      }
+    body {
+      margin: 0;
+      font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(0, 169, 157, 0.12), transparent 24%),
+        radial-gradient(circle at top right, rgba(23, 119, 200, 0.10), transparent 26%),
+        linear-gradient(180deg, #fbfdff 0%, var(--bg) 100%);
+      color: var(--text);
+    }
 
-      .card {
-        padding: 28px;
-        border: 1px solid var(--line);
-        border-radius: 24px;
-        background: var(--panel);
-        box-shadow: 0 24px 60px rgba(31, 41, 55, 0.12);
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 28px 20px 56px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 24px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background:
+        linear-gradient(140deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 248, 250, 0.96) 58%, rgba(232, 243, 250, 0.98) 100%);
+      box-shadow: var(--shadow);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -60px -70px auto;
+      width: 240px;
+      height: 240px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(0, 169, 157, 0.18), rgba(0, 169, 157, 0));
+      pointer-events: none;
+    }
+
+    .brand-bar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 22px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 16px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-logo-wrap {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 74px;
+      height: 74px;
+      padding: 14px;
+      border-radius: 22px;
+      background: #fff;
+      border: 1px solid rgba(23, 119, 200, 0.12);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .brand-logo {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .brand-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding-top: 4px;
+    }
+
+    .brand-kicker {
+      color: var(--accent-deep);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .brand-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .brand-subtitle {
+      color: var(--muted);
+      font-size: 0.95rem;
+      max-width: 420px;
+      line-height: 1.45;
+    }
+
+    .brand-note {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 10px 16px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid var(--line);
+      color: var(--accent-deep);
+      font-weight: 600;
+      text-align: center;
+      box-shadow: var(--shadow-soft);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      line-height: 1.03;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      margin: 0 0 28px;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 1.06rem;
+      line-height: 1.6;
+    }
+
+    .quick-links {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 0 0 24px;
+    }
+
+    .quick-links a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 16px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.94);
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 600;
+      box-shadow: var(--shadow-soft);
+      transition: transform 120ms ease, border-color 120ms ease;
+    }
+
+    .quick-links a:hover {
+      transform: translateY(-1px);
+      border-color: rgba(23, 119, 200, 0.35);
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      margin-bottom: 22px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 20px;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .panel h2 {
+      margin: 0 0 8px;
+      font-size: 1.15rem;
+    }
+
+    .panel p {
+      margin: 0 0 16px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 18px;
+      font: inherit;
+      font-weight: 600;
+      color: white;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--accent-2), var(--accent));
+      transition: transform 120ms ease, opacity 120ms ease;
+      box-shadow: 0 14px 24px rgba(23, 119, 200, 0.22);
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    button.danger {
+      background: linear-gradient(135deg, #d65943, var(--danger));
+    }
+
+    input[type="date"] {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font: inherit;
+      color: var(--text);
+      background: #fff;
+    }
+
+    .status {
+      min-height: 24px;
+      margin-top: 14px;
+      font-size: 0.96rem;
+      color: var(--muted);
+    }
+
+    .status.error {
+      color: var(--danger);
+    }
+
+    .status.success {
+      color: var(--accent);
+    }
+
+    .meta {
+      font-size: 0.98rem;
+      color: var(--muted);
+    }
+
+    .table-panel {
+      margin-top: 20px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border-radius: 18px;
+      overflow: hidden;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--panel-soft);
+      font-size: 0.88rem;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: #426179;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .mono {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95rem;
+    }
+
+    @media (max-width: 700px) {
+      main {
+        padding: 24px 14px 40px;
       }
 
       .hero {
-        display: grid;
-        gap: 16px;
+        padding: 18px;
       }
 
-      .eyebrow {
-        margin: 0;
-        color: var(--accent-2);
-        font-size: 13px;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
+      .brand-bar {
+        flex-direction: column;
+        align-items: flex-start;
       }
 
-      h1, h2 {
-        margin: 0;
-        line-height: 0.95;
+      .brand {
+        align-items: flex-start;
       }
 
-      h1 {
-        font-size: clamp(34px, 7vw, 64px);
+      .brand-logo-wrap {
+        width: 62px;
+        height: 62px;
       }
 
-      h2 {
-        font-size: clamp(24px, 4vw, 34px);
-      }
-
-      p {
-        margin: 0;
-        color: var(--muted);
-        font-size: 18px;
-      }
-
-      .actions {
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-      }
-
-      button {
-        border: 0;
-        border-radius: 999px;
-        padding: 14px 22px;
-        font: inherit;
-        font-size: 16px;
-        cursor: pointer;
-        background: var(--accent);
-        color: white;
-        transition: transform 120ms ease, opacity 120ms ease;
-      }
-
-      button.secondary {
-        background: var(--accent-2);
-      }
-
-      button:hover {
-        transform: translateY(-1px);
-      }
-
-      button:disabled {
-        opacity: 0.7;
-        cursor: wait;
-        transform: none;
-      }
-
-      .grid {
-        display: grid;
-        gap: 24px;
-        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      }
-
-      .info-box {
-        padding: 22px;
-        border-radius: 18px;
-        background: var(--panel-strong);
-        border: 1px solid var(--line);
-      }
-
-      .label {
-        display: block;
-        font-size: 12px;
-        color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-      }
-
-      .value {
-        margin-top: 10px;
-        font-size: clamp(28px, 5vw, 42px);
-        font-weight: 700;
-      }
-
-      .meta {
-        margin-top: 10px;
-        font-size: 14px;
-        color: var(--muted);
-      }
-
-      .section-head {
-        display: flex;
-        gap: 16px;
-        align-items: end;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        margin-bottom: 18px;
-      }
-
-      .status {
-        min-height: 22px;
-        color: var(--muted);
-        font-size: 15px;
-      }
-
-      .status.error {
-        color: #b91c1c;
-      }
-
-      .status.success {
-        color: #166534;
-      }
-
-      .table-wrap {
-        overflow: auto;
-        border-radius: 18px;
-        border: 1px solid var(--line);
-        background: var(--panel-strong);
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        min-width: 720px;
-      }
-
-      th, td {
-        padding: 14px 16px;
-        text-align: left;
-        border-bottom: 1px solid var(--line);
-        vertical-align: top;
-      }
-
-      th {
-        font-size: 13px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--muted);
-      }
-
+      th,
       td {
-        font-size: 15px;
+        padding: 10px 9px;
+        font-size: 0.93rem;
       }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <div class="brand-bar">
+        <a class="brand" href="https://sms-it.ru" target="_blank" rel="noreferrer">
+          <span class="brand-logo-wrap">
+            <img
+              class="brand-logo"
+              src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg"
+              alt="СМС-ИТ"
+            >
+          </span>
+          <span class="brand-copy">
+            <span class="brand-kicker">СМС-ИТ</span>
+            <span class="brand-title">Внутренний обзор проектов и ежедневных срезов</span>
+            <span class="brand-subtitle">
+              Панель для синхронизации проектов из Redmine, получения срезов задач и контроля оценок и трудозатрат.
+            </span>
+          </span>
+        </a>
+        <div class="brand-note">Продуктовая разработка и сопровождение</div>
+      </div>
 
-      tbody tr:last-child td {
-        border-bottom: 0;
-      }
+      <h1>Проекты Redmine в фирменной подаче</h1>
+      <p class="lead">
+        Страница визуально приведена ближе к стилю
+        <a href="https://sms-it.ru" target="_blank" rel="noreferrer">sms-it.ru</a>:
+        светлая корпоративная палитра, мягкие карточки, округлая навигация и логотип в левом верхнем углу для чистых скриншотов.
+      </p>
 
-      .empty {
-        padding: 22px;
-        color: var(--muted);
-      }
+      <nav class="quick-links" aria-label="Быстрый переход по разделам">
+        <a href="#server-time">Время сервера</a>
+        <a href="#project-actions">Проекты</a>
+        <a href="#snapshot-actions">Срезы</a>
+        <a href="#delete-snapshot">Удаление</a>
+        <a href="#projects-table">Таблица проектов</a>
+        <a href="#snapshot-runs-table">Таблица срезов</a>
+      </nav>
+    </section>
 
-      @media (max-width: 640px) {
-        .shell {
-          width: min(100vw - 20px, 1120px);
-          margin: 10px auto 20px;
-        }
+    <section class="grid">
+      <article class="panel" id="server-time">
+        <h2>Текущее время сервера</h2>
+        <p>Быстрая проверка, что приложение отвечает и показывает актуальное время.</p>
+        <div class="meta" id="timeValue">Загрузка...</div>
+      </article>
 
-        .card {
-          padding: 20px;
-          border-radius: 20px;
-        }
-
-        p {
-          font-size: 16px;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <main class="shell">
-      <section class="card hero">
-        <p class="eyebrow">Redmine dashboard</p>
-        <h1>Projects, issues, and server time</h1>
-        <p>This page can synchronize projects from Redmine and capture issue snapshots for burn and growth charts.</p>
-      </section>
-
-      <section class="grid">
-        <article class="card">
-          <h2>Server time</h2>
-          <p>Fetch the current time from the Python backend.</p>
-          <div class="actions" style="margin-top: 20px;">
-            <button id="load-time" type="button">Get current time</button>
-          </div>
-          <section class="info-box" style="margin-top: 22px;" aria-live="polite">
-            <span class="label">Current server time</span>
-            <div id="time-value" class="value">--:--:--</div>
-            <div id="time-meta" class="meta">Click the button to load the current time.</div>
-          </section>
-        </article>
-
-        <article class="card">
-          <h2>Projects sync</h2>
-          <p>Load projects from Redmine and store only the ones that are not yet in the database.</p>
-          <div class="actions" style="margin-top: 20px;">
-            <button id="refresh-projects" class="secondary" type="button">Refresh projects</button>
-          </div>
-          <div id="projects-status" class="status" style="margin-top: 22px;">Project list is loading from the database.</div>
-        </article>
-
-        <article class="card">
-          <h2>Issue snapshots</h2>
-          <p>Capture a dated issue slice for every stored project and save it to a reusable history batch.</p>
-          <div class="actions" style="margin-top: 20px;">
-            <button id="capture-snapshots" type="button">Capture issue snapshot</button>
-          </div>
-          <div id="snapshots-status" class="status" style="margin-top: 22px;">Recent snapshot runs are loading.</div>
-        </article>
-      </section>
-
-      <section class="card">
-        <div class="section-head">
-          <div>
-            <p class="eyebrow">Periodic capture</p>
-            <h2>Recent snapshot batches</h2>
-          </div>
-          <div id="batches-count" class="meta">0 batches</div>
+      <article class="panel" id="project-actions">
+        <h2>Проекты Redmine</h2>
+        <p>Получает список проектов из Redmine и добавляет в базу только новые записи.</p>
+        <div class="row">
+          <button id="refreshProjectsButton" type="button">Обновить список проектов</button>
         </div>
+        <div class="status" id="projectsStatus"></div>
+      </article>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Snapshot Date</th>
-                <th>Started</th>
-                <th>Completed</th>
-                <th>Projects</th>
-                <th>Skipped</th>
-                <th>Issues</th>
-              </tr>
-            </thead>
-            <tbody id="batches-table-body">
-              <tr>
-                <td colspan="6" class="empty">No snapshot batches yet.</td>
-              </tr>
-            </tbody>
-          </table>
+      <article class="panel" id="snapshot-actions">
+        <h2>Получение срезов задач</h2>
+        <p>
+          Запрашивает срезы только для тех проектов, по которым на сегодняшнюю дату
+          еще нет записи в базе данных.
+        </p>
+        <div class="row">
+          <button id="captureSnapshotsButton" type="button">Получить срезы задач</button>
         </div>
-      </section>
+        <div class="status" id="captureStatus"></div>
+      </article>
 
-      <section class="card">
-        <div class="section-head">
-          <div>
-            <p class="eyebrow">Stored data</p>
-            <h2>Projects in database</h2>
-          </div>
-          <div id="projects-count" class="meta">0 projects</div>
+      <article class="panel" id="delete-snapshot">
+        <h2>Удаление среза по дате</h2>
+        <p>Удаляет все срезы и все строки задач за выбранную календарную дату.</p>
+        <div class="row">
+          <input id="snapshotDateInput" type="date">
+          <button id="deleteSnapshotsButton" class="danger" type="button">Очистить срез на дату</button>
         </div>
+        <div class="status" id="deleteStatus"></div>
+      </article>
+    </section>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Identifier</th>
-                <th>Parent</th>
-                <th>Updated</th>
-              </tr>
-            </thead>
-            <tbody id="projects-table-body">
-              <tr>
-                <td colspan="5" class="empty">No projects loaded yet.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+    <section class="panel table-panel" id="projects-table">
+      <h2>Проекты в базе данных</h2>
+      <p class="meta" id="projectsCount">Загрузка списка проектов...</p>
+      <div style="overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Название</th>
+              <th>Идентификатор</th>
+              <th>Статус</th>
+              <th>Дата последнего среза</th>
+              <th>Базовая оценка, ч</th>
+              <th>Разработка: оценка, ч</th>
+              <th>Разработка: факт за год, ч</th>
+              <th>Ошибка: оценка, ч</th>
+              <th>Ошибка: факт за год, ч</th>
+              <th>Обновлен в Redmine</th>
+              <th>Синхронизирован</th>
+            </tr>
+          </thead>
+          <tbody id="projectsTableBody"></tbody>
+        </table>
+      </div>
+    </section>
 
-      <section class="card">
-        <div class="section-head">
-          <div>
-            <p class="eyebrow">Historical data</p>
-            <h2>Recent issue snapshot runs</h2>
-          </div>
-          <div id="snapshots-count" class="meta">0 runs</div>
-        </div>
+    <section class="panel table-panel" id="snapshot-runs-table">
+      <h2>Последние срезы задач</h2>
+      <p class="meta" id="snapshotRunsCount">Загрузка списка срезов...</p>
+      <div style="overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Дата среза</th>
+              <th>Проект</th>
+              <th>Идентификатор</th>
+              <th>Задач</th>
+              <th>План, ч</th>
+              <th>Факт всего, ч</th>
+              <th>Факт за год, ч</th>
+              <th>Записан</th>
+            </tr>
+          </thead>
+          <tbody id="snapshotRunsTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Captured At</th>
-                <th>Project</th>
-                <th>Identifier</th>
-                <th>Issues</th>
-                <th>Estimated Hours</th>
-                <th>Spent Hours</th>
-              </tr>
-            </thead>
-            <tbody id="snapshots-table-body">
-              <tr>
-                <td colspan="6" class="empty">No snapshot runs yet.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </main>
+  <script>
+    const timeValue = document.getElementById("timeValue");
+    const projectsStatus = document.getElementById("projectsStatus");
+    const captureStatus = document.getElementById("captureStatus");
+    const deleteStatus = document.getElementById("deleteStatus");
+    const projectsCount = document.getElementById("projectsCount");
+    const snapshotRunsCount = document.getElementById("snapshotRunsCount");
+    const projectsTableBody = document.getElementById("projectsTableBody");
+    const snapshotRunsTableBody = document.getElementById("snapshotRunsTableBody");
+    const snapshotDateInput = document.getElementById("snapshotDateInput");
+    const refreshProjectsButton = document.getElementById("refreshProjectsButton");
+    const captureSnapshotsButton = document.getElementById("captureSnapshotsButton");
+    const deleteSnapshotsButton = document.getElementById("deleteSnapshotsButton");
 
-    <script>
-      const button = document.getElementById("load-time");
-      const timeValue = document.getElementById("time-value");
-      const timeMeta = document.getElementById("time-meta");
-      const refreshProjectsButton = document.getElementById("refresh-projects");
-      const captureSnapshotsButton = document.getElementById("capture-snapshots");
-      const projectsStatus = document.getElementById("projects-status");
-      const snapshotsStatus = document.getElementById("snapshots-status");
-      const projectsCount = document.getElementById("projects-count");
-      const batchesCount = document.getElementById("batches-count");
-      const snapshotsCount = document.getElementById("snapshots-count");
-      const projectsTableBody = document.getElementById("projects-table-body");
-      const batchesTableBody = document.getElementById("batches-table-body");
-      const snapshotsTableBody = document.getElementById("snapshots-table-body");
+    function setStatus(element, message, kind = "") {
+      element.textContent = message;
+      element.className = "status" + (kind ? " " + kind : "");
+    }
 
-      function setStatus(target, message, tone = "") {
-        target.textContent = message;
-        target.className = tone ? `status ${tone}` : "status";
+    function formatDate(value) {
+      if (!value) {
+        return "—";
       }
 
-      function renderProjects(projects) {
-        projectsCount.textContent = `${projects.length} projects`;
+      return String(value).replace("T", " ").replace("+00:00", " UTC");
+    }
 
-        if (!projects.length) {
-          projectsTableBody.innerHTML = '<tr><td colspan="5" class="empty">No projects in the database yet.</td></tr>';
-          return;
+    function renderProjects(projects) {
+      projectsTableBody.innerHTML = "";
+      projectsCount.textContent = `Проектов в базе: ${projects.length}`;
+
+      if (!projects.length) {
+        projectsTableBody.innerHTML = '<tr><td colspan="12">Проектов пока нет.</td></tr>';
+        return;
+      }
+
+      for (const project of projects) {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td class="mono">${project.redmine_id ?? "—"}</td>
+          <td>${project.name ?? "—"}</td>
+          <td class="mono">${project.identifier ?? "—"}</td>
+          <td>${project.status ?? "—"}</td>
+          <td class="mono">${project.latest_snapshot_date ?? "—"}</td>
+          <td>${project.baseline_estimate_hours ?? 0}</td>
+          <td>${project.development_estimate_hours ?? 0}</td>
+          <td>${project.development_spent_hours_year ?? 0}</td>
+          <td>${project.bug_estimate_hours ?? 0}</td>
+          <td>${project.bug_spent_hours_year ?? 0}</td>
+          <td>${formatDate(project.updated_on)}</td>
+          <td>${formatDate(project.synced_at)}</td>
+        `;
+        projectsTableBody.appendChild(row);
+      }
+    }
+
+    function renderSnapshotRuns(snapshotRuns) {
+      snapshotRunsTableBody.innerHTML = "";
+      snapshotRunsCount.textContent = `Последних срезов в списке: ${snapshotRuns.length}`;
+
+      if (!snapshotRuns.length) {
+        snapshotRunsTableBody.innerHTML = '<tr><td colspan="9">Срезов пока нет.</td></tr>';
+        return;
+      }
+
+      for (const run of snapshotRuns) {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td class="mono">${run.id ?? "—"}</td>
+          <td class="mono">${run.captured_for_date ?? "—"}</td>
+          <td>${run.project_name ?? "—"}</td>
+          <td class="mono">${run.project_identifier ?? "—"}</td>
+          <td>${run.total_issues ?? 0}</td>
+          <td>${run.total_estimated_hours ?? 0}</td>
+          <td>${run.total_spent_hours ?? 0}</td>
+          <td>${run.total_spent_hours_year ?? 0}</td>
+          <td>${formatDate(run.captured_at)}</td>
+        `;
+        snapshotRunsTableBody.appendChild(row);
+      }
+    }
+
+    async function loadServerTime() {
+      try {
+        const response = await fetch("/api/time");
+        const payload = await response.json();
+        timeValue.textContent = `${payload.current_time} | UTC: ${payload.current_time_utc}`;
+      } catch (error) {
+        timeValue.textContent = "Не удалось получить время сервера.";
+      }
+    }
+
+    async function loadProjects() {
+      try {
+        const response = await fetch("/api/projects");
+        const payload = await response.json();
+        renderProjects(payload.projects ?? []);
+      } catch (error) {
+        renderProjects([]);
+        setStatus(projectsStatus, "Не удалось загрузить проекты из базы.", "error");
+      }
+    }
+
+    async function loadSnapshotRuns() {
+      try {
+        const response = await fetch("/api/issues/snapshots/runs");
+        const payload = await response.json();
+        renderSnapshotRuns(payload.snapshot_runs ?? []);
+      } catch (error) {
+        renderSnapshotRuns([]);
+        setStatus(captureStatus, "Не удалось загрузить список срезов.", "error");
+      }
+    }
+
+    async function refreshProjects() {
+      refreshProjectsButton.disabled = true;
+      setStatus(projectsStatus, "Обновляем список проектов...");
+
+      try {
+        const response = await fetch("/api/projects/refresh", { method: "POST" });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.detail || "Ошибка обновления проектов.");
         }
 
-        const rows = projects.map((project) => `
-          <tr>
-            <td>${project.redmine_id}</td>
-            <td>${project.name}</td>
-            <td>${project.identifier || ""}</td>
-            <td>${project.parent_redmine_id || ""}</td>
-            <td>${project.updated_on || ""}</td>
-          </tr>
-        `);
-
-        projectsTableBody.innerHTML = rows.join("");
+        renderProjects(payload.projects ?? []);
+        setStatus(
+          projectsStatus,
+          `Готово: добавлено новых проектов ${payload.added_count ?? 0}.`,
+          "success"
+        );
+      } catch (error) {
+        setStatus(projectsStatus, error.message, "error");
+      } finally {
+        refreshProjectsButton.disabled = false;
       }
+    }
 
-      function renderSnapshotBatches(batches) {
-        batchesCount.textContent = `${batches.length} batches`;
+    async function captureSnapshots() {
+      captureSnapshotsButton.disabled = true;
+      setStatus(captureStatus, "Получаем срезы задач...");
 
-        if (!batches.length) {
-          batchesTableBody.innerHTML = '<tr><td colspan="6" class="empty">No snapshot batches yet.</td></tr>';
-          return;
+      try {
+        const response = await fetch("/api/issues/snapshots/capture", { method: "POST" });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.detail || "Ошибка получения срезов.");
         }
 
-        const rows = batches.map((batch) => `
-          <tr>
-            <td>${batch.captured_for_date}</td>
-            <td>${batch.started_at}</td>
-            <td>${batch.completed_at || ""}</td>
-            <td>${batch.completed_projects} / ${batch.total_projects}</td>
-            <td>${batch.skipped_projects}</td>
-            <td>${batch.total_issues}</td>
-          </tr>
-        `);
-
-        batchesTableBody.innerHTML = rows.join("");
-      }
-
-      function renderSnapshotRuns(runs) {
-        snapshotsCount.textContent = `${runs.length} runs`;
-
-        if (!runs.length) {
-          snapshotsTableBody.innerHTML = '<tr><td colspan="6" class="empty">No snapshot runs yet.</td></tr>';
-          return;
+        if (payload.captured_for_date) {
+          snapshotDateInput.value = payload.captured_for_date;
         }
 
-        const rows = runs.map((run) => `
-          <tr>
-            <td>${run.captured_at}</td>
-            <td>${run.project_name}</td>
-            <td>${run.project_identifier}</td>
-            <td>${run.total_issues}</td>
-            <td>${run.total_estimated_hours}</td>
-            <td>${run.total_spent_hours}</td>
-          </tr>
-        `);
+        renderSnapshotRuns(payload.snapshot_runs ?? []);
+        setStatus(
+          captureStatus,
+          `Готово: создано срезов ${payload.created_runs ?? 0}, задач ${payload.captured_issues ?? 0}, уже было срезов на сегодня ${payload.already_captured_projects ?? 0}.`,
+          "success"
+        );
+      } catch (error) {
+        setStatus(captureStatus, error.message, "error");
+      } finally {
+        captureSnapshotsButton.disabled = false;
+      }
+    }
 
-        snapshotsTableBody.innerHTML = rows.join("");
+    async function deleteSnapshotsForDate() {
+      const capturedForDate = snapshotDateInput.value;
+      if (!capturedForDate) {
+        setStatus(deleteStatus, "Сначала выберите дату в календаре.", "error");
+        return;
       }
 
-      async function loadServerTime() {
-        button.disabled = true;
-        timeMeta.textContent = "Requesting server time...";
+      deleteSnapshotsButton.disabled = true;
+      setStatus(deleteStatus, `Удаляем срезы за ${capturedForDate}...`);
 
-        try {
-          const response = await fetch("/api/time");
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
+      try {
+        const response = await fetch(
+          `/api/issues/snapshots/by-date?captured_for_date=${encodeURIComponent(capturedForDate)}`,
+          { method: "DELETE" }
+        );
+        const payload = await response.json();
 
-          const payload = await response.json();
-          timeValue.textContent = payload.current_time;
-          timeMeta.textContent = `UTC timestamp: ${payload.current_time_utc}`;
-        } catch (error) {
-          timeValue.textContent = "Error";
-          timeMeta.textContent = `Could not load time: ${error.message}`;
-        } finally {
-          button.disabled = false;
+        if (!response.ok) {
+          throw new Error(payload.detail || "Ошибка удаления срезов.");
         }
+
+        renderSnapshotRuns(payload.snapshot_runs ?? []);
+        setStatus(
+          deleteStatus,
+          `Удалено срезов: ${payload.deleted_runs ?? 0}, строк задач: ${payload.deleted_items ?? 0}.`,
+          "success"
+        );
+      } catch (error) {
+        setStatus(deleteStatus, error.message, "error");
+      } finally {
+        deleteSnapshotsButton.disabled = false;
       }
+    }
 
-      async function loadProjects() {
-        setStatus(projectsStatus, "Loading projects from the database...");
+    refreshProjectsButton.addEventListener("click", refreshProjects);
+    captureSnapshotsButton.addEventListener("click", captureSnapshots);
+    deleteSnapshotsButton.addEventListener("click", deleteSnapshotsForDate);
 
-        try {
-          const response = await fetch("/api/projects");
-          const payload = await response.json();
-
-          if (!response.ok) {
-            throw new Error(payload.detail || `HTTP ${response.status}`);
-          }
-
-          renderProjects(payload.projects);
-          setStatus(projectsStatus, `Loaded ${payload.projects.length} projects from the database.`, "success");
-        } catch (error) {
-          renderProjects([]);
-          setStatus(projectsStatus, `Could not load projects: ${error.message}`, "error");
-        }
-      }
-
-      async function loadSnapshotBatches() {
-        try {
-          const response = await fetch("/api/issues/snapshots/batches");
-          const payload = await response.json();
-
-          if (!response.ok) {
-            throw new Error(payload.detail || `HTTP ${response.status}`);
-          }
-
-          renderSnapshotBatches(payload.snapshot_batches);
-        } catch (error) {
-          renderSnapshotBatches([]);
-          setStatus(snapshotsStatus, `Could not load snapshot batches: ${error.message}`, "error");
-        }
-      }
-
-      async function loadSnapshotRuns() {
-        setStatus(snapshotsStatus, "Loading recent snapshot runs...");
-
-        try {
-          const response = await fetch("/api/issues/snapshots/runs");
-          const payload = await response.json();
-
-          if (!response.ok) {
-            throw new Error(payload.detail || `HTTP ${response.status}`);
-          }
-
-          renderSnapshotRuns(payload.snapshot_runs);
-          setStatus(snapshotsStatus, `Loaded ${payload.snapshot_runs.length} recent snapshot runs.`, "success");
-        } catch (error) {
-          renderSnapshotRuns([]);
-          setStatus(snapshotsStatus, `Could not load snapshot runs: ${error.message}`, "error");
-        }
-      }
-
-      async function refreshProjects() {
-        refreshProjectsButton.disabled = true;
-        setStatus(projectsStatus, "Requesting projects from Redmine and saving missing rows...");
-
-        try {
-          const response = await fetch("/api/projects/refresh", { method: "POST" });
-          const payload = await response.json();
-
-          if (!response.ok) {
-            throw new Error(payload.detail || `HTTP ${response.status}`);
-          }
-
-          renderProjects(payload.projects);
-          setStatus(
-            projectsStatus,
-            `Stored ${payload.projects.length} projects. Added ${payload.added_count} new rows from Redmine.`,
-            "success"
-          );
-        } catch (error) {
-          setStatus(projectsStatus, `Could not refresh projects: ${error.message}`, "error");
-        } finally {
-          refreshProjectsButton.disabled = false;
-        }
-      }
-
-      async function captureSnapshots() {
-        captureSnapshotsButton.disabled = true;
-        setStatus(snapshotsStatus, "Requesting full issue slices from Redmine and saving snapshot history...");
-
-        try {
-          const response = await fetch("/api/issues/snapshots/capture", { method: "POST" });
-          const payload = await response.json();
-
-          if (!response.ok) {
-            throw new Error(payload.detail || `HTTP ${response.status}`);
-          }
-
-          renderSnapshotRuns(payload.snapshot_runs);
-          renderSnapshotBatches(payload.snapshot_batches);
-          setStatus(
-            snapshotsStatus,
-            `Created batch ${payload.snapshot_batch_id}, stored ${payload.created_runs} project slices and ${payload.captured_issues} issues.`,
-            "success"
-          );
-        } catch (error) {
-          setStatus(snapshotsStatus, `Could not capture snapshots: ${error.message}`, "error");
-        } finally {
-          captureSnapshotsButton.disabled = false;
-        }
-      }
-
-      button.addEventListener("click", loadServerTime);
-      refreshProjectsButton.addEventListener("click", refreshProjects);
-      captureSnapshotsButton.addEventListener("click", captureSnapshots);
-      loadProjects();
-      loadSnapshotBatches();
-      loadSnapshotRuns();
-    </script>
-  </body>
+    loadServerTime();
+    loadProjects();
+    loadSnapshotRuns();
+  </script>
+</body>
 </html>
 """
 
 
 def requireProjectSyncConfig() -> None:
-    if not config.databaseUrl:
-        raise HTTPException(status_code=500, detail="DATABASE_URL is not set")
     if not config.redmineUrl:
-        raise HTTPException(status_code=500, detail="REDMINE_URL is not set")
+        raise HTTPException(status_code=400, detail="REDMINE_URL is not set")
     if not config.apiKey:
-        raise HTTPException(status_code=500, detail="REDMINE_API_KEY is not set")
+        raise HTTPException(status_code=400, detail="REDMINE_API_KEY is not set")
 
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 def readRoot() -> HTMLResponse:
     return HTMLResponse(PAGE_HTML)
 
 
 @app.get("/api/time")
 def getTime() -> dict[str, str]:
-    now = datetime.now(UTC)
+    nowUtc = datetime.now(UTC)
     return {
-        "current_time": now.strftime("%Y-%m-%d %H:%M:%S UTC"),
-        "current_time_utc": now.isoformat(),
+        "current_time": nowUtc.astimezone().isoformat(),
+        "current_time_utc": nowUtc.isoformat(),
     }
 
 
 @app.get("/api/projects")
-def getProjects() -> dict[str, list[dict[str, object]]]:
+def getProjects() -> dict[str, object]:
     if not config.databaseUrl:
-        raise HTTPException(status_code=500, detail="DATABASE_URL is not set")
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureProjectsTable()
     return {"projects": listStoredProjects()}
@@ -635,60 +744,80 @@ def getProjects() -> dict[str, list[dict[str, object]]]:
 
 @app.post("/api/projects/refresh")
 def refreshProjects() -> dict[str, object]:
-    requireProjectSyncConfig()
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
+    requireProjectSyncConfig()
     ensureProjectsTable()
+
     projects = fetchAllProjectsFromRedmine(config.redmineUrl, config.apiKey)
     addedCount = storeMissingProjects(projects)
-    storedProjects = listStoredProjects()
 
     return {
         "added_count": addedCount,
-        "projects": storedProjects,
+        "projects": listStoredProjects(),
     }
 
 
 @app.get("/api/issues/snapshots/runs")
-def getIssueSnapshotRuns() -> dict[str, list[dict[str, object]]]:
+def getIssueSnapshotRuns() -> dict[str, object]:
     if not config.databaseUrl:
-        raise HTTPException(status_code=500, detail="DATABASE_URL is not set")
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureIssueSnapshotTables()
     return {"snapshot_runs": listRecentIssueSnapshotRuns()}
 
 
-@app.get("/api/issues/snapshots/batches")
-def getIssueSnapshotBatches() -> dict[str, list[dict[str, object]]]:
+@app.delete("/api/issues/snapshots/by-date")
+def deleteIssueSnapshotsByDate(
+    captured_for_date: str = Query(..., description="Дата в формате YYYY-MM-DD"),
+) -> dict[str, object]:
     if not config.databaseUrl:
-        raise HTTPException(status_code=500, detail="DATABASE_URL is not set")
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureIssueSnapshotTables()
-    return {"snapshot_batches": listRecentIssueSnapshotBatches()}
+
+    try:
+        datetime.strptime(captured_for_date, "%Y-%m-%d")
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="captured_for_date must be YYYY-MM-DD") from error
+
+    result = deleteIssueSnapshotsForDate(captured_for_date)
+    result["snapshot_runs"] = listRecentIssueSnapshotRuns()
+    return result
 
 
 @app.post("/api/issues/snapshots/capture")
 def captureIssueSnapshots() -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
     requireProjectSyncConfig()
+
     try:
         return captureAllIssueSnapshots()
     except RuntimeError as error:
-        detail = str(error)
-        statusCode = 400 if "No projects in the database" in detail else 500
-        raise HTTPException(status_code=statusCode, detail=detail) from error
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, object]:
+    return {
+        "status": "ok",
+        "environment": config.appEnv,
+        "database_configured": bool(config.databaseUrl),
+        "redmine_configured": bool(config.redmineUrl and config.apiKey),
+    }
 
 
 @app.get("/db-health")
-def dbHealth() -> dict[str, str]:
+def databaseHealth() -> dict[str, object]:
     if not config.databaseUrl:
-        return {"status": "error", "details": "DATABASE_URL is not set"}
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     try:
-        checkDatabaseConnection()
-        return {"status": "ok"}
-    except Exception as error:
-        return {"status": "error", "details": str(error)}
+        connected = checkDatabaseConnection()
+    except Exception as error:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+    return {"status": "ok" if connected else "down", "connected": connected}
