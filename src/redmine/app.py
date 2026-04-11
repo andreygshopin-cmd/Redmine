@@ -2,22 +2,18 @@ from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
-from requests import HTTPError
-
 from src.redmine.config import loadConfig
 from src.redmine.db import (
     checkDatabaseConnection,
-    createIssueSnapshotRun,
     ensureIssueSnapshotTables,
     ensureProjectsTable,
+    listRecentIssueSnapshotBatches,
     listRecentIssueSnapshotRuns,
     listStoredProjects,
     storeMissingProjects,
 )
-from src.redmine.redmine_client import (
-    fetchAllIssuesForProject,
-    fetchAllProjectsFromRedmine,
-)
+from src.redmine.redmine_client import fetchAllProjectsFromRedmine
+from src.redmine.snapshots import captureAllIssueSnapshots
 
 
 config = loadConfig()
@@ -51,7 +47,7 @@ PAGE_HTML = """
       body {
         margin: 0;
         min-height: 100vh;
-        font-family: Georgia, \"Times New Roman\", serif;
+        font-family: Georgia, "Times New Roman", serif;
         background:
           radial-gradient(circle at top left, rgba(217, 119, 6, 0.18), transparent 32%),
           radial-gradient(circle at bottom right, rgba(20, 83, 45, 0.18), transparent 30%),
@@ -284,12 +280,42 @@ PAGE_HTML = """
 
         <article class="card">
           <h2>Issue snapshots</h2>
-          <p>Capture a full issue slice for every stored project and save it to a dedicated history table.</p>
+          <p>Capture a dated issue slice for every stored project and save it to a reusable history batch.</p>
           <div class="actions" style="margin-top: 20px;">
             <button id="capture-snapshots" type="button">Capture issue snapshot</button>
           </div>
           <div id="snapshots-status" class="status" style="margin-top: 22px;">Recent snapshot runs are loading.</div>
         </article>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Periodic capture</p>
+            <h2>Recent snapshot batches</h2>
+          </div>
+          <div id="batches-count" class="meta">0 batches</div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Snapshot Date</th>
+                <th>Started</th>
+                <th>Completed</th>
+                <th>Projects</th>
+                <th>Skipped</th>
+                <th>Issues</th>
+              </tr>
+            </thead>
+            <tbody id="batches-table-body">
+              <tr>
+                <td colspan="6" class="empty">No snapshot batches yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section class="card">
@@ -361,8 +387,10 @@ PAGE_HTML = """
       const projectsStatus = document.getElementById("projects-status");
       const snapshotsStatus = document.getElementById("snapshots-status");
       const projectsCount = document.getElementById("projects-count");
+      const batchesCount = document.getElementById("batches-count");
       const snapshotsCount = document.getElementById("snapshots-count");
       const projectsTableBody = document.getElementById("projects-table-body");
+      const batchesTableBody = document.getElementById("batches-table-body");
       const snapshotsTableBody = document.getElementById("snapshots-table-body");
 
       function setStatus(target, message, tone = "") {
@@ -389,6 +417,28 @@ PAGE_HTML = """
         `);
 
         projectsTableBody.innerHTML = rows.join("");
+      }
+
+      function renderSnapshotBatches(batches) {
+        batchesCount.textContent = `${batches.length} batches`;
+
+        if (!batches.length) {
+          batchesTableBody.innerHTML = '<tr><td colspan="6" class="empty">No snapshot batches yet.</td></tr>';
+          return;
+        }
+
+        const rows = batches.map((batch) => `
+          <tr>
+            <td>${batch.captured_for_date}</td>
+            <td>${batch.started_at}</td>
+            <td>${batch.completed_at || ""}</td>
+            <td>${batch.completed_projects} / ${batch.total_projects}</td>
+            <td>${batch.skipped_projects}</td>
+            <td>${batch.total_issues}</td>
+          </tr>
+        `);
+
+        batchesTableBody.innerHTML = rows.join("");
       }
 
       function renderSnapshotRuns(runs) {
@@ -453,6 +503,22 @@ PAGE_HTML = """
         }
       }
 
+      async function loadSnapshotBatches() {
+        try {
+          const response = await fetch("/api/issues/snapshots/batches");
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.detail || `HTTP ${response.status}`);
+          }
+
+          renderSnapshotBatches(payload.snapshot_batches);
+        } catch (error) {
+          renderSnapshotBatches([]);
+          setStatus(snapshotsStatus, `Could not load snapshot batches: ${error.message}`, "error");
+        }
+      }
+
       async function loadSnapshotRuns() {
         setStatus(snapshotsStatus, "Loading recent snapshot runs...");
 
@@ -510,9 +576,10 @@ PAGE_HTML = """
           }
 
           renderSnapshotRuns(payload.snapshot_runs);
+          renderSnapshotBatches(payload.snapshot_batches);
           setStatus(
             snapshotsStatus,
-            `Created ${payload.created_runs} snapshot runs and stored ${payload.captured_issues} issues.`,
+            `Created batch ${payload.snapshot_batch_id}, stored ${payload.created_runs} project slices and ${payload.captured_issues} issues.`,
             "success"
           );
         } catch (error) {
@@ -526,6 +593,7 @@ PAGE_HTML = """
       refreshProjectsButton.addEventListener("click", refreshProjects);
       captureSnapshotsButton.addEventListener("click", captureSnapshots);
       loadProjects();
+      loadSnapshotBatches();
       loadSnapshotRuns();
     </script>
   </body>
@@ -589,59 +657,24 @@ def getIssueSnapshotRuns() -> dict[str, list[dict[str, object]]]:
     return {"snapshot_runs": listRecentIssueSnapshotRuns()}
 
 
+@app.get("/api/issues/snapshots/batches")
+def getIssueSnapshotBatches() -> dict[str, list[dict[str, object]]]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+    return {"snapshot_batches": listRecentIssueSnapshotBatches()}
+
+
 @app.post("/api/issues/snapshots/capture")
 def captureIssueSnapshots() -> dict[str, object]:
     requireProjectSyncConfig()
-
-    ensureProjectsTable()
-    ensureIssueSnapshotTables()
-    projects = listStoredProjects()
-    if not projects:
-        raise HTTPException(status_code=400, detail="No projects in the database. Refresh projects first.")
-
-    createdRuns = 0
-    capturedIssues = 0
-    skippedProjects = []
-
-    for project in projects:
-        identifier = project.get("identifier")
-        if not identifier:
-            skippedProjects.append(
-                {
-                    "project_redmine_id": project["redmine_id"],
-                    "project_name": project["name"],
-                    "reason": "Project identifier is missing",
-                }
-            )
-            continue
-
-        try:
-            issues = fetchAllIssuesForProject(
-                config.redmineUrl,
-                config.apiKey,
-                str(identifier),
-                int(project["redmine_id"]),
-            )
-        except HTTPError as error:
-            skippedProjects.append(
-                {
-                    "project_redmine_id": project["redmine_id"],
-                    "project_name": project["name"],
-                    "reason": str(error),
-                }
-            )
-            continue
-
-        createIssueSnapshotRun(project, issues)
-        createdRuns += 1
-        capturedIssues += len(issues)
-
-    return {
-        "created_runs": createdRuns,
-        "captured_issues": capturedIssues,
-        "skipped_projects": skippedProjects,
-        "snapshot_runs": listRecentIssueSnapshotRuns(),
-    }
+    try:
+        return captureAllIssueSnapshots()
+    except RuntimeError as error:
+        detail = str(error)
+        statusCode = 400 if "No projects in the database" in detail else 500
+        raise HTTPException(status_code=statusCode, detail=detail) from error
 
 
 @app.get("/health")
@@ -659,4 +692,3 @@ def dbHealth() -> dict[str, str]:
         return {"status": "ok"}
     except Exception as error:
         return {"status": "error", "details": str(error)}
-

@@ -63,11 +63,32 @@ def ensureIssueSnapshotTables() -> None:
         connection.execute(
             text(
                 """
+                CREATE TABLE IF NOT EXISTS issue_snapshot_batches (
+                    id BIGSERIAL PRIMARY KEY,
+                    captured_for_date DATE NOT NULL,
+                    started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    completed_at TIMESTAMPTZ NULL,
+                    total_projects INTEGER NOT NULL DEFAULT 0,
+                    completed_projects INTEGER NOT NULL DEFAULT 0,
+                    skipped_projects INTEGER NOT NULL DEFAULT 0,
+                    total_issues INTEGER NOT NULL DEFAULT 0,
+                    total_estimated_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    total_spent_hours DOUBLE PRECISION NOT NULL DEFAULT 0
+                )
+                """
+            )
+        )
+
+        connection.execute(
+            text(
+                """
                 CREATE TABLE IF NOT EXISTS issue_snapshot_runs (
                     id BIGSERIAL PRIMARY KEY,
+                    snapshot_batch_id BIGINT NULL REFERENCES issue_snapshot_batches(id) ON DELETE SET NULL,
                     project_redmine_id INTEGER NOT NULL,
                     project_name TEXT NOT NULL,
                     project_identifier TEXT NOT NULL,
+                    captured_for_date DATE NOT NULL DEFAULT CURRENT_DATE,
                     captured_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     total_issues INTEGER NOT NULL DEFAULT 0,
                     total_estimated_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -116,8 +137,56 @@ def ensureIssueSnapshotTables() -> None:
         connection.execute(
             text(
                 """
+                ALTER TABLE issue_snapshot_runs
+                ADD COLUMN IF NOT EXISTS snapshot_batch_id BIGINT NULL
+                """
+            )
+        )
+
+        connection.execute(
+            text(
+                """
+                ALTER TABLE issue_snapshot_runs
+                ADD COLUMN IF NOT EXISTS captured_for_date DATE NOT NULL DEFAULT CURRENT_DATE
+                """
+            )
+        )
+
+        connection.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_constraint
+                        WHERE conname = 'issue_snapshot_runs_snapshot_batch_id_fkey'
+                    ) THEN
+                        ALTER TABLE issue_snapshot_runs
+                        ADD CONSTRAINT issue_snapshot_runs_snapshot_batch_id_fkey
+                        FOREIGN KEY (snapshot_batch_id)
+                        REFERENCES issue_snapshot_batches(id)
+                        ON DELETE SET NULL;
+                    END IF;
+                END $$;
+                """
+            )
+        )
+
+        connection.execute(
+            text(
+                """
                 CREATE INDEX IF NOT EXISTS idx_issue_snapshot_runs_project_captured
                 ON issue_snapshot_runs(project_redmine_id, captured_at DESC)
+                """
+            )
+        )
+
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_issue_snapshot_runs_batch
+                ON issue_snapshot_runs(snapshot_batch_id)
                 """
             )
         )
@@ -178,15 +247,47 @@ def listRecentIssueSnapshotRuns(limit: int = 20) -> list[dict[str, object]]:
                 """
                 SELECT
                     id,
+                    snapshot_batch_id,
                     project_redmine_id,
                     project_name,
                     project_identifier,
+                    captured_for_date,
                     captured_at,
                     total_issues,
                     total_estimated_hours,
                     total_spent_hours
                 FROM issue_snapshot_runs
                 ORDER BY captured_at DESC, id DESC
+                LIMIT :limit_value
+                """
+            ),
+            {"limit_value": limit},
+        )
+
+        return [dict(row._mapping) for row in rows]
+
+
+def listRecentIssueSnapshotBatches(limit: int = 20) -> list[dict[str, object]]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    captured_for_date,
+                    started_at,
+                    completed_at,
+                    total_projects,
+                    completed_projects,
+                    skipped_projects,
+                    total_issues,
+                    total_estimated_hours,
+                    total_spent_hours
+                FROM issue_snapshot_batches
+                ORDER BY started_at DESC, id DESC
                 LIMIT :limit_value
                 """
             ),
@@ -248,7 +349,79 @@ def storeMissingProjects(projects: Sequence[dict[str, object]]) -> int:
     return addedCount
 
 
-def createIssueSnapshotRun(project: dict[str, object], issues: Sequence[dict[str, object]]) -> int:
+def createIssueSnapshotBatch(
+    capturedForDate: str,
+    totalProjects: int,
+) -> int:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.begin() as connection:
+        batchRow = connection.execute(
+            text(
+                """
+                INSERT INTO issue_snapshot_batches (
+                    captured_for_date,
+                    total_projects
+                ) VALUES (
+                    :captured_for_date,
+                    :total_projects
+                )
+                RETURNING id
+                """
+            ),
+            {
+                "captured_for_date": capturedForDate,
+                "total_projects": totalProjects,
+            },
+        ).first()
+
+    return int(batchRow.id)
+
+
+def finalizeIssueSnapshotBatch(
+    batchId: int,
+    completedProjects: int,
+    skippedProjects: int,
+    totalIssues: int,
+    totalEstimatedHours: float,
+    totalSpentHours: float,
+) -> None:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                UPDATE issue_snapshot_batches
+                SET
+                    completed_at = CURRENT_TIMESTAMP,
+                    completed_projects = :completed_projects,
+                    skipped_projects = :skipped_projects,
+                    total_issues = :total_issues,
+                    total_estimated_hours = :total_estimated_hours,
+                    total_spent_hours = :total_spent_hours
+                WHERE id = :batch_id
+                """
+            ),
+            {
+                "batch_id": batchId,
+                "completed_projects": completedProjects,
+                "skipped_projects": skippedProjects,
+                "total_issues": totalIssues,
+                "total_estimated_hours": totalEstimatedHours,
+                "total_spent_hours": totalSpentHours,
+            },
+        )
+
+
+def createIssueSnapshotRun(
+    batchId: int | None,
+    capturedForDate: str,
+    project: dict[str, object],
+    issues: Sequence[dict[str, object]],
+) -> int:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
 
@@ -260,16 +433,20 @@ def createIssueSnapshotRun(project: dict[str, object], issues: Sequence[dict[str
             text(
                 """
                 INSERT INTO issue_snapshot_runs (
+                    snapshot_batch_id,
                     project_redmine_id,
                     project_name,
                     project_identifier,
+                    captured_for_date,
                     total_issues,
                     total_estimated_hours,
                     total_spent_hours
                 ) VALUES (
+                    :snapshot_batch_id,
                     :project_redmine_id,
                     :project_name,
                     :project_identifier,
+                    :captured_for_date,
                     :total_issues,
                     :total_estimated_hours,
                     :total_spent_hours
@@ -278,9 +455,11 @@ def createIssueSnapshotRun(project: dict[str, object], issues: Sequence[dict[str
                 """
             ),
             {
+                "snapshot_batch_id": batchId,
                 "project_redmine_id": project["redmine_id"],
                 "project_name": project["name"],
                 "project_identifier": project["identifier"],
+                "captured_for_date": capturedForDate,
                 "total_issues": len(issues),
                 "total_estimated_hours": totalEstimatedHours,
                 "total_spent_hours": totalSpentHours,
@@ -359,4 +538,3 @@ def createIssueSnapshotRun(project: dict[str, object], issues: Sequence[dict[str
             connection.execute(insertStatement, payload)
 
     return snapshotRunId
-
