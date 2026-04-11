@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from requests import HTTPError
 
 from src.redmine import app as app_module
 from src.redmine.app import app, getTime, readRoot
@@ -194,4 +195,33 @@ def testCaptureIssueSnapshotsEndpointCreatesRuns(monkeypatch) -> None:
     assert response.json()["created_runs"] == 1
     assert response.json()["captured_issues"] == 1
     assert created[0][0]["identifier"] == "alpha"
+
+
+def testCaptureIssueSnapshotsEndpointSkipsForbiddenProject(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module.config, "redmineUrl", "https://redmine.example.com")
+    monkeypatch.setattr(app_module.config, "apiKey", "secret")
+    monkeypatch.setattr(app_module, "ensureProjectsTable", lambda: None)
+    monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
+    monkeypatch.setattr(
+        app_module,
+        "listStoredProjects",
+        lambda: [{"redmine_id": 1, "name": "Alpha", "identifier": "alpha"}],
+    )
+    monkeypatch.setattr(
+        app_module,
+        "fetchAllIssuesForProject",
+        lambda redmineUrl, apiKey, projectIdentifier, projectRedmineId: (_ for _ in ()).throw(
+            HTTPError("403 Client Error: Forbidden")
+        ),
+    )
+    monkeypatch.setattr(app_module, "createIssueSnapshotRun", lambda project, issues: 100)
+    monkeypatch.setattr(app_module, "listRecentIssueSnapshotRuns", lambda: [])
+
+    response = client.post("/api/issues/snapshots/capture")
+
+    assert response.status_code == 200
+    assert response.json()["created_runs"] == 0
+    assert response.json()["captured_issues"] == 0
+    assert response.json()["skipped_projects"][0]["project_name"] == "Alpha"
 

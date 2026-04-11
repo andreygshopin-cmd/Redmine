@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
+from requests import HTTPError
 
 from src.redmine.config import loadConfig
 from src.redmine.db import (
@@ -600,18 +601,37 @@ def captureIssueSnapshots() -> dict[str, object]:
 
     createdRuns = 0
     capturedIssues = 0
+    skippedProjects = []
 
     for project in projects:
         identifier = project.get("identifier")
         if not identifier:
+            skippedProjects.append(
+                {
+                    "project_redmine_id": project["redmine_id"],
+                    "project_name": project["name"],
+                    "reason": "Project identifier is missing",
+                }
+            )
             continue
 
-        issues = fetchAllIssuesForProject(
-            config.redmineUrl,
-            config.apiKey,
-            str(identifier),
-            int(project["redmine_id"]),
-        )
+        try:
+            issues = fetchAllIssuesForProject(
+                config.redmineUrl,
+                config.apiKey,
+                str(identifier),
+                int(project["redmine_id"]),
+            )
+        except HTTPError as error:
+            skippedProjects.append(
+                {
+                    "project_redmine_id": project["redmine_id"],
+                    "project_name": project["name"],
+                    "reason": str(error),
+                }
+            )
+            continue
+
         createIssueSnapshotRun(project, issues)
         createdRuns += 1
         capturedIssues += len(issues)
@@ -619,6 +639,7 @@ def captureIssueSnapshots() -> dict[str, object]:
     return {
         "created_runs": createdRuns,
         "captured_issues": capturedIssues,
+        "skipped_projects": skippedProjects,
         "snapshot_runs": listRecentIssueSnapshotRuns(),
     }
 
