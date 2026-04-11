@@ -7,12 +7,20 @@ from src.redmine.config import loadConfig
 
 
 config = loadConfig()
+SNAPSHOT_INSERT_BATCH_SIZE = 200
 
 
 def normalizeDatabaseUrl(databaseUrl: str) -> str:
     if databaseUrl.startswith("postgresql://") and "+psycopg" not in databaseUrl:
         return databaseUrl.replace("postgresql://", "postgresql+psycopg://", 1)
     return databaseUrl
+
+
+def chunkSequence(items: Sequence[dict[str, object]], chunkSize: int) -> list[list[dict[str, object]]]:
+    if chunkSize <= 0:
+        raise ValueError("chunkSize must be greater than 0")
+
+    return [list(items[index : index + chunkSize]) for index in range(0, len(items), chunkSize)]
 
 
 normalizedDatabaseUrl = normalizeDatabaseUrl(config.databaseUrl)
@@ -584,6 +592,7 @@ def createIssueSnapshotRun(
                 item["snapshot_run_id"] = snapshotRunId
                 payload.append(item)
 
-            connection.execute(insertStatement, payload)
+            for payloadChunk in chunkSequence(payload, SNAPSHOT_INSERT_BATCH_SIZE):
+                connection.execute(insertStatement, payloadChunk)
 
     return snapshotRunId

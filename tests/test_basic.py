@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from src.redmine import app as app_module
 from src.redmine.app import app, getTime, readRoot
 from src.redmine.config import loadConfig
-from src.redmine.db import normalizeDatabaseUrl
+from src.redmine.db import chunkSequence, normalizeDatabaseUrl
 from src.redmine.redmine_client import (
     applySpentHoursYearByIssue,
     normalizeIssue,
@@ -45,6 +45,18 @@ def testNormalizeDatabaseUrlUsesPsycopgDriver() -> None:
         normalizeDatabaseUrl("postgresql+psycopg://user:pass@host/db")
         == "postgresql+psycopg://user:pass@host/db"
     )
+
+
+def testChunkSequenceSplitsIntoSmallerBatches() -> None:
+    payload = [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}]
+
+    chunks = chunkSequence(payload, 2)
+
+    assert chunks == [
+        [{"id": 1}, {"id": 2}],
+        [{"id": 3}, {"id": 4}],
+        [{"id": 5}],
+    ]
 
 
 def testNormalizeProjectMapsFields() -> None:

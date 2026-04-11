@@ -30,16 +30,17 @@ PAGE_HTML = """<!doctype html>
   <style>
     :root {
       color-scheme: light;
-      --bg: #f5f8fb;
+      --bg: #ffffff;
       --panel: #ffffff;
       --panel-soft: #eef6f7;
       --line: #d9e5eb;
       --text: #16324a;
       --muted: #64798d;
-      --accent: #00a99d;
-      --accent-2: #1777c8;
-      --accent-deep: #0d4b8f;
-      --danger: #c84a3e;
+      --blue-302: #375d77;
+      --yellow-109: #ffc600;
+      --cyan-310: #52cee6;
+      --orange-1585: #ff6c0e;
+      --danger: #ff6c0e;
       --shadow: 0 18px 40px rgba(22, 50, 74, 0.08);
       --shadow-soft: 0 12px 24px rgba(22, 50, 74, 0.06);
     }
@@ -55,48 +56,44 @@ PAGE_HTML = """<!doctype html>
     body {
       margin: 0;
       font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
-      background:
-        radial-gradient(circle at top left, rgba(0, 169, 157, 0.12), transparent 24%),
-        radial-gradient(circle at top right, rgba(23, 119, 200, 0.10), transparent 26%),
-        linear-gradient(180deg, #fbfdff 0%, var(--bg) 100%);
+      background: var(--bg);
       color: var(--text);
+    }
+
+    .topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 20;
+      padding: 0 20px;
+      background: #ffffff;
+      border-bottom: 1px solid #eef2f6;
+    }
+
+    .topbar-spacer {
+      height: 100px;
     }
 
     main {
       max-width: 1200px;
       margin: 0 auto;
-      padding: 28px 20px 56px;
+      padding: 18px 20px 56px;
     }
 
     .hero {
-      position: relative;
-      overflow: hidden;
       margin-bottom: 24px;
-      padding: 24px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background:
-        linear-gradient(140deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 248, 250, 0.96) 58%, rgba(232, 243, 250, 0.98) 100%);
-      box-shadow: var(--shadow);
-    }
-
-    .hero::after {
-      content: "";
-      position: absolute;
-      inset: auto -60px -70px auto;
-      width: 240px;
-      height: 240px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(0, 169, 157, 0.18), rgba(0, 169, 157, 0));
-      pointer-events: none;
+      padding: 0;
     }
 
     .brand-bar {
+      max-width: 1200px;
+      margin: 0 auto;
       display: flex;
-      align-items: stretch;
+      align-items: center;
       justify-content: space-between;
       gap: 24px;
-      margin-bottom: 18px;
+      min-height: 100px;
     }
 
     .brand {
@@ -113,11 +110,12 @@ PAGE_HTML = """<!doctype html>
       align-items: center;
       justify-content: center;
       width: 220px;
-      min-height: 118px;
-      padding: 18px 22px;
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.96);
-      border: 1px solid var(--line);
+      height: 72px;
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
     }
 
     .brand-logo {
@@ -154,18 +152,35 @@ PAGE_HTML = """<!doctype html>
       justify-content: center;
       padding: 10px 16px;
       border-radius: 6px;
-      border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.94);
-      color: var(--text);
+      border: 1px solid transparent;
+      color: #ffffff;
       text-decoration: none;
       font-weight: 600;
       box-shadow: var(--shadow-soft);
       transition: transform 120ms ease, border-color 120ms ease;
     }
 
+    .quick-links a:nth-child(4n + 1) {
+      background: var(--blue-302);
+    }
+
+    .quick-links a:nth-child(4n + 2) {
+      background: var(--yellow-109);
+      color: #16324a;
+    }
+
+    .quick-links a:nth-child(4n + 3) {
+      background: var(--cyan-310);
+      color: #16324a;
+    }
+
+    .quick-links a:nth-child(4n + 4) {
+      background: var(--orange-1585);
+    }
+
     .quick-links a:hover {
       transform: translateY(-1px);
-      border-color: rgba(23, 119, 200, 0.35);
+      filter: brightness(1.03);
     }
 
     .grid {
@@ -209,9 +224,9 @@ PAGE_HTML = """<!doctype html>
       font-weight: 600;
       color: white;
       cursor: pointer;
-      background: linear-gradient(135deg, var(--accent-2), var(--accent));
+      background: var(--blue-302);
       transition: transform 120ms ease, opacity 120ms ease;
-      box-shadow: 0 14px 24px rgba(23, 119, 200, 0.22);
+      box-shadow: 0 14px 24px rgba(55, 93, 119, 0.22);
     }
 
     button:hover {
@@ -225,7 +240,20 @@ PAGE_HTML = """<!doctype html>
     }
 
     button.danger {
-      background: linear-gradient(135deg, #d65943, var(--danger));
+      background: var(--orange-1585);
+      box-shadow: 0 14px 24px rgba(255, 108, 14, 0.22);
+    }
+
+    #refreshProjectsButton {
+      background: var(--yellow-109);
+      color: #16324a;
+      box-shadow: 0 14px 24px rgba(255, 198, 0, 0.24);
+    }
+
+    #captureSnapshotsButton {
+      background: var(--cyan-310);
+      color: #16324a;
+      box-shadow: 0 14px 24px rgba(82, 206, 230, 0.24);
     }
 
     input[type="date"] {
@@ -249,7 +277,7 @@ PAGE_HTML = """<!doctype html>
     }
 
     .status.success {
-      color: var(--accent);
+      color: var(--blue-302);
     }
 
     .meta {
@@ -313,17 +341,24 @@ PAGE_HTML = """<!doctype html>
     }
 
     @media (max-width: 700px) {
-      main {
-        padding: 24px 14px 40px;
+      .topbar {
+        padding: 0 14px;
       }
 
-      .hero {
-        padding: 18px;
+      .topbar-spacer {
+        height: 136px;
+      }
+
+      main {
+        padding: 18px 14px 40px;
       }
 
       .brand-bar {
         flex-direction: column;
         align-items: flex-start;
+        justify-content: center;
+        gap: 12px;
+        min-height: 136px;
       }
 
       .hero-nav,
@@ -333,7 +368,7 @@ PAGE_HTML = """<!doctype html>
 
       .brand-logo-wrap {
         width: 180px;
-        min-height: 96px;
+        height: 58px;
       }
 
       th,
@@ -345,40 +380,36 @@ PAGE_HTML = """<!doctype html>
   </style>
 </head>
 <body>
+  <div class="topbar">
+    <div class="brand-bar">
+      <a class="brand" href="https://sms-it.ru" target="_blank" rel="noreferrer">
+        <span class="brand-logo-wrap">
+          <img
+            class="brand-logo"
+            src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg"
+            alt="СМС-ИТ"
+          >
+        </span>
+      </a>
+      <nav class="hero-nav" aria-label="Быстрый переход по разделам">
+        <div class="quick-links">
+          <a href="#project-actions">Проекты</a>
+          <a href="#snapshot-actions">Срезы</a>
+          <a href="#delete-snapshot">Удаление</a>
+          <a href="#projects-table">Таблица проектов</a>
+          <a href="#snapshot-runs-table">Таблица срезов</a>
+        </div>
+      </nav>
+    </div>
+  </div>
+  <div class="topbar-spacer" aria-hidden="true"></div>
+
   <main>
     <section class="hero">
-      <div class="brand-bar">
-        <a class="brand" href="https://sms-it.ru" target="_blank" rel="noreferrer">
-          <span class="brand-logo-wrap">
-            <img
-              class="brand-logo"
-              src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg"
-              alt="СМС-ИТ"
-            >
-          </span>
-        </a>
-        <nav class="hero-nav" aria-label="Быстрый переход по разделам">
-          <div class="quick-links">
-            <a href="#server-time">Время сервера</a>
-            <a href="#project-actions">Проекты</a>
-            <a href="#snapshot-actions">Срезы</a>
-            <a href="#delete-snapshot">Удаление</a>
-            <a href="#projects-table">Таблица проектов</a>
-            <a href="#snapshot-runs-table">Таблица срезов</a>
-          </div>
-        </nav>
-      </div>
-
       <h1>Анализ проектов Redmine</h1>
     </section>
 
     <section class="grid">
-      <article class="panel" id="server-time">
-        <h2>Текущее время сервера</h2>
-        <p>Быстрая проверка, что приложение отвечает и показывает актуальное время.</p>
-        <div class="meta" id="timeValue">Загрузка...</div>
-      </article>
-
       <article class="panel" id="project-actions">
         <h2>Проекты Redmine</h2>
         <p>Получает список проектов из Redmine и добавляет в базу только новые записи.</p>
@@ -462,7 +493,6 @@ PAGE_HTML = """<!doctype html>
   </main>
 
   <script>
-    const timeValue = document.getElementById("timeValue");
     const projectsStatus = document.getElementById("projectsStatus");
     const captureStatus = document.getElementById("captureStatus");
     const deleteStatus = document.getElementById("deleteStatus");
@@ -591,16 +621,6 @@ PAGE_HTML = """<!doctype html>
       }
     }
 
-    async function loadServerTime() {
-      try {
-        const response = await fetch("/api/time");
-        const payload = await response.json();
-        timeValue.textContent = `${payload.current_time} | UTC: ${payload.current_time_utc}`;
-      } catch (error) {
-        timeValue.textContent = "Не удалось получить время сервера.";
-      }
-    }
-
     async function loadProjects() {
       try {
         const response = await fetch("/api/projects");
@@ -717,7 +737,6 @@ PAGE_HTML = """<!doctype html>
     captureSnapshotsButton.addEventListener("click", captureSnapshots);
     deleteSnapshotsButton.addEventListener("click", deleteSnapshotsForDate);
 
-    loadServerTime();
     loadProjects();
     loadSnapshotRuns();
   </script>

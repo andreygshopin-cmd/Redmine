@@ -2,6 +2,8 @@ from datetime import datetime
 
 import requests
 
+REDMINE_PAGE_SIZE = 50
+
 
 def parseRedmineDate(value: str | None) -> str | None:
     if not value:
@@ -83,7 +85,7 @@ def buildSession(apiKey: str) -> requests.Session:
 def fetchAllProjectsFromRedmine(redmineUrl: str, apiKey: str) -> list[dict[str, object]]:
     projects: list[dict[str, object]] = []
     offset = 0
-    limit = 100
+    limit = REDMINE_PAGE_SIZE
     session = buildSession(apiKey)
 
     while True:
@@ -115,7 +117,7 @@ def fetchAllIssuesForProject(
 ) -> list[dict[str, object]]:
     issues: list[dict[str, object]] = []
     offset = 0
-    limit = 100
+    limit = REDMINE_PAGE_SIZE
     session = buildSession(apiKey)
 
     while True:
@@ -152,7 +154,7 @@ def fetchSpentHoursByIssueForProjectYear(
 ) -> dict[int, float]:
     spentHoursByIssue: dict[int, float] = {}
     offset = 0
-    limit = 100
+    limit = REDMINE_PAGE_SIZE
     session = buildSession(apiKey)
     fromDate = f"{year}-01-01"
     toDate = f"{year}-12-31"
