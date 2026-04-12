@@ -602,7 +602,7 @@ PAGE_HTML = """<!doctype html>
       const byParent = new Map();
       const visited = new Set();
 
-      for (const project of filteredProjects) {
+      for (const project of projects) {
         const parentId = project.parent_redmine_id ?? null;
         if (!byParent.has(parentId)) {
           byParent.set(parentId, []);
@@ -630,7 +630,7 @@ PAGE_HTML = """<!doctype html>
 
       visit(null, 0);
 
-      for (const project of filteredProjects) {
+      for (const project of projects) {
         if (visited.has(project.redmine_id)) {
           continue;
         }
