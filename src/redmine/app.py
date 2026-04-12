@@ -294,6 +294,33 @@ PAGE_HTML = """<!doctype html>
       margin-top: 20px;
     }
 
+    .table-toolbar {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin: 14px 0 16px;
+    }
+
+    .table-toolbar label {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .filter-input {
+      width: 160px;
+    }
+
+    .project-name-cell {
+      white-space: nowrap;
+    }
+
+    .project-indent {
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;
@@ -453,6 +480,17 @@ PAGE_HTML = """<!doctype html>
     <section class="panel table-panel" id="projects-table">
       <h2>Проекты в базе данных</h2>
       <p class="meta" id="projectsCount">Загрузка списка проектов...</p>
+      <div class="table-toolbar">
+        <label for="projectsFactFilterInput">Мин. сумма факта за год по разработке и багфиксу</label>
+        <input
+          id="projectsFactFilterInput"
+          class="filter-input"
+          type="number"
+          min="0"
+          step="0.1"
+          inputmode="decimal"
+        >
+      </div>
       <div class="table-wrap">
         <table>
           <thead>
@@ -509,10 +547,13 @@ PAGE_HTML = """<!doctype html>
     const projectsTableBody = document.getElementById("projectsTableBody");
     const snapshotRunsTableBody = document.getElementById("snapshotRunsTableBody");
     const snapshotDateInput = document.getElementById("snapshotDateInput");
+    const projectsFactFilterInput = document.getElementById("projectsFactFilterInput");
     const refreshProjectsButton = document.getElementById("refreshProjectsButton");
     const captureSnapshotsButton = document.getElementById("captureSnapshotsButton");
     const deleteSnapshotsButton = document.getElementById("deleteSnapshotsButton");
     let captureStatusPollTimer = null;
+    let allProjects = [];
+    const projectsFactFilterStorageKey = "redmine.projects.factFilter.min";
 
     function setStatus(element, message, kind = "") {
       element.textContent = message;
@@ -534,6 +575,97 @@ PAGE_HTML = """<!doctype html>
       }
 
       return number.toFixed(1);
+    }
+
+    function getProjectsFactFilterValue() {
+      const rawValue = String(projectsFactFilterInput.value || "").trim().replace(",", ".");
+      const parsed = Number(rawValue);
+      if (!rawValue || !Number.isFinite(parsed) || parsed < 0) {
+        return 0;
+      }
+
+      return parsed;
+    }
+
+    function saveProjectsFactFilterValue() {
+      window.localStorage.setItem(projectsFactFilterStorageKey, String(projectsFactFilterInput.value || ""));
+    }
+
+    function restoreProjectsFactFilterValue() {
+      const savedValue = window.localStorage.getItem(projectsFactFilterStorageKey);
+      if (savedValue !== null) {
+        projectsFactFilterInput.value = savedValue;
+      }
+    }
+
+    function buildProjectHierarchy(projects) {
+      const byParent = new Map();
+      const visited = new Set();
+
+      for (const project of filteredProjects) {
+        const parentId = project.parent_redmine_id ?? null;
+        if (!byParent.has(parentId)) {
+          byParent.set(parentId, []);
+        }
+        byParent.get(parentId).push(project);
+      }
+
+      for (const children of byParent.values()) {
+        children.sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""), "ru"));
+      }
+
+      const ordered = [];
+
+      function visit(parentId, level) {
+        const children = byParent.get(parentId) || [];
+        for (const child of children) {
+          if (visited.has(child.redmine_id)) {
+            continue;
+          }
+          visited.add(child.redmine_id);
+          ordered.push({ ...child, hierarchy_level: level });
+          visit(child.redmine_id, level + 1);
+        }
+      }
+
+      visit(null, 0);
+
+      for (const project of filteredProjects) {
+        if (visited.has(project.redmine_id)) {
+          continue;
+        }
+        ordered.push({ ...project, hierarchy_level: 0 });
+        visit(project.redmine_id, 1);
+      }
+
+      return ordered;
+    }
+
+    function applyProjectsFilter(projects) {
+      const minFactSum = getProjectsFactFilterValue();
+      const byId = new Map(projects.map((project) => [project.redmine_id, project]));
+      const includedIds = new Set();
+
+      for (const project of projects) {
+        const developmentFact = Number(project.development_spent_hours_year ?? 0);
+        const bugFact = Number(project.bug_spent_hours_year ?? 0);
+        if (developmentFact + bugFact <= minFactSum) {
+          continue;
+        }
+
+        let currentProject = project;
+        while (currentProject) {
+          includedIds.add(currentProject.redmine_id);
+          const parentId = currentProject.parent_redmine_id;
+          currentProject = parentId ? byId.get(parentId) || null : null;
+        }
+      }
+
+      return projects.filter((project) => includedIds.has(project.redmine_id));
+    }
+
+    function rerenderProjects() {
+      renderProjects(allProjects);
     }
 
     async function loadCaptureProgress() {
@@ -590,23 +722,28 @@ PAGE_HTML = """<!doctype html>
     }
 
     function renderProjects(projects) {
+      allProjects = Array.isArray(projects) ? [...projects] : [];
+      const orderedProjects = buildProjectHierarchy(allProjects);
+      const filteredProjects = applyProjectsFilter(orderedProjects);
       projectsTableBody.innerHTML = "";
-      projectsCount.textContent = `Проектов в базе: ${projects.length}`;
+      projectsCount.textContent = `Проектов в базе: ${allProjects.length}. После фильтра: ${filteredProjects.length}`;
 
-      if (!projects.length) {
+      if (!filteredProjects.length) {
         projectsTableBody.innerHTML = '<tr><td colspan="12">Проектов пока нет.</td></tr>';
         return;
       }
 
-      for (const project of projects) {
+      for (const project of filteredProjects) {
         const identifier = project.identifier ?? "";
         const identifierHtml = identifier
           ? `<a class="project-link mono" href="https://redmine.sms-it.ru/projects/${encodeURIComponent(identifier)}/issues" target="_blank" rel="noreferrer">${identifier}</a>`
           : "—";
+        const level = Number(project.hierarchy_level ?? 0);
+        const indent = level > 0 ? `${"--".repeat(level)} ` : "";
         const row = document.createElement("tr");
         row.innerHTML = `
           <td class="mono">${project.redmine_id ?? "—"}</td>
-          <td>${project.name ?? "—"}</td>
+          <td class="project-name-cell"><span class="project-indent">${indent}</span>${project.name ?? "—"}</td>
           <td>${identifierHtml}</td>
           <td>${project.status ?? "—"}</td>
           <td class="mono">${project.latest_snapshot_date ?? "—"}</td>
@@ -757,7 +894,12 @@ PAGE_HTML = """<!doctype html>
     refreshProjectsButton.addEventListener("click", refreshProjects);
     captureSnapshotsButton.addEventListener("click", captureSnapshots);
     deleteSnapshotsButton.addEventListener("click", deleteSnapshotsForDate);
+    projectsFactFilterInput.addEventListener("input", () => {
+      saveProjectsFactFilterValue();
+      rerenderProjects();
+    });
 
+    restoreProjectsFactFilterValue();
     loadProjects();
     loadSnapshotRuns();
   </script>
