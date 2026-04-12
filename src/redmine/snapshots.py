@@ -33,6 +33,10 @@ captureStatusState: dict[str, object] = {
     "captured_issues": 0,
     "already_captured_projects": 0,
     "remaining_projects": 0,
+    "current_project_issues_pages_loaded": 0,
+    "current_project_issues_pages_total": 0,
+    "current_project_time_pages_loaded": 0,
+    "current_project_time_pages_total": 0,
     "error_message": None,
 }
 
@@ -54,6 +58,10 @@ def resetIssueSnapshotCaptureStatus() -> None:
         captured_issues=0,
         already_captured_projects=0,
         remaining_projects=0,
+        current_project_issues_pages_loaded=0,
+        current_project_issues_pages_total=0,
+        current_project_time_pages_loaded=0,
+        current_project_time_pages_total=0,
         error_message=None,
     )
 
@@ -96,6 +104,10 @@ def startIssueSnapshotCaptureInBackground() -> bool:
                 "captured_issues": 0,
                 "already_captured_projects": 0,
                 "remaining_projects": 0,
+                "current_project_issues_pages_loaded": 0,
+                "current_project_issues_pages_total": 0,
+                "current_project_time_pages_loaded": 0,
+                "current_project_time_pages_total": 0,
                 "error_message": None,
             }
         )
@@ -141,13 +153,23 @@ def captureAllIssueSnapshots() -> dict[str, object]:
         captured_issues=0,
         already_captured_projects=alreadyCapturedProjects,
         remaining_projects=len(pendingProjects),
+        current_project_issues_pages_loaded=0,
+        current_project_issues_pages_total=0,
+        current_project_time_pages_loaded=0,
+        current_project_time_pages_total=0,
         error_message=None,
     )
 
     try:
         for project in pendingProjects:
             projectName = str(project.get("name") or "")
-            updateIssueSnapshotCaptureStatus(current_project_name=projectName)
+            updateIssueSnapshotCaptureStatus(
+                current_project_name=projectName,
+                current_project_issues_pages_loaded=0,
+                current_project_issues_pages_total=0,
+                current_project_time_pages_loaded=0,
+                current_project_time_pages_total=0,
+            )
 
             identifier = project.get("identifier")
             if not identifier:
@@ -166,17 +188,33 @@ def captureAllIssueSnapshots() -> dict[str, object]:
                 continue
 
             try:
+                def updateIssuesProgress(loadedPages: int, totalPages: int, loadedItems: int, totalItems: int) -> None:
+                    updateIssueSnapshotCaptureStatus(
+                        current_project_name=projectName,
+                        current_project_issues_pages_loaded=loadedPages,
+                        current_project_issues_pages_total=totalPages,
+                    )
+
+                def updateTimeProgress(loadedPages: int, totalPages: int, loadedItems: int, totalItems: int) -> None:
+                    updateIssueSnapshotCaptureStatus(
+                        current_project_name=projectName,
+                        current_project_time_pages_loaded=loadedPages,
+                        current_project_time_pages_total=totalPages,
+                    )
+
                 issues = fetchAllIssuesForProject(
                     config.redmineUrl,
                     config.apiKey,
                     str(identifier),
                     int(project["redmine_id"]),
+                    progressCallback=updateIssuesProgress,
                 )
                 spentHoursByIssue = fetchSpentHoursByIssueForProjectYear(
                     config.redmineUrl,
                     config.apiKey,
                     str(identifier),
                     captureYear,
+                    progressCallback=updateTimeProgress,
                 )
             except HTTPError as error:
                 skippedProjects.append(
@@ -190,6 +228,10 @@ def captureAllIssueSnapshots() -> dict[str, object]:
                     processed_projects=createdRuns + len(skippedProjects),
                     last_completed_project_name=projectName,
                     current_project_name=None,
+                    current_project_issues_pages_loaded=0,
+                    current_project_issues_pages_total=0,
+                    current_project_time_pages_loaded=0,
+                    current_project_time_pages_total=0,
                 )
                 continue
 
@@ -200,6 +242,10 @@ def captureAllIssueSnapshots() -> dict[str, object]:
                     processed_projects=createdRuns + len(skippedProjects),
                     last_completed_project_name=projectName,
                     current_project_name=None,
+                    current_project_issues_pages_loaded=0,
+                    current_project_issues_pages_total=0,
+                    current_project_time_pages_loaded=0,
+                    current_project_time_pages_total=0,
                 )
                 continue
 
@@ -211,6 +257,10 @@ def captureAllIssueSnapshots() -> dict[str, object]:
                 current_project_name=None,
                 created_runs=createdRuns,
                 captured_issues=capturedIssues,
+                current_project_issues_pages_loaded=0,
+                current_project_issues_pages_total=0,
+                current_project_time_pages_loaded=0,
+                current_project_time_pages_total=0,
             )
     finally:
         updateIssueSnapshotCaptureStatus(
@@ -220,6 +270,10 @@ def captureAllIssueSnapshots() -> dict[str, object]:
             captured_issues=capturedIssues,
             already_captured_projects=alreadyCapturedProjects,
             remaining_projects=len(listProjectsWithoutSnapshotForDate(capturedForDate)),
+            current_project_issues_pages_loaded=0,
+            current_project_issues_pages_total=0,
+            current_project_time_pages_loaded=0,
+            current_project_time_pages_total=0,
         )
 
     return {

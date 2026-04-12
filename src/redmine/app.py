@@ -649,7 +649,7 @@ PAGE_HTML = """<!doctype html>
       for (const project of projects) {
         const developmentFact = Number(project.development_spent_hours_year ?? 0);
         const bugFact = Number(project.bug_spent_hours_year ?? 0);
-        if (developmentFact + bugFact <= minFactSum) {
+        if (developmentFact + bugFact < minFactSum) {
           continue;
         }
 
@@ -687,7 +687,7 @@ PAGE_HTML = """<!doctype html>
           if (payload.created_runs || payload.captured_issues || payload.already_captured_projects) {
             setStatus(
               captureStatus,
-              `Готово: создано срезов ${payload.created_runs ?? 0}, задач ${payload.captured_issues ?? 0}, уже было срезов на сегодня ${payload.already_captured_projects ?? 0}.`,
+              `??????: ??????? ?????? ${payload.created_runs ?? 0}, ????? ${payload.captured_issues ?? 0}, ??? ???? ?????? ?? ??????? ${payload.already_captured_projects ?? 0}.`,
               "success"
             );
           }
@@ -696,12 +696,27 @@ PAGE_HTML = """<!doctype html>
           return;
         }
 
-        const projectName = payload.current_project_name || payload.last_completed_project_name || "без названия";
+        const projectName = payload.current_project_name || payload.last_completed_project_name || "??? ????????";
         const processedProjects = Number(payload.processed_projects ?? 0);
         const totalProjects = Number(payload.total_projects ?? 0);
+        const issuesPagesLoaded = Number(payload.current_project_issues_pages_loaded ?? 0);
+        const issuesPagesTotal = Number(payload.current_project_issues_pages_total ?? 0);
+        const timePagesLoaded = Number(payload.current_project_time_pages_loaded ?? 0);
+        const timePagesTotal = Number(payload.current_project_time_pages_total ?? 0);
+        const pagesParts = [];
+
+        if (issuesPagesTotal > 0) {
+          pagesParts.push(`?????? ${issuesPagesLoaded}/${issuesPagesTotal} ???.`);
+        }
+
+        if (timePagesTotal > 0) {
+          pagesParts.push(`???????????? ${timePagesLoaded}/${timePagesTotal} ???.`);
+        }
+
+        const pagesSuffix = pagesParts.length ? ` (${pagesParts.join(", ")})` : "";
         setStatus(
           captureStatus,
-          `Получаем срезы задач по проекту ${projectName}... ${processedProjects}/${totalProjects}`
+          `???????? ????? ????? ?? ??????? ${projectName}... ${processedProjects}/${totalProjects}${pagesSuffix}`
         );
       } catch (error) {
         // Keep the last visible status if polling temporarily fails.

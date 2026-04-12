@@ -1,8 +1,13 @@
+from collections.abc import Callable
 from datetime import datetime
 
 import requests
 
-REDMINE_PAGE_SIZE = 50
+REDMINE_PROJECTS_PAGE_SIZE = 100
+REDMINE_ISSUES_PAGE_SIZE = 1000
+REDMINE_TIME_ENTRIES_PAGE_SIZE = 1000
+
+ProgressCallback = Callable[[int, int, int, int], None]
 
 
 def parseRedmineDate(value: str | None) -> str | None:
@@ -85,7 +90,7 @@ def buildSession(apiKey: str) -> requests.Session:
 def fetchAllProjectsFromRedmine(redmineUrl: str, apiKey: str) -> list[dict[str, object]]:
     projects: list[dict[str, object]] = []
     offset = 0
-    limit = REDMINE_PAGE_SIZE
+    limit = REDMINE_PROJECTS_PAGE_SIZE
     session = buildSession(apiKey)
 
     while True:
@@ -114,10 +119,11 @@ def fetchAllIssuesForProject(
     apiKey: str,
     projectIdentifier: str,
     projectRedmineId: int,
+    progressCallback: ProgressCallback | None = None,
 ) -> list[dict[str, object]]:
     issues: list[dict[str, object]] = []
     offset = 0
-    limit = REDMINE_PAGE_SIZE
+    limit = REDMINE_ISSUES_PAGE_SIZE
     session = buildSession(apiKey)
 
     while True:
@@ -129,16 +135,21 @@ def fetchAllIssuesForProject(
                 "offset": offset,
                 "limit": limit,
             },
-            timeout=30,
+            timeout=120,
         )
         response.raise_for_status()
         payload = response.json()
         rawIssues = payload.get("issues", [])
+        effectiveLimit = max(int(payload.get("limit") or len(rawIssues) or limit), 1)
+        totalCount = int(payload.get("total_count", offset + len(rawIssues)))
+        totalPages = max((totalCount + effectiveLimit - 1) // effectiveLimit, 1)
 
         issues.extend(normalizeIssue(issue, projectRedmineId) for issue in rawIssues)
 
         offset += len(rawIssues)
-        totalCount = payload.get("total_count", offset)
+        loadedPages = min((offset + effectiveLimit - 1) // effectiveLimit, totalPages) if rawIssues else totalPages
+        if progressCallback is not None:
+            progressCallback(loadedPages, totalPages, offset, totalCount)
         if offset >= totalCount or not rawIssues:
             break
 
@@ -151,10 +162,11 @@ def fetchSpentHoursByIssueForProjectYear(
     apiKey: str,
     projectIdentifier: str,
     year: int,
+    progressCallback: ProgressCallback | None = None,
 ) -> dict[int, float]:
     spentHoursByIssue: dict[int, float] = {}
     offset = 0
-    limit = REDMINE_PAGE_SIZE
+    limit = REDMINE_TIME_ENTRIES_PAGE_SIZE
     session = buildSession(apiKey)
     fromDate = f"{year}-01-01"
     toDate = f"{year}-12-31"
@@ -169,11 +181,14 @@ def fetchSpentHoursByIssueForProjectYear(
                 "offset": offset,
                 "limit": limit,
             },
-            timeout=30,
+            timeout=120,
         )
         response.raise_for_status()
         payload = response.json()
         rawEntries = payload.get("time_entries", [])
+        effectiveLimit = max(int(payload.get("limit") or len(rawEntries) or limit), 1)
+        totalCount = int(payload.get("total_count", offset + len(rawEntries)))
+        totalPages = max((totalCount + effectiveLimit - 1) // effectiveLimit, 1)
 
         for entry in rawEntries:
             issue = entry.get("issue") or {}
@@ -186,7 +201,9 @@ def fetchSpentHoursByIssueForProjectYear(
             )
 
         offset += len(rawEntries)
-        totalCount = payload.get("total_count", offset)
+        loadedPages = min((offset + effectiveLimit - 1) // effectiveLimit, totalPages) if rawEntries else totalPages
+        if progressCallback is not None:
+            progressCallback(loadedPages, totalPages, offset, totalCount)
         if offset >= totalCount or not rawEntries:
             break
 
