@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 
 from src.redmine.config import loadConfig
 from src.redmine.db import (
@@ -13,6 +14,7 @@ from src.redmine.db import (
     listRecentIssueSnapshotRuns,
     listStoredProjects,
     storeMissingProjects,
+    updateProjectsDisabledState,
 )
 from src.redmine.redmine_client import fetchAllProjectsFromRedmine
 from src.redmine.snapshots import (
@@ -24,6 +26,10 @@ from src.redmine.snapshots import (
 
 config = loadConfig()
 app = FastAPI(title="Redmine Snapshot Viewer")
+
+
+class ProjectSettingsUpdate(BaseModel):
+    disabled_project_ids: list[int] = []
 
 
 PAGE_HTML = """<!doctype html>
@@ -294,6 +300,12 @@ PAGE_HTML = """<!doctype html>
       margin-top: 20px;
     }
 
+    .panel[id],
+    article[id],
+    section[id] {
+      scroll-margin-top: 118px;
+    }
+
     .table-toolbar {
       display: flex;
       gap: 12px;
@@ -309,6 +321,19 @@ PAGE_HTML = """<!doctype html>
 
     .filter-input {
       width: 160px;
+    }
+
+    .filter-input-name {
+      width: 240px;
+    }
+
+    .toolbar-spacer {
+      flex: 1 1 auto;
+    }
+
+    .checkbox-cell {
+      width: 64px;
+      white-space: nowrap;
     }
 
     .project-name-cell {
@@ -351,6 +376,16 @@ PAGE_HTML = """<!doctype html>
 
     tr:last-child td {
       border-bottom: 0;
+    }
+
+    .project-row-disabled {
+      color: #93a1af;
+      background: #f5f7f9;
+    }
+
+    .project-row-disabled a {
+      color: #93a1af;
+      border-bottom-color: currentColor;
     }
 
     .mono {
@@ -428,9 +463,7 @@ PAGE_HTML = """<!doctype html>
       </a>
       <nav class="hero-nav" aria-label="Быстрый переход по разделам">
         <div class="quick-links">
-          <a href="#project-actions">Проекты</a>
-          <a href="#snapshot-actions">Срезы</a>
-          <a href="#delete-snapshot">Удаление</a>
+          <a href="#data-load-section">Загрузка данных</a>
           <a href="#projects-table">Таблица проектов</a>
           <a href="#snapshot-runs-table">Таблица срезов</a>
         </div>
@@ -444,7 +477,7 @@ PAGE_HTML = """<!doctype html>
       <h1>Анализ проектов Redmine</h1>
     </section>
 
-    <section class="grid">
+    <section class="grid" id="data-load-section">
       <article class="panel" id="project-actions">
         <h2>Проекты Redmine</h2>
         <p>Получает список проектов из Redmine и добавляет в базу только новые записи.</p>
@@ -481,6 +514,13 @@ PAGE_HTML = """<!doctype html>
       <h2>Проекты в базе данных</h2>
       <p class="meta" id="projectsCount">Загрузка списка проектов...</p>
       <div class="table-toolbar">
+        <label for="projectsNameFilterInput">Фильтр по названию</label>
+        <input
+          id="projectsNameFilterInput"
+          class="filter-input filter-input-name"
+          type="text"
+          placeholder="Введите часть названия"
+        >
         <label for="projectsFactFilterInput">Мин. сумма факта за год по разработке и багфиксу</label>
         <input
           id="projectsFactFilterInput"
@@ -490,11 +530,14 @@ PAGE_HTML = """<!doctype html>
           step="0.1"
           inputmode="decimal"
         >
+        <span class="toolbar-spacer"></span>
+        <button id="applyProjectsSettingsButton" type="button">Применить</button>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
+              <th class="checkbox-cell">Отключить</th>
               <th>ID</th>
               <th>Название</th>
               <th class="identifier-col">Идентификатор</th>
@@ -547,12 +590,15 @@ PAGE_HTML = """<!doctype html>
     const projectsTableBody = document.getElementById("projectsTableBody");
     const snapshotRunsTableBody = document.getElementById("snapshotRunsTableBody");
     const snapshotDateInput = document.getElementById("snapshotDateInput");
+    const projectsNameFilterInput = document.getElementById("projectsNameFilterInput");
     const projectsFactFilterInput = document.getElementById("projectsFactFilterInput");
+    const applyProjectsSettingsButton = document.getElementById("applyProjectsSettingsButton");
     const refreshProjectsButton = document.getElementById("refreshProjectsButton");
     const captureSnapshotsButton = document.getElementById("captureSnapshotsButton");
     const deleteSnapshotsButton = document.getElementById("deleteSnapshotsButton");
     let captureStatusPollTimer = null;
     let allProjects = [];
+    const projectsNameFilterStorageKey = "redmine.projects.nameFilter";
     const projectsFactFilterStorageKey = "redmine.projects.factFilter.min";
 
     function setStatus(element, message, kind = "") {
@@ -587,6 +633,14 @@ PAGE_HTML = """<!doctype html>
       return parsed;
     }
 
+    function getProjectsNameFilterValue() {
+      return String(projectsNameFilterInput.value || "").trim().toLocaleLowerCase("ru");
+    }
+
+    function saveProjectsNameFilterValue() {
+      window.localStorage.setItem(projectsNameFilterStorageKey, String(projectsNameFilterInput.value || ""));
+    }
+
     function saveProjectsFactFilterValue() {
       window.localStorage.setItem(projectsFactFilterStorageKey, String(projectsFactFilterInput.value || ""));
     }
@@ -595,6 +649,13 @@ PAGE_HTML = """<!doctype html>
       const savedValue = window.localStorage.getItem(projectsFactFilterStorageKey);
       if (savedValue !== null) {
         projectsFactFilterInput.value = savedValue;
+      }
+    }
+
+    function restoreProjectsNameFilterValue() {
+      const savedValue = window.localStorage.getItem(projectsNameFilterStorageKey);
+      if (savedValue !== null) {
+        projectsNameFilterInput.value = savedValue;
       }
     }
 
@@ -643,6 +704,7 @@ PAGE_HTML = """<!doctype html>
 
     function applyProjectsFilter(projects) {
       const minFactSum = getProjectsFactFilterValue();
+      const nameFilter = getProjectsNameFilterValue();
       const byId = new Map(projects.map((project) => [project.redmine_id, project]));
       const includedIds = new Set();
 
@@ -650,6 +712,12 @@ PAGE_HTML = """<!doctype html>
         const developmentFact = Number(project.development_spent_hours_year ?? 0);
         const bugFact = Number(project.bug_spent_hours_year ?? 0);
         if (developmentFact + bugFact < minFactSum) {
+          continue;
+        }
+
+        const projectName = String(project.name || "").toLocaleLowerCase("ru");
+        const identifier = String(project.identifier || "").toLocaleLowerCase("ru");
+        if (nameFilter && !projectName.includes(nameFilter) && !identifier.includes(nameFilter)) {
           continue;
         }
 
@@ -744,7 +812,7 @@ PAGE_HTML = """<!doctype html>
       projectsCount.textContent = `Проектов в базе: ${allProjects.length}. После фильтра: ${filteredProjects.length}`;
 
       if (!filteredProjects.length) {
-        projectsTableBody.innerHTML = '<tr><td colspan="12">Проектов пока нет.</td></tr>';
+        projectsTableBody.innerHTML = '<tr><td colspan="13">Проектов пока нет.</td></tr>';
         return;
       }
 
@@ -756,7 +824,9 @@ PAGE_HTML = """<!doctype html>
         const level = Number(project.hierarchy_level ?? 0);
         const indent = level > 0 ? `${"--".repeat(level)} ` : "";
         const row = document.createElement("tr");
+        row.className = project.is_disabled ? "project-row-disabled" : "";
         row.innerHTML = `
+          <td class="checkbox-cell"><input class="project-disable-checkbox" type="checkbox" data-project-id="${project.redmine_id}" ${project.is_disabled ? "checked" : ""}></td>
           <td class="mono">${project.redmine_id ?? "—"}</td>
           <td class="project-name-cell"><span class="project-indent">${indent}</span>${project.name ?? "—"}</td>
           <td>${identifierHtml}</td>
@@ -819,6 +889,39 @@ PAGE_HTML = """<!doctype html>
       } catch (error) {
         renderSnapshotRuns([], 0);
         setStatus(captureStatus, "Не удалось загрузить список срезов.", "error");
+      }
+    }
+
+    async function applyProjectsSettings() {
+      applyProjectsSettingsButton.disabled = true;
+      setStatus(projectsStatus, "Сохраняем настройки проектов...");
+
+      try {
+        const disabledProjectIds = allProjects
+          .filter((project) => project.is_disabled)
+          .map((project) => Number(project.redmine_id));
+
+        const response = await fetch("/api/projects/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ disabled_project_ids: disabledProjectIds }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.detail || "Ошибка сохранения настроек проектов.");
+        }
+
+        renderProjects(payload.projects ?? []);
+        setStatus(
+          projectsStatus,
+          `Готово: отключено проектов ${payload.disabled_count ?? 0}.`,
+          "success"
+        );
+      } catch (error) {
+        setStatus(projectsStatus, error.message, "error");
+      } finally {
+        applyProjectsSettingsButton.disabled = false;
       }
     }
 
@@ -907,13 +1010,34 @@ PAGE_HTML = """<!doctype html>
     }
 
     refreshProjectsButton.addEventListener("click", refreshProjects);
+    applyProjectsSettingsButton.addEventListener("click", applyProjectsSettings);
     captureSnapshotsButton.addEventListener("click", captureSnapshots);
     deleteSnapshotsButton.addEventListener("click", deleteSnapshotsForDate);
+    projectsNameFilterInput.addEventListener("input", () => {
+      saveProjectsNameFilterValue();
+      rerenderProjects();
+    });
     projectsFactFilterInput.addEventListener("input", () => {
       saveProjectsFactFilterValue();
       rerenderProjects();
     });
+    projectsTableBody.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement) || !target.classList.contains("project-disable-checkbox")) {
+        return;
+      }
 
+      const projectId = Number(target.dataset.projectId || 0);
+      const project = allProjects.find((item) => Number(item.redmine_id) === projectId);
+      if (!project) {
+        return;
+      }
+
+      project.is_disabled = target.checked;
+      rerenderProjects();
+    });
+
+    restoreProjectsNameFilterValue();
     restoreProjectsFactFilterValue();
     loadProjects();
     loadSnapshotRuns();
@@ -966,6 +1090,19 @@ def refreshProjects() -> dict[str, object]:
 
     return {
         "added_count": addedCount,
+        "projects": listStoredProjects(),
+    }
+
+
+@app.post("/api/projects/settings")
+def updateProjectSettings(payload: ProjectSettingsUpdate) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureProjectsTable()
+    updateProjectsDisabledState(payload.disabled_project_ids)
+    return {
+        "disabled_count": len(payload.disabled_project_ids),
         "projects": listStoredProjects(),
     }
 

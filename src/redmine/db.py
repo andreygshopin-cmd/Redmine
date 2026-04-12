@@ -56,8 +56,18 @@ def ensureProjectsTable() -> None:
                     parent_redmine_id INTEGER,
                     created_on TIMESTAMPTZ NULL,
                     updated_on TIMESTAMPTZ NULL,
+                    is_disabled BOOLEAN NOT NULL DEFAULT FALSE,
                     synced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
+                """
+            )
+        )
+
+        connection.execute(
+            text(
+                """
+                ALTER TABLE projects
+                ADD COLUMN IF NOT EXISTS is_disabled BOOLEAN NOT NULL DEFAULT FALSE
                 """
             )
         )
@@ -289,6 +299,7 @@ def listStoredProjects() -> list[dict[str, object]]:
                     parent_redmine_id,
                     created_on,
                     updated_on,
+                    is_disabled,
                     synced_at,
                     m.latest_snapshot_date,
                     COALESCE(m.baseline_estimate_hours, 0) AS baseline_estimate_hours,
@@ -377,6 +388,7 @@ def listProjectsWithoutSnapshotForDate(capturedForDate: str) -> list[dict[str, o
                     ON r.project_redmine_id = p.redmine_id
                    AND r.captured_for_date = :captured_for_date
                 WHERE r.id IS NULL
+                  AND COALESCE(p.is_disabled, FALSE) = FALSE
                 ORDER BY LOWER(p.name), p.redmine_id
                 """
             ),
@@ -484,6 +496,41 @@ def storeMissingProjects(projects: Sequence[dict[str, object]]) -> int:
             addedCount += 1
 
     return addedCount
+
+
+def updateProjectsDisabledState(disabledProjectIds: Sequence[int]) -> int:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    disabledIds = sorted({int(projectId) for projectId in disabledProjectIds})
+
+    with engine.begin() as connection:
+        if disabledIds:
+            connection.execute(
+                text(
+                    """
+                    UPDATE projects
+                    SET is_disabled = CASE
+                        WHEN redmine_id IN :disabled_ids THEN TRUE
+                        ELSE FALSE
+                    END
+                    """
+                ).bindparams(bindparam("disabled_ids", expanding=True)),
+                {"disabled_ids": disabledIds},
+            )
+        else:
+            connection.execute(
+                text(
+                    """
+                    UPDATE projects
+                    SET is_disabled = FALSE
+                    """
+                )
+            )
+
+    return len(disabledIds)
+
+
 def createIssueSnapshotRun(
     capturedForDate: str,
     project: dict[str, object],

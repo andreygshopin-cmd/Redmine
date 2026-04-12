@@ -137,11 +137,12 @@ def captureAllIssueSnapshots() -> dict[str, object]:
     capturedForDate = datetime.now(UTC).date().isoformat()
     captureYear = int(capturedForDate[:4])
     closedOnCutoff = f"{datetime.now(UTC).year - 1}-01-01"
+    activeProjects = [project for project in projects if not bool(project.get("is_disabled"))]
     pendingProjects = listProjectsWithoutSnapshotForDate(capturedForDate)
     createdRuns = 0
     capturedIssues = 0
     skippedProjects = []
-    alreadyCapturedProjects = len(projects) - len(pendingProjects)
+    alreadyCapturedProjects = len(activeProjects) - len(pendingProjects)
 
     updateIssueSnapshotCaptureStatus(
         is_running=True,
