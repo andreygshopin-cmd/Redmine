@@ -136,6 +136,7 @@ def captureAllIssueSnapshots() -> dict[str, object]:
 
     capturedForDate = datetime.now(UTC).date().isoformat()
     captureYear = int(capturedForDate[:4])
+    closedOnCutoff = f"{datetime.now(UTC).year - 1}-01-01"
     pendingProjects = listProjectsWithoutSnapshotForDate(capturedForDate)
     createdRuns = 0
     capturedIssues = 0
@@ -208,6 +209,7 @@ def captureAllIssueSnapshots() -> dict[str, object]:
                     str(identifier),
                     int(project["redmine_id"]),
                     progressCallback=updateIssuesProgress,
+                    closedOnOrAfter=closedOnCutoff,
                 )
                 spentHoursByIssue = fetchSpentHoursByIssueForProjectYear(
                     config.redmineUrl,

@@ -87,6 +87,44 @@ def buildSession(apiKey: str) -> requests.Session:
     return session
 
 
+def fetchIssuesByParams(
+    session: requests.Session,
+    redmineUrl: str,
+    params: dict[str, object],
+    projectRedmineId: int,
+    progressCallback: ProgressCallback | None = None,
+    pageOffsetBase: int = 0,
+) -> tuple[list[dict[str, object]], int]:
+    issues: list[dict[str, object]] = []
+    offset = 0
+    limit = REDMINE_ISSUES_PAGE_SIZE
+    totalPages = 0
+
+    while True:
+        response = session.get(
+            f"{redmineUrl.rstrip('/')}/issues.json",
+            params={**params, "offset": offset, "limit": limit},
+            timeout=120,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        rawIssues = payload.get("issues", [])
+        effectiveLimit = max(int(payload.get("limit") or len(rawIssues) or limit), 1)
+        totalCount = int(payload.get("total_count", offset + len(rawIssues)))
+        totalPages = max((totalCount + effectiveLimit - 1) // effectiveLimit, 1) if totalCount or rawIssues else 0
+
+        issues.extend(normalizeIssue(issue, projectRedmineId) for issue in rawIssues)
+
+        offset += len(rawIssues)
+        loadedPages = min((offset + effectiveLimit - 1) // effectiveLimit, totalPages) if rawIssues else totalPages
+        if progressCallback is not None:
+            progressCallback(pageOffsetBase + loadedPages, pageOffsetBase + totalPages, offset, totalCount)
+        if offset >= totalCount or not rawIssues:
+            break
+
+    return issues, totalPages
+
+
 def fetchAllProjectsFromRedmine(redmineUrl: str, apiKey: str) -> list[dict[str, object]]:
     projects: list[dict[str, object]] = []
     offset = 0
@@ -120,38 +158,44 @@ def fetchAllIssuesForProject(
     projectIdentifier: str,
     projectRedmineId: int,
     progressCallback: ProgressCallback | None = None,
+    closedOnOrAfter: str | None = None,
 ) -> list[dict[str, object]]:
-    issues: list[dict[str, object]] = []
-    offset = 0
-    limit = REDMINE_ISSUES_PAGE_SIZE
     session = buildSession(apiKey)
+    baseParams = {
+        "project_id": projectIdentifier,
+    }
 
-    while True:
-        response = session.get(
-            f"{redmineUrl.rstrip('/')}/issues.json",
-            params={
-                "project_id": projectIdentifier,
-                "status_id": "*",
-                "offset": offset,
-                "limit": limit,
+    openIssues, openPages = fetchIssuesByParams(
+        session,
+        redmineUrl,
+        {**baseParams, "status_id": "open"},
+        projectRedmineId,
+        progressCallback=progressCallback,
+        pageOffsetBase=0,
+    )
+
+    closedIssues: list[dict[str, object]] = []
+    if closedOnOrAfter:
+        closedIssues, _ = fetchIssuesByParams(
+            session,
+            redmineUrl,
+            {
+                **baseParams,
+                "status_id": "closed",
+                "closed_on": f">={closedOnOrAfter}",
             },
-            timeout=120,
+            projectRedmineId,
+            progressCallback=progressCallback,
+            pageOffsetBase=openPages,
         )
-        response.raise_for_status()
-        payload = response.json()
-        rawIssues = payload.get("issues", [])
-        effectiveLimit = max(int(payload.get("limit") or len(rawIssues) or limit), 1)
-        totalCount = int(payload.get("total_count", offset + len(rawIssues)))
-        totalPages = max((totalCount + effectiveLimit - 1) // effectiveLimit, 1)
 
-        issues.extend(normalizeIssue(issue, projectRedmineId) for issue in rawIssues)
+    issuesById: dict[int, dict[str, object]] = {}
+    for issue in openIssues:
+        issuesById[int(issue["issue_redmine_id"])] = issue
+    for issue in closedIssues:
+        issuesById[int(issue["issue_redmine_id"])] = issue
 
-        offset += len(rawIssues)
-        loadedPages = min((offset + effectiveLimit - 1) // effectiveLimit, totalPages) if rawIssues else totalPages
-        if progressCallback is not None:
-            progressCallback(loadedPages, totalPages, offset, totalCount)
-        if offset >= totalCount or not rawIssues:
-            break
+    issues = list(issuesById.values())
 
     issues.sort(key=lambda issue: int(issue["issue_redmine_id"]))
     return issues
