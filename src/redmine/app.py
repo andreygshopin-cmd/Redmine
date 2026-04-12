@@ -534,6 +534,10 @@ PAGE_HTML = """<!doctype html>
           step="0.1"
           inputmode="decimal"
         >
+        <label>
+          <input id="showDisabledProjectsCheckbox" type="checkbox">
+          Показывать отключенные
+        </label>
         <span class="toolbar-spacer"></span>
         <button id="applyProjectsSettingsButton" type="button">Применить</button>
       </div>
@@ -599,6 +603,7 @@ PAGE_HTML = """<!doctype html>
     const projectsTableBody = document.getElementById("projectsTableBody");
     const snapshotRunsTableBody = document.getElementById("snapshotRunsTableBody");
     const disableVisibleProjectsCheckbox = document.getElementById("disableVisibleProjectsCheckbox");
+    const showDisabledProjectsCheckbox = document.getElementById("showDisabledProjectsCheckbox");
     const snapshotDateInput = document.getElementById("snapshotDateInput");
     const projectsNameFilterInput = document.getElementById("projectsNameFilterInput");
     const projectsFactFilterInput = document.getElementById("projectsFactFilterInput");
@@ -610,6 +615,7 @@ PAGE_HTML = """<!doctype html>
     let allProjects = [];
     const projectsNameFilterStorageKey = "redmine.projects.nameFilter";
     const projectsFactFilterStorageKey = "redmine.projects.factFilter.min";
+    const showDisabledProjectsStorageKey = "redmine.projects.showDisabled";
 
     function setStatus(element, message, kind = "") {
       element.textContent = message;
@@ -647,12 +653,20 @@ PAGE_HTML = """<!doctype html>
       return String(projectsNameFilterInput.value || "").trim().toLocaleLowerCase("ru");
     }
 
+    function getShowDisabledProjectsValue() {
+      return Boolean(showDisabledProjectsCheckbox.checked);
+    }
+
     function saveProjectsNameFilterValue() {
       window.localStorage.setItem(projectsNameFilterStorageKey, String(projectsNameFilterInput.value || ""));
     }
 
     function saveProjectsFactFilterValue() {
       window.localStorage.setItem(projectsFactFilterStorageKey, String(projectsFactFilterInput.value || ""));
+    }
+
+    function saveShowDisabledProjectsValue() {
+      window.localStorage.setItem(showDisabledProjectsStorageKey, showDisabledProjectsCheckbox.checked ? "1" : "0");
     }
 
     function restoreProjectsFactFilterValue() {
@@ -666,6 +680,13 @@ PAGE_HTML = """<!doctype html>
       const savedValue = window.localStorage.getItem(projectsNameFilterStorageKey);
       if (savedValue !== null) {
         projectsNameFilterInput.value = savedValue;
+      }
+    }
+
+    function restoreShowDisabledProjectsValue() {
+      const savedValue = window.localStorage.getItem(showDisabledProjectsStorageKey);
+      if (savedValue !== null) {
+        showDisabledProjectsCheckbox.checked = savedValue === "1";
       }
     }
 
@@ -715,10 +736,15 @@ PAGE_HTML = """<!doctype html>
     function applyProjectsFilter(projects) {
       const minFactSum = getProjectsFactFilterValue();
       const nameFilter = getProjectsNameFilterValue();
+      const showDisabledProjects = getShowDisabledProjectsValue();
       const byId = new Map(projects.map((project) => [project.redmine_id, project]));
       const includedIds = new Set();
 
       for (const project of projects) {
+        if (!showDisabledProjects && project.is_disabled) {
+          continue;
+        }
+
         const developmentFact = Number(project.development_spent_hours_year ?? 0);
         const bugFact = Number(project.bug_spent_hours_year ?? 0);
         if (developmentFact + bugFact < minFactSum) {
@@ -1050,6 +1076,10 @@ PAGE_HTML = """<!doctype html>
       saveProjectsFactFilterValue();
       rerenderProjects();
     });
+    showDisabledProjectsCheckbox.addEventListener("change", () => {
+      saveShowDisabledProjectsValue();
+      rerenderProjects();
+    });
     projectsTableBody.addEventListener("change", (event) => {
       const target = event.target;
       if (!(target instanceof HTMLInputElement) || !target.classList.contains("project-disable-checkbox")) {
@@ -1082,6 +1112,7 @@ PAGE_HTML = """<!doctype html>
 
     restoreProjectsNameFilterValue();
     restoreProjectsFactFilterValue();
+    restoreShowDisabledProjectsValue();
     loadProjects();
     loadSnapshotRuns();
   </script>
