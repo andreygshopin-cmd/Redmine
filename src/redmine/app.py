@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse
 from src.redmine.config import loadConfig
 from src.redmine.db import (
     checkDatabaseConnection,
+    countIssueSnapshotRuns,
     deleteIssueSnapshotsForDate,
     ensureIssueSnapshotTables,
     ensureProjectsTable,
@@ -14,7 +15,11 @@ from src.redmine.db import (
     storeMissingProjects,
 )
 from src.redmine.redmine_client import fetchAllProjectsFromRedmine
-from src.redmine.snapshots import captureAllIssueSnapshots, getIssueSnapshotCaptureStatus
+from src.redmine.snapshots import (
+    getIssueSnapshotCaptureStatus,
+    isIssueSnapshotCaptureRunning,
+    startIssueSnapshotCaptureInBackground,
+)
 
 
 config = loadConfig()
@@ -331,13 +336,16 @@ PAGE_HTML = """<!doctype html>
     }
 
     .project-link {
-      color: var(--accent-deep);
+      color: var(--blue-302);
       text-decoration: none;
       white-space: nowrap;
+      font-weight: 700;
+      border-bottom: 1px dashed currentColor;
     }
 
     .project-link:hover {
-      text-decoration: underline;
+      color: var(--orange-1585);
+      border-bottom-style: solid;
     }
 
     @media (max-width: 700px) {
@@ -379,10 +387,10 @@ PAGE_HTML = """<!doctype html>
     }
   </style>
 </head>
-<body>
+<body id="top">
   <div class="topbar">
     <div class="brand-bar">
-      <a class="brand" href="https://sms-it.ru" target="_blank" rel="noreferrer">
+      <a class="brand" href="#top">
         <span class="brand-logo-wrap">
           <img
             class="brand-logo"
@@ -534,6 +542,25 @@ PAGE_HTML = """<!doctype html>
         const payload = await response.json();
 
         if (!payload.is_running) {
+          stopCaptureProgressPolling();
+          await loadProjects();
+          await loadSnapshotRuns();
+
+          if (payload.error_message) {
+            setStatus(captureStatus, payload.error_message, "error");
+            captureSnapshotsButton.disabled = false;
+            return;
+          }
+
+          if (payload.created_runs || payload.captured_issues || payload.already_captured_projects) {
+            setStatus(
+              captureStatus,
+              `Готово: создано срезов ${payload.created_runs ?? 0}, задач ${payload.captured_issues ?? 0}, уже было срезов на сегодня ${payload.already_captured_projects ?? 0}.`,
+              "success"
+            );
+          }
+
+          captureSnapshotsButton.disabled = false;
           return;
         }
 
@@ -595,9 +622,9 @@ PAGE_HTML = """<!doctype html>
       }
     }
 
-    function renderSnapshotRuns(snapshotRuns) {
+    function renderSnapshotRuns(snapshotRuns, totalCount = snapshotRuns.length) {
       snapshotRunsTableBody.innerHTML = "";
-      snapshotRunsCount.textContent = `Последних срезов в списке: ${snapshotRuns.length}`;
+      snapshotRunsCount.textContent = `Всего срезов в базе: ${totalCount}`;
 
       if (!snapshotRuns.length) {
         snapshotRunsTableBody.innerHTML = '<tr><td colspan="9">Срезов пока нет.</td></tr>';
@@ -636,9 +663,9 @@ PAGE_HTML = """<!doctype html>
       try {
         const response = await fetch("/api/issues/snapshots/runs");
         const payload = await response.json();
-        renderSnapshotRuns(payload.snapshot_runs ?? []);
+        renderSnapshotRuns(payload.snapshot_runs ?? [], payload.total_count ?? 0);
       } catch (error) {
-        renderSnapshotRuns([]);
+        renderSnapshotRuns([], 0);
         setStatus(captureStatus, "Не удалось загрузить список срезов.", "error");
       }
     }
@@ -670,8 +697,7 @@ PAGE_HTML = """<!doctype html>
 
     async function captureSnapshots() {
       captureSnapshotsButton.disabled = true;
-      setStatus(captureStatus, "Получаем срезы задач...");
-      startCaptureProgressPolling();
+      setStatus(captureStatus, "Запускаем получение срезов...");
 
       try {
         const response = await fetch("/api/issues/snapshots/capture", { method: "POST" });
@@ -685,16 +711,11 @@ PAGE_HTML = """<!doctype html>
           snapshotDateInput.value = payload.captured_for_date;
         }
 
-        renderSnapshotRuns(payload.snapshot_runs ?? []);
-        setStatus(
-          captureStatus,
-          `Готово: создано срезов ${payload.created_runs ?? 0}, задач ${payload.captured_issues ?? 0}, уже было срезов на сегодня ${payload.already_captured_projects ?? 0}.`,
-          "success"
-        );
+        setStatus(captureStatus, payload.detail || "Фоновая загрузка срезов запущена...");
+        startCaptureProgressPolling();
       } catch (error) {
-        setStatus(captureStatus, error.message, "error");
-      } finally {
         stopCaptureProgressPolling();
+        setStatus(captureStatus, error.message, "error");
         captureSnapshotsButton.disabled = false;
       }
     }
@@ -720,7 +741,7 @@ PAGE_HTML = """<!doctype html>
           throw new Error(payload.detail || "Ошибка удаления срезов.");
         }
 
-        renderSnapshotRuns(payload.snapshot_runs ?? []);
+        renderSnapshotRuns(payload.snapshot_runs ?? [], payload.total_count ?? 0);
         setStatus(
           deleteStatus,
           `Удалено срезов: ${payload.deleted_runs ?? 0}, строк задач: ${payload.deleted_items ?? 0}.`,
@@ -798,7 +819,10 @@ def getIssueSnapshotRuns() -> dict[str, object]:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureIssueSnapshotTables()
-    return {"snapshot_runs": listRecentIssueSnapshotRuns()}
+    return {
+        "snapshot_runs": listRecentIssueSnapshotRuns(limit=200),
+        "total_count": countIssueSnapshotRuns(),
+    }
 
 
 @app.delete("/api/issues/snapshots/by-date")
@@ -816,7 +840,8 @@ def deleteIssueSnapshotsByDate(
         raise HTTPException(status_code=400, detail="captured_for_date must be YYYY-MM-DD") from error
 
     result = deleteIssueSnapshotsForDate(captured_for_date)
-    result["snapshot_runs"] = listRecentIssueSnapshotRuns()
+    result["snapshot_runs"] = listRecentIssueSnapshotRuns(limit=200)
+    result["total_count"] = countIssueSnapshotRuns()
     return result
 
 
@@ -826,11 +851,22 @@ def captureIssueSnapshots() -> dict[str, object]:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     requireProjectSyncConfig()
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
 
-    try:
-        return captureAllIssueSnapshots()
-    except RuntimeError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
+    if isIssueSnapshotCaptureRunning():
+        return {
+            "started": False,
+            "detail": "Получение срезов уже выполняется.",
+            **getIssueSnapshotCaptureStatus(),
+        }
+
+    started = startIssueSnapshotCaptureInBackground()
+    return {
+        "started": started,
+        "detail": "Получение срезов запущено в фоновом режиме.",
+        **getIssueSnapshotCaptureStatus(),
+    }
 
 
 @app.get("/api/issues/snapshots/capture-status")

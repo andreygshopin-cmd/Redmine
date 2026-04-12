@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from threading import Lock
+from threading import Lock, Thread
 
 from requests import HTTPError
 
@@ -29,6 +29,11 @@ captureStatusState: dict[str, object] = {
     "processed_projects": 0,
     "current_project_name": None,
     "last_completed_project_name": None,
+    "created_runs": 0,
+    "captured_issues": 0,
+    "already_captured_projects": 0,
+    "remaining_projects": 0,
+    "error_message": None,
 }
 
 
@@ -45,12 +50,58 @@ def resetIssueSnapshotCaptureStatus() -> None:
         processed_projects=0,
         current_project_name=None,
         last_completed_project_name=None,
+        created_runs=0,
+        captured_issues=0,
+        already_captured_projects=0,
+        remaining_projects=0,
+        error_message=None,
     )
 
 
 def getIssueSnapshotCaptureStatus() -> dict[str, object]:
     with captureStatusLock:
         return dict(captureStatusState)
+
+
+def isIssueSnapshotCaptureRunning() -> bool:
+    with captureStatusLock:
+        return bool(captureStatusState["is_running"])
+
+
+def _runIssueSnapshotCaptureInBackground() -> None:
+    try:
+        captureAllIssueSnapshots()
+    except Exception as error:  # pragma: no cover
+        updateIssueSnapshotCaptureStatus(
+            is_running=False,
+            current_project_name=None,
+            error_message=str(error),
+        )
+
+
+def startIssueSnapshotCaptureInBackground() -> bool:
+    with captureStatusLock:
+        if bool(captureStatusState["is_running"]):
+            return False
+
+        captureStatusState.update(
+            {
+                "is_running": True,
+                "captured_for_date": None,
+                "total_projects": 0,
+                "processed_projects": 0,
+                "current_project_name": None,
+                "last_completed_project_name": None,
+                "created_runs": 0,
+                "captured_issues": 0,
+                "already_captured_projects": 0,
+                "remaining_projects": 0,
+                "error_message": None,
+            }
+        )
+
+    Thread(target=_runIssueSnapshotCaptureInBackground, daemon=True).start()
+    return True
 
 
 def captureAllIssueSnapshots() -> dict[str, object]:
@@ -86,6 +137,11 @@ def captureAllIssueSnapshots() -> dict[str, object]:
         processed_projects=0,
         current_project_name=None,
         last_completed_project_name=None,
+        created_runs=0,
+        captured_issues=0,
+        already_captured_projects=alreadyCapturedProjects,
+        remaining_projects=len(pendingProjects),
+        error_message=None,
     )
 
     try:
@@ -153,9 +209,18 @@ def captureAllIssueSnapshots() -> dict[str, object]:
                 processed_projects=createdRuns + len(skippedProjects),
                 last_completed_project_name=projectName,
                 current_project_name=None,
+                created_runs=createdRuns,
+                captured_issues=capturedIssues,
             )
     finally:
-        updateIssueSnapshotCaptureStatus(is_running=False, current_project_name=None)
+        updateIssueSnapshotCaptureStatus(
+            is_running=False,
+            current_project_name=None,
+            created_runs=createdRuns,
+            captured_issues=capturedIssues,
+            already_captured_projects=alreadyCapturedProjects,
+            remaining_projects=len(listProjectsWithoutSnapshotForDate(capturedForDate)),
+        )
 
     return {
         "captured_for_date": capturedForDate,

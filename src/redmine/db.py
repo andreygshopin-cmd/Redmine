@@ -337,6 +337,23 @@ def listRecentIssueSnapshotRuns(limit: int = 20) -> list[dict[str, object]]:
         return [dict(row._mapping) for row in rows]
 
 
+def countIssueSnapshotRuns() -> int:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        return int(
+            connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM issue_snapshot_runs
+                    """
+                )
+            ).scalar_one()
+        )
+
+
 def listProjectsWithoutSnapshotForDate(capturedForDate: str) -> list[dict[str, object]]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
