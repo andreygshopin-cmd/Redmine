@@ -380,12 +380,16 @@ PAGE_HTML = """<!doctype html>
 
     .project-row-disabled {
       color: #93a1af;
-      background: #f5f7f9;
     }
 
     .project-row-disabled a {
       color: #93a1af;
       border-bottom-color: currentColor;
+    }
+
+    .project-row-disabled .project-disable-checkbox,
+    .project-row-disabled #disableVisibleProjectsCheckbox {
+      accent-color: #b4bec8;
     }
 
     .mono {
@@ -537,7 +541,12 @@ PAGE_HTML = """<!doctype html>
         <table>
           <thead>
             <tr>
-              <th class="checkbox-cell">Отключить</th>
+              <th class="checkbox-cell">
+                <label>
+                  <input id="disableVisibleProjectsCheckbox" type="checkbox">
+                  Отключить
+                </label>
+              </th>
               <th>ID</th>
               <th>Название</th>
               <th class="identifier-col">Идентификатор</th>
@@ -589,6 +598,7 @@ PAGE_HTML = """<!doctype html>
     const snapshotRunsCount = document.getElementById("snapshotRunsCount");
     const projectsTableBody = document.getElementById("projectsTableBody");
     const snapshotRunsTableBody = document.getElementById("snapshotRunsTableBody");
+    const disableVisibleProjectsCheckbox = document.getElementById("disableVisibleProjectsCheckbox");
     const snapshotDateInput = document.getElementById("snapshotDateInput");
     const projectsNameFilterInput = document.getElementById("projectsNameFilterInput");
     const projectsFactFilterInput = document.getElementById("projectsFactFilterInput");
@@ -736,6 +746,24 @@ PAGE_HTML = """<!doctype html>
       renderProjects(allProjects);
     }
 
+    function updateDisableVisibleProjectsCheckbox(filteredProjects) {
+      if (!disableVisibleProjectsCheckbox) {
+        return;
+      }
+
+      if (!filteredProjects.length) {
+        disableVisibleProjectsCheckbox.checked = false;
+        disableVisibleProjectsCheckbox.indeterminate = false;
+        disableVisibleProjectsCheckbox.disabled = true;
+        return;
+      }
+
+      const disabledCount = filteredProjects.filter((project) => Boolean(project.is_disabled)).length;
+      disableVisibleProjectsCheckbox.disabled = false;
+      disableVisibleProjectsCheckbox.checked = disabledCount === filteredProjects.length;
+      disableVisibleProjectsCheckbox.indeterminate = disabledCount > 0 && disabledCount < filteredProjects.length;
+    }
+
     async function loadCaptureProgress() {
       try {
         const response = await fetch("/api/issues/snapshots/capture-status");
@@ -809,6 +837,7 @@ PAGE_HTML = """<!doctype html>
       const orderedProjects = buildProjectHierarchy(allProjects);
       const filteredProjects = applyProjectsFilter(orderedProjects);
       projectsTableBody.innerHTML = "";
+      updateDisableVisibleProjectsCheckbox(filteredProjects);
       projectsCount.textContent = `Проектов в базе: ${allProjects.length}. После фильтра: ${filteredProjects.length}`;
 
       if (!filteredProjects.length) {
@@ -1034,6 +1063,20 @@ PAGE_HTML = """<!doctype html>
       }
 
       project.is_disabled = target.checked;
+      rerenderProjects();
+    });
+    disableVisibleProjectsCheckbox.addEventListener("change", () => {
+      const shouldDisable = disableVisibleProjectsCheckbox.checked;
+      const filteredProjectIds = new Set(
+        applyProjectsFilter(buildProjectHierarchy(allProjects)).map((project) => Number(project.redmine_id))
+      );
+
+      allProjects.forEach((project) => {
+        if (filteredProjectIds.has(Number(project.redmine_id))) {
+          project.is_disabled = shouldDisable;
+        }
+      });
+
       rerenderProjects();
     });
 
