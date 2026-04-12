@@ -687,7 +687,7 @@ PAGE_HTML = """<!doctype html>
           if (payload.created_runs || payload.captured_issues || payload.already_captured_projects) {
             setStatus(
               captureStatus,
-              `??????: ??????? ?????? ${payload.created_runs ?? 0}, ????? ${payload.captured_issues ?? 0}, ??? ???? ?????? ?? ??????? ${payload.already_captured_projects ?? 0}.`,
+              `\u0413\u043e\u0442\u043e\u0432\u043e: \u0441\u043e\u0437\u0434\u0430\u043d\u043e \u0441\u0440\u0435\u0437\u043e\u0432 ${payload.created_runs ?? 0}, \u0437\u0430\u0434\u0430\u0447 ${payload.captured_issues ?? 0}, \u0443\u0436\u0435 \u0431\u044b\u043b\u043e \u0441\u0440\u0435\u0437\u043e\u0432 \u043d\u0430 \u0441\u0435\u0433\u043e\u0434\u043d\u044f ${payload.already_captured_projects ?? 0}.`,
               "success"
             );
           }
@@ -696,7 +696,7 @@ PAGE_HTML = """<!doctype html>
           return;
         }
 
-        const projectName = payload.current_project_name || payload.last_completed_project_name || "??? ????????";
+        const projectName = payload.current_project_name || payload.last_completed_project_name || "\u0431\u0435\u0437 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u044f";
         const processedProjects = Number(payload.processed_projects ?? 0);
         const totalProjects = Number(payload.total_projects ?? 0);
         const issuesPagesLoaded = Number(payload.current_project_issues_pages_loaded ?? 0);
@@ -706,17 +706,17 @@ PAGE_HTML = """<!doctype html>
         const pagesParts = [];
 
         if (issuesPagesTotal > 0) {
-          pagesParts.push(`?????? ${issuesPagesLoaded}/${issuesPagesTotal} ???.`);
+          pagesParts.push(`\u0437\u0430\u0434\u0430\u0447\u0438 ${issuesPagesLoaded}/${issuesPagesTotal} \u0441\u0442\u0440.`);
         }
 
         if (timePagesTotal > 0) {
-          pagesParts.push(`???????????? ${timePagesLoaded}/${timePagesTotal} ???.`);
+          pagesParts.push(`\u0442\u0440\u0443\u0434\u043e\u0437\u0430\u0442\u0440\u0430\u0442\u044b ${timePagesLoaded}/${timePagesTotal} \u0441\u0442\u0440.`);
         }
 
         const pagesSuffix = pagesParts.length ? ` (${pagesParts.join(", ")})` : "";
         setStatus(
           captureStatus,
-          `???????? ????? ????? ?? ??????? ${projectName}... ${processedProjects}/${totalProjects}${pagesSuffix}`
+          `\u041f\u043e\u043b\u0443\u0447\u0430\u0435\u043c \u0441\u0440\u0435\u0437\u044b \u0437\u0430\u0434\u0430\u0447 \u043f\u043e \u043f\u0440\u043e\u0435\u043a\u0442\u0443 ${projectName}... ${processedProjects}/${totalProjects}${pagesSuffix}`
         );
       } catch (error) {
         // Keep the last visible status if polling temporarily fails.
