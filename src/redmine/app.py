@@ -40,6 +40,7 @@ PAGE_HTML = """<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Redmine: проекты и срезы</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <style>
     :root {
       color-scheme: light;
