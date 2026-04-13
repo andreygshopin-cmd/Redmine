@@ -11,6 +11,7 @@ from src.redmine.db import (
     deleteIssueSnapshotsForDate,
     ensureIssueSnapshotTables,
     ensureProjectsTable,
+    getLatestSnapshotIssuesForProject,
     listRecentIssueSnapshotRuns,
     listStoredProjects,
     storeMissingProjects,
@@ -340,6 +341,37 @@ PAGE_HTML = """<!doctype html>
       white-space: nowrap;
     }
 
+    .project-sticky-1,
+    .project-sticky-2,
+    .project-sticky-3 {
+      position: sticky;
+      z-index: 2;
+      background: var(--panel);
+    }
+
+    th.project-sticky-1,
+    th.project-sticky-2,
+    th.project-sticky-3 {
+      z-index: 3;
+      background: var(--panel-soft);
+    }
+
+    .project-sticky-1 {
+      left: 0;
+    }
+
+    .project-sticky-2 {
+      left: 64px;
+    }
+
+    .project-sticky-3 {
+      left: 140px;
+    }
+
+    .project-sticky-3.project-name-cell {
+      min-width: 260px;
+    }
+
     .project-indent {
       color: var(--muted);
       font-weight: 600;
@@ -372,6 +404,9 @@ PAGE_HTML = """<!doctype html>
       letter-spacing: 0.02em;
       text-transform: uppercase;
       color: #426179;
+      position: sticky;
+      top: 0;
+      z-index: 1;
     }
 
     tr:last-child td {
@@ -412,6 +447,38 @@ PAGE_HTML = """<!doctype html>
     .project-link:hover {
       color: var(--orange-1585);
       border-bottom-style: solid;
+    }
+
+    .project-id-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 56px;
+      padding: 2px 0;
+      color: var(--blue-302);
+      background: transparent;
+      border: 0;
+      border-bottom: 1px dashed currentColor;
+      border-radius: 0;
+      box-shadow: none;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .project-id-button:hover {
+      color: var(--orange-1585);
+      border-bottom-style: solid;
+      transform: none;
+    }
+
+    .project-id-button:disabled {
+      color: var(--muted);
+      border-bottom-color: transparent;
+      background: transparent;
+      cursor: default;
+      opacity: 1;
     }
 
     @media (max-width: 700px) {
@@ -545,22 +612,22 @@ PAGE_HTML = """<!doctype html>
         <table>
           <thead>
             <tr>
-              <th class="checkbox-cell">
+              <th class="checkbox-cell project-sticky-1">
                 <label>
                   <input id="disableVisibleProjectsCheckbox" type="checkbox">
-                  Отключить
+                  Откл.
                 </label>
               </th>
-              <th>ID</th>
-              <th>Название</th>
+              <th class="project-sticky-2">ID</th>
+              <th class="project-sticky-3">Название</th>
               <th class="identifier-col">Идентификатор</th>
-              <th>Статус</th>
-              <th>Дата последнего среза</th>
               <th>Базовая оценка, ч</th>
               <th>Разработка: оценка, ч</th>
               <th>Разработка: факт за год, ч</th>
               <th>Ошибка: оценка, ч</th>
               <th>Ошибка: факт за год, ч</th>
+              <th>Статус проекта</th>
+              <th>Дата последнего среза</th>
               <th>Обновлен в Redmine</th>
               <th>Синхронизирован</th>
             </tr>
@@ -592,6 +659,31 @@ PAGE_HTML = """<!doctype html>
         </table>
       </div>
     </section>
+    <section class="panel table-panel" id="project-snapshot-issues">
+      <h2>Р—Р°РґР°С‡Рё РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р° РїСЂРѕРµРєС‚Р°</h2>
+      <p class="meta" id="projectSnapshotIssuesMeta">РќР°Р¶РјРёС‚Рµ РЅР° ID РїСЂРѕРµРєС‚Р° РІ С‚Р°Р±Р»РёС†Рµ РІС‹С€Рµ, С‡С‚РѕР±С‹ Р·Р°РіСЂСѓР·РёС‚СЊ СЃРїРёСЃРѕРє Р·Р°РґР°С‡.</p>
+      <div class="status" id="projectSnapshotIssuesStatus"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>РўРµРјР°</th>
+              <th>РўСЂРµРєРµСЂ</th>
+              <th>РЎС‚Р°С‚СѓСЃ</th>
+              <th>РСЃРїРѕР»РЅРёС‚РµР»СЊ</th>
+              <th>Р’РµСЂСЃРёСЏ</th>
+              <th>Р“РѕС‚РѕРІРѕ, %</th>
+              <th>РџР»Р°РЅ, С‡</th>
+              <th>Р¤Р°РєС‚ РІСЃРµРіРѕ, С‡</th>
+              <th>Р¤Р°РєС‚ Р·Р° РіРѕРґ, С‡</th>
+              <th>Р—Р°РєСЂС‹С‚Р°</th>
+            </tr>
+          </thead>
+          <tbody id="projectSnapshotIssuesTableBody"></tbody>
+        </table>
+      </div>
+    </section>
   </main>
 
   <script>
@@ -602,6 +694,10 @@ PAGE_HTML = """<!doctype html>
     const snapshotRunsCount = document.getElementById("snapshotRunsCount");
     const projectsTableBody = document.getElementById("projectsTableBody");
     const snapshotRunsTableBody = document.getElementById("snapshotRunsTableBody");
+    const projectSnapshotIssuesMeta = document.getElementById("projectSnapshotIssuesMeta");
+    const projectSnapshotIssuesStatus = document.getElementById("projectSnapshotIssuesStatus");
+    const projectSnapshotIssuesTableBody = document.getElementById("projectSnapshotIssuesTableBody");
+    const projectSnapshotIssuesSection = document.getElementById("project-snapshot-issues");
     const disableVisibleProjectsCheckbox = document.getElementById("disableVisibleProjectsCheckbox");
     const showDisabledProjectsCheckbox = document.getElementById("showDisabledProjectsCheckbox");
     const snapshotDateInput = document.getElementById("snapshotDateInput");
@@ -733,12 +829,11 @@ PAGE_HTML = """<!doctype html>
       return ordered;
     }
 
-    function applyProjectsFilter(projects) {
+    function getDirectlyMatchedProjects(projects) {
       const minFactSum = getProjectsFactFilterValue();
       const nameFilter = getProjectsNameFilterValue();
       const showDisabledProjects = getShowDisabledProjectsValue();
-      const byId = new Map(projects.map((project) => [project.redmine_id, project]));
-      const includedIds = new Set();
+      const matchedProjects = [];
 
       for (const project of projects) {
         if (!showDisabledProjects && project.is_disabled) {
@@ -757,6 +852,18 @@ PAGE_HTML = """<!doctype html>
           continue;
         }
 
+        matchedProjects.push(project);
+      }
+
+      return matchedProjects;
+    }
+
+    function applyProjectsFilter(projects) {
+      const directlyMatchedProjects = getDirectlyMatchedProjects(projects);
+      const byId = new Map(projects.map((project) => [project.redmine_id, project]));
+      const includedIds = new Set();
+
+      for (const project of directlyMatchedProjects) {
         let currentProject = project;
         while (currentProject) {
           includedIds.add(currentProject.redmine_id);
@@ -777,17 +884,19 @@ PAGE_HTML = """<!doctype html>
         return;
       }
 
-      if (!filteredProjects.length) {
+      const directlyMatchedProjects = getDirectlyMatchedProjects(buildProjectHierarchy(allProjects));
+
+      if (!directlyMatchedProjects.length) {
         disableVisibleProjectsCheckbox.checked = false;
         disableVisibleProjectsCheckbox.indeterminate = false;
         disableVisibleProjectsCheckbox.disabled = true;
         return;
       }
 
-      const disabledCount = filteredProjects.filter((project) => Boolean(project.is_disabled)).length;
+      const disabledCount = directlyMatchedProjects.filter((project) => Boolean(project.is_disabled)).length;
       disableVisibleProjectsCheckbox.disabled = false;
-      disableVisibleProjectsCheckbox.checked = disabledCount === filteredProjects.length;
-      disableVisibleProjectsCheckbox.indeterminate = disabledCount > 0 && disabledCount < filteredProjects.length;
+      disableVisibleProjectsCheckbox.checked = disabledCount === directlyMatchedProjects.length;
+      disableVisibleProjectsCheckbox.indeterminate = disabledCount > 0 && disabledCount < directlyMatchedProjects.length;
     }
 
     async function loadCaptureProgress() {
@@ -881,17 +990,17 @@ PAGE_HTML = """<!doctype html>
         const row = document.createElement("tr");
         row.className = project.is_disabled ? "project-row-disabled" : "";
         row.innerHTML = `
-          <td class="checkbox-cell"><input class="project-disable-checkbox" type="checkbox" data-project-id="${project.redmine_id}" ${project.is_disabled ? "checked" : ""}></td>
-          <td class="mono">${project.redmine_id ?? "—"}</td>
-          <td class="project-name-cell"><span class="project-indent">${indent}</span>${project.name ?? "—"}</td>
+          <td class="checkbox-cell project-sticky-1"><input class="project-disable-checkbox" type="checkbox" data-project-id="${project.redmine_id}" ${project.is_disabled ? "checked" : ""}></td>
+          <td class="mono project-sticky-2"><button class="project-id-button mono" type="button" data-project-redmine-id="${project.redmine_id}" data-project-name="${String(project.name ?? "").replace(/"/g, "&quot;")}">${project.redmine_id ?? "\u2014"}</button></td>
+          <td class="project-name-cell project-sticky-3"><span class="project-indent">${indent}</span>${project.name ?? "\u2014"}</td>
           <td>${identifierHtml}</td>
-          <td>${project.status ?? "—"}</td>
-          <td class="mono">${project.latest_snapshot_date ?? "—"}</td>
           <td>${formatHours(project.baseline_estimate_hours)}</td>
           <td>${formatHours(project.development_estimate_hours)}</td>
           <td>${formatHours(project.development_spent_hours_year)}</td>
           <td>${formatHours(project.bug_estimate_hours)}</td>
           <td>${formatHours(project.bug_spent_hours_year)}</td>
+          <td>${project.status ?? "—"}</td>
+          <td class="mono">${project.latest_snapshot_date ?? "—"}</td>
           <td>${formatDate(project.updated_on)}</td>
           <td>${formatDate(project.synced_at)}</td>
         `;
@@ -922,6 +1031,65 @@ PAGE_HTML = """<!doctype html>
           <td>${formatDate(run.captured_at)}</td>
         `;
         snapshotRunsTableBody.appendChild(row);
+      }
+    }
+
+    function renderProjectSnapshotIssues(snapshotRun, issues) {
+      projectSnapshotIssuesTableBody.innerHTML = "";
+
+      if (!snapshotRun) {
+        projectSnapshotIssuesMeta.textContent = "РџРѕ РІС‹Р±СЂР°РЅРЅРѕРјСѓ РїСЂРѕРµРєС‚Сѓ РїРѕРєР° РЅРµС‚ СЃСЂРµР·РѕРІ.";
+        projectSnapshotIssuesTableBody.innerHTML =
+          '<tr><td colspan="11">РЎСЂРµР· РґР»СЏ СЌС‚РѕРіРѕ РїСЂРѕРµРєС‚Р° РїРѕРєР° РЅРµ РЅР°Р№РґРµРЅ.</td></tr>';
+        return;
+      }
+
+      projectSnapshotIssuesMeta.textContent =
+        `РџСЂРѕРµРєС‚: ${snapshotRun.project_name ?? "вЂ”"}. Р”Р°С‚Р° СЃСЂРµР·Р°: ${snapshotRun.captured_for_date ?? "вЂ”"}. Р—Р°РґР°С‡: ${issues.length}.`;
+
+      if (!issues.length) {
+        projectSnapshotIssuesTableBody.innerHTML =
+          '<tr><td colspan="11">Р’ РїРѕСЃР»РµРґРЅРµРј СЃСЂРµР·Рµ Р·Р°РґР°С‡ РЅРµС‚.</td></tr>';
+        return;
+      }
+
+      for (const issue of issues) {
+        const issueId = issue.issue_redmine_id ?? "вЂ”";
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td class="mono"><a class="project-link mono" href="https://redmine.sms-it.ru/issues/${issueId}" target="_blank" rel="noreferrer">${issueId}</a></td>
+          <td>${issue.subject ?? "вЂ”"}</td>
+          <td>${issue.tracker_name ?? "вЂ”"}</td>
+          <td>${issue.status_name ?? "вЂ”"}</td>
+          <td>${issue.assigned_to_name ?? "вЂ”"}</td>
+          <td>${issue.fixed_version_name ?? "вЂ”"}</td>
+          <td>${issue.done_ratio ?? 0}</td>
+          <td>${formatHours(issue.estimated_hours)}</td>
+          <td>${formatHours(issue.spent_hours)}</td>
+          <td>${formatHours(issue.spent_hours_year)}</td>
+          <td>${formatDate(issue.closed_on)}</td>
+        `;
+        projectSnapshotIssuesTableBody.appendChild(row);
+      }
+    }
+
+    async function loadLatestSnapshotIssuesForProject(projectRedmineId, projectName = "") {
+      setStatus(projectSnapshotIssuesStatus, `Р—Р°РіСЂСѓР¶Р°РµРј Р·Р°РґР°С‡Рё РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р° РїРѕ РїСЂРѕРµРєС‚Сѓ ${projectName || projectRedmineId}...`);
+
+      try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(projectRedmineId)}/latest-snapshot-issues`);
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ Р·Р°РґР°С‡Рё РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р°.");
+        }
+
+        renderProjectSnapshotIssues(payload.snapshot_run, payload.issues ?? []);
+        setStatus(projectSnapshotIssuesStatus, "", "");
+        projectSnapshotIssuesSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        renderProjectSnapshotIssues(null, []);
+        setStatus(projectSnapshotIssuesStatus, error.message, "error");
       }
     }
 
@@ -1095,10 +1263,26 @@ PAGE_HTML = """<!doctype html>
       project.is_disabled = target.checked;
       rerenderProjects();
     });
+    projectsTableBody.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const projectIdButton = target.closest(".project-id-button");
+      if (!(projectIdButton instanceof HTMLButtonElement)) {
+        return;
+      }
+
+      loadLatestSnapshotIssuesForProject(
+        Number(projectIdButton.dataset.projectRedmineId || 0),
+        projectIdButton.dataset.projectName || ""
+      );
+    });
     disableVisibleProjectsCheckbox.addEventListener("change", () => {
       const shouldDisable = disableVisibleProjectsCheckbox.checked;
       const filteredProjectIds = new Set(
-        applyProjectsFilter(buildProjectHierarchy(allProjects)).map((project) => Number(project.redmine_id))
+        getDirectlyMatchedProjects(buildProjectHierarchy(allProjects)).map((project) => Number(project.redmine_id))
       );
 
       allProjects.forEach((project) => {
@@ -1149,6 +1333,15 @@ def getProjects() -> dict[str, object]:
 
     ensureProjectsTable()
     return {"projects": listStoredProjects()}
+
+
+@app.get("/api/projects/{project_redmine_id}/latest-snapshot-issues")
+def getProjectLatestSnapshotIssues(project_redmine_id: int) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+    return getLatestSnapshotIssuesForProject(project_redmine_id)
 
 
 @app.post("/api/projects/refresh")

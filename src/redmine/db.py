@@ -365,6 +365,71 @@ def countIssueSnapshotRuns() -> int:
         )
 
 
+def getLatestSnapshotIssuesForProject(projectRedmineId: int) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        latestRun = connection.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    project_redmine_id,
+                    project_name,
+                    project_identifier,
+                    captured_for_date,
+                    captured_at,
+                    total_issues,
+                    total_estimated_hours,
+                    total_spent_hours,
+                    total_spent_hours_year
+                FROM issue_snapshot_runs
+                WHERE project_redmine_id = :project_redmine_id
+                ORDER BY captured_for_date DESC, captured_at DESC, id DESC
+                LIMIT 1
+                """
+            ),
+            {"project_redmine_id": projectRedmineId},
+        ).mappings().first()
+
+        if latestRun is None:
+            return {"snapshot_run": None, "issues": []}
+
+        issueRows = connection.execute(
+            text(
+                """
+                SELECT
+                    issue_redmine_id,
+                    subject,
+                    tracker_name,
+                    status_name,
+                    priority_name,
+                    assigned_to_name,
+                    fixed_version_name,
+                    done_ratio,
+                    estimated_hours,
+                    spent_hours,
+                    spent_hours_year,
+                    start_date,
+                    due_date,
+                    created_on,
+                    updated_on,
+                    closed_on
+                FROM issue_snapshot_items
+                WHERE snapshot_run_id = :snapshot_run_id
+                ORDER BY issue_redmine_id
+                """
+            ),
+            {"snapshot_run_id": latestRun["id"]},
+        )
+
+        return {
+            "snapshot_run": dict(latestRun),
+            "issues": [dict(row._mapping) for row in issueRows],
+        }
+
+
 def listProjectsWithoutSnapshotForDate(capturedForDate: str) -> list[dict[str, object]]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
