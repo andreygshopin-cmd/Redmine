@@ -89,6 +89,7 @@ def ensureIssueSnapshotTables() -> None:
                     captured_for_date DATE NOT NULL DEFAULT CURRENT_DATE,
                     captured_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     total_issues INTEGER NOT NULL DEFAULT 0,
+                    total_baseline_estimate_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
                     total_estimated_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
                     total_spent_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
                     total_spent_hours_year DOUBLE PRECISION NOT NULL DEFAULT 0
@@ -121,6 +122,7 @@ def ensureIssueSnapshotTables() -> None:
                     fixed_version_name TEXT,
                     done_ratio INTEGER,
                     is_private BOOLEAN NOT NULL DEFAULT FALSE,
+                    baseline_estimate_hours DOUBLE PRECISION,
                     estimated_hours DOUBLE PRECISION,
                     spent_hours DOUBLE PRECISION,
                     spent_hours_year DOUBLE PRECISION,
@@ -139,6 +141,24 @@ def ensureIssueSnapshotTables() -> None:
                 """
                 ALTER TABLE issue_snapshot_runs
                 ADD COLUMN IF NOT EXISTS captured_for_date DATE NOT NULL DEFAULT CURRENT_DATE
+                """
+            )
+        )
+
+        connection.execute(
+            text(
+                """
+                ALTER TABLE issue_snapshot_runs
+                ADD COLUMN IF NOT EXISTS total_baseline_estimate_hours DOUBLE PRECISION NOT NULL DEFAULT 0
+                """
+            )
+        )
+
+        connection.execute(
+            text(
+                """
+                ALTER TABLE issue_snapshot_items
+                ADD COLUMN IF NOT EXISTS baseline_estimate_hours DOUBLE PRECISION
                 """
             )
         )
@@ -244,7 +264,7 @@ def listStoredProjects() -> list[dict[str, object]]:
                     SELECT
                         lr.project_redmine_id,
                         lr.captured_for_date AS latest_snapshot_date,
-                        COALESCE(SUM(COALESCE(i.estimated_hours, 0)), 0) AS baseline_estimate_hours,
+                        COALESCE(SUM(COALESCE(i.baseline_estimate_hours, 0)), 0) AS baseline_estimate_hours,
                         COALESCE(
                             SUM(
                                 CASE
@@ -334,6 +354,7 @@ def listRecentIssueSnapshotRuns(limit: int = 20) -> list[dict[str, object]]:
                     captured_for_date,
                     captured_at,
                     total_issues,
+                    total_baseline_estimate_hours,
                     total_estimated_hours,
                     total_spent_hours,
                     total_spent_hours_year
@@ -381,6 +402,7 @@ def getLatestSnapshotIssuesForProject(projectRedmineId: int) -> dict[str, object
                     captured_for_date,
                     captured_at,
                     total_issues,
+                    total_baseline_estimate_hours,
                     total_estimated_hours,
                     total_spent_hours,
                     total_spent_hours_year
@@ -408,6 +430,7 @@ def getLatestSnapshotIssuesForProject(projectRedmineId: int) -> dict[str, object
                     assigned_to_name,
                     fixed_version_name,
                     done_ratio,
+                    baseline_estimate_hours,
                     estimated_hours,
                     spent_hours,
                     spent_hours_year,
@@ -604,6 +627,7 @@ def createIssueSnapshotRun(
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
 
+    totalBaselineEstimateHours = sum(float(issue.get("baseline_estimate_hours") or 0) for issue in issues)
     totalEstimatedHours = sum(float(issue.get("estimated_hours") or 0) for issue in issues)
     totalSpentHours = sum(float(issue.get("spent_hours") or 0) for issue in issues)
     totalSpentHoursYear = sum(float(issue.get("spent_hours_year") or 0) for issue in issues)
@@ -618,6 +642,7 @@ def createIssueSnapshotRun(
                     project_identifier,
                     captured_for_date,
                     total_issues,
+                    total_baseline_estimate_hours,
                     total_estimated_hours,
                     total_spent_hours,
                     total_spent_hours_year
@@ -627,6 +652,7 @@ def createIssueSnapshotRun(
                     :project_identifier,
                     :captured_for_date,
                     :total_issues,
+                    :total_baseline_estimate_hours,
                     :total_estimated_hours,
                     :total_spent_hours,
                     :total_spent_hours_year
@@ -641,6 +667,7 @@ def createIssueSnapshotRun(
                 "project_identifier": project["identifier"],
                 "captured_for_date": capturedForDate,
                 "total_issues": len(issues),
+                "total_baseline_estimate_hours": totalBaselineEstimateHours,
                 "total_estimated_hours": totalEstimatedHours,
                 "total_spent_hours": totalSpentHours,
                 "total_spent_hours_year": totalSpentHoursYear,
@@ -675,6 +702,7 @@ def createIssueSnapshotRun(
                     fixed_version_name,
                     done_ratio,
                     is_private,
+                    baseline_estimate_hours,
                     estimated_hours,
                     spent_hours,
                     spent_hours_year,
@@ -703,6 +731,7 @@ def createIssueSnapshotRun(
                     :fixed_version_name,
                     :done_ratio,
                     :is_private,
+                    :baseline_estimate_hours,
                     :estimated_hours,
                     :spent_hours,
                     :spent_hours_year,

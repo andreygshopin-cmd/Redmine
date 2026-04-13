@@ -1234,6 +1234,7 @@ def buildLatestSnapshotIssuesPage(projectRedmineId: int) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Задачи последнего среза</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <style>
     body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
     main {{ max-width: 1200px; margin: 0 auto; padding: 24px 20px 48px; }}
@@ -1251,29 +1252,67 @@ def buildLatestSnapshotIssuesPage(projectRedmineId: int) -> str:
 </body>
 </html>"""
 
-    issueRowsHtml = []
+
+def formatSnapshotPageDateTime(value: object) -> str:
+    if not value:
+        return "—"
+    return str(value).replace("T", " ").replace("+00:00", " UTC")
+
+
+def buildLatestSnapshotIssuesPageUtf8(projectRedmineId: int) -> str:
+    snapshotPayload = getLatestSnapshotIssuesForProject(projectRedmineId)
+    snapshotRun = snapshotPayload["snapshot_run"]
+    issues = snapshotPayload["issues"]
+
+    if snapshotRun is None:
+        return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Задачи последнего среза</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
+    main {{ max-width: 1200px; margin: 0 auto; padding: 24px 20px 48px; }}
+    .back-link {{ color: #375d77; text-decoration: none; font-weight: 600; }}
+    h1 {{ margin: 18px 0 12px; font-size: 2rem; }}
+    .meta {{ color: #64798d; margin: 0 0 24px; }}
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back-link" href="/">← К списку проектов</a>
+    <h1>Задачи последнего среза проекта</h1>
+    <p class="meta">Для проекта с ID {projectRedmineId} срезы пока не найдены.</p>
+  </main>
+</body>
+</html>"""
+
+    issueRowsHtml: list[str] = []
     for issue in issues:
         issueId = issue.get("issue_redmine_id", "—")
         issueRowsHtml.append(
             f"""
             <tr>
               <td class="mono"><a class="issue-link" href="https://redmine.sms-it.ru/issues/{issueId}" target="_blank" rel="noreferrer">{issueId}</a></td>
-              <td>{escape(str(issue.get("subject") or "—"))}</td>
+              <td class="subject-col">{escape(str(issue.get("subject") or "—"))}</td>
               <td>{escape(str(issue.get("tracker_name") or "—"))}</td>
               <td>{escape(str(issue.get("status_name") or "—"))}</td>
-              <td>{escape(str(issue.get("assigned_to_name") or "—"))}</td>
-              <td>{escape(str(issue.get("fixed_version_name") or "—"))}</td>
               <td>{escape(str(issue.get("done_ratio") if issue.get("done_ratio") is not None else 0))}</td>
+              <td>{formatPageHours(issue.get("baseline_estimate_hours"))}</td>
               <td>{formatPageHours(issue.get("estimated_hours"))}</td>
               <td>{formatPageHours(issue.get("spent_hours"))}</td>
               <td>{formatPageHours(issue.get("spent_hours_year"))}</td>
-              <td>{escape(formatPageDateTime(issue.get("closed_on")))}</td>
+              <td>{escape(formatSnapshotPageDateTime(issue.get("closed_on")))}</td>
+              <td>{escape(str(issue.get("assigned_to_name") or "—"))}</td>
+              <td>{escape(str(issue.get("fixed_version_name") or "—"))}</td>
             </tr>
             """
         )
 
     if not issueRowsHtml:
-        issueRowsHtml.append('<tr><td colspan="11">В последнем срезе задач нет.</td></tr>')
+        issueRowsHtml.append('<tr><td colspan="12">В последнем срезе задач нет.</td></tr>')
 
     projectName = escape(str(snapshotRun.get("project_name") or "—"))
     capturedForDate = escape(str(snapshotRun.get("captured_for_date") or "—"))
@@ -1284,6 +1323,7 @@ def buildLatestSnapshotIssuesPage(projectRedmineId: int) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Задачи последнего среза</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <style>
     :root {{
       color-scheme: light;
@@ -1303,7 +1343,7 @@ def buildLatestSnapshotIssuesPage(projectRedmineId: int) -> str:
     .back-link:hover {{ color: var(--orange); }}
     h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
     .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
-    .table-wrap {{ overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
+    .table-wrap {{ max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
     table {{ width: 100%; border-collapse: collapse; background: var(--panel); }}
     th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
     th {{ position: sticky; top: 0; z-index: 1; background: var(--panel-soft); color: #426179; text-transform: uppercase; font-size: 0.88rem; }}
@@ -1311,6 +1351,7 @@ def buildLatestSnapshotIssuesPage(projectRedmineId: int) -> str:
     .mono {{ font-family: Consolas, "Courier New", monospace; font-size: 0.95rem; white-space: nowrap; }}
     .issue-link {{ color: var(--blue); text-decoration: none; border-bottom: 1px dashed currentColor; font-weight: 700; }}
     .issue-link:hover {{ color: var(--orange); border-bottom-style: solid; }}
+    .subject-col {{ width: 24%; max-width: 24%; }}
   </style>
 </head>
 <body>
@@ -1323,16 +1364,113 @@ def buildLatestSnapshotIssuesPage(projectRedmineId: int) -> str:
         <thead>
           <tr>
             <th>ID</th>
-            <th>Тема</th>
+            <th class="subject-col">Тема</th>
             <th>Трекер</th>
             <th>Статус</th>
+            <th>Готово, %</th>
+            <th>Базовая оценка, ч</th>
+            <th>План, ч</th>
+            <th>Факт всего, ч</th>
+            <th>Факт за год, ч</th>
+            <th>Закрыта</th>
             <th>Исполнитель</th>
             <th>Версия</th>
+          </tr>
+        </thead>
+        <tbody>
+          {''.join(issueRowsHtml)}
+        </tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>"""
+
+    issueRowsHtml = []
+    for issue in issues:
+        issueId = issue.get("issue_redmine_id", "—")
+        issueRowsHtml.append(
+            f"""
+            <tr>
+              <td class="mono"><a class="issue-link" href="https://redmine.sms-it.ru/issues/{issueId}" target="_blank" rel="noreferrer">{issueId}</a></td>
+              <td class="subject-col">{escape(str(issue.get("subject") or "—"))}</td>
+              <td>{escape(str(issue.get("tracker_name") or "—"))}</td>
+              <td>{escape(str(issue.get("status_name") or "—"))}</td>
+              <td>{escape(str(issue.get("done_ratio") if issue.get("done_ratio") is not None else 0))}</td>
+              <td>{formatPageHours(issue.get("baseline_estimate_hours"))}</td>
+              <td>{formatPageHours(issue.get("estimated_hours"))}</td>
+              <td>{formatPageHours(issue.get("spent_hours"))}</td>
+              <td>{formatPageHours(issue.get("spent_hours_year"))}</td>
+              <td>{escape(formatPageDateTime(issue.get("closed_on")))}</td>
+              <td>{escape(str(issue.get("assigned_to_name") or "—"))}</td>
+              <td>{escape(str(issue.get("fixed_version_name") or "—"))}</td>
+            </tr>
+            """
+        )
+
+    if not issueRowsHtml:
+        issueRowsHtml.append('<tr><td colspan="11">В последнем срезе задач нет.</td></tr>')
+
+    projectName = escape(str(snapshotRun.get("project_name") or "—"))
+    capturedForDate = escape(str(snapshotRun.get("captured_for_date") or "—"))
+
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Задачи последнего среза</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --panel-soft: #eef6f7;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue: #375d77;
+      --orange: #ff6c0e;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
+    main {{ max-width: 1440px; margin: 0 auto; padding: 24px 20px 48px; }}
+    .back-link {{ color: var(--blue); text-decoration: none; font-weight: 600; }}
+    .back-link:hover {{ color: var(--orange); }}
+    h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
+    .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
+    .table-wrap {{ max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
+    table {{ width: 100%; border-collapse: collapse; background: var(--panel); }}
+    th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
+    th {{ position: sticky; top: 0; z-index: 1; background: var(--panel-soft); color: #426179; text-transform: uppercase; font-size: 0.88rem; }}
+    tr:last-child td {{ border-bottom: 0; }}
+    .mono {{ font-family: Consolas, "Courier New", monospace; font-size: 0.95rem; white-space: nowrap; }}
+    .issue-link {{ color: var(--blue); text-decoration: none; border-bottom: 1px dashed currentColor; font-weight: 700; }}
+    .issue-link:hover {{ color: var(--orange); border-bottom-style: solid; }}
+    .subject-col {{ width: 24%; max-width: 24%; }}
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back-link" href="/">← К списку проектов</a>
+    <h1>Задачи последнего среза проекта</h1>
+    <p class="meta">Проект: {projectName}. Дата среза: {capturedForDate}. Задач: {len(issues)}.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th class="subject-col">Тема</th>
+            <th>Трекер</th>
+            <th>Статус</th>
             <th>Готово, %</th>
             <th>План, ч</th>
             <th>Факт всего, ч</th>
             <th>Факт за год, ч</th>
             <th>Закрыта</th>
+            <th>Исполнитель</th>
+            <th>Версия</th>
           </tr>
         </thead>
         <tbody>
@@ -1374,7 +1512,7 @@ def getProjectLatestSnapshotIssuesPage(project_redmine_id: int) -> HTMLResponse:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureIssueSnapshotTables()
-    return HTMLResponse(buildLatestSnapshotIssuesPage(project_redmine_id))
+    return HTMLResponse(buildLatestSnapshotIssuesPageUtf8(project_redmine_id))
 
 
 @app.post("/api/projects/refresh")

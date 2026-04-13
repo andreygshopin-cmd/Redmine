@@ -10,6 +10,25 @@ REDMINE_TIME_ENTRIES_PAGE_SIZE = 1000
 ProgressCallback = Callable[[int, int, int, int], None]
 
 
+def parseOptionalFloat(value: object) -> float | None:
+    if value is None or value == "":
+        return None
+
+    try:
+        return float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+def extractCustomFieldValue(issue: dict[str, object], fieldName: str) -> object | None:
+    customFields = issue.get("custom_fields") or []
+    for customField in customFields:
+        if str(customField.get("name") or "") == fieldName:
+            return customField.get("value")
+
+    return None
+
+
 def parseRedmineDate(value: str | None) -> str | None:
     if not value:
         return None
@@ -40,6 +59,7 @@ def normalizeIssue(issue: dict[str, object], projectRedmineId: int) -> dict[str,
     assignedTo = issue.get("assigned_to") or {}
     fixedVersion = issue.get("fixed_version") or {}
     parent = issue.get("parent") or {}
+    baselineEstimateHours = parseOptionalFloat(extractCustomFieldValue(issue, "Базовая оценка"))
 
     return {
         "project_redmine_id": projectRedmineId,
@@ -60,6 +80,7 @@ def normalizeIssue(issue: dict[str, object], projectRedmineId: int) -> dict[str,
         "fixed_version_name": fixedVersion.get("name"),
         "done_ratio": issue.get("done_ratio"),
         "is_private": bool(issue.get("is_private", False)),
+        "baseline_estimate_hours": baselineEstimateHours,
         "estimated_hours": issue.get("estimated_hours"),
         "spent_hours": issue.get("spent_hours"),
         "spent_hours_year": 0.0,

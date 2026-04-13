@@ -94,6 +94,7 @@ def testNormalizeIssueMapsFields() -> None:
             "done_ratio": 50,
             "estimated_hours": 12.5,
             "spent_hours": 3.0,
+            "custom_fields": [{"id": 27, "name": "Базовая оценка", "value": "32"}],
             "start_date": "2026-04-01",
             "due_date": "2026-04-05",
             "created_on": "2026-04-01T10:00:00Z",
@@ -107,6 +108,7 @@ def testNormalizeIssueMapsFields() -> None:
     assert issue["issue_redmine_id"] == 501
     assert issue["tracker_name"] == "Feature"
     assert issue["fixed_version_name"] == "Sprint 1"
+    assert issue["baseline_estimate_hours"] == 32.0
     assert issue["created_on"] == "2026-04-01T10:00:00+00:00"
 
 
