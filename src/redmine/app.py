@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from html import escape
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
@@ -659,31 +660,6 @@ PAGE_HTML = """<!doctype html>
         </table>
       </div>
     </section>
-    <section class="panel table-panel" id="project-snapshot-issues">
-      <h2>Р—Р°РґР°С‡Рё РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р° РїСЂРѕРµРєС‚Р°</h2>
-      <p class="meta" id="projectSnapshotIssuesMeta">РќР°Р¶РјРёС‚Рµ РЅР° ID РїСЂРѕРµРєС‚Р° РІ С‚Р°Р±Р»РёС†Рµ РІС‹С€Рµ, С‡С‚РѕР±С‹ Р·Р°РіСЂСѓР·РёС‚СЊ СЃРїРёСЃРѕРє Р·Р°РґР°С‡.</p>
-      <div class="status" id="projectSnapshotIssuesStatus"></div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>РўРµРјР°</th>
-              <th>РўСЂРµРєРµСЂ</th>
-              <th>РЎС‚Р°С‚СѓСЃ</th>
-              <th>РСЃРїРѕР»РЅРёС‚РµР»СЊ</th>
-              <th>Р’РµСЂСЃРёСЏ</th>
-              <th>Р“РѕС‚РѕРІРѕ, %</th>
-              <th>РџР»Р°РЅ, С‡</th>
-              <th>Р¤Р°РєС‚ РІСЃРµРіРѕ, С‡</th>
-              <th>Р¤Р°РєС‚ Р·Р° РіРѕРґ, С‡</th>
-              <th>Р—Р°РєСЂС‹С‚Р°</th>
-            </tr>
-          </thead>
-          <tbody id="projectSnapshotIssuesTableBody"></tbody>
-        </table>
-      </div>
-    </section>
   </main>
 
   <script>
@@ -694,10 +670,6 @@ PAGE_HTML = """<!doctype html>
     const snapshotRunsCount = document.getElementById("snapshotRunsCount");
     const projectsTableBody = document.getElementById("projectsTableBody");
     const snapshotRunsTableBody = document.getElementById("snapshotRunsTableBody");
-    const projectSnapshotIssuesMeta = document.getElementById("projectSnapshotIssuesMeta");
-    const projectSnapshotIssuesStatus = document.getElementById("projectSnapshotIssuesStatus");
-    const projectSnapshotIssuesTableBody = document.getElementById("projectSnapshotIssuesTableBody");
-    const projectSnapshotIssuesSection = document.getElementById("project-snapshot-issues");
     const disableVisibleProjectsCheckbox = document.getElementById("disableVisibleProjectsCheckbox");
     const showDisabledProjectsCheckbox = document.getElementById("showDisabledProjectsCheckbox");
     const snapshotDateInput = document.getElementById("snapshotDateInput");
@@ -991,7 +963,7 @@ PAGE_HTML = """<!doctype html>
         row.className = project.is_disabled ? "project-row-disabled" : "";
         row.innerHTML = `
           <td class="checkbox-cell project-sticky-1"><input class="project-disable-checkbox" type="checkbox" data-project-id="${project.redmine_id}" ${project.is_disabled ? "checked" : ""}></td>
-          <td class="mono project-sticky-2"><button class="project-id-button mono" type="button" data-project-redmine-id="${project.redmine_id}" data-project-name="${String(project.name ?? "").replace(/"/g, "&quot;")}">${project.redmine_id ?? "\u2014"}</button></td>
+          <td class="mono project-sticky-2"><a class="project-id-button mono" href="/projects/${encodeURIComponent(project.redmine_id)}/latest-snapshot-issues" target="_blank" rel="noreferrer">${project.redmine_id ?? "\u2014"}</a></td>
           <td class="project-name-cell project-sticky-3"><span class="project-indent">${indent}</span>${project.name ?? "\u2014"}</td>
           <td>${identifierHtml}</td>
           <td>${formatHours(project.baseline_estimate_hours)}</td>
@@ -1031,65 +1003,6 @@ PAGE_HTML = """<!doctype html>
           <td>${formatDate(run.captured_at)}</td>
         `;
         snapshotRunsTableBody.appendChild(row);
-      }
-    }
-
-    function renderProjectSnapshotIssues(snapshotRun, issues) {
-      projectSnapshotIssuesTableBody.innerHTML = "";
-
-      if (!snapshotRun) {
-        projectSnapshotIssuesMeta.textContent = "РџРѕ РІС‹Р±СЂР°РЅРЅРѕРјСѓ РїСЂРѕРµРєС‚Сѓ РїРѕРєР° РЅРµС‚ СЃСЂРµР·РѕРІ.";
-        projectSnapshotIssuesTableBody.innerHTML =
-          '<tr><td colspan="11">РЎСЂРµР· РґР»СЏ СЌС‚РѕРіРѕ РїСЂРѕРµРєС‚Р° РїРѕРєР° РЅРµ РЅР°Р№РґРµРЅ.</td></tr>';
-        return;
-      }
-
-      projectSnapshotIssuesMeta.textContent =
-        `РџСЂРѕРµРєС‚: ${snapshotRun.project_name ?? "вЂ”"}. Р”Р°С‚Р° СЃСЂРµР·Р°: ${snapshotRun.captured_for_date ?? "вЂ”"}. Р—Р°РґР°С‡: ${issues.length}.`;
-
-      if (!issues.length) {
-        projectSnapshotIssuesTableBody.innerHTML =
-          '<tr><td colspan="11">Р’ РїРѕСЃР»РµРґРЅРµРј СЃСЂРµР·Рµ Р·Р°РґР°С‡ РЅРµС‚.</td></tr>';
-        return;
-      }
-
-      for (const issue of issues) {
-        const issueId = issue.issue_redmine_id ?? "вЂ”";
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td class="mono"><a class="project-link mono" href="https://redmine.sms-it.ru/issues/${issueId}" target="_blank" rel="noreferrer">${issueId}</a></td>
-          <td>${issue.subject ?? "вЂ”"}</td>
-          <td>${issue.tracker_name ?? "вЂ”"}</td>
-          <td>${issue.status_name ?? "вЂ”"}</td>
-          <td>${issue.assigned_to_name ?? "вЂ”"}</td>
-          <td>${issue.fixed_version_name ?? "вЂ”"}</td>
-          <td>${issue.done_ratio ?? 0}</td>
-          <td>${formatHours(issue.estimated_hours)}</td>
-          <td>${formatHours(issue.spent_hours)}</td>
-          <td>${formatHours(issue.spent_hours_year)}</td>
-          <td>${formatDate(issue.closed_on)}</td>
-        `;
-        projectSnapshotIssuesTableBody.appendChild(row);
-      }
-    }
-
-    async function loadLatestSnapshotIssuesForProject(projectRedmineId, projectName = "") {
-      setStatus(projectSnapshotIssuesStatus, `Р—Р°РіСЂСѓР¶Р°РµРј Р·Р°РґР°С‡Рё РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р° РїРѕ РїСЂРѕРµРєС‚Сѓ ${projectName || projectRedmineId}...`);
-
-      try {
-        const response = await fetch(`/api/projects/${encodeURIComponent(projectRedmineId)}/latest-snapshot-issues`);
-        const payload = await response.json();
-
-        if (!response.ok) {
-          throw new Error(payload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ Р·Р°РґР°С‡Рё РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р°.");
-        }
-
-        renderProjectSnapshotIssues(payload.snapshot_run, payload.issues ?? []);
-        setStatus(projectSnapshotIssuesStatus, "", "");
-        projectSnapshotIssuesSection.scrollIntoView({ behavior: "smooth", block: "start" });
-      } catch (error) {
-        renderProjectSnapshotIssues(null, []);
-        setStatus(projectSnapshotIssuesStatus, error.message, "error");
       }
     }
 
@@ -1263,22 +1176,6 @@ PAGE_HTML = """<!doctype html>
       project.is_disabled = target.checked;
       rerenderProjects();
     });
-    projectsTableBody.addEventListener("click", (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) {
-        return;
-      }
-
-      const projectIdButton = target.closest(".project-id-button");
-      if (!(projectIdButton instanceof HTMLButtonElement)) {
-        return;
-      }
-
-      loadLatestSnapshotIssuesForProject(
-        Number(projectIdButton.dataset.projectRedmineId || 0),
-        projectIdButton.dataset.projectName || ""
-      );
-    });
     disableVisibleProjectsCheckbox.addEventListener("change", () => {
       const shouldDisable = disableVisibleProjectsCheckbox.checked;
       const filteredProjectIds = new Set(
@@ -1312,6 +1209,142 @@ def requireProjectSyncConfig() -> None:
         raise HTTPException(status_code=400, detail="REDMINE_API_KEY is not set")
 
 
+def formatPageHours(value: object) -> str:
+    try:
+        return f"{float(value or 0):.1f}"
+    except (TypeError, ValueError):
+        return "0.0"
+
+
+def formatPageDateTime(value: object) -> str:
+    if not value:
+        return "—"
+    return str(value).replace("T", " ").replace("+00:00", " UTC")
+
+
+def buildLatestSnapshotIssuesPage(projectRedmineId: int) -> str:
+    snapshotPayload = getLatestSnapshotIssuesForProject(projectRedmineId)
+    snapshotRun = snapshotPayload["snapshot_run"]
+    issues = snapshotPayload["issues"]
+
+    if snapshotRun is None:
+        return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Задачи последнего среза</title>
+  <style>
+    body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
+    main {{ max-width: 1200px; margin: 0 auto; padding: 24px 20px 48px; }}
+    .back-link {{ color: #375d77; text-decoration: none; font-weight: 600; }}
+    h1 {{ margin: 18px 0 12px; font-size: 2rem; }}
+    .meta {{ color: #64798d; margin: 0 0 24px; }}
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back-link" href="/">← К списку проектов</a>
+    <h1>Задачи последнего среза проекта</h1>
+    <p class="meta">Для проекта с ID {projectRedmineId} срезы пока не найдены.</p>
+  </main>
+</body>
+</html>"""
+
+    issueRowsHtml = []
+    for issue in issues:
+        issueId = issue.get("issue_redmine_id", "—")
+        issueRowsHtml.append(
+            f"""
+            <tr>
+              <td class="mono"><a class="issue-link" href="https://redmine.sms-it.ru/issues/{issueId}" target="_blank" rel="noreferrer">{issueId}</a></td>
+              <td>{escape(str(issue.get("subject") or "—"))}</td>
+              <td>{escape(str(issue.get("tracker_name") or "—"))}</td>
+              <td>{escape(str(issue.get("status_name") or "—"))}</td>
+              <td>{escape(str(issue.get("assigned_to_name") or "—"))}</td>
+              <td>{escape(str(issue.get("fixed_version_name") or "—"))}</td>
+              <td>{escape(str(issue.get("done_ratio") if issue.get("done_ratio") is not None else 0))}</td>
+              <td>{formatPageHours(issue.get("estimated_hours"))}</td>
+              <td>{formatPageHours(issue.get("spent_hours"))}</td>
+              <td>{formatPageHours(issue.get("spent_hours_year"))}</td>
+              <td>{escape(formatPageDateTime(issue.get("closed_on")))}</td>
+            </tr>
+            """
+        )
+
+    if not issueRowsHtml:
+        issueRowsHtml.append('<tr><td colspan="11">В последнем срезе задач нет.</td></tr>')
+
+    projectName = escape(str(snapshotRun.get("project_name") or "—"))
+    capturedForDate = escape(str(snapshotRun.get("captured_for_date") or "—"))
+
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Задачи последнего среза</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --panel-soft: #eef6f7;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue: #375d77;
+      --orange: #ff6c0e;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
+    main {{ max-width: 1440px; margin: 0 auto; padding: 24px 20px 48px; }}
+    .back-link {{ color: var(--blue); text-decoration: none; font-weight: 600; }}
+    .back-link:hover {{ color: var(--orange); }}
+    h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
+    .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
+    .table-wrap {{ overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
+    table {{ width: 100%; border-collapse: collapse; background: var(--panel); }}
+    th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
+    th {{ position: sticky; top: 0; z-index: 1; background: var(--panel-soft); color: #426179; text-transform: uppercase; font-size: 0.88rem; }}
+    tr:last-child td {{ border-bottom: 0; }}
+    .mono {{ font-family: Consolas, "Courier New", monospace; font-size: 0.95rem; white-space: nowrap; }}
+    .issue-link {{ color: var(--blue); text-decoration: none; border-bottom: 1px dashed currentColor; font-weight: 700; }}
+    .issue-link:hover {{ color: var(--orange); border-bottom-style: solid; }}
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back-link" href="/">← К списку проектов</a>
+    <h1>Задачи последнего среза проекта</h1>
+    <p class="meta">Проект: {projectName}. Дата среза: {capturedForDate}. Задач: {len(issues)}.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Тема</th>
+            <th>Трекер</th>
+            <th>Статус</th>
+            <th>Исполнитель</th>
+            <th>Версия</th>
+            <th>Готово, %</th>
+            <th>План, ч</th>
+            <th>Факт всего, ч</th>
+            <th>Факт за год, ч</th>
+            <th>Закрыта</th>
+          </tr>
+        </thead>
+        <tbody>
+          {''.join(issueRowsHtml)}
+        </tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>"""
+
+
 @app.get("/", response_class=HTMLResponse)
 def readRoot() -> HTMLResponse:
     return HTMLResponse(PAGE_HTML)
@@ -1335,13 +1368,13 @@ def getProjects() -> dict[str, object]:
     return {"projects": listStoredProjects()}
 
 
-@app.get("/api/projects/{project_redmine_id}/latest-snapshot-issues")
-def getProjectLatestSnapshotIssues(project_redmine_id: int) -> dict[str, object]:
+@app.get("/projects/{project_redmine_id}/latest-snapshot-issues", response_class=HTMLResponse)
+def getProjectLatestSnapshotIssuesPage(project_redmine_id: int) -> HTMLResponse:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureIssueSnapshotTables()
-    return getLatestSnapshotIssuesForProject(project_redmine_id)
+    return HTMLResponse(buildLatestSnapshotIssuesPage(project_redmine_id))
 
 
 @app.post("/api/projects/refresh")

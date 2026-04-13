@@ -163,6 +163,7 @@ def fetchAllIssuesForProject(
     session = buildSession(apiKey)
     baseParams = {
         "project_id": projectIdentifier,
+        "subproject_id": "!*",
     }
 
     openIssues, openPages = fetchIssuesByParams(
@@ -220,6 +221,7 @@ def fetchSpentHoursByIssueForProjectYear(
             f"{redmineUrl.rstrip('/')}/time_entries.json",
             params={
                 "project_id": projectIdentifier,
+                "subproject_id": "!*",
                 "from": fromDate,
                 "to": toDate,
                 "offset": offset,

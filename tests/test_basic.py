@@ -141,23 +141,29 @@ def testGetProjectsEndpointReturnsStoredProjects(monkeypatch) -> None:
     assert response.json()["projects"][0]["redmine_id"] == 10
 
 
-def testGetLatestSnapshotIssuesForProjectEndpointReturnsIssues(monkeypatch) -> None:
+def testGetLatestSnapshotIssuesForProjectPageReturnsHtml(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
     monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
     monkeypatch.setattr(
         app_module,
         "getLatestSnapshotIssuesForProject",
         lambda projectRedmineId: {
-            "snapshot_run": {"project_redmine_id": projectRedmineId, "captured_for_date": "2026-04-13"},
+            "snapshot_run": {
+                "project_redmine_id": projectRedmineId,
+                "project_name": "Billing",
+                "captured_for_date": "2026-04-13",
+            },
             "issues": [{"issue_redmine_id": 501, "subject": "Add chart"}],
         },
     )
 
-    response = client.get("/api/projects/10/latest-snapshot-issues")
+    response = client.get("/projects/10/latest-snapshot-issues")
 
     assert response.status_code == 200
-    assert response.json()["snapshot_run"]["project_redmine_id"] == 10
-    assert response.json()["issues"][0]["issue_redmine_id"] == 501
+    body = response.text
+    assert "Задачи последнего среза проекта" in body
+    assert "Billing" in body
+    assert "Add chart" in body
 
 
 def testRefreshProjectsEndpointStoresOnlyMissingRows(monkeypatch) -> None:
