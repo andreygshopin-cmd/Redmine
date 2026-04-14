@@ -168,6 +168,45 @@ def testGetLatestSnapshotIssuesForProjectPageReturnsHtml(monkeypatch) -> None:
     assert "Add chart" in body
 
 
+def testGetProjectBurndownPageReturnsPlaceholder(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module, "ensureProjectsTable", lambda: None)
+    monkeypatch.setattr(
+        app_module,
+        "listStoredProjects",
+        lambda: [{"redmine_id": 10, "name": "Billing", "identifier": "billing"}],
+    )
+
+    response = client.get("/projects/10/burndown")
+
+    assert response.status_code == 200
+    assert "Диаграмма сгорания проекта" in response.text
+    assert "Billing" in response.text
+
+
+def testSnapshotIssuesPageUsesCleanRussianText(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
+    monkeypatch.setattr(
+        app_module,
+        "getLatestSnapshotIssuesForProject",
+        lambda projectRedmineId: {
+            "snapshot_run": {
+                "project_redmine_id": projectRedmineId,
+                "project_name": "Billing",
+                "captured_for_date": "2026-04-14",
+            },
+            "issues": [{"issue_redmine_id": 501, "subject": "Add chart", "baseline_estimate_hours": 3.5}],
+        },
+    )
+
+    response = client.get("/projects/10/latest-snapshot-issues")
+
+    assert response.status_code == 200
+    assert "Базовая оценка, ч" in response.text
+    assert "Проект: Billing." in response.text
+
+
 def testRefreshProjectsEndpointStoresOnlyMissingRows(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
     monkeypatch.setattr(app_module.config, "redmineUrl", "https://redmine.example.com")

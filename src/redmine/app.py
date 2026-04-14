@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+﻿from datetime import UTC, datetime
 from html import escape
 
 from fastapi import FastAPI, HTTPException, Query
@@ -39,14 +39,15 @@ PAGE_HTML = """<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Redmine: проекты и срезы</title>
+  <title>Redmine: РїСЂРѕРµРєС‚С‹ Рё СЃСЂРµР·С‹</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <style>
     :root {
       color-scheme: light;
+      --sticky-top: 100px;
       --bg: #ffffff;
       --panel: #ffffff;
-      --panel-soft: #eef6f7;
+      --panel-soft: #eef6f7;`r`n      --sticky-top: 100px;
       --line: #d9e5eb;
       --text: #16324a;
       --muted: #64798d;
@@ -76,7 +77,7 @@ PAGE_HTML = """<!doctype html>
 
     .topbar {
       position: fixed;
-      top: 0;
+      top: var(--sticky-top);
       left: 0;
       right: 0;
       z-index: 20;
@@ -389,6 +390,7 @@ PAGE_HTML = """<!doctype html>
     }
 
     .table-wrap {
+      max-height: calc(100vh - 180px);
       overflow: auto;
     }
 
@@ -407,7 +409,7 @@ PAGE_HTML = """<!doctype html>
       text-transform: uppercase;
       color: #426179;
       position: sticky;
-      top: 0;
+      top: var(--sticky-top);
       z-index: 1;
     }
 
@@ -488,6 +490,10 @@ PAGE_HTML = """<!doctype html>
         padding: 0 14px;
       }
 
+      :root {
+        --sticky-top: 136px;
+      }
+
       .topbar-spacer {
         height: 136px;
       }
@@ -530,15 +536,15 @@ PAGE_HTML = """<!doctype html>
           <img
             class="brand-logo"
             src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg"
-            alt="СМС-ИТ"
+            alt="РЎРњРЎ-РРў"
           >
         </span>
       </a>
-      <nav class="hero-nav" aria-label="Быстрый переход по разделам">
+      <nav class="hero-nav" aria-label="Р‘С‹СЃС‚СЂС‹Р№ РїРµСЂРµС…РѕРґ РїРѕ СЂР°Р·РґРµР»Р°Рј">
         <div class="quick-links">
-          <a href="#data-load-section">Загрузка данных</a>
-          <a href="#projects-table">Таблица проектов</a>
-          <a href="#snapshot-runs-table">Таблица срезов</a>
+          <a href="#data-load-section">Р—Р°РіСЂСѓР·РєР° РґР°РЅРЅС‹С…</a>
+          <a href="#projects-table">РўР°Р±Р»РёС†Р° РїСЂРѕРµРєС‚РѕРІ</a>
+          <a href="#snapshot-runs-table">РўР°Р±Р»РёС†Р° СЃСЂРµР·РѕРІ</a>
         </div>
       </nav>
     </div>
@@ -547,54 +553,54 @@ PAGE_HTML = """<!doctype html>
 
   <main>
     <section class="hero">
-      <h1>Анализ проектов Redmine</h1>
+      <h1>РђРЅР°Р»РёР· РїСЂРѕРµРєС‚РѕРІ Redmine</h1>
     </section>
 
     <section class="grid" id="data-load-section">
       <article class="panel" id="project-actions">
-        <h2>Проекты Redmine</h2>
-        <p>Получает список проектов из Redmine и добавляет в базу только новые записи.</p>
+        <h2>РџСЂРѕРµРєС‚С‹ Redmine</h2>
+        <p>РџРѕР»СѓС‡Р°РµС‚ СЃРїРёСЃРѕРє РїСЂРѕРµРєС‚РѕРІ РёР· Redmine Рё РґРѕР±Р°РІР»СЏРµС‚ РІ Р±Р°Р·Сѓ С‚РѕР»СЊРєРѕ РЅРѕРІС‹Рµ Р·Р°РїРёСЃРё.</p>
         <div class="row">
-          <button id="refreshProjectsButton" type="button">Обновить список проектов</button>
+          <button id="refreshProjectsButton" type="button">РћР±РЅРѕРІРёС‚СЊ СЃРїРёСЃРѕРє РїСЂРѕРµРєС‚РѕРІ</button>
         </div>
         <div class="status" id="projectsStatus"></div>
       </article>
 
       <article class="panel" id="snapshot-actions">
-        <h2>Получение срезов задач</h2>
+        <h2>РџРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·РѕРІ Р·Р°РґР°С‡</h2>
         <p>
-          Запрашивает срезы только для тех проектов, по которым на сегодняшнюю дату
-          еще нет записи в базе данных.
+          Р—Р°РїСЂР°С€РёРІР°РµС‚ СЃСЂРµР·С‹ С‚РѕР»СЊРєРѕ РґР»СЏ С‚РµС… РїСЂРѕРµРєС‚РѕРІ, РїРѕ РєРѕС‚РѕСЂС‹Рј РЅР° СЃРµРіРѕРґРЅСЏС€РЅСЋСЋ РґР°С‚Сѓ
+          РµС‰Рµ РЅРµС‚ Р·Р°РїРёСЃРё РІ Р±Р°Р·Рµ РґР°РЅРЅС‹С….
         </p>
         <div class="row">
-          <button id="captureSnapshotsButton" type="button">Получить срезы задач</button>
+          <button id="captureSnapshotsButton" type="button">РџРѕР»СѓС‡РёС‚СЊ СЃСЂРµР·С‹ Р·Р°РґР°С‡</button>
         </div>
         <div class="status" id="captureStatus"></div>
       </article>
 
       <article class="panel" id="delete-snapshot">
-        <h2>Удаление среза по дате</h2>
-        <p>Удаляет все срезы и все строки задач за выбранную календарную дату.</p>
+        <h2>РЈРґР°Р»РµРЅРёРµ СЃСЂРµР·Р° РїРѕ РґР°С‚Рµ</h2>
+        <p>РЈРґР°Р»СЏРµС‚ РІСЃРµ СЃСЂРµР·С‹ Рё РІСЃРµ СЃС‚СЂРѕРєРё Р·Р°РґР°С‡ Р·Р° РІС‹Р±СЂР°РЅРЅСѓСЋ РєР°Р»РµРЅРґР°СЂРЅСѓСЋ РґР°С‚Сѓ.</p>
         <div class="row">
           <input id="snapshotDateInput" type="date">
-          <button id="deleteSnapshotsButton" class="danger" type="button">Очистить срез на дату</button>
+          <button id="deleteSnapshotsButton" class="danger" type="button">РћС‡РёСЃС‚РёС‚СЊ СЃСЂРµР· РЅР° РґР°С‚Сѓ</button>
         </div>
         <div class="status" id="deleteStatus"></div>
       </article>
     </section>
 
     <section class="panel table-panel" id="projects-table">
-      <h2>Проекты в базе данных</h2>
-      <p class="meta" id="projectsCount">Загрузка списка проектов...</p>
+      <h2>РџСЂРѕРµРєС‚С‹ РІ Р±Р°Р·Рµ РґР°РЅРЅС‹С…</h2>
+      <p class="meta" id="projectsCount">Р—Р°РіСЂСѓР·РєР° СЃРїРёСЃРєР° РїСЂРѕРµРєС‚РѕРІ...</p>
       <div class="table-toolbar">
-        <label for="projectsNameFilterInput">Фильтр по названию</label>
+        <label for="projectsNameFilterInput">Р¤РёР»СЊС‚СЂ РїРѕ РЅР°Р·РІР°РЅРёСЋ</label>
         <input
           id="projectsNameFilterInput"
           class="filter-input filter-input-name"
           type="text"
-          placeholder="Введите часть названия"
+          placeholder="Р’РІРµРґРёС‚Рµ С‡Р°СЃС‚СЊ РЅР°Р·РІР°РЅРёСЏ"
         >
-        <label for="projectsFactFilterInput">Мин. сумма факта за год по разработке и багфиксу</label>
+        <label for="projectsFactFilterInput">РњРёРЅ. СЃСѓРјРјР° С„Р°РєС‚Р° Р·Р° РіРѕРґ РїРѕ СЂР°Р·СЂР°Р±РѕС‚РєРµ Рё Р±Р°РіС„РёРєСЃСѓ</label>
         <input
           id="projectsFactFilterInput"
           class="filter-input"
@@ -605,10 +611,10 @@ PAGE_HTML = """<!doctype html>
         >
         <label>
           <input id="showDisabledProjectsCheckbox" type="checkbox">
-          Показывать отключенные
+          РџРѕРєР°Р·С‹РІР°С‚СЊ РѕС‚РєР»СЋС‡РµРЅРЅС‹Рµ
         </label>
         <span class="toolbar-spacer"></span>
-        <button id="applyProjectsSettingsButton" type="button">Применить</button>
+        <button id="applyProjectsSettingsButton" type="button">РџСЂРёРјРµРЅРёС‚СЊ</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -617,21 +623,21 @@ PAGE_HTML = """<!doctype html>
               <th class="checkbox-cell project-sticky-1">
                 <label>
                   <input id="disableVisibleProjectsCheckbox" type="checkbox">
-                  Откл.
+                  РћС‚РєР».
                 </label>
               </th>
               <th class="project-sticky-2">ID</th>
-              <th class="project-sticky-3">Название</th>
-              <th class="identifier-col">Идентификатор</th>
-              <th>Базовая оценка, ч</th>
-              <th>Разработка: оценка, ч</th>
-              <th>Разработка: факт за год, ч</th>
-              <th>Ошибка: оценка, ч</th>
-              <th>Ошибка: факт за год, ч</th>
-              <th>Статус проекта</th>
-              <th>Дата последнего среза</th>
-              <th>Обновлен в Redmine</th>
-              <th>Синхронизирован</th>
+              <th class="project-sticky-3">РќР°Р·РІР°РЅРёРµ</th>
+              <th class="identifier-col">РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ</th>
+              <th>Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°, С‡</th>
+              <th>Р Р°Р·СЂР°Р±РѕС‚РєР°: РѕС†РµРЅРєР°, С‡</th>
+              <th>Р Р°Р·СЂР°Р±РѕС‚РєР°: С„Р°РєС‚ Р·Р° РіРѕРґ, С‡</th>
+              <th>РћС€РёР±РєР°: РѕС†РµРЅРєР°, С‡</th>
+              <th>РћС€РёР±РєР°: С„Р°РєС‚ Р·Р° РіРѕРґ, С‡</th>
+              <th>РЎС‚Р°С‚СѓСЃ РїСЂРѕРµРєС‚Р°</th>
+              <th>Р”Р°С‚Р° РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р°</th>
+              <th>РћР±РЅРѕРІР»РµРЅ РІ Redmine</th>
+              <th>РЎРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°РЅ</th>
             </tr>
           </thead>
           <tbody id="projectsTableBody"></tbody>
@@ -640,21 +646,22 @@ PAGE_HTML = """<!doctype html>
     </section>
 
     <section class="panel table-panel" id="snapshot-runs-table">
-      <h2>Последние срезы задач</h2>
-      <p class="meta" id="snapshotRunsCount">Загрузка списка срезов...</p>
+      <h2>РџРѕСЃР»РµРґРЅРёРµ СЃСЂРµР·С‹ Р·Р°РґР°С‡</h2>
+      <p class="meta" id="snapshotRunsCount">Р—Р°РіСЂСѓР·РєР° СЃРїРёСЃРєР° СЃСЂРµР·РѕРІ...</p>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
               <th>ID</th>
-              <th>Дата среза</th>
-              <th>Проект</th>
-              <th>Идентификатор</th>
-              <th>Задач</th>
-              <th>План, ч</th>
-              <th>Факт всего, ч</th>
-              <th>Факт за год, ч</th>
-              <th>Записан</th>
+              <th>Р”Р°С‚Р° СЃСЂРµР·Р°</th>
+              <th>РџСЂРѕРµРєС‚</th>
+              <th>РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ</th>
+              <th>Р—Р°РґР°С‡</th>
+              <th>Базовая оценка, ч</th>
+              <th>РџР»Р°РЅ, С‡</th>
+              <th>Р¤Р°РєС‚ РІСЃРµРіРѕ, С‡</th>
+              <th>Р¤Р°РєС‚ Р·Р° РіРѕРґ, С‡</th>
+              <th>Р—Р°РїРёСЃР°РЅ</th>
             </tr>
           </thead>
           <tbody id="snapshotRunsTableBody"></tbody>
@@ -693,7 +700,7 @@ PAGE_HTML = """<!doctype html>
 
     function formatDate(value) {
       if (!value) {
-        return "—";
+        return "вЂ”";
       }
 
       return String(value).replace("T", " ").replace("+00:00", " UTC");
@@ -702,10 +709,10 @@ PAGE_HTML = """<!doctype html>
     function formatHours(value) {
       const number = Number(value ?? 0);
       if (!Number.isFinite(number)) {
-        return "0.0";
+        return "0,0";
       }
 
-      return number.toFixed(1);
+      return number.toFixed(1).replace(".", ",");
     }
 
     function getProjectsFactFilterValue() {
@@ -946,10 +953,10 @@ PAGE_HTML = """<!doctype html>
       const filteredProjects = applyProjectsFilter(orderedProjects);
       projectsTableBody.innerHTML = "";
       updateDisableVisibleProjectsCheckbox(filteredProjects);
-      projectsCount.textContent = `Проектов в базе: ${allProjects.length}. После фильтра: ${filteredProjects.length}`;
+      projectsCount.textContent = `РџСЂРѕРµРєС‚РѕРІ РІ Р±Р°Р·Рµ: ${allProjects.length}. РџРѕСЃР»Рµ С„РёР»СЊС‚СЂР°: ${filteredProjects.length}`;
 
       if (!filteredProjects.length) {
-        projectsTableBody.innerHTML = '<tr><td colspan="13">Проектов пока нет.</td></tr>';
+        projectsTableBody.innerHTML = '<tr><td colspan="13">РџСЂРѕРµРєС‚РѕРІ РїРѕРєР° РЅРµС‚.</td></tr>';
         return;
       }
 
@@ -957,7 +964,7 @@ PAGE_HTML = """<!doctype html>
         const identifier = project.identifier ?? "";
         const identifierHtml = identifier
           ? `<a class="project-link mono" href="https://redmine.sms-it.ru/projects/${encodeURIComponent(identifier)}/issues" target="_blank" rel="noreferrer">${identifier}</a>`
-          : "—";
+          : "вЂ”";
         const level = Number(project.hierarchy_level ?? 0);
         const indent = level > 0 ? `${"--".repeat(level)} ` : "";
         const row = document.createElement("tr");
@@ -965,15 +972,15 @@ PAGE_HTML = """<!doctype html>
         row.innerHTML = `
           <td class="checkbox-cell project-sticky-1"><input class="project-disable-checkbox" type="checkbox" data-project-id="${project.redmine_id}" ${project.is_disabled ? "checked" : ""}></td>
           <td class="mono project-sticky-2"><a class="project-id-button mono" href="/projects/${encodeURIComponent(project.redmine_id)}/latest-snapshot-issues" target="_blank" rel="noreferrer">${project.redmine_id ?? "\u2014"}</a></td>
-          <td class="project-name-cell project-sticky-3"><span class="project-indent">${indent}</span>${project.name ?? "\u2014"}</td>
+          <td class="project-name-cell project-sticky-3"><span class="project-indent">${indent}</span><a class="project-link" href="/projects/${encodeURIComponent(project.redmine_id)}/burndown" target="_blank" rel="noreferrer">${project.name ?? "\u2014"}</a></td>
           <td>${identifierHtml}</td>
           <td>${formatHours(project.baseline_estimate_hours)}</td>
           <td>${formatHours(project.development_estimate_hours)}</td>
           <td>${formatHours(project.development_spent_hours_year)}</td>
           <td>${formatHours(project.bug_estimate_hours)}</td>
           <td>${formatHours(project.bug_spent_hours_year)}</td>
-          <td>${project.status ?? "—"}</td>
-          <td class="mono">${project.latest_snapshot_date ?? "—"}</td>
+          <td>${project.status ?? "вЂ”"}</td>
+          <td class="mono">${project.latest_snapshot_date ?? "вЂ”"}</td>
           <td>${formatDate(project.updated_on)}</td>
           <td>${formatDate(project.synced_at)}</td>
         `;
@@ -983,21 +990,22 @@ PAGE_HTML = """<!doctype html>
 
     function renderSnapshotRuns(snapshotRuns, totalCount = snapshotRuns.length) {
       snapshotRunsTableBody.innerHTML = "";
-      snapshotRunsCount.textContent = `Всего срезов в базе: ${totalCount}`;
+      snapshotRunsCount.textContent = `Р’СЃРµРіРѕ СЃСЂРµР·РѕРІ РІ Р±Р°Р·Рµ: ${totalCount}`;
 
       if (!snapshotRuns.length) {
-        snapshotRunsTableBody.innerHTML = '<tr><td colspan="9">Срезов пока нет.</td></tr>';
+        snapshotRunsTableBody.innerHTML = '<tr><td colspan="10">РЎСЂРµР·РѕРІ РїРѕРєР° РЅРµС‚.</td></tr>';
         return;
       }
 
       for (const run of snapshotRuns) {
         const row = document.createElement("tr");
         row.innerHTML = `
-          <td class="mono">${run.id ?? "—"}</td>
-          <td class="mono">${run.captured_for_date ?? "—"}</td>
-          <td>${run.project_name ?? "—"}</td>
-          <td class="mono">${run.project_identifier ?? "—"}</td>
+          <td class="mono">${run.id ?? "вЂ”"}</td>
+          <td class="mono">${run.captured_for_date ?? "вЂ”"}</td>
+          <td>${run.project_name ?? "вЂ”"}</td>
+          <td class="mono">${run.project_identifier ?? "вЂ”"}</td>
           <td>${run.total_issues ?? 0}</td>
+          <td>${formatHours(run.total_baseline_estimate_hours)}</td>
           <td>${formatHours(run.total_estimated_hours)}</td>
           <td>${formatHours(run.total_spent_hours)}</td>
           <td>${formatHours(run.total_spent_hours_year)}</td>
@@ -1014,7 +1022,7 @@ PAGE_HTML = """<!doctype html>
         renderProjects(payload.projects ?? []);
       } catch (error) {
         renderProjects([]);
-        setStatus(projectsStatus, "Не удалось загрузить проекты из базы.", "error");
+        setStatus(projectsStatus, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РїСЂРѕРµРєС‚С‹ РёР· Р±Р°Р·С‹.", "error");
       }
     }
 
@@ -1025,13 +1033,13 @@ PAGE_HTML = """<!doctype html>
         renderSnapshotRuns(payload.snapshot_runs ?? [], payload.total_count ?? 0);
       } catch (error) {
         renderSnapshotRuns([], 0);
-        setStatus(captureStatus, "Не удалось загрузить список срезов.", "error");
+        setStatus(captureStatus, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЃРїРёСЃРѕРє СЃСЂРµР·РѕРІ.", "error");
       }
     }
 
     async function applyProjectsSettings() {
       applyProjectsSettingsButton.disabled = true;
-      setStatus(projectsStatus, "Сохраняем настройки проектов...");
+      setStatus(projectsStatus, "РЎРѕС…СЂР°РЅСЏРµРј РЅР°СЃС‚СЂРѕР№РєРё РїСЂРѕРµРєС‚РѕРІ...");
 
       try {
         const disabledProjectIds = allProjects
@@ -1046,13 +1054,13 @@ PAGE_HTML = """<!doctype html>
         const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(payload.detail || "Ошибка сохранения настроек проектов.");
+          throw new Error(payload.detail || "РћС€РёР±РєР° СЃРѕС…СЂР°РЅРµРЅРёСЏ РЅР°СЃС‚СЂРѕРµРє РїСЂРѕРµРєС‚РѕРІ.");
         }
 
         renderProjects(payload.projects ?? []);
         setStatus(
           projectsStatus,
-          `Готово: отключено проектов ${payload.disabled_count ?? 0}.`,
+          `Р“РѕС‚РѕРІРѕ: РѕС‚РєР»СЋС‡РµРЅРѕ РїСЂРѕРµРєС‚РѕРІ ${payload.disabled_count ?? 0}.`,
           "success"
         );
       } catch (error) {
@@ -1064,20 +1072,20 @@ PAGE_HTML = """<!doctype html>
 
     async function refreshProjects() {
       refreshProjectsButton.disabled = true;
-      setStatus(projectsStatus, "Обновляем список проектов...");
+      setStatus(projectsStatus, "РћР±РЅРѕРІР»СЏРµРј СЃРїРёСЃРѕРє РїСЂРѕРµРєС‚РѕРІ...");
 
       try {
         const response = await fetch("/api/projects/refresh", { method: "POST" });
         const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(payload.detail || "Ошибка обновления проектов.");
+          throw new Error(payload.detail || "РћС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ РїСЂРѕРµРєС‚РѕРІ.");
         }
 
         renderProjects(payload.projects ?? []);
         setStatus(
           projectsStatus,
-          `Готово: добавлено новых проектов ${payload.added_count ?? 0}.`,
+          `Р“РѕС‚РѕРІРѕ: РґРѕР±Р°РІР»РµРЅРѕ РЅРѕРІС‹С… РїСЂРѕРµРєС‚РѕРІ ${payload.added_count ?? 0}.`,
           "success"
         );
       } catch (error) {
@@ -1089,21 +1097,21 @@ PAGE_HTML = """<!doctype html>
 
     async function captureSnapshots() {
       captureSnapshotsButton.disabled = true;
-      setStatus(captureStatus, "Запускаем получение срезов...");
+      setStatus(captureStatus, "Р—Р°РїСѓСЃРєР°РµРј РїРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·РѕРІ...");
 
       try {
         const response = await fetch("/api/issues/snapshots/capture", { method: "POST" });
         const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(payload.detail || "Ошибка получения срезов.");
+          throw new Error(payload.detail || "РћС€РёР±РєР° РїРѕР»СѓС‡РµРЅРёСЏ СЃСЂРµР·РѕРІ.");
         }
 
         if (payload.captured_for_date) {
           snapshotDateInput.value = payload.captured_for_date;
         }
 
-        setStatus(captureStatus, payload.detail || "Фоновая загрузка срезов запущена...");
+        setStatus(captureStatus, payload.detail || "Р¤РѕРЅРѕРІР°СЏ Р·Р°РіСЂСѓР·РєР° СЃСЂРµР·РѕРІ Р·Р°РїСѓС‰РµРЅР°...");
         startCaptureProgressPolling();
       } catch (error) {
         stopCaptureProgressPolling();
@@ -1115,12 +1123,12 @@ PAGE_HTML = """<!doctype html>
     async function deleteSnapshotsForDate() {
       const capturedForDate = snapshotDateInput.value;
       if (!capturedForDate) {
-        setStatus(deleteStatus, "Сначала выберите дату в календаре.", "error");
+        setStatus(deleteStatus, "РЎРЅР°С‡Р°Р»Р° РІС‹Р±РµСЂРёС‚Рµ РґР°С‚Сѓ РІ РєР°Р»РµРЅРґР°СЂРµ.", "error");
         return;
       }
 
       deleteSnapshotsButton.disabled = true;
-      setStatus(deleteStatus, `Удаляем срезы за ${capturedForDate}...`);
+      setStatus(deleteStatus, `РЈРґР°Р»СЏРµРј СЃСЂРµР·С‹ Р·Р° ${capturedForDate}...`);
 
       try {
         const response = await fetch(
@@ -1130,13 +1138,13 @@ PAGE_HTML = """<!doctype html>
         const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(payload.detail || "Ошибка удаления срезов.");
+          throw new Error(payload.detail || "РћС€РёР±РєР° СѓРґР°Р»РµРЅРёСЏ СЃСЂРµР·РѕРІ.");
         }
 
         renderSnapshotRuns(payload.snapshot_runs ?? [], payload.total_count ?? 0);
         setStatus(
           deleteStatus,
-          `Удалено срезов: ${payload.deleted_runs ?? 0}, строк задач: ${payload.deleted_items ?? 0}.`,
+          `РЈРґР°Р»РµРЅРѕ СЃСЂРµР·РѕРІ: ${payload.deleted_runs ?? 0}, СЃС‚СЂРѕРє Р·Р°РґР°С‡: ${payload.deleted_items ?? 0}.`,
           "success"
         );
       } catch (error) {
@@ -1212,14 +1220,14 @@ def requireProjectSyncConfig() -> None:
 
 def formatPageHours(value: object) -> str:
     try:
-        return f"{float(value or 0):.1f}"
+        return f"{float(value or 0):.1f}".replace(".", ",")
     except (TypeError, ValueError):
-        return "0.0"
+        return "0,0"
 
 
 def formatPageDateTime(value: object) -> str:
     if not value:
-        return "—"
+        return "вЂ”"
     return str(value).replace("T", " ").replace("+00:00", " UTC")
 
 
@@ -1234,7 +1242,7 @@ def buildLatestSnapshotIssuesPage(projectRedmineId: int) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Задачи последнего среза</title>
+  <title>Р—Р°РґР°С‡Рё РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р°</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <style>
     body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
@@ -1246,9 +1254,9 @@ def buildLatestSnapshotIssuesPage(projectRedmineId: int) -> str:
 </head>
 <body>
   <main>
-    <a class="back-link" href="/">← К списку проектов</a>
-    <h1>Задачи последнего среза проекта</h1>
-    <p class="meta">Для проекта с ID {projectRedmineId} срезы пока не найдены.</p>
+    <a class="back-link" href="/">в†ђ Рљ СЃРїРёСЃРєСѓ РїСЂРѕРµРєС‚РѕРІ</a>
+    <h1>Р—Р°РґР°С‡Рё РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р° РїСЂРѕРµРєС‚Р°</h1>
+    <p class="meta">Р”Р»СЏ РїСЂРѕРµРєС‚Р° СЃ ID {projectRedmineId} СЃСЂРµР·С‹ РїРѕРєР° РЅРµ РЅР°Р№РґРµРЅС‹.</p>
   </main>
 </body>
 </html>"""
@@ -1261,6 +1269,82 @@ def formatSnapshotPageDateTime(value: object) -> str:
 
 
 def buildLatestSnapshotIssuesPageUtf8(projectRedmineId: int) -> str:
+    snapshotPayload = getLatestSnapshotIssuesForProject(projectRedmineId)
+    snapshotRun = snapshotPayload["snapshot_run"]
+    issues = snapshotPayload["issues"]
+
+    if snapshotRun is None:
+        return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Р—Р°РґР°С‡Рё РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р°</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
+    main {{ max-width: 1200px; margin: 0 auto; padding: 24px 20px 48px; }}
+    .back-link {{ color: #375d77; text-decoration: none; font-weight: 600; }}
+    h1 {{ margin: 18px 0 12px; font-size: 2rem; }}
+    .meta {{ color: #64798d; margin: 0 0 24px; }}
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back-link" href="/">в†ђ Рљ СЃРїРёСЃРєСѓ РїСЂРѕРµРєС‚РѕРІ</a>
+    <h1>Р—Р°РґР°С‡Рё РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р° РїСЂРѕРµРєС‚Р°</h1>
+    <p class="meta">Р”Р»СЏ РїСЂРѕРµРєС‚Р° СЃ ID {projectRedmineId} СЃСЂРµР·С‹ РїРѕРєР° РЅРµ РЅР°Р№РґРµРЅС‹.</p>
+  </main>
+</body>
+</html>"""
+
+
+def buildBurndownPlaceholderPage(projectRedmineId: int) -> str:
+    projects = listStoredProjects()
+    project = next((item for item in projects if int(item.get("redmine_id") or 0) == projectRedmineId), None)
+    projectName = escape(str(project.get("name") or "—")) if project else "—"
+    projectIdentifier = escape(str(project.get("identifier") or "—")) if project else "—"
+
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Диаграмма сгорания</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue: #375d77;
+      --orange: #ff6c0e;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
+    main {{ max-width: 1200px; margin: 0 auto; padding: 24px 20px 48px; }}
+    .back-link {{ color: var(--blue); text-decoration: none; font-weight: 600; }}
+    .back-link:hover {{ color: var(--orange); }}
+    h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
+    .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
+    .placeholder {{ border: 1px dashed var(--line); border-radius: 8px; padding: 32px; color: var(--muted); background: #f9fcfd; }}
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back-link" href="/">← К списку проектов</a>
+    <h1>Диаграмма сгорания проекта</h1>
+    <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}. ID: {projectRedmineId}.</p>
+    <div class="placeholder">Страница подготовки диаграммы готова. Саму диаграмму добавим следующим шагом.</div>
+  </main>
+</body>
+</html>"""
+
+
+def buildLatestSnapshotIssuesPageClean(projectRedmineId: int) -> str:
     snapshotPayload = getLatestSnapshotIssuesForProject(projectRedmineId)
     snapshotRun = snapshotPayload["snapshot_run"]
     issues = snapshotPayload["issues"]
@@ -1330,7 +1414,6 @@ def buildLatestSnapshotIssuesPageUtf8(projectRedmineId: int) -> str:
       color-scheme: light;
       --bg: #ffffff;
       --panel: #ffffff;
-      --panel-soft: #eef6f7;
       --line: #d9e5eb;
       --text: #16324a;
       --muted: #64798d;
@@ -1347,7 +1430,7 @@ def buildLatestSnapshotIssuesPageUtf8(projectRedmineId: int) -> str:
     .table-wrap {{ max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
     table {{ width: 100%; border-collapse: collapse; background: var(--panel); }}
     th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
-    th {{ position: sticky; top: 0; z-index: 1; background: var(--panel-soft); color: #426179; text-transform: uppercase; font-size: 0.88rem; }}
+    th {{ position: sticky; top: 0; z-index: 1; background: #eef6f7; color: #426179; text-transform: uppercase; font-size: 0.88rem; }}
     tr:last-child td {{ border-bottom: 0; }}
     .mono {{ font-family: Consolas, "Courier New", monospace; font-size: 0.95rem; white-space: nowrap; }}
     .issue-link {{ color: var(--blue); text-decoration: none; border-bottom: 1px dashed currentColor; font-weight: 700; }}
@@ -1387,47 +1470,47 @@ def buildLatestSnapshotIssuesPageUtf8(projectRedmineId: int) -> str:
 </body>
 </html>"""
 
-    issueRowsHtml = []
+    issueRowsHtml: list[str] = []
     for issue in issues:
-        issueId = issue.get("issue_redmine_id", "—")
+        issueId = issue.get("issue_redmine_id", "вЂ”")
         issueRowsHtml.append(
             f"""
             <tr>
               <td class="mono"><a class="issue-link" href="https://redmine.sms-it.ru/issues/{issueId}" target="_blank" rel="noreferrer">{issueId}</a></td>
-              <td class="subject-col">{escape(str(issue.get("subject") or "—"))}</td>
-              <td>{escape(str(issue.get("tracker_name") or "—"))}</td>
-              <td>{escape(str(issue.get("status_name") or "—"))}</td>
+              <td class="subject-col">{escape(str(issue.get("subject") or "вЂ”"))}</td>
+              <td>{escape(str(issue.get("tracker_name") or "вЂ”"))}</td>
+              <td>{escape(str(issue.get("status_name") or "вЂ”"))}</td>
               <td>{escape(str(issue.get("done_ratio") if issue.get("done_ratio") is not None else 0))}</td>
               <td>{formatPageHours(issue.get("baseline_estimate_hours"))}</td>
               <td>{formatPageHours(issue.get("estimated_hours"))}</td>
               <td>{formatPageHours(issue.get("spent_hours"))}</td>
               <td>{formatPageHours(issue.get("spent_hours_year"))}</td>
-              <td>{escape(formatPageDateTime(issue.get("closed_on")))}</td>
-              <td>{escape(str(issue.get("assigned_to_name") or "—"))}</td>
-              <td>{escape(str(issue.get("fixed_version_name") or "—"))}</td>
+              <td>{escape(formatSnapshotPageDateTime(issue.get("closed_on")))}</td>
+              <td>{escape(str(issue.get("assigned_to_name") or "вЂ”"))}</td>
+              <td>{escape(str(issue.get("fixed_version_name") or "вЂ”"))}</td>
             </tr>
             """
         )
 
     if not issueRowsHtml:
-        issueRowsHtml.append('<tr><td colspan="11">В последнем срезе задач нет.</td></tr>')
+        issueRowsHtml.append('<tr><td colspan="12">Р’ РїРѕСЃР»РµРґРЅРµРј СЃСЂРµР·Рµ Р·Р°РґР°С‡ РЅРµС‚.</td></tr>')
 
-    projectName = escape(str(snapshotRun.get("project_name") or "—"))
-    capturedForDate = escape(str(snapshotRun.get("captured_for_date") or "—"))
+    projectName = escape(str(snapshotRun.get("project_name") or "вЂ”"))
+    capturedForDate = escape(str(snapshotRun.get("captured_for_date") or "вЂ”"))
 
     return f"""<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Задачи последнего среза</title>
+  <title>Р—Р°РґР°С‡Рё РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р°</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <style>
     :root {{
       color-scheme: light;
       --bg: #ffffff;
       --panel: #ffffff;
-      --panel-soft: #eef6f7;
+      --panel-soft: #eef6f7;`r`n      --sticky-top: 100px;
       --line: #d9e5eb;
       --text: #16324a;
       --muted: #64798d;
@@ -1454,24 +1537,121 @@ def buildLatestSnapshotIssuesPageUtf8(projectRedmineId: int) -> str:
 </head>
 <body>
   <main>
-    <a class="back-link" href="/">← К списку проектов</a>
-    <h1>Задачи последнего среза проекта</h1>
-    <p class="meta">Проект: {projectName}. Дата среза: {capturedForDate}. Задач: {len(issues)}.</p>
+    <a class="back-link" href="/">в†ђ Рљ СЃРїРёСЃРєСѓ РїСЂРѕРµРєС‚РѕРІ</a>
+    <h1>Р—Р°РґР°С‡Рё РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р° РїСЂРѕРµРєС‚Р°</h1>
+    <p class="meta">РџСЂРѕРµРєС‚: {projectName}. Р”Р°С‚Р° СЃСЂРµР·Р°: {capturedForDate}. Р—Р°РґР°С‡: {len(issues)}.</p>
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
             <th>ID</th>
-            <th class="subject-col">Тема</th>
-            <th>Трекер</th>
-            <th>Статус</th>
-            <th>Готово, %</th>
-            <th>План, ч</th>
-            <th>Факт всего, ч</th>
-            <th>Факт за год, ч</th>
-            <th>Закрыта</th>
-            <th>Исполнитель</th>
-            <th>Версия</th>
+            <th class="subject-col">РўРµРјР°</th>
+            <th>РўСЂРµРєРµСЂ</th>
+            <th>РЎС‚Р°С‚СѓСЃ</th>
+            <th>Р“РѕС‚РѕРІРѕ, %</th>
+            <th>Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°, С‡</th>
+            <th>РџР»Р°РЅ, С‡</th>
+            <th>Р¤Р°РєС‚ РІСЃРµРіРѕ, С‡</th>
+            <th>Р¤Р°РєС‚ Р·Р° РіРѕРґ, С‡</th>
+            <th>Р—Р°РєСЂС‹С‚Р°</th>
+            <th>РСЃРїРѕР»РЅРёС‚РµР»СЊ</th>
+            <th>Р’РµСЂСЃРёСЏ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {''.join(issueRowsHtml)}
+        </tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>"""
+
+    issueRowsHtml = []
+    for issue in issues:
+        issueId = issue.get("issue_redmine_id", "вЂ”")
+        issueRowsHtml.append(
+            f"""
+            <tr>
+              <td class="mono"><a class="issue-link" href="https://redmine.sms-it.ru/issues/{issueId}" target="_blank" rel="noreferrer">{issueId}</a></td>
+              <td class="subject-col">{escape(str(issue.get("subject") or "вЂ”"))}</td>
+              <td>{escape(str(issue.get("tracker_name") or "вЂ”"))}</td>
+              <td>{escape(str(issue.get("status_name") or "вЂ”"))}</td>
+              <td>{escape(str(issue.get("done_ratio") if issue.get("done_ratio") is not None else 0))}</td>
+              <td>{formatPageHours(issue.get("baseline_estimate_hours"))}</td>
+              <td>{formatPageHours(issue.get("estimated_hours"))}</td>
+              <td>{formatPageHours(issue.get("spent_hours"))}</td>
+              <td>{formatPageHours(issue.get("spent_hours_year"))}</td>
+              <td>{escape(formatPageDateTime(issue.get("closed_on")))}</td>
+              <td>{escape(str(issue.get("assigned_to_name") or "вЂ”"))}</td>
+              <td>{escape(str(issue.get("fixed_version_name") or "вЂ”"))}</td>
+            </tr>
+            """
+        )
+
+    if not issueRowsHtml:
+        issueRowsHtml.append('<tr><td colspan="11">Р’ РїРѕСЃР»РµРґРЅРµРј СЃСЂРµР·Рµ Р·Р°РґР°С‡ РЅРµС‚.</td></tr>')
+
+    projectName = escape(str(snapshotRun.get("project_name") or "вЂ”"))
+    capturedForDate = escape(str(snapshotRun.get("captured_for_date") or "вЂ”"))
+
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Р—Р°РґР°С‡Рё РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р°</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --panel-soft: #eef6f7;`r`n      --sticky-top: 100px;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue: #375d77;
+      --orange: #ff6c0e;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
+    main {{ max-width: 1440px; margin: 0 auto; padding: 24px 20px 48px; }}
+    .back-link {{ color: var(--blue); text-decoration: none; font-weight: 600; }}
+    .back-link:hover {{ color: var(--orange); }}
+    h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
+    .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
+    .table-wrap {{ max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
+    table {{ width: 100%; border-collapse: collapse; background: var(--panel); }}
+    th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
+    th {{ position: sticky; top: 0; z-index: 1; background: var(--panel-soft); color: #426179; text-transform: uppercase; font-size: 0.88rem; }}
+    tr:last-child td {{ border-bottom: 0; }}
+    .mono {{ font-family: Consolas, "Courier New", monospace; font-size: 0.95rem; white-space: nowrap; }}
+    .issue-link {{ color: var(--blue); text-decoration: none; border-bottom: 1px dashed currentColor; font-weight: 700; }}
+    .issue-link:hover {{ color: var(--orange); border-bottom-style: solid; }}
+    .subject-col {{ width: 24%; max-width: 24%; }}
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back-link" href="/">в†ђ Рљ СЃРїРёСЃРєСѓ РїСЂРѕРµРєС‚РѕРІ</a>
+    <h1>Р—Р°РґР°С‡Рё РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р° РїСЂРѕРµРєС‚Р°</h1>
+    <p class="meta">РџСЂРѕРµРєС‚: {projectName}. Р”Р°С‚Р° СЃСЂРµР·Р°: {capturedForDate}. Р—Р°РґР°С‡: {len(issues)}.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th class="subject-col">РўРµРјР°</th>
+            <th>РўСЂРµРєРµСЂ</th>
+            <th>РЎС‚Р°С‚СѓСЃ</th>
+            <th>Р“РѕС‚РѕРІРѕ, %</th>
+            <th>РџР»Р°РЅ, С‡</th>
+            <th>Р¤Р°РєС‚ РІСЃРµРіРѕ, С‡</th>
+            <th>Р¤Р°РєС‚ Р·Р° РіРѕРґ, С‡</th>
+            <th>Р—Р°РєСЂС‹С‚Р°</th>
+            <th>РСЃРїРѕР»РЅРёС‚РµР»СЊ</th>
+            <th>Р’РµСЂСЃРёСЏ</th>
           </tr>
         </thead>
         <tbody>
@@ -1513,7 +1693,16 @@ def getProjectLatestSnapshotIssuesPage(project_redmine_id: int) -> HTMLResponse:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureIssueSnapshotTables()
-    return HTMLResponse(buildLatestSnapshotIssuesPageUtf8(project_redmine_id))
+    return HTMLResponse(buildLatestSnapshotIssuesPageClean(project_redmine_id))
+
+
+@app.get("/projects/{project_redmine_id}/burndown", response_class=HTMLResponse)
+def getProjectBurndownPage(project_redmine_id: int) -> HTMLResponse:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureProjectsTable()
+    return HTMLResponse(buildBurndownPlaceholderPage(project_redmine_id))
 
 
 @app.post("/api/projects/refresh")
@@ -1560,7 +1749,7 @@ def getIssueSnapshotRuns() -> dict[str, object]:
 
 @app.delete("/api/issues/snapshots/by-date")
 def deleteIssueSnapshotsByDate(
-    captured_for_date: str = Query(..., description="Дата в формате YYYY-MM-DD"),
+    captured_for_date: str = Query(..., description="Р”Р°С‚Р° РІ С„РѕСЂРјР°С‚Рµ YYYY-MM-DD"),
 ) -> dict[str, object]:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
@@ -1590,14 +1779,14 @@ def captureIssueSnapshots() -> dict[str, object]:
     if isIssueSnapshotCaptureRunning():
         return {
             "started": False,
-            "detail": "Получение срезов уже выполняется.",
+            "detail": "РџРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·РѕРІ СѓР¶Рµ РІС‹РїРѕР»РЅСЏРµС‚СЃСЏ.",
             **getIssueSnapshotCaptureStatus(),
         }
 
     started = startIssueSnapshotCaptureInBackground()
     return {
         "started": started,
-        "detail": "Получение срезов запущено в фоновом режиме.",
+        "detail": "РџРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·РѕРІ Р·Р°РїСѓС‰РµРЅРѕ РІ С„РѕРЅРѕРІРѕРј СЂРµР¶РёРјРµ.",
         **getIssueSnapshotCaptureStatus(),
     }
 
@@ -1628,3 +1817,6 @@ def databaseHealth() -> dict[str, object]:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
     return {"status": "ok" if connected else "down", "connected": connected}
+
+
+
