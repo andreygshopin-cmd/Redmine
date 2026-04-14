@@ -383,15 +383,18 @@ PAGE_HTML = """<!doctype html>
 
     table {
       width: 100%;
-      border-collapse: collapse;
+      border-collapse: separate;
+      border-spacing: 0;
       background: var(--panel);
       border-radius: 8px;
-      overflow: hidden;
     }
 
     .table-wrap {
       max-height: calc(100vh - 180px);
       overflow: auto;
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 8px;
     }
 
     th,
@@ -410,7 +413,7 @@ PAGE_HTML = """<!doctype html>
       color: #426179;
       position: sticky;
       top: 0;
-      z-index: 1;
+      z-index: 4;
     }
 
     tr:last-child td {
