@@ -179,6 +179,7 @@ def fetchAllIssuesForProject(
     projectIdentifier: str,
     projectRedmineId: int,
     progressCallback: ProgressCallback | None = None,
+    partialLoad: bool = True,
     closedOnOrAfter: str | None = None,
 ) -> list[dict[str, object]]:
     session = buildSession(apiKey)
@@ -186,6 +187,18 @@ def fetchAllIssuesForProject(
         "project_id": projectIdentifier,
         "subproject_id": "!*",
     }
+
+    if not partialLoad:
+        issues, _ = fetchIssuesByParams(
+            session,
+            redmineUrl,
+            {**baseParams, "status_id": "*"},
+            projectRedmineId,
+            progressCallback=progressCallback,
+            pageOffsetBase=0,
+        )
+        issues.sort(key=lambda issue: int(issue["issue_redmine_id"]))
+        return issues
 
     openIssues, openPages = fetchIssuesByParams(
         session,

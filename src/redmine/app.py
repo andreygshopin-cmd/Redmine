@@ -18,7 +18,7 @@ from src.redmine.db import (
     listStoredProjects,
     pruneUnchangedIssueSnapshots,
     syncProjects,
-    updateProjectsDisabledState,
+    updateProjectLoadSettings,
 )
 from src.redmine.redmine_client import fetchAllProjectsFromRedmine
 from src.redmine.snapshots import (
@@ -34,7 +34,8 @@ app = FastAPI(title="Redmine Snapshot Viewer")
 
 
 class ProjectSettingsUpdate(BaseModel):
-    disabled_project_ids: list[int] = []
+    enabled_project_ids: list[int] = []
+    partial_project_ids: list[int] = []
 
 
 PAGE_HTML = """<!doctype html>
@@ -405,8 +406,9 @@ PAGE_HTML = """<!doctype html>
       border-bottom-color: currentColor;
     }
 
-    .project-row-disabled .project-disable-checkbox,
-    .project-row-disabled #disableVisibleProjectsCheckbox {
+    .project-row-disabled .project-enabled-checkbox,
+    .project-row-disabled .project-partial-checkbox,
+    .project-row-disabled #enableVisibleProjectsCheckbox {
       accent-color: #b4bec8;
     }
 
@@ -581,6 +583,9 @@ PAGE_HTML = """<!doctype html>
           Запрашивает срезы только для тех проектов, по которым на сегодняшнюю дату
           еще нет записи в базе данных.
         </p>
+        <p>
+          <a class="project-link" href="/snapshot-rules" target="_blank" rel="noreferrer">Правила получения срезов</a>
+        </p>
         <div class="row">
           <button id="captureSnapshotsButton" type="button">Получить срезы задач</button>
         </div>
@@ -621,7 +626,7 @@ PAGE_HTML = """<!doctype html>
         >
         <label id="showDisabledProjectsLabel">
           <input id="showDisabledProjectsCheckbox" type="checkbox">
-          <span>Показывать отключенные</span>
+          <span>Показывать выключенные</span>
         </label>
         <span class="toolbar-spacer"></span>
         <button id="applyProjectsSettingsButton" type="button">Применить</button>
@@ -632,10 +637,11 @@ PAGE_HTML = """<!doctype html>
             <tr>
               <th class="checkbox-cell project-sticky-1">
                 <label>
-                  <input id="disableVisibleProjectsCheckbox" type="checkbox">
-                  Откл.
+                  <input id="enableVisibleProjectsCheckbox" type="checkbox">
+                  Вкл.
                 </label>
               </th>
+              <th class="checkbox-cell">Част.</th>
               <th class="project-sticky-2">ID</th>
               <th class="project-sticky-3">Название</th>
               <th class="identifier-col">Идентификатор</th>
@@ -699,7 +705,7 @@ PAGE_HTML = """<!doctype html>
     const snapshotRunsCount = document.getElementById("snapshotRunsCount");
     const projectsTableBody = document.getElementById("projectsTableBody");
     const snapshotRunsTableBody = document.getElementById("snapshotRunsTableBody");
-    const disableVisibleProjectsCheckbox = document.getElementById("disableVisibleProjectsCheckbox");
+    const enableVisibleProjectsCheckbox = document.getElementById("enableVisibleProjectsCheckbox");
     const showDisabledProjectsCheckbox = document.getElementById("showDisabledProjectsCheckbox");
     const snapshotDateInput = document.getElementById("snapshotDateInput");
     const projectsNameFilterInput = document.getElementById("projectsNameFilterInput");
@@ -813,7 +819,7 @@ PAGE_HTML = """<!doctype html>
         ["label[for='projectsNameFilterInput']", "textContent", "Фильтр по названию"],
         ["#projectsNameFilterInput", "placeholder", "Введите часть названия"],
         ["label[for='projectsFactFilterInput']", "textContent", "Мин. сумма факта за год по разработке и багфиксу"],
-        ["#showDisabledProjectsLabel span", "textContent", "Показывать отключенные"],
+        ["#showDisabledProjectsLabel span", "textContent", "Показывать выключенные"],
         ["#applyProjectsSettingsButton", "textContent", "Применить"],
         ["#snapshot-runs-table h2", "textContent", "Последние срезы задач"],
         ["label[for='snapshotRunsProjectFilterInput']", "textContent", "Фильтр по проекту"],
@@ -833,7 +839,8 @@ PAGE_HTML = """<!doctype html>
       }
 
       const projectsHeaders = [
-        "Откл.",
+        "Вкл.",
+        "Част.",
         "ID",
         "Название",
         "Идентификатор",
@@ -852,7 +859,7 @@ PAGE_HTML = """<!doctype html>
       document.querySelectorAll("#projects-table thead th").forEach((element, index) => {
         if (index === 0) {
           const label = element.querySelector("label");
-          if (label) label.lastChild.textContent = " Откл.";
+          if (label) label.lastChild.textContent = " Вкл.";
           return;
         }
         if (projectsHeaders[index]) {
@@ -929,7 +936,7 @@ PAGE_HTML = """<!doctype html>
       const matchedProjects = [];
 
       for (const project of projects) {
-        if (!showDisabledProjects && project.is_disabled) {
+        if (!showDisabledProjects && !project.is_enabled) {
           continue;
         }
 
@@ -980,24 +987,24 @@ PAGE_HTML = """<!doctype html>
       renderSnapshotRuns(allSnapshotRuns);
     }
 
-    function updateDisableVisibleProjectsCheckbox(filteredProjects) {
-      if (!disableVisibleProjectsCheckbox) {
+    function updateEnableVisibleProjectsCheckbox() {
+      if (!enableVisibleProjectsCheckbox) {
         return;
       }
 
       const directlyMatchedProjects = getDirectlyMatchedProjects(buildProjectHierarchy(allProjects));
 
       if (!directlyMatchedProjects.length) {
-        disableVisibleProjectsCheckbox.checked = false;
-        disableVisibleProjectsCheckbox.indeterminate = false;
-        disableVisibleProjectsCheckbox.disabled = true;
+        enableVisibleProjectsCheckbox.checked = false;
+        enableVisibleProjectsCheckbox.indeterminate = false;
+        enableVisibleProjectsCheckbox.disabled = true;
         return;
       }
 
-      const disabledCount = directlyMatchedProjects.filter((project) => Boolean(project.is_disabled)).length;
-      disableVisibleProjectsCheckbox.disabled = false;
-      disableVisibleProjectsCheckbox.checked = disabledCount === directlyMatchedProjects.length;
-      disableVisibleProjectsCheckbox.indeterminate = disabledCount > 0 && disabledCount < directlyMatchedProjects.length;
+      const enabledCount = directlyMatchedProjects.filter((project) => Boolean(project.is_enabled)).length;
+      enableVisibleProjectsCheckbox.disabled = false;
+      enableVisibleProjectsCheckbox.checked = enabledCount === directlyMatchedProjects.length;
+      enableVisibleProjectsCheckbox.indeterminate = enabledCount > 0 && enabledCount < directlyMatchedProjects.length;
     }
 
     async function loadCaptureProgress() {
@@ -1074,11 +1081,11 @@ PAGE_HTML = """<!doctype html>
       const filteredProjects = applyProjectsFilter(orderedProjects);
       let renderedCount = 0;
       projectsTableBody.innerHTML = "";
-      updateDisableVisibleProjectsCheckbox(filteredProjects);
+      updateEnableVisibleProjectsCheckbox();
       projectsCount.textContent = `Проектов в базе: ${allProjects.length}. После фильтра: ${filteredProjects.length}`;
 
       if (!filteredProjects.length) {
-        projectsTableBody.innerHTML = '<tr><td colspan="15">Проектов пока нет.</td></tr>';
+        projectsTableBody.innerHTML = '<tr><td colspan="16">Проектов пока нет.</td></tr>';
         return;
       }
 
@@ -1092,13 +1099,14 @@ PAGE_HTML = """<!doctype html>
           const level = Math.max(Number(project?.hierarchy_level ?? 0) || 0, 0);
           const indent = level > 0 ? `${"--".repeat(level)} ` : "";
           const row = document.createElement("tr");
-          row.className = project?.is_disabled ? "project-row-disabled" : "";
+          row.className = project?.is_enabled ? "" : "project-row-disabled";
           row.innerHTML = `
-            <td class="checkbox-cell project-sticky-1"><input class="project-disable-checkbox" type="checkbox" data-project-id="${redmineId}" ${project?.is_disabled ? "checked" : ""}></td>
+            <td class="checkbox-cell project-sticky-1"><input class="project-enabled-checkbox" type="checkbox" data-project-id="${redmineId}" ${project?.is_enabled ? "checked" : ""}></td>
+            <td class="checkbox-cell"><input class="project-partial-checkbox" type="checkbox" data-project-id="${redmineId}" ${project?.partial_load ? "checked" : ""} ${project?.is_enabled ? "" : "disabled"}></td>
             <td class="mono project-sticky-2">
               <span class="project-id-actions">
                 <a class="project-id-button mono" href="/projects/${encodeURIComponent(redmineId)}/latest-snapshot-issues" target="_blank" rel="noreferrer">${redmineId}</a>
-                <button class="project-capture-button" type="button" data-project-id="${redmineId}" title="Получить срез по проекту">↓</button>
+                <button class="project-capture-button" type="button" data-project-id="${redmineId}" title="Получить срез по проекту" ${project?.is_enabled ? "" : "disabled"}>↓</button>
               </span>
             </td>
             <td class="project-name-cell project-sticky-3"><span class="project-indent">${indent}</span><a class="project-link" href="/projects/${encodeURIComponent(redmineId)}/burndown" target="_blank" rel="noreferrer">${project?.name ?? "\u2014"}</a></td>
@@ -1123,7 +1131,7 @@ PAGE_HTML = """<!doctype html>
       }
 
       if (!renderedCount) {
-        projectsTableBody.innerHTML = '<tr><td colspan="15">Не удалось отрисовать проекты.</td></tr>';
+        projectsTableBody.innerHTML = '<tr><td colspan="16">Не удалось отрисовать проекты.</td></tr>';
         throw new Error("Не удалось отрисовать проекты.");
       }
     }
@@ -1265,14 +1273,20 @@ PAGE_HTML = """<!doctype html>
       setStatus(projectsStatus, "Сохраняем настройки проектов...");
 
       try {
-        const disabledProjectIds = allProjects
-          .filter((project) => project.is_disabled)
+        const enabledProjectIds = allProjects
+          .filter((project) => project.is_enabled)
+          .map((project) => Number(project.redmine_id));
+        const partialProjectIds = allProjects
+          .filter((project) => project.is_enabled && project.partial_load)
           .map((project) => Number(project.redmine_id));
 
         const response = await fetch("/api/projects/settings", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ disabled_project_ids: disabledProjectIds }),
+          body: JSON.stringify({
+            enabled_project_ids: enabledProjectIds,
+            partial_project_ids: partialProjectIds,
+          }),
         });
         const payload = await response.json();
 
@@ -1283,7 +1297,7 @@ PAGE_HTML = """<!doctype html>
         renderProjects(payload.projects ?? []);
         setStatus(
           projectsStatus,
-          `Готово: отключено проектов ${payload.disabled_count ?? 0}.`,
+          `Готово: включено проектов ${payload.enabled_count ?? 0}, частичная загрузка у ${payload.partial_count ?? 0}.`,
           "success"
         );
       } catch (error) {
@@ -1435,28 +1449,54 @@ PAGE_HTML = """<!doctype html>
     });
     projectsTableBody.addEventListener("change", (event) => {
       const target = event.target;
-      if (!(target instanceof HTMLInputElement) || !target.classList.contains("project-disable-checkbox")) {
+      if (!(target instanceof HTMLInputElement)) {
         return;
       }
 
-      const projectId = Number(target.dataset.projectId || 0);
-      const project = allProjects.find((item) => Number(item.redmine_id) === projectId);
-      if (!project) {
+      if (target.classList.contains("project-enabled-checkbox")) {
+        const projectId = Number(target.dataset.projectId || 0);
+        const project = allProjects.find((item) => Number(item.redmine_id) === projectId);
+        if (!project) {
+          return;
+        }
+
+        project.is_enabled = target.checked;
+        if (!project.is_enabled) {
+          project.partial_load = false;
+        }
+        rerenderProjects();
         return;
       }
 
-      project.is_disabled = target.checked;
-      rerenderProjects();
+      if (target.classList.contains("project-partial-checkbox")) {
+        const projectId = Number(target.dataset.projectId || 0);
+        const project = allProjects.find((item) => Number(item.redmine_id) === projectId);
+        if (!project) {
+          return;
+        }
+
+        if (!project.is_enabled) {
+          project.partial_load = false;
+          rerenderProjects();
+          return;
+        }
+
+        project.partial_load = target.checked;
+        rerenderProjects();
+      }
     });
-    disableVisibleProjectsCheckbox.addEventListener("change", () => {
-      const shouldDisable = disableVisibleProjectsCheckbox.checked;
+    enableVisibleProjectsCheckbox.addEventListener("change", () => {
+      const shouldEnable = enableVisibleProjectsCheckbox.checked;
       const filteredProjectIds = new Set(
         getDirectlyMatchedProjects(buildProjectHierarchy(allProjects)).map((project) => Number(project.redmine_id))
       );
 
       allProjects.forEach((project) => {
         if (filteredProjectIds.has(Number(project.redmine_id))) {
-          project.is_disabled = shouldDisable;
+          project.is_enabled = shouldEnable;
+          if (!shouldEnable) {
+            project.partial_load = false;
+          }
         }
       });
 
@@ -1541,6 +1581,214 @@ def buildBurndownPlaceholderPage(projectRedmineId: int) -> str:
     <h1>Диаграмма сгорания проекта</h1>
     <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}. ID: {projectRedmineId}.</p>
     <div class="placeholder">Страница подготовки диаграммы готова. Саму диаграмму добавим следующим шагом.</div>
+  </main>
+</body>
+</html>"""
+
+
+def buildSnapshotRulesPage() -> str:
+    previousYearStart = f"{datetime.now(UTC).year - 1}-01-01"
+
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Правила получения срезов</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --panel-soft: #eef6f7;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue-302: #375d77;
+      --yellow-109: #ffc600;
+      --cyan-310: #52cee6;
+      --orange-1585: #ff6c0e;
+      --shadow-soft: 0 12px 24px rgba(22, 50, 74, 0.06);
+    }}
+
+    * {{
+      box-sizing: border-box;
+    }}
+
+    body {{
+      margin: 0;
+      font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }}
+
+    main {{
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 24px 20px 48px;
+    }}
+
+    .topbar {{
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: #ffffff;
+      border-bottom: 1px solid #eef2f6;
+      padding: 16px 20px;
+    }}
+
+    .topbar-inner {{
+      max-width: 960px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }}
+
+    .brand-logo-wrap {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 220px;
+      height: 72px;
+    }}
+
+    .brand-logo {{
+      width: 100%;
+      height: auto;
+      display: block;
+    }}
+
+    .back-link {{
+      color: var(--blue-302);
+      font-weight: 700;
+      text-decoration: none;
+      border-bottom: 1px dashed currentColor;
+      white-space: nowrap;
+    }}
+
+    h1 {{
+      margin: 0 0 12px;
+      font-size: clamp(2rem, 5vw, 3rem);
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }}
+
+    .lead {{
+      color: var(--muted);
+      line-height: 1.6;
+      margin: 0 0 22px;
+    }}
+
+    .panel {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: var(--shadow-soft);
+      margin-bottom: 18px;
+    }}
+
+    .panel h2 {{
+      margin: 0 0 12px;
+      font-size: 1.15rem;
+    }}
+
+    ul {{
+      margin: 0;
+      padding-left: 22px;
+      line-height: 1.7;
+    }}
+
+    li + li {{
+      margin-top: 8px;
+    }}
+
+    .note {{
+      background: var(--panel-soft);
+      border-left: 4px solid var(--cyan-310);
+      padding: 14px 16px;
+      color: var(--text);
+    }}
+
+    code {{
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+    }}
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="/" aria-label="На главную">
+        <span class="brand-logo-wrap">
+          <img
+            class="brand-logo"
+            src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg"
+            alt="СМС-ИТ"
+          >
+        </span>
+      </a>
+      <a class="back-link" href="/" target="_self" rel="noreferrer">Вернуться на главную</a>
+    </div>
+  </header>
+
+  <main>
+    <h1>Правила получения срезов</h1>
+    <p class="lead">
+      На этой странице собраны текущие правила, по которым приложение получает задачи из Redmine
+      и записывает проектные срезы в базу данных.
+    </p>
+
+    <section class="panel">
+      <h2>Какие проекты участвуют</h2>
+      <ul>
+        <li>В загрузку попадают только проекты, у которых в таблице <code>Проекты в базе данных</code> включен флажок <code>Вкл.</code>.</li>
+        <li>Для автоматического общего запуска берутся только проекты, у которых на текущую календарную дату еще нет среза.</li>
+        <li>При ручном запуске по одному проекту переснимается только выбранный проект.</li>
+        <li>Если <code>Вкл.</code> выключен, срезы по проекту не загружаются.</li>
+        <li>Если включены <code>Вкл.</code> и <code>Част.</code>, используется частичная загрузка задач.</li>
+        <li>Если включен только <code>Вкл.</code>, загружаются все задачи проекта.</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Какие задачи попадают в срез</h2>
+      <ul>
+        <li>Берутся только задачи самого проекта, без подпроектов: в запросах используется <code>subproject_id=!* </code>.</li>
+        <li>При полной загрузке берутся все задачи проекта.</li>
+        <li>При частичной загрузке всегда попадают все открытые задачи проекта.</li>
+        <li>При частичной загрузке из закрытых задач попадают задачи, закрытые начиная с <code>{previousYearStart}</code>.</li>
+        <li>При частичной загрузке также попадают закрытые задачи, которые были обновлены начиная с <code>{previousYearStart}</code>, даже если закрыты раньше.</li>
+        <li>Если одна и та же задача подходит сразу под несколько правил, в срез она записывается один раз.</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Какие данные по задачам сохраняются</h2>
+      <ul>
+        <li>Сохраняются основные поля задачи: трекер, статус, приоритет, исполнитель, версия, даты и проценты выполнения.</li>
+        <li><code>Базовая оценка</code> читается из кастомного поля Redmine с названием <code>Базовая оценка</code>.</li>
+        <li><code>План</code> берется из стандартного поля <code>estimated_hours</code>.</li>
+        <li><code>Факт за год</code> считается по трудозатратам текущего года, а не за всю историю задачи.</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Как срез записывается в базу</h2>
+      <ul>
+        <li>Сначала приложение полностью получает задачи и трудозатраты из Redmine.</li>
+        <li>Только после полного получения данных по проекту создается запись среза и строки задач в базе.</li>
+        <li>За одни сутки у проекта хранится только один срез.</li>
+        <li>Дата среза хранится отдельно от времени, поэтому повторно автоматом тот же проект за те же сутки не переснимается.</li>
+      </ul>
+    </section>
+
+    <section class="panel note">
+      Если правила получения будут меняться, эта страница должна обновляться вместе с кодом, чтобы описание всегда совпадало с фактической логикой.
+    </section>
   </main>
 </body>
 </html>"""
@@ -1807,6 +2055,11 @@ def readRoot() -> HTMLResponse:
     return HTMLResponse(PAGE_HTML)
 
 
+@app.get("/snapshot-rules", response_class=HTMLResponse)
+def getSnapshotRulesPage() -> HTMLResponse:
+    return HTMLResponse(buildSnapshotRulesPage())
+
+
 @app.get("/api/time")
 def getTime() -> dict[str, str]:
     nowUtc = datetime.now(UTC)
@@ -1870,9 +2123,10 @@ def updateProjectSettings(payload: ProjectSettingsUpdate) -> dict[str, object]:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureProjectsTable()
-    updateProjectsDisabledState(payload.disabled_project_ids)
+    settingsStats = updateProjectLoadSettings(payload.enabled_project_ids, payload.partial_project_ids)
     return {
-        "disabled_count": len(payload.disabled_project_ids),
+        "enabled_count": settingsStats["enabled_count"],
+        "partial_count": settingsStats["partial_count"],
         "projects": listStoredProjects(),
     }
 
@@ -1984,8 +2238,8 @@ def captureIssueSnapshotByProject(project_redmine_id: int) -> dict[str, object]:
     project = next((item for item in listStoredProjects() if int(item.get("redmine_id") or 0) == project_redmine_id), None)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    if bool(project.get("is_disabled")):
-        raise HTTPException(status_code=400, detail="Проект отключен от загрузки")
+    if not bool(project.get("is_enabled")):
+        raise HTTPException(status_code=400, detail="Проект выключен для загрузки")
 
     started = startProjectIssueSnapshotCaptureInBackground(project_redmine_id)
     return {
@@ -2014,8 +2268,8 @@ def recaptureIssueSnapshotByProject(project_redmine_id: int) -> dict[str, object
     project = next((item for item in listStoredProjects() if int(item.get("redmine_id") or 0) == project_redmine_id), None)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    if bool(project.get("is_disabled")):
-        raise HTTPException(status_code=400, detail="Проект отключен от загрузки")
+    if not bool(project.get("is_enabled")):
+        raise HTTPException(status_code=400, detail="Проект выключен для загрузки")
 
     capturedForDate = datetime.now(UTC).date().isoformat()
     deleteIssueSnapshotForProjectDate(project_redmine_id, capturedForDate)
