@@ -1072,6 +1072,7 @@ PAGE_HTML = """<!doctype html>
       allProjects = Array.isArray(projects) ? [...projects] : [];
       const orderedProjects = buildProjectHierarchy(allProjects);
       const filteredProjects = applyProjectsFilter(orderedProjects);
+      let renderedCount = 0;
       projectsTableBody.innerHTML = "";
       updateDisableVisibleProjectsCheckbox(filteredProjects);
       projectsCount.textContent = `Проектов в базе: ${allProjects.length}. После фильтра: ${filteredProjects.length}`;
@@ -1082,37 +1083,48 @@ PAGE_HTML = """<!doctype html>
       }
 
       for (const project of filteredProjects) {
-        const identifier = project.identifier ?? "";
-        const identifierHtml = identifier
-          ? `<a class="project-link mono" href="https://redmine.sms-it.ru/projects/${encodeURIComponent(identifier)}/issues" target="_blank" rel="noreferrer">${identifier}</a>`
-          : "—";
-        const level = Number(project.hierarchy_level ?? 0);
-        const indent = level > 0 ? `${"--".repeat(level)} ` : "";
-        const row = document.createElement("tr");
-        row.className = project.is_disabled ? "project-row-disabled" : "";
-        row.innerHTML = `
-          <td class="checkbox-cell project-sticky-1"><input class="project-disable-checkbox" type="checkbox" data-project-id="${project.redmine_id}" ${project.is_disabled ? "checked" : ""}></td>
-          <td class="mono project-sticky-2">
-            <span class="project-id-actions">
-              <a class="project-id-button mono" href="/projects/${encodeURIComponent(project.redmine_id)}/latest-snapshot-issues" target="_blank" rel="noreferrer">${project.redmine_id ?? "\u2014"}</a>
-              <button class="project-capture-button" type="button" data-project-id="${project.redmine_id}" title="Получить срез по проекту">↓</button>
-            </span>
-          </td>
-          <td class="project-name-cell project-sticky-3"><span class="project-indent">${indent}</span><a class="project-link" href="/projects/${encodeURIComponent(project.redmine_id)}/burndown" target="_blank" rel="noreferrer">${project.name ?? "\u2014"}</a></td>
-          <td>${identifierHtml}</td>
-          <td>${formatHours(project.baseline_estimate_hours)}</td>
-          <td>${formatHours(project.development_estimate_hours)}</td>
-          <td>${formatHours(project.development_spent_hours_year)}</td>
-          <td>${formatHours(project.development_process_estimate_hours)}</td>
-          <td>${formatHours(project.development_process_spent_hours_year)}</td>
-          <td>${formatHours(project.bug_estimate_hours)}</td>
-          <td>${formatHours(project.bug_spent_hours_year)}</td>
-          <td>${project.status ?? "—"}</td>
-          <td class="mono">${project.latest_snapshot_date ?? "—"}</td>
-          <td>${formatDate(project.updated_on)}</td>
-          <td>${formatDate(project.synced_at)}</td>
-        `;
-        projectsTableBody.appendChild(row);
+        try {
+          const redmineId = Number(project?.redmine_id ?? 0) || project?.redmine_id || "—";
+          const identifier = String(project?.identifier ?? "");
+          const identifierHtml = identifier
+            ? `<a class="project-link mono" href="https://redmine.sms-it.ru/projects/${encodeURIComponent(identifier)}/issues" target="_blank" rel="noreferrer">${identifier}</a>`
+            : "—";
+          const level = Math.max(Number(project?.hierarchy_level ?? 0) || 0, 0);
+          const indent = level > 0 ? `${"--".repeat(level)} ` : "";
+          const row = document.createElement("tr");
+          row.className = project?.is_disabled ? "project-row-disabled" : "";
+          row.innerHTML = `
+            <td class="checkbox-cell project-sticky-1"><input class="project-disable-checkbox" type="checkbox" data-project-id="${redmineId}" ${project?.is_disabled ? "checked" : ""}></td>
+            <td class="mono project-sticky-2">
+              <span class="project-id-actions">
+                <a class="project-id-button mono" href="/projects/${encodeURIComponent(redmineId)}/latest-snapshot-issues" target="_blank" rel="noreferrer">${redmineId}</a>
+                <button class="project-capture-button" type="button" data-project-id="${redmineId}" title="Получить срез по проекту">↓</button>
+              </span>
+            </td>
+            <td class="project-name-cell project-sticky-3"><span class="project-indent">${indent}</span><a class="project-link" href="/projects/${encodeURIComponent(redmineId)}/burndown" target="_blank" rel="noreferrer">${project?.name ?? "\u2014"}</a></td>
+            <td>${identifierHtml}</td>
+            <td>${formatHours(project?.baseline_estimate_hours)}</td>
+            <td>${formatHours(project?.development_estimate_hours)}</td>
+            <td>${formatHours(project?.development_spent_hours_year)}</td>
+            <td>${formatHours(project?.development_process_estimate_hours)}</td>
+            <td>${formatHours(project?.development_process_spent_hours_year)}</td>
+            <td>${formatHours(project?.bug_estimate_hours)}</td>
+            <td>${formatHours(project?.bug_spent_hours_year)}</td>
+            <td>${project?.status ?? "—"}</td>
+            <td class="mono">${project?.latest_snapshot_date ?? "—"}</td>
+            <td>${formatDate(project?.updated_on)}</td>
+            <td>${formatDate(project?.synced_at)}</td>
+          `;
+          projectsTableBody.appendChild(row);
+          renderedCount += 1;
+        } catch (error) {
+          console.error("Не удалось отрисовать проект", project, error);
+        }
+      }
+
+      if (!renderedCount) {
+        projectsTableBody.innerHTML = '<tr><td colspan="15">Не удалось отрисовать проекты.</td></tr>';
+        throw new Error("Не удалось отрисовать проекты.");
       }
     }
 
@@ -1220,10 +1232,20 @@ PAGE_HTML = """<!doctype html>
       try {
         const response = await fetch("/api/projects");
         const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось загрузить проекты из базы.");
+        }
+
         renderProjects(payload.projects ?? []);
+        setStatus(projectsStatus, "");
       } catch (error) {
-        renderProjects([]);
-        setStatus(projectsStatus, "Не удалось загрузить проекты из базы.", "error");
+        console.error("Ошибка загрузки проектов", error);
+        try {
+          renderProjects([]);
+        } catch (renderError) {
+          console.error("Ошибка очистки таблицы проектов", renderError);
+        }
+        setStatus(projectsStatus, error?.message || "Не удалось загрузить проекты из базы.", "error");
       }
     }
 
@@ -1693,6 +1715,11 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           const response = await fetch("/api/issues/snapshots/capture-status");
           const payload = await response.json();
 
+          if (payload.error_message) {{
+            setActionStatus(payload.error_message);
+            return;
+          }}
+
           if (!payload.is_running) {{
             window.location.href = `/projects/{projectRedmineId}/latest-snapshot-issues?captured_for_date=${{encodeURIComponent(targetDate)}}`;
             return;
@@ -1715,6 +1742,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             progressParts.push(`трудозатраты ${{
               timePagesLoaded
             }}/${{timePagesTotal}} стр.`);
+          }} else if (issuesPagesTotal > 0 && issuesPagesLoaded >= issuesPagesTotal) {{
+            progressParts.push("готовим трудозатраты");
           }}
 
           const progressSuffix = progressParts.length ? ` (${{
@@ -1993,10 +2022,10 @@ def recaptureIssueSnapshotByProject(project_redmine_id: int) -> dict[str, object
     started = startProjectIssueSnapshotCaptureInBackground(project_redmine_id)
 
     return {
+        **getIssueSnapshotCaptureStatus(),
         "started": started,
         "captured_for_date": capturedForDate,
         "detail": f"Повторное получение среза по проекту «{project.get('name') or project_redmine_id}» запущено.",
-        **getIssueSnapshotCaptureStatus(),
     }
 
 

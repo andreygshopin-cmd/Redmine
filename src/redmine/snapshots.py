@@ -16,7 +16,6 @@ from src.redmine.db import (
 from src.redmine.redmine_client import (
     applySpentHoursYearByIssue,
     fetchAllIssuesForProject,
-    fetchAllProjectsFromRedmine,
     fetchSpentHoursByIssueForProjectYear,
 )
 
@@ -342,8 +341,6 @@ def captureIssueSnapshotForProject(projectRedmineId: int) -> dict[str, object]:
     ensureProjectsTable()
     ensureIssueSnapshotTables()
 
-    redmineProjects = fetchAllProjectsFromRedmine(config.redmineUrl, config.apiKey)
-    storeMissingProjects(redmineProjects)
     project = next(
         (item for item in listStoredProjects() if int(item.get("redmine_id") or 0) == int(projectRedmineId)),
         None,
@@ -402,6 +399,12 @@ def captureIssueSnapshotForProject(projectRedmineId: int) -> dict[str, object]:
             int(project["redmine_id"]),
             progressCallback=updateIssuesProgress,
             closedOnOrAfter=closedOnCutoff,
+        )
+        updateIssueSnapshotCaptureStatus(
+            current_project_name=projectName,
+            current_project_issues_pages_loaded=getIssueSnapshotCaptureStatus().get("current_project_issues_pages_total", 0),
+            current_project_time_pages_loaded=0,
+            current_project_time_pages_total=0,
         )
         spentHoursByIssue = fetchSpentHoursByIssueForProjectYear(
             config.redmineUrl,
