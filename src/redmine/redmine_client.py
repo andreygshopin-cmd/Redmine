@@ -197,8 +197,9 @@ def fetchAllIssuesForProject(
     )
 
     closedIssues: list[dict[str, object]] = []
+    recentlyUpdatedClosedIssues: list[dict[str, object]] = []
     if closedOnOrAfter:
-        closedIssues, _ = fetchIssuesByParams(
+        closedIssues, closedPages = fetchIssuesByParams(
             session,
             redmineUrl,
             {
@@ -210,11 +211,25 @@ def fetchAllIssuesForProject(
             progressCallback=progressCallback,
             pageOffsetBase=openPages,
         )
+        recentlyUpdatedClosedIssues, _ = fetchIssuesByParams(
+            session,
+            redmineUrl,
+            {
+                **baseParams,
+                "status_id": "closed",
+                "updated_on": f">={closedOnOrAfter}",
+            },
+            projectRedmineId,
+            progressCallback=progressCallback,
+            pageOffsetBase=openPages + closedPages,
+        )
 
     issuesById: dict[int, dict[str, object]] = {}
     for issue in openIssues:
         issuesById[int(issue["issue_redmine_id"])] = issue
     for issue in closedIssues:
+        issuesById[int(issue["issue_redmine_id"])] = issue
+    for issue in recentlyUpdatedClosedIssues:
         issuesById[int(issue["issue_redmine_id"])] = issue
 
     issues = list(issuesById.values())
