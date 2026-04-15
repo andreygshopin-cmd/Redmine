@@ -288,6 +288,26 @@ def listStoredProjects() -> list[dict[str, object]]:
                         COALESCE(
                             SUM(
                                 CASE
+                                    WHEN LOWER(COALESCE(i.tracker_name, '')) = LOWER('Процессы разработки')
+                                    THEN COALESCE(i.estimated_hours, 0)
+                                    ELSE 0
+                                END
+                            ),
+                            0
+                        ) AS development_process_estimate_hours,
+                        COALESCE(
+                            SUM(
+                                CASE
+                                    WHEN LOWER(COALESCE(i.tracker_name, '')) = LOWER('Процессы разработки')
+                                    THEN COALESCE(i.spent_hours_year, 0)
+                                    ELSE 0
+                                END
+                            ),
+                            0
+                        ) AS development_process_spent_hours_year,
+                        COALESCE(
+                            SUM(
+                                CASE
                                     WHEN LOWER(COALESCE(i.tracker_name, '')) = LOWER('Ошибка')
                                     THEN COALESCE(i.estimated_hours, 0)
                                     ELSE 0
@@ -325,6 +345,8 @@ def listStoredProjects() -> list[dict[str, object]]:
                     COALESCE(m.baseline_estimate_hours, 0) AS baseline_estimate_hours,
                     COALESCE(m.development_estimate_hours, 0) AS development_estimate_hours,
                     COALESCE(m.development_spent_hours_year, 0) AS development_spent_hours_year,
+                    COALESCE(m.development_process_estimate_hours, 0) AS development_process_estimate_hours,
+                    COALESCE(m.development_process_spent_hours_year, 0) AS development_process_spent_hours_year,
                     COALESCE(m.bug_estimate_hours, 0) AS bug_estimate_hours,
                     COALESCE(m.bug_spent_hours_year, 0) AS bug_spent_hours_year
                 FROM projects
@@ -673,6 +695,65 @@ def deleteIssueSnapshotsForDate(capturedForDate: str) -> dict[str, int | str]:
     }
 
 
+def deleteIssueSnapshotForProjectDate(projectRedmineId: int, capturedForDate: str) -> dict[str, int | str]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.begin() as connection:
+        runIds = [
+            int(row.id)
+            for row in connection.execute(
+                text(
+                    """
+                    SELECT id
+                    FROM issue_snapshot_runs
+                    WHERE project_redmine_id = :project_redmine_id
+                      AND captured_for_date = :captured_for_date
+                    """
+                ),
+                {"project_redmine_id": projectRedmineId, "captured_for_date": capturedForDate},
+            )
+        ]
+
+        if not runIds:
+            return {
+                "project_redmine_id": projectRedmineId,
+                "captured_for_date": capturedForDate,
+                "deleted_items": 0,
+                "deleted_runs": 0,
+            }
+
+        itemCount = int(
+            connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM issue_snapshot_items
+                    WHERE snapshot_run_id IN :run_ids
+                    """
+                ).bindparams(bindparam("run_ids", expanding=True)),
+                {"run_ids": runIds},
+            ).scalar_one()
+        )
+
+        connection.execute(
+            text(
+                """
+                DELETE FROM issue_snapshot_runs
+                WHERE id IN :run_ids
+                """
+            ).bindparams(bindparam("run_ids", expanding=True)),
+            {"run_ids": runIds},
+        )
+
+    return {
+        "project_redmine_id": projectRedmineId,
+        "captured_for_date": capturedForDate,
+        "deleted_items": itemCount,
+        "deleted_runs": len(runIds),
+    }
+
+
 def pruneUnchangedIssueSnapshots() -> dict[str, int]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
@@ -805,8 +886,25 @@ def storeMissingProjects(projects: Sequence[dict[str, object]]) -> int:
             """
         )
 
+        updateStatement = text(
+            """
+            UPDATE projects
+            SET
+                name = :name,
+                identifier = :identifier,
+                status = :status,
+                homepage = :homepage,
+                parent_redmine_id = :parent_redmine_id,
+                created_on = :created_on,
+                updated_on = :updated_on,
+                synced_at = CURRENT_TIMESTAMP
+            WHERE redmine_id = :redmine_id
+            """
+        )
+
         for project in projects:
             if project["redmine_id"] in existingIds:
+                connection.execute(updateStatement, project)
                 continue
 
             connection.execute(insertStatement, project)

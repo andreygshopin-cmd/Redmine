@@ -9,6 +9,7 @@ from src.redmine.config import loadConfig
 from src.redmine.db import (
     checkDatabaseConnection,
     countIssueSnapshotRuns,
+    deleteIssueSnapshotForProjectDate,
     deleteIssueSnapshotsForDate,
     ensureIssueSnapshotTables,
     ensureProjectsTable,
@@ -668,6 +669,8 @@ PAGE_HTML = """<!doctype html>
               <th>Базовая оценка, ч</th>
               <th>Разработка: оценка, ч</th>
               <th>Разработка: факт за год, ч</th>
+              <th>Процессы разработки: план, ч</th>
+              <th>Процессы разработки: факт за год, ч</th>
               <th>Ошибка: оценка, ч</th>
               <th>Ошибка: факт за год, ч</th>
               <th>Статус проекта</th>
@@ -864,6 +867,8 @@ PAGE_HTML = """<!doctype html>
         "Базовая оценка, ч",
         "Разработка: оценка, ч",
         "Разработка: факт за год, ч",
+        "Процессы разработки: план, ч",
+        "Процессы разработки: факт за год, ч",
         "Ошибка: оценка, ч",
         "Ошибка: факт за год, ч",
         "Статус проекта",
@@ -1099,7 +1104,7 @@ PAGE_HTML = """<!doctype html>
       projectsCount.textContent = `Проектов в базе: ${allProjects.length}. После фильтра: ${filteredProjects.length}`;
 
       if (!filteredProjects.length) {
-        projectsTableBody.innerHTML = '<tr><td colspan="13">Проектов пока нет.</td></tr>';
+        projectsTableBody.innerHTML = '<tr><td colspan="15">Проектов пока нет.</td></tr>';
         return;
       }
 
@@ -1125,6 +1130,8 @@ PAGE_HTML = """<!doctype html>
           <td>${formatHours(project.baseline_estimate_hours)}</td>
           <td>${formatHours(project.development_estimate_hours)}</td>
           <td>${formatHours(project.development_spent_hours_year)}</td>
+          <td>${formatHours(project.development_process_estimate_hours)}</td>
+          <td>${formatHours(project.development_process_spent_hours_year)}</td>
           <td>${formatHours(project.bug_estimate_hours)}</td>
           <td>${formatHours(project.bug_spent_hours_year)}</td>
           <td>${project.status ?? "—"}</td>
@@ -1625,11 +1632,11 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Задачи последнего среза</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
-  <style>
-    :root {{
-      color-scheme: light;
-      --bg: #ffffff;
-      --panel: #ffffff;
+    <style>
+      :root {{
+        color-scheme: light;
+        --bg: #ffffff;
+        --panel: #ffffff;
       --line: #d9e5eb;
       --text: #16324a;
       --muted: #64798d;
@@ -1639,12 +1646,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       * {{ box-sizing: border-box; }}
       body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
       main {{ max-width: 1440px; margin: 0 auto; padding: 24px 20px 48px; }}
+      .toolbar {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 0 0 16px; }}
       .back-link {{ color: var(--blue); text-decoration: none; font-weight: 600; }}
       .back-link:hover {{ color: var(--orange); }}
       h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
       form {{ display: flex; gap: 10px; align-items: center; margin: 0 0 16px; }}
       label {{ font-weight: 600; }}
       select {{ border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }}
+      button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #ff6c0e; color: #ffffff; }}
       .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
       .table-wrap {{ max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
       table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); }}
@@ -1661,12 +1670,15 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     <main>
       <a class="back-link" href="/">← К списку проектов</a>
       <h1>Задачи последнего среза проекта</h1>
+      <div class="toolbar">
       <form method="get">
         <label for="capturedForDate">Дата среза</label>
         <select id="capturedForDate" name="captured_for_date" onchange="this.form.submit()">
           {''.join(optionsHtml)}
         </select>
       </form>
+      <button type="button" id="deleteSnapshotButton">Удалить выбранный срез</button>
+      </div>
       <p class="meta">Проект: {projectName}. Дата среза: {capturedForDate}. Задач: {len(issues)}.</p>
       <div class="table-wrap">
         <table>
@@ -1691,6 +1703,30 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         </tbody>
       </table>
     </div>
+    <script>
+      document.getElementById("deleteSnapshotButton")?.addEventListener("click", async () => {{
+        if (!window.confirm("Удалить выбранный срез?")) {{
+          return;
+        }}
+
+        const response = await fetch("/api/issues/snapshots/project/{projectRedmineId}/by-date?captured_for_date={capturedForDate}", {{
+          method: "DELETE"
+        }});
+        const payload = await response.json();
+        if (!response.ok) {{
+          window.alert(payload.detail || "Не удалось удалить срез.");
+          return;
+        }}
+
+        const nextDate = payload.available_dates?.[0];
+        if (nextDate) {{
+          window.location.href = `/projects/{projectRedmineId}/latest-snapshot-issues?captured_for_date=${{encodeURIComponent(nextDate)}}`;
+          return;
+        }}
+
+        window.location.href = `/projects/{projectRedmineId}/latest-snapshot-issues`;
+      }});
+    </script>
   </main>
 </body>
 </html>"""
@@ -1799,6 +1835,26 @@ def deleteIssueSnapshotsByDate(
     result = deleteIssueSnapshotsForDate(captured_for_date)
     result["snapshot_runs"] = listRecentIssueSnapshotRuns(limit=200)
     result["total_count"] = countIssueSnapshotRuns()
+    return result
+
+
+@app.delete("/api/issues/snapshots/project/{project_redmine_id}/by-date")
+def deleteIssueSnapshotByProjectDate(
+    project_redmine_id: int,
+    captured_for_date: str = Query(..., description="Дата в формате YYYY-MM-DD"),
+) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+
+    try:
+        datetime.strptime(captured_for_date, "%Y-%m-%d")
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="captured_for_date must be YYYY-MM-DD") from error
+
+    result = deleteIssueSnapshotForProjectDate(project_redmine_id, captured_for_date)
+    result["available_dates"] = getSnapshotIssuesForProjectByDate(project_redmine_id, None).get("available_dates", [])
     return result
 
 
