@@ -12,9 +12,10 @@ from src.redmine.db import (
     deleteIssueSnapshotsForDate,
     ensureIssueSnapshotTables,
     ensureProjectsTable,
-    getLatestSnapshotIssuesForProject,
+    getSnapshotIssuesForProjectByDate,
     listRecentIssueSnapshotRuns,
     listStoredProjects,
+    pruneUnchangedIssueSnapshots,
     storeMissingProjects,
     updateProjectsDisabledState,
 )
@@ -22,6 +23,7 @@ from src.redmine.redmine_client import fetchAllProjectsFromRedmine
 from src.redmine.snapshots import (
     getIssueSnapshotCaptureStatus,
     isIssueSnapshotCaptureRunning,
+    startProjectIssueSnapshotCaptureInBackground,
     startIssueSnapshotCaptureInBackground,
 )
 
@@ -488,6 +490,36 @@ PAGE_HTML = """<!doctype html>
       opacity: 1;
     }
 
+    .project-id-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .project-capture-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      font-size: 0.8rem;
+      line-height: 1;
+      border-radius: 4px;
+      background: var(--cyan-310);
+      color: #16324a;
+      box-shadow: none;
+    }
+
+    .project-capture-button:hover {
+      transform: translateY(-1px);
+    }
+
+    .snapshot-filter-input {
+      width: 240px;
+    }
+
     @media (max-width: 700px) {
       .topbar {
         padding: 0 14px;
@@ -587,6 +619,7 @@ PAGE_HTML = """<!doctype html>
         <div class="row">
           <input id="snapshotDateInput" type="date">
           <button id="deleteSnapshotsButton" class="danger" type="button">Очистить срез на дату</button>
+          <button id="pruneSnapshotsButton" type="button">Проредить срезы</button>
         </div>
         <div class="status" id="deleteStatus"></div>
       </article>
@@ -651,6 +684,15 @@ PAGE_HTML = """<!doctype html>
     <section class="panel table-panel" id="snapshot-runs-table">
       <h2>Последние срезы задач</h2>
       <p class="meta" id="snapshotRunsCount">Загрузка списка срезов...</p>
+      <div class="table-toolbar">
+        <label for="snapshotRunsProjectFilterInput">Фильтр по проекту</label>
+        <input
+          id="snapshotRunsProjectFilterInput"
+          class="filter-input snapshot-filter-input"
+          type="text"
+          placeholder="Введите часть названия проекта"
+        >
+      </div>
       <div class="table-wrap">
         <table>
           <thead>
@@ -686,12 +728,15 @@ PAGE_HTML = """<!doctype html>
     const snapshotDateInput = document.getElementById("snapshotDateInput");
     const projectsNameFilterInput = document.getElementById("projectsNameFilterInput");
     const projectsFactFilterInput = document.getElementById("projectsFactFilterInput");
+    const snapshotRunsProjectFilterInput = document.getElementById("snapshotRunsProjectFilterInput");
     const applyProjectsSettingsButton = document.getElementById("applyProjectsSettingsButton");
     const refreshProjectsButton = document.getElementById("refreshProjectsButton");
     const captureSnapshotsButton = document.getElementById("captureSnapshotsButton");
     const deleteSnapshotsButton = document.getElementById("deleteSnapshotsButton");
+    const pruneSnapshotsButton = document.getElementById("pruneSnapshotsButton");
     let captureStatusPollTimer = null;
     let allProjects = [];
+    let allSnapshotRuns = [];
     const projectsNameFilterStorageKey = "redmine.projects.nameFilter";
     const projectsFactFilterStorageKey = "redmine.projects.factFilter.min";
     const showDisabledProjectsStorageKey = "redmine.projects.showDisabled";
@@ -787,6 +832,7 @@ PAGE_HTML = """<!doctype html>
         ["#delete-snapshot h2", "textContent", "Удаление среза по дате"],
         ["#delete-snapshot p", "textContent", "Удаляет все срезы и все строки задач за выбранную календарную дату."],
         ["#deleteSnapshotsButton", "textContent", "Очистить срез на дату"],
+        ["#pruneSnapshotsButton", "textContent", "Проредить срезы"],
         ["#projects-table h2", "textContent", "Проекты в базе данных"],
         ["label[for='projectsNameFilterInput']", "textContent", "Фильтр по названию"],
         ["#projectsNameFilterInput", "placeholder", "Введите часть названия"],
@@ -794,6 +840,8 @@ PAGE_HTML = """<!doctype html>
         ["label:has(#showDisabledProjectsCheckbox)", "textContent", "Показывать отключенные"],
         ["#applyProjectsSettingsButton", "textContent", "Применить"],
         ["#snapshot-runs-table h2", "textContent", "Последние срезы задач"],
+        ["label[for='snapshotRunsProjectFilterInput']", "textContent", "Фильтр по проекту"],
+        ["#snapshotRunsProjectFilterInput", "placeholder", "Введите часть названия проекта"],
         ["#projectsCount", "textContent", "Загрузка списка проектов..."],
         ["#snapshotRunsCount", "textContent", "Загрузка списка срезов..."],
       ];
@@ -946,6 +994,14 @@ PAGE_HTML = """<!doctype html>
       renderProjects(allProjects);
     }
 
+    function getSnapshotRunsProjectFilterValue() {
+      return String(snapshotRunsProjectFilterInput.value || "").trim().toLocaleLowerCase("ru");
+    }
+
+    function rerenderSnapshotRuns() {
+      renderSnapshotRuns(allSnapshotRuns);
+    }
+
     function updateDisableVisibleProjectsCheckbox(filteredProjects) {
       if (!disableVisibleProjectsCheckbox) {
         return;
@@ -1058,7 +1114,12 @@ PAGE_HTML = """<!doctype html>
         row.className = project.is_disabled ? "project-row-disabled" : "";
         row.innerHTML = `
           <td class="checkbox-cell project-sticky-1"><input class="project-disable-checkbox" type="checkbox" data-project-id="${project.redmine_id}" ${project.is_disabled ? "checked" : ""}></td>
-          <td class="mono project-sticky-2"><a class="project-id-button mono" href="/projects/${encodeURIComponent(project.redmine_id)}/latest-snapshot-issues" target="_blank" rel="noreferrer">${project.redmine_id ?? "\u2014"}</a></td>
+          <td class="mono project-sticky-2">
+            <span class="project-id-actions">
+              <a class="project-id-button mono" href="/projects/${encodeURIComponent(project.redmine_id)}/latest-snapshot-issues" target="_blank" rel="noreferrer">${project.redmine_id ?? "\u2014"}</a>
+              <button class="project-capture-button" type="button" data-project-id="${project.redmine_id}" title="Получить срез по проекту">↓</button>
+            </span>
+          </td>
           <td class="project-name-cell project-sticky-3"><span class="project-indent">${indent}</span><a class="project-link" href="/projects/${encodeURIComponent(project.redmine_id)}/burndown" target="_blank" rel="noreferrer">${project.name ?? "\u2014"}</a></td>
           <td>${identifierHtml}</td>
           <td>${formatHours(project.baseline_estimate_hours)}</td>
@@ -1076,15 +1137,63 @@ PAGE_HTML = """<!doctype html>
     }
 
     function renderSnapshotRuns(snapshotRuns, totalCount = snapshotRuns.length) {
-      snapshotRunsTableBody.innerHTML = "";
-      snapshotRunsCount.textContent = `Всего срезов в базе: ${totalCount}`;
+      allSnapshotRuns = Array.isArray(snapshotRuns) ? [...snapshotRuns] : [];
+      const filterValue = getSnapshotRunsProjectFilterValue();
+      const groupedRuns = new Map();
+      for (const run of allSnapshotRuns) {
+        const projectId = Number(run.project_redmine_id ?? 0);
+        if (!groupedRuns.has(projectId)) {
+          groupedRuns.set(projectId, []);
+        }
+        groupedRuns.get(projectId).push(run);
+      }
 
-      if (!snapshotRuns.length) {
+      const visibleRuns = [];
+      for (const runs of groupedRuns.values()) {
+        runs.sort((left, right) => {
+          const dateCompare = String(right.captured_for_date ?? "").localeCompare(String(left.captured_for_date ?? ""));
+          if (dateCompare !== 0) {
+            return dateCompare;
+          }
+          const capturedCompare = String(right.captured_at ?? "").localeCompare(String(left.captured_at ?? ""));
+          if (capturedCompare !== 0) {
+            return capturedCompare;
+          }
+          return Number(right.id ?? 0) - Number(left.id ?? 0);
+        });
+        visibleRuns.push(...runs.slice(0, 3));
+      }
+
+      visibleRuns.sort((left, right) => {
+        const projectCompare = String(left.project_name || "").localeCompare(String(right.project_name || ""), "ru");
+        if (projectCompare !== 0) {
+          return projectCompare;
+        }
+        const dateCompare = String(right.captured_for_date ?? "").localeCompare(String(left.captured_for_date ?? ""));
+        if (dateCompare !== 0) {
+          return dateCompare;
+        }
+        return Number(right.id ?? 0) - Number(left.id ?? 0);
+      });
+
+      const filteredRuns = visibleRuns.filter((run) => {
+        if (!filterValue) {
+          return true;
+        }
+        const projectName = String(run.project_name || "").toLocaleLowerCase("ru");
+        const projectIdentifier = String(run.project_identifier || "").toLocaleLowerCase("ru");
+        return projectName.includes(filterValue) || projectIdentifier.includes(filterValue);
+      });
+
+      snapshotRunsTableBody.innerHTML = "";
+      snapshotRunsCount.textContent = `Всего срезов в базе: ${totalCount}. Показано: ${filteredRuns.length}`;
+
+      if (!filteredRuns.length) {
         snapshotRunsTableBody.innerHTML = '<tr><td colspan="10">Срезов пока нет.</td></tr>';
         return;
       }
 
-      for (const run of snapshotRuns) {
+      for (const run of filteredRuns) {
         const row = document.createElement("tr");
         row.innerHTML = `
           <td class="mono">${run.id ?? "—"}</td>
@@ -1099,6 +1208,31 @@ PAGE_HTML = """<!doctype html>
           <td>${formatDate(run.captured_at)}</td>
         `;
         snapshotRunsTableBody.appendChild(row);
+      }
+    }
+
+    async function captureSnapshotForProject(projectId) {
+      captureSnapshotsButton.disabled = true;
+      setStatus(captureStatus, `Запускаем получение среза по проекту ${projectId}...`);
+
+      try {
+        const response = await fetch(`/api/issues/snapshots/capture-project/${encodeURIComponent(projectId)}`, { method: "POST" });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.detail || "Ошибка получения среза по проекту.");
+        }
+
+        if (payload.captured_for_date) {
+          snapshotDateInput.value = payload.captured_for_date;
+        }
+
+        setStatus(captureStatus, payload.detail || "Фоновая загрузка среза по проекту запущена...");
+        startCaptureProgressPolling();
+      } catch (error) {
+        stopCaptureProgressPolling();
+        setStatus(captureStatus, error.message, "error");
+        captureSnapshotsButton.disabled = false;
       }
     }
 
@@ -1241,10 +1375,36 @@ PAGE_HTML = """<!doctype html>
       }
     }
 
+    async function pruneSnapshots() {
+      pruneSnapshotsButton.disabled = true;
+      setStatus(deleteStatus, "Прореживаем неизменные срезы...");
+
+      try {
+        const response = await fetch("/api/issues/snapshots/prune", { method: "POST" });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.detail || "Ошибка прореживания срезов.");
+        }
+
+        renderSnapshotRuns(payload.snapshot_runs ?? [], payload.total_count ?? 0);
+        setStatus(
+          deleteStatus,
+          `Прореживание завершено: удалено срезов ${payload.deleted_runs ?? 0}, строк задач ${payload.deleted_items ?? 0}.`,
+          "success"
+        );
+      } catch (error) {
+        setStatus(deleteStatus, error.message, "error");
+      } finally {
+        pruneSnapshotsButton.disabled = false;
+      }
+    }
+
     refreshProjectsButton.addEventListener("click", refreshProjects);
     applyProjectsSettingsButton.addEventListener("click", applyProjectsSettings);
     captureSnapshotsButton.addEventListener("click", captureSnapshots);
     deleteSnapshotsButton.addEventListener("click", deleteSnapshotsForDate);
+    pruneSnapshotsButton.addEventListener("click", pruneSnapshots);
     projectsNameFilterInput.addEventListener("input", () => {
       saveProjectsNameFilterValue();
       rerenderProjects();
@@ -1253,9 +1413,23 @@ PAGE_HTML = """<!doctype html>
       saveProjectsFactFilterValue();
       rerenderProjects();
     });
+    snapshotRunsProjectFilterInput.addEventListener("input", rerenderSnapshotRuns);
     showDisabledProjectsCheckbox.addEventListener("change", () => {
       saveShowDisabledProjectsValue();
       rerenderProjects();
+    });
+    projectsTableBody.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || !target.classList.contains("project-capture-button")) {
+        return;
+      }
+
+      const projectId = Number(target.dataset.projectId || 0);
+      if (!projectId) {
+        return;
+      }
+
+      captureSnapshotForProject(projectId);
     });
     projectsTableBody.addEventListener("change", (event) => {
       const target = event.target;
@@ -1370,12 +1544,16 @@ def buildBurndownPlaceholderPage(projectRedmineId: int) -> str:
 </html>"""
 
 
-def buildLatestSnapshotIssuesPageClean(projectRedmineId: int) -> str:
-    snapshotPayload = getLatestSnapshotIssuesForProject(projectRedmineId)
+def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: str | None = None) -> str:
+    snapshotPayload = getSnapshotIssuesForProjectByDate(projectRedmineId, capturedForDate)
     snapshotRun = snapshotPayload["snapshot_run"]
     issues = snapshotPayload["issues"]
+    availableDates = [str(value) for value in snapshotPayload.get("available_dates") or []]
 
     if snapshotRun is None:
+        optionsHtml = "".join(
+            f'<option value="{escape(dateValue)}">{escape(dateValue)}</option>' for dateValue in availableDates
+        )
         return f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -1392,12 +1570,19 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int) -> str:
   </style>
 </head>
 <body>
-  <main>
-    <a class="back-link" href="/">← К списку проектов</a>
-    <h1>Задачи последнего среза проекта</h1>
-    <p class="meta">Для проекта с ID {projectRedmineId} срезы пока не найдены.</p>
-  </main>
-</body>
+    <main>
+      <a class="back-link" href="/">← К списку проектов</a>
+      <h1>Задачи последнего среза проекта</h1>
+      <form method="get">
+        <label for="capturedForDate">Дата среза</label>
+        <select id="capturedForDate" name="captured_for_date" onchange="this.form.submit()">
+          <option value="">Последний срез</option>
+          {optionsHtml}
+        </select>
+      </form>
+      <p class="meta">Для проекта с ID {projectRedmineId} срезы пока не найдены.</p>
+    </main>
+  </body>
 </html>"""
 
     issueRowsHtml: list[str] = []
@@ -1427,6 +1612,11 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int) -> str:
 
     projectName = escape(str(snapshotRun.get("project_name") or "—"))
     capturedForDate = escape(str(snapshotRun.get("captured_for_date") or "—"))
+    selectedDate = str(snapshotRun.get("captured_for_date") or "")
+    optionsHtml = ["<option value=\"\">Последний срез</option>"]
+    for dateValue in availableDates:
+        selectedAttr = " selected" if dateValue == selectedDate else ""
+        optionsHtml.append(f'<option value="{escape(dateValue)}"{selectedAttr}>{escape(dateValue)}</option>')
 
     return f"""<!doctype html>
 <html lang="ru">
@@ -1446,31 +1636,40 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int) -> str:
       --blue: #375d77;
       --orange: #ff6c0e;
     }}
-    * {{ box-sizing: border-box; }}
-    body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
-    main {{ max-width: 1440px; margin: 0 auto; padding: 24px 20px 48px; }}
-    .back-link {{ color: var(--blue); text-decoration: none; font-weight: 600; }}
-    .back-link:hover {{ color: var(--orange); }}
-    h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
-    .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
-    .table-wrap {{ max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
-    table {{ width: 100%; border-collapse: collapse; background: var(--panel); }}
-    th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
-    th {{ position: sticky; top: 0; z-index: 1; background: #eef6f7; color: #426179; text-transform: uppercase; font-size: 0.88rem; }}
-    tr:last-child td {{ border-bottom: 0; }}
-    .mono {{ font-family: Consolas, "Courier New", monospace; font-size: 0.95rem; white-space: nowrap; }}
-    .issue-link {{ color: var(--blue); text-decoration: none; border-bottom: 1px dashed currentColor; font-weight: 700; }}
-    .issue-link:hover {{ color: var(--orange); border-bottom-style: solid; }}
-    .subject-col {{ width: 24%; max-width: 24%; }}
+      * {{ box-sizing: border-box; }}
+      body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
+      main {{ max-width: 1440px; margin: 0 auto; padding: 24px 20px 48px; }}
+      .back-link {{ color: var(--blue); text-decoration: none; font-weight: 600; }}
+      .back-link:hover {{ color: var(--orange); }}
+      h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
+      form {{ display: flex; gap: 10px; align-items: center; margin: 0 0 16px; }}
+      label {{ font-weight: 600; }}
+      select {{ border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }}
+      .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
+      .table-wrap {{ max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
+      table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); }}
+      th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
+      th {{ position: sticky; top: 0; z-index: 2; background: #eef6f7; color: #426179; text-transform: uppercase; font-size: 0.88rem; }}
+      tr:last-child td {{ border-bottom: 0; }}
+      .mono {{ font-family: Consolas, "Courier New", monospace; font-size: 0.95rem; white-space: nowrap; }}
+      .issue-link {{ color: var(--blue); text-decoration: none; border-bottom: 1px dashed currentColor; font-weight: 700; }}
+      .issue-link:hover {{ color: var(--orange); border-bottom-style: solid; }}
+      .subject-col {{ width: 24%; max-width: 24%; }}
   </style>
 </head>
-<body>
-  <main>
-    <a class="back-link" href="/">← К списку проектов</a>
-    <h1>Задачи последнего среза проекта</h1>
-    <p class="meta">Проект: {projectName}. Дата среза: {capturedForDate}. Задач: {len(issues)}.</p>
-    <div class="table-wrap">
-      <table>
+  <body>
+    <main>
+      <a class="back-link" href="/">← К списку проектов</a>
+      <h1>Задачи последнего среза проекта</h1>
+      <form method="get">
+        <label for="capturedForDate">Дата среза</label>
+        <select id="capturedForDate" name="captured_for_date" onchange="this.form.submit()">
+          {''.join(optionsHtml)}
+        </select>
+      </form>
+      <p class="meta">Проект: {projectName}. Дата среза: {capturedForDate}. Задач: {len(issues)}.</p>
+      <div class="table-wrap">
+        <table>
         <thead>
           <tr>
             <th>ID</th>
@@ -1521,12 +1720,15 @@ def getProjects() -> dict[str, object]:
 
 
 @app.get("/projects/{project_redmine_id}/latest-snapshot-issues", response_class=HTMLResponse)
-def getProjectLatestSnapshotIssuesPage(project_redmine_id: int) -> HTMLResponse:
+def getProjectLatestSnapshotIssuesPage(
+    project_redmine_id: int,
+    captured_for_date: str | None = Query(None, description="Дата среза в формате YYYY-MM-DD"),
+) -> HTMLResponse:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureIssueSnapshotTables()
-    return HTMLResponse(buildLatestSnapshotIssuesPageClean(project_redmine_id))
+    return HTMLResponse(buildLatestSnapshotIssuesPageClean(project_redmine_id, captured_for_date))
 
 
 @app.get("/projects/{project_redmine_id}/burndown", response_class=HTMLResponse)
@@ -1575,7 +1777,7 @@ def getIssueSnapshotRuns() -> dict[str, object]:
 
     ensureIssueSnapshotTables()
     return {
-        "snapshot_runs": listRecentIssueSnapshotRuns(limit=200),
+        "snapshot_runs": listRecentIssueSnapshotRuns(limit=None),
         "total_count": countIssueSnapshotRuns(),
     }
 
@@ -1600,6 +1802,18 @@ def deleteIssueSnapshotsByDate(
     return result
 
 
+@app.post("/api/issues/snapshots/prune")
+def pruneIssueSnapshots() -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+    result = pruneUnchangedIssueSnapshots()
+    result["snapshot_runs"] = listRecentIssueSnapshotRuns(limit=None)
+    result["total_count"] = countIssueSnapshotRuns()
+    return result
+
+
 @app.post("/api/issues/snapshots/capture")
 def captureIssueSnapshots() -> dict[str, object]:
     if not config.databaseUrl:
@@ -1620,6 +1834,36 @@ def captureIssueSnapshots() -> dict[str, object]:
     return {
         "started": started,
         "detail": "Получение срезов запущено в фоновом режиме.",
+        **getIssueSnapshotCaptureStatus(),
+    }
+
+
+@app.post("/api/issues/snapshots/capture-project/{project_redmine_id}")
+def captureIssueSnapshotByProject(project_redmine_id: int) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    requireProjectSyncConfig()
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+
+    if isIssueSnapshotCaptureRunning():
+        return {
+            "started": False,
+            "detail": "Другое получение срезов уже выполняется.",
+            **getIssueSnapshotCaptureStatus(),
+        }
+
+    project = next((item for item in listStoredProjects() if int(item.get("redmine_id") or 0) == project_redmine_id), None)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if bool(project.get("is_disabled")):
+        raise HTTPException(status_code=400, detail="Проект отключен от загрузки")
+
+    started = startProjectIssueSnapshotCaptureInBackground(project_redmine_id)
+    return {
+        "started": started,
+        "detail": f"Получение среза по проекту «{project.get('name') or project_redmine_id}» запущено.",
         **getIssueSnapshotCaptureStatus(),
     }
 

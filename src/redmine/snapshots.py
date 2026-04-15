@@ -87,6 +87,17 @@ def _runIssueSnapshotCaptureInBackground() -> None:
         )
 
 
+def _runProjectIssueSnapshotCaptureInBackground(projectRedmineId: int) -> None:
+    try:
+        captureIssueSnapshotForProject(projectRedmineId)
+    except Exception as error:  # pragma: no cover
+        updateIssueSnapshotCaptureStatus(
+            is_running=False,
+            current_project_name=None,
+            error_message=str(error),
+        )
+
+
 def startIssueSnapshotCaptureInBackground() -> bool:
     with captureStatusLock:
         if bool(captureStatusState["is_running"]):
@@ -113,6 +124,35 @@ def startIssueSnapshotCaptureInBackground() -> bool:
         )
 
     Thread(target=_runIssueSnapshotCaptureInBackground, daemon=True).start()
+    return True
+
+
+def startProjectIssueSnapshotCaptureInBackground(projectRedmineId: int) -> bool:
+    with captureStatusLock:
+        if bool(captureStatusState["is_running"]):
+            return False
+
+        captureStatusState.update(
+            {
+                "is_running": True,
+                "captured_for_date": None,
+                "total_projects": 1,
+                "processed_projects": 0,
+                "current_project_name": None,
+                "last_completed_project_name": None,
+                "created_runs": 0,
+                "captured_issues": 0,
+                "already_captured_projects": 0,
+                "remaining_projects": 1,
+                "current_project_issues_pages_loaded": 0,
+                "current_project_issues_pages_total": 0,
+                "current_project_time_pages_loaded": 0,
+                "current_project_time_pages_total": 0,
+                "error_message": None,
+            }
+        )
+
+    Thread(target=_runProjectIssueSnapshotCaptureInBackground, args=(projectRedmineId,), daemon=True).start()
     return True
 
 
@@ -286,5 +326,125 @@ def captureAllIssueSnapshots() -> dict[str, object]:
         "already_captured_projects": alreadyCapturedProjects,
         "remaining_projects": len(listProjectsWithoutSnapshotForDate(capturedForDate)),
         "skipped_projects": skippedProjects,
+        "snapshot_runs": listRecentIssueSnapshotRuns(),
+    }
+
+
+def captureIssueSnapshotForProject(projectRedmineId: int) -> dict[str, object]:
+    config = loadConfig()
+    if not config.databaseUrl:
+        raise RuntimeError("DATABASE_URL is not set")
+    if not config.redmineUrl:
+        raise RuntimeError("REDMINE_URL is not set")
+    if not config.apiKey:
+        raise RuntimeError("REDMINE_API_KEY is not set")
+
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+
+    redmineProjects = fetchAllProjectsFromRedmine(config.redmineUrl, config.apiKey)
+    storeMissingProjects(redmineProjects)
+    project = next(
+        (item for item in listStoredProjects() if int(item.get("redmine_id") or 0) == int(projectRedmineId)),
+        None,
+    )
+    if project is None:
+        raise RuntimeError(f"Project {projectRedmineId} not found")
+
+    capturedForDate = datetime.now(UTC).date().isoformat()
+    captureYear = int(capturedForDate[:4])
+    closedOnCutoff = f"{datetime.now(UTC).year - 1}-01-01"
+    projectName = str(project.get("name") or "")
+
+    updateIssueSnapshotCaptureStatus(
+        is_running=True,
+        captured_for_date=capturedForDate,
+        total_projects=1,
+        processed_projects=0,
+        current_project_name=projectName,
+        last_completed_project_name=None,
+        created_runs=0,
+        captured_issues=0,
+        already_captured_projects=0,
+        remaining_projects=1,
+        current_project_issues_pages_loaded=0,
+        current_project_issues_pages_total=0,
+        current_project_time_pages_loaded=0,
+        current_project_time_pages_total=0,
+        error_message=None,
+    )
+
+    snapshotRunId: int | None = None
+    issues: list[dict[str, object]] = []
+    try:
+        identifier = project.get("identifier")
+        if not identifier:
+            raise RuntimeError("Project identifier is missing")
+
+        def updateIssuesProgress(loadedPages: int, totalPages: int, loadedItems: int, totalItems: int) -> None:
+            updateIssueSnapshotCaptureStatus(
+                current_project_name=projectName,
+                current_project_issues_pages_loaded=loadedPages,
+                current_project_issues_pages_total=totalPages,
+            )
+
+        def updateTimeProgress(loadedPages: int, totalPages: int, loadedItems: int, totalItems: int) -> None:
+            updateIssueSnapshotCaptureStatus(
+                current_project_name=projectName,
+                current_project_time_pages_loaded=loadedPages,
+                current_project_time_pages_total=totalPages,
+            )
+
+        issues = fetchAllIssuesForProject(
+            config.redmineUrl,
+            config.apiKey,
+            str(identifier),
+            int(project["redmine_id"]),
+            progressCallback=updateIssuesProgress,
+            closedOnOrAfter=closedOnCutoff,
+        )
+        spentHoursByIssue = fetchSpentHoursByIssueForProjectYear(
+            config.redmineUrl,
+            config.apiKey,
+            str(identifier),
+            captureYear,
+            progressCallback=updateTimeProgress,
+        )
+        applySpentHoursYearByIssue(issues, spentHoursByIssue)
+        snapshotRunId = createIssueSnapshotRun(capturedForDate, project, issues)
+
+        createdRuns = 1 if snapshotRunId is not None else 0
+        alreadyCaptured = 0 if snapshotRunId is not None else 1
+        capturedIssues = len(issues) if snapshotRunId is not None else 0
+        updateIssueSnapshotCaptureStatus(
+            processed_projects=1,
+            last_completed_project_name=projectName,
+            current_project_name=None,
+            created_runs=createdRuns,
+            captured_issues=capturedIssues,
+            already_captured_projects=alreadyCaptured,
+            remaining_projects=0,
+            current_project_issues_pages_loaded=0,
+            current_project_issues_pages_total=0,
+            current_project_time_pages_loaded=0,
+            current_project_time_pages_total=0,
+        )
+    finally:
+        updateIssueSnapshotCaptureStatus(
+            is_running=False,
+            current_project_name=None,
+            remaining_projects=0,
+            current_project_issues_pages_loaded=0,
+            current_project_issues_pages_total=0,
+            current_project_time_pages_loaded=0,
+            current_project_time_pages_total=0,
+        )
+
+    return {
+        "captured_for_date": capturedForDate,
+        "created_runs": 1 if snapshotRunId is not None else 0,
+        "captured_issues": len(issues) if snapshotRunId is not None else 0,
+        "already_captured_projects": 0 if snapshotRunId is not None else 1,
+        "remaining_projects": 0,
         "snapshot_runs": listRecentIssueSnapshotRuns(),
     }

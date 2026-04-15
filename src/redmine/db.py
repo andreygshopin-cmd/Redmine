@@ -338,33 +338,55 @@ def listStoredProjects() -> list[dict[str, object]]:
         return [dict(row._mapping) for row in rows]
 
 
-def listRecentIssueSnapshotRuns(limit: int = 20) -> list[dict[str, object]]:
+def listRecentIssueSnapshotRuns(limit: int | None = 20) -> list[dict[str, object]]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
 
     with engine.connect() as connection:
-        rows = connection.execute(
-            text(
-                """
-                SELECT
-                    id,
-                    project_redmine_id,
-                    project_name,
-                    project_identifier,
-                    captured_for_date,
-                    captured_at,
-                    total_issues,
-                    total_baseline_estimate_hours,
-                    total_estimated_hours,
-                    total_spent_hours,
-                    total_spent_hours_year
-                FROM issue_snapshot_runs
-                ORDER BY captured_at DESC, id DESC
-                LIMIT :limit_value
-                """
-            ),
-            {"limit_value": limit},
-        )
+        if limit is None:
+            rows = connection.execute(
+                text(
+                    """
+                    SELECT
+                        id,
+                        project_redmine_id,
+                        project_name,
+                        project_identifier,
+                        captured_for_date,
+                        captured_at,
+                        total_issues,
+                        total_baseline_estimate_hours,
+                        total_estimated_hours,
+                        total_spent_hours,
+                        total_spent_hours_year
+                    FROM issue_snapshot_runs
+                    ORDER BY project_name, captured_for_date DESC, captured_at DESC, id DESC
+                    """
+                )
+            )
+        else:
+            rows = connection.execute(
+                text(
+                    """
+                    SELECT
+                        id,
+                        project_redmine_id,
+                        project_name,
+                        project_identifier,
+                        captured_for_date,
+                        captured_at,
+                        total_issues,
+                        total_baseline_estimate_hours,
+                        total_estimated_hours,
+                        total_spent_hours,
+                        total_spent_hours_year
+                    FROM issue_snapshot_runs
+                    ORDER BY captured_at DESC, id DESC
+                    LIMIT :limit_value
+                    """
+                ),
+                {"limit_value": limit},
+            )
 
         return [dict(row._mapping) for row in rows]
 
@@ -453,6 +475,123 @@ def getLatestSnapshotIssuesForProject(projectRedmineId: int) -> dict[str, object
         }
 
 
+def listSnapshotDatesForProject(projectRedmineId: int) -> list[str]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT DISTINCT captured_for_date
+                FROM issue_snapshot_runs
+                WHERE project_redmine_id = :project_redmine_id
+                ORDER BY captured_for_date DESC
+                """
+            ),
+            {"project_redmine_id": projectRedmineId},
+        )
+
+        return [str(row.captured_for_date) for row in rows]
+
+
+def getSnapshotIssuesForProjectByDate(projectRedmineId: int, capturedForDate: str | None) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        params: dict[str, object] = {"project_redmine_id": projectRedmineId}
+        if capturedForDate:
+            params["captured_for_date"] = capturedForDate
+            latestRun = connection.execute(
+                text(
+                    """
+                    SELECT
+                        id,
+                        project_redmine_id,
+                        project_name,
+                        project_identifier,
+                        captured_for_date,
+                        captured_at,
+                        total_issues,
+                        total_baseline_estimate_hours,
+                        total_estimated_hours,
+                        total_spent_hours,
+                        total_spent_hours_year
+                    FROM issue_snapshot_runs
+                    WHERE project_redmine_id = :project_redmine_id
+                      AND captured_for_date = :captured_for_date
+                    ORDER BY captured_at DESC, id DESC
+                    LIMIT 1
+                    """
+                ),
+                params,
+            ).mappings().first()
+        else:
+            latestRun = connection.execute(
+                text(
+                    """
+                    SELECT
+                        id,
+                        project_redmine_id,
+                        project_name,
+                        project_identifier,
+                        captured_for_date,
+                        captured_at,
+                        total_issues,
+                        total_baseline_estimate_hours,
+                        total_estimated_hours,
+                        total_spent_hours,
+                        total_spent_hours_year
+                    FROM issue_snapshot_runs
+                    WHERE project_redmine_id = :project_redmine_id
+                    ORDER BY captured_for_date DESC, captured_at DESC, id DESC
+                    LIMIT 1
+                    """
+                ),
+                params,
+            ).mappings().first()
+
+        availableDates = listSnapshotDatesForProject(projectRedmineId)
+        if latestRun is None:
+            return {"snapshot_run": None, "issues": [], "available_dates": availableDates}
+
+        issueRows = connection.execute(
+            text(
+                """
+                SELECT
+                    issue_redmine_id,
+                    subject,
+                    tracker_name,
+                    status_name,
+                    priority_name,
+                    assigned_to_name,
+                    fixed_version_name,
+                    done_ratio,
+                    baseline_estimate_hours,
+                    estimated_hours,
+                    spent_hours,
+                    spent_hours_year,
+                    start_date,
+                    due_date,
+                    created_on,
+                    updated_on,
+                    closed_on
+                FROM issue_snapshot_items
+                WHERE snapshot_run_id = :snapshot_run_id
+                ORDER BY issue_redmine_id
+                """
+            ),
+            {"snapshot_run_id": latestRun["id"]},
+        )
+
+        return {
+            "snapshot_run": dict(latestRun),
+            "issues": [dict(row._mapping) for row in issueRows],
+            "available_dates": availableDates,
+        }
+
+
 def listProjectsWithoutSnapshotForDate(capturedForDate: str) -> list[dict[str, object]]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
@@ -531,6 +670,96 @@ def deleteIssueSnapshotsForDate(capturedForDate: str) -> dict[str, int | str]:
         "captured_for_date": capturedForDate,
         "deleted_items": int(itemCount),
         "deleted_runs": int(runCount),
+    }
+
+
+def pruneUnchangedIssueSnapshots() -> dict[str, int]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.begin() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    project_redmine_id,
+                    captured_for_date,
+                    total_issues,
+                    total_baseline_estimate_hours,
+                    total_estimated_hours,
+                    total_spent_hours,
+                    total_spent_hours_year
+                FROM issue_snapshot_runs
+                ORDER BY project_redmine_id, captured_for_date ASC, captured_at ASC, id ASC
+                """
+            )
+        ).mappings().all()
+
+        idsToDelete: list[int] = []
+        currentProjectId: int | None = None
+        currentGroup: list[dict[str, object]] = []
+        currentMetrics: tuple[float, float, float, float, float] | None = None
+
+        def flushGroup() -> None:
+            if len(currentGroup) > 2:
+                idsToDelete.extend(int(row["id"]) for row in currentGroup[1:-1])
+
+        for row in rows:
+            metrics = (
+                float(row["total_issues"] or 0),
+                float(row["total_baseline_estimate_hours"] or 0),
+                float(row["total_estimated_hours"] or 0),
+                float(row["total_spent_hours"] or 0),
+                float(row["total_spent_hours_year"] or 0),
+            )
+            projectId = int(row["project_redmine_id"])
+
+            if currentProjectId != projectId:
+                flushGroup()
+                currentProjectId = projectId
+                currentGroup = [dict(row)]
+                currentMetrics = metrics
+                continue
+
+            if metrics == currentMetrics:
+                currentGroup.append(dict(row))
+                continue
+
+            flushGroup()
+            currentGroup = [dict(row)]
+            currentMetrics = metrics
+
+        flushGroup()
+
+        deletedRuns = len(idsToDelete)
+        deletedItems = 0
+        if idsToDelete:
+            deletedItems = int(
+                connection.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM issue_snapshot_items
+                        WHERE snapshot_run_id IN :run_ids
+                        """
+                    ).bindparams(bindparam("run_ids", expanding=True)),
+                    {"run_ids": idsToDelete},
+                ).scalar_one()
+            )
+            connection.execute(
+                text(
+                    """
+                    DELETE FROM issue_snapshot_runs
+                    WHERE id IN :run_ids
+                    """
+                ).bindparams(bindparam("run_ids", expanding=True)),
+                {"run_ids": idsToDelete},
+            )
+
+    return {
+        "deleted_runs": deletedRuns,
+        "deleted_items": deletedItems,
     }
 
 
