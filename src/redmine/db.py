@@ -844,23 +844,38 @@ def pruneUnchangedIssueSnapshots() -> dict[str, int]:
     }
 
 
-def storeMissingProjects(projects: Sequence[dict[str, object]]) -> int:
+def syncProjects(projects: Sequence[dict[str, object]]) -> dict[str, int]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
     if not projects:
-        return 0
+        return {"added_count": 0, "updated_count": 0}
 
     ids = [project["redmine_id"] for project in projects]
     addedCount = 0
+    updatedCount = 0
 
     with engine.begin() as connection:
         existingRows = connection.execute(
-            text("SELECT redmine_id FROM projects WHERE redmine_id IN :ids").bindparams(
+            text(
+                """
+                SELECT
+                    redmine_id,
+                    name,
+                    identifier,
+                    status,
+                    homepage,
+                    parent_redmine_id,
+                    created_on,
+                    updated_on
+                FROM projects
+                WHERE redmine_id IN :ids
+                """
+            ).bindparams(
                 bindparam("ids", expanding=True)
             ),
             {"ids": ids},
         )
-        existingIds = {row.redmine_id for row in existingRows}
+        existingById = {int(row.redmine_id): dict(row._mapping) for row in existingRows}
 
         insertStatement = text(
             """
@@ -903,14 +918,29 @@ def storeMissingProjects(projects: Sequence[dict[str, object]]) -> int:
         )
 
         for project in projects:
-            if project["redmine_id"] in existingIds:
+            existing = existingById.get(int(project["redmine_id"]))
+            if existing is not None:
+                if (
+                    existing.get("name") != project.get("name")
+                    or existing.get("identifier") != project.get("identifier")
+                    or existing.get("status") != project.get("status")
+                    or existing.get("homepage") != project.get("homepage")
+                    or existing.get("parent_redmine_id") != project.get("parent_redmine_id")
+                    or existing.get("created_on") != project.get("created_on")
+                    or existing.get("updated_on") != project.get("updated_on")
+                ):
+                    updatedCount += 1
                 connection.execute(updateStatement, project)
                 continue
 
             connection.execute(insertStatement, project)
             addedCount += 1
 
-    return addedCount
+    return {"added_count": addedCount, "updated_count": updatedCount}
+
+
+def storeMissingProjects(projects: Sequence[dict[str, object]]) -> int:
+    return syncProjects(projects)["added_count"]
 
 
 def updateProjectsDisabledState(disabledProjectIds: Sequence[int]) -> int:

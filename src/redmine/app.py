@@ -17,7 +17,7 @@ from src.redmine.db import (
     listRecentIssueSnapshotRuns,
     listStoredProjects,
     pruneUnchangedIssueSnapshots,
-    storeMissingProjects,
+    syncProjects,
     updateProjectsDisabledState,
 )
 from src.redmine.redmine_client import fetchAllProjectsFromRedmine
@@ -347,33 +347,6 @@ PAGE_HTML = """<!doctype html>
       white-space: nowrap;
     }
 
-    .project-sticky-1,
-    .project-sticky-2,
-    .project-sticky-3 {
-      position: sticky;
-      z-index: 2;
-      background: var(--panel);
-    }
-
-    th.project-sticky-1,
-    th.project-sticky-2,
-    th.project-sticky-3 {
-      z-index: 3;
-      background: var(--panel-soft);
-    }
-
-    .project-sticky-1 {
-      left: 0;
-    }
-
-    .project-sticky-2 {
-      left: 64px;
-    }
-
-    .project-sticky-3 {
-      left: 140px;
-    }
-
     .project-sticky-3.project-name-cell {
       min-width: 260px;
     }
@@ -595,7 +568,7 @@ PAGE_HTML = """<!doctype html>
     <section class="grid" id="data-load-section">
       <article class="panel" id="project-actions">
         <h2>Проекты Redmine</h2>
-        <p>Получает список проектов из Redmine и добавляет в базу только новые записи.</p>
+        <p>Получает список проектов из Redmine, добавляет новые записи и обновляет измененные.</p>
         <div class="row">
           <button id="refreshProjectsButton" type="button">Обновить список проектов</button>
         </div>
@@ -646,9 +619,9 @@ PAGE_HTML = """<!doctype html>
           step="0.1"
           inputmode="decimal"
         >
-        <label>
+        <label id="showDisabledProjectsLabel">
           <input id="showDisabledProjectsCheckbox" type="checkbox">
-          Показывать отключенные
+          <span>Показывать отключенные</span>
         </label>
         <span class="toolbar-spacer"></span>
         <button id="applyProjectsSettingsButton" type="button">Применить</button>
@@ -827,7 +800,7 @@ PAGE_HTML = """<!doctype html>
         [".quick-links a:nth-child(3)", "textContent", "Таблица срезов"],
         [".hero h1", "textContent", "Анализ проектов Redmine"],
         ["#project-actions h2", "textContent", "Проекты Redmine"],
-        ["#project-actions p", "textContent", "Получает список проектов из Redmine и добавляет в базу только новые записи."],
+        ["#project-actions p", "textContent", "Получает список проектов из Redmine, добавляет новые записи и обновляет измененные."],
         ["#refreshProjectsButton", "textContent", "Обновить список проектов"],
         ["#snapshot-actions h2", "textContent", "Получение срезов задач"],
         ["#snapshot-actions p", "textContent", "Запрашивает срезы только для тех проектов, по которым на сегодняшнюю дату еще нет записи в базе данных."],
@@ -840,7 +813,7 @@ PAGE_HTML = """<!doctype html>
         ["label[for='projectsNameFilterInput']", "textContent", "Фильтр по названию"],
         ["#projectsNameFilterInput", "placeholder", "Введите часть названия"],
         ["label[for='projectsFactFilterInput']", "textContent", "Мин. сумма факта за год по разработке и багфиксу"],
-        ["label:has(#showDisabledProjectsCheckbox)", "textContent", "Показывать отключенные"],
+        ["#showDisabledProjectsLabel span", "textContent", "Показывать отключенные"],
         ["#applyProjectsSettingsButton", "textContent", "Применить"],
         ["#snapshot-runs-table h2", "textContent", "Последние срезы задач"],
         ["label[for='snapshotRunsProjectFilterInput']", "textContent", "Фильтр по проекту"],
@@ -1313,7 +1286,7 @@ PAGE_HTML = """<!doctype html>
         renderProjects(payload.projects ?? []);
         setStatus(
           projectsStatus,
-          `Готово: добавлено новых проектов ${payload.added_count ?? 0}.`,
+          `Готово: добавлено новых проектов ${payload.added_count ?? 0}, обновлено ${payload.updated_count ?? 0}.`,
           "success"
         );
       } catch (error) {
@@ -1650,11 +1623,12 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .back-link {{ color: var(--blue); text-decoration: none; font-weight: 600; }}
       .back-link:hover {{ color: var(--orange); }}
       h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
-      form {{ display: flex; gap: 10px; align-items: center; margin: 0 0 16px; }}
+      form {{ display: flex; gap: 10px; align-items: center; margin: 0; }}
       label {{ font-weight: 600; }}
       select {{ border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }}
       button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #ff6c0e; color: #ffffff; }}
       .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
+      .action-status {{ color: var(--muted); margin: 0 0 18px; min-height: 22px; }}
       .table-wrap {{ max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
       table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); }}
       th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
@@ -1677,8 +1651,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           {''.join(optionsHtml)}
         </select>
       </form>
+      <button type="button" id="recaptureSnapshotButton">Получить срез заново</button>
       <button type="button" id="deleteSnapshotButton">Удалить выбранный срез</button>
       </div>
+      <div class="action-status" id="snapshotActionStatus"></div>
       <p class="meta">Проект: {projectName}. Дата среза: {capturedForDate}. Задач: {len(issues)}.</p>
       <div class="table-wrap">
         <table>
@@ -1704,6 +1680,71 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       </table>
     </div>
     <script>
+      const snapshotActionStatus = document.getElementById("snapshotActionStatus");
+
+      function setActionStatus(message) {{
+        if (snapshotActionStatus) {{
+          snapshotActionStatus.textContent = message;
+        }}
+      }}
+
+      async function pollRecaptureStatus(targetDate) {{
+        try {{
+          const response = await fetch("/api/issues/snapshots/capture-status");
+          const payload = await response.json();
+
+          if (!payload.is_running) {{
+            window.location.href = `/projects/{projectRedmineId}/latest-snapshot-issues?captured_for_date=${{encodeURIComponent(targetDate)}}`;
+            return;
+          }}
+
+          const projectName = payload.current_project_name || payload.last_completed_project_name || "без названия";
+          const issuesPagesLoaded = Number(payload.current_project_issues_pages_loaded ?? 0);
+          const issuesPagesTotal = Number(payload.current_project_issues_pages_total ?? 0);
+          const timePagesLoaded = Number(payload.current_project_time_pages_loaded ?? 0);
+          const timePagesTotal = Number(payload.current_project_time_pages_total ?? 0);
+          const progressParts = [];
+
+          if (issuesPagesTotal > 0) {{
+            progressParts.push(`задачи ${{
+              issuesPagesLoaded
+            }}/${{issuesPagesTotal}} стр.`);
+          }}
+
+          if (timePagesTotal > 0) {{
+            progressParts.push(`трудозатраты ${{
+              timePagesLoaded
+            }}/${{timePagesTotal}} стр.`);
+          }}
+
+          const progressSuffix = progressParts.length ? ` (${{
+            progressParts.join(", ")
+          }})` : "";
+          setActionStatus(`Получаем срез по проекту ${{projectName}}${{progressSuffix}}`);
+          window.setTimeout(() => pollRecaptureStatus(targetDate), 1500);
+        }} catch (error) {{
+          setActionStatus("Не удалось получить статус повторного среза.");
+        }}
+      }}
+
+      document.getElementById("recaptureSnapshotButton")?.addEventListener("click", async () => {{
+        setActionStatus("Запускаем повторное получение среза...");
+        const response = await fetch("/api/issues/snapshots/recapture-project/{projectRedmineId}", {{
+          method: "POST"
+        }});
+        const payload = await response.json();
+
+        if (!response.ok) {{
+          window.alert(payload.detail || "Не удалось запустить повторное получение среза.");
+          setActionStatus("");
+          return;
+        }}
+
+        const targetDate = payload.captured_for_date || "{selectedDate}";
+        setActionStatus(payload.detail || "Повторное получение среза запущено.");
+        pollRecaptureStatus(targetDate);
+      }});
+
       document.getElementById("deleteSnapshotButton")?.addEventListener("click", async () => {{
         if (!window.confirm("Удалить выбранный срез?")) {{
           return;
@@ -1785,10 +1826,11 @@ def refreshProjects() -> dict[str, object]:
     ensureProjectsTable()
 
     projects = fetchAllProjectsFromRedmine(config.redmineUrl, config.apiKey)
-    addedCount = storeMissingProjects(projects)
+    syncStats = syncProjects(projects)
 
     return {
-        "added_count": addedCount,
+        "added_count": syncStats["added_count"],
+        "updated_count": syncStats["updated_count"],
         "projects": listStoredProjects(),
     }
 
@@ -1920,6 +1962,40 @@ def captureIssueSnapshotByProject(project_redmine_id: int) -> dict[str, object]:
     return {
         "started": started,
         "detail": f"Получение среза по проекту «{project.get('name') or project_redmine_id}» запущено.",
+        **getIssueSnapshotCaptureStatus(),
+    }
+
+
+@app.post("/api/issues/snapshots/recapture-project/{project_redmine_id}")
+def recaptureIssueSnapshotByProject(project_redmine_id: int) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    requireProjectSyncConfig()
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+
+    if isIssueSnapshotCaptureRunning():
+        return {
+            "started": False,
+            "detail": "Другое получение срезов уже выполняется.",
+            **getIssueSnapshotCaptureStatus(),
+        }
+
+    project = next((item for item in listStoredProjects() if int(item.get("redmine_id") or 0) == project_redmine_id), None)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if bool(project.get("is_disabled")):
+        raise HTTPException(status_code=400, detail="Проект отключен от загрузки")
+
+    capturedForDate = datetime.now(UTC).date().isoformat()
+    deleteIssueSnapshotForProjectDate(project_redmine_id, capturedForDate)
+    started = startProjectIssueSnapshotCaptureInBackground(project_redmine_id)
+
+    return {
+        "started": started,
+        "captured_for_date": capturedForDate,
+        "detail": f"Повторное получение среза по проекту «{project.get('name') or project_redmine_id}» запущено.",
         **getIssueSnapshotCaptureStatus(),
     }
 
