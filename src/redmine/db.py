@@ -402,19 +402,21 @@ def listRecentIssueSnapshotRuns(limit: int | None = 20) -> list[dict[str, object
                 text(
                     """
                     SELECT
-                        id,
-                        project_redmine_id,
-                        project_name,
-                        project_identifier,
-                        captured_for_date,
-                        captured_at,
-                        total_issues,
-                        total_baseline_estimate_hours,
-                        total_estimated_hours,
-                        total_spent_hours,
-                        total_spent_hours_year
-                    FROM issue_snapshot_runs
-                    ORDER BY project_name, captured_for_date DESC, captured_at DESC, id DESC
+                        r.id,
+                        r.project_redmine_id,
+                        COALESCE(p.name, r.project_name) AS project_name,
+                        COALESCE(p.identifier, r.project_identifier) AS project_identifier,
+                        r.captured_for_date,
+                        r.captured_at,
+                        r.total_issues,
+                        r.total_baseline_estimate_hours,
+                        r.total_estimated_hours,
+                        r.total_spent_hours,
+                        r.total_spent_hours_year
+                    FROM issue_snapshot_runs r
+                    LEFT JOIN projects p
+                        ON p.redmine_id = r.project_redmine_id
+                    ORDER BY LOWER(COALESCE(p.name, r.project_name)), r.captured_for_date DESC, r.captured_at DESC, r.id DESC
                     """
                 )
             )
@@ -423,19 +425,21 @@ def listRecentIssueSnapshotRuns(limit: int | None = 20) -> list[dict[str, object
                 text(
                     """
                     SELECT
-                        id,
-                        project_redmine_id,
-                        project_name,
-                        project_identifier,
-                        captured_for_date,
-                        captured_at,
-                        total_issues,
-                        total_baseline_estimate_hours,
-                        total_estimated_hours,
-                        total_spent_hours,
-                        total_spent_hours_year
-                    FROM issue_snapshot_runs
-                    ORDER BY captured_at DESC, id DESC
+                        r.id,
+                        r.project_redmine_id,
+                        COALESCE(p.name, r.project_name) AS project_name,
+                        COALESCE(p.identifier, r.project_identifier) AS project_identifier,
+                        r.captured_for_date,
+                        r.captured_at,
+                        r.total_issues,
+                        r.total_baseline_estimate_hours,
+                        r.total_estimated_hours,
+                        r.total_spent_hours,
+                        r.total_spent_hours_year
+                    FROM issue_snapshot_runs r
+                    LEFT JOIN projects p
+                        ON p.redmine_id = r.project_redmine_id
+                    ORDER BY r.captured_at DESC, r.id DESC
                     LIMIT :limit_value
                     """
                 ),
@@ -471,20 +475,22 @@ def getLatestSnapshotIssuesForProject(projectRedmineId: int) -> dict[str, object
             text(
                 """
                 SELECT
-                    id,
-                    project_redmine_id,
-                    project_name,
-                    project_identifier,
-                    captured_for_date,
-                    captured_at,
-                    total_issues,
-                    total_baseline_estimate_hours,
-                    total_estimated_hours,
-                    total_spent_hours,
-                    total_spent_hours_year
-                FROM issue_snapshot_runs
-                WHERE project_redmine_id = :project_redmine_id
-                ORDER BY captured_for_date DESC, captured_at DESC, id DESC
+                    r.id,
+                    r.project_redmine_id,
+                    COALESCE(p.name, r.project_name) AS project_name,
+                    COALESCE(p.identifier, r.project_identifier) AS project_identifier,
+                    r.captured_for_date,
+                    r.captured_at,
+                    r.total_issues,
+                    r.total_baseline_estimate_hours,
+                    r.total_estimated_hours,
+                    r.total_spent_hours,
+                    r.total_spent_hours_year
+                FROM issue_snapshot_runs r
+                LEFT JOIN projects p
+                    ON p.redmine_id = r.project_redmine_id
+                WHERE r.project_redmine_id = :project_redmine_id
+                ORDER BY r.captured_for_date DESC, r.captured_at DESC, r.id DESC
                 LIMIT 1
                 """
             ),
@@ -561,21 +567,23 @@ def getSnapshotIssuesForProjectByDate(projectRedmineId: int, capturedForDate: st
                 text(
                     """
                     SELECT
-                        id,
-                        project_redmine_id,
-                        project_name,
-                        project_identifier,
-                        captured_for_date,
-                        captured_at,
-                        total_issues,
-                        total_baseline_estimate_hours,
-                        total_estimated_hours,
-                        total_spent_hours,
-                        total_spent_hours_year
-                    FROM issue_snapshot_runs
-                    WHERE project_redmine_id = :project_redmine_id
-                      AND captured_for_date = :captured_for_date
-                    ORDER BY captured_at DESC, id DESC
+                        r.id,
+                        r.project_redmine_id,
+                        COALESCE(p.name, r.project_name) AS project_name,
+                        COALESCE(p.identifier, r.project_identifier) AS project_identifier,
+                        r.captured_for_date,
+                        r.captured_at,
+                        r.total_issues,
+                        r.total_baseline_estimate_hours,
+                        r.total_estimated_hours,
+                        r.total_spent_hours,
+                        r.total_spent_hours_year
+                    FROM issue_snapshot_runs r
+                    LEFT JOIN projects p
+                        ON p.redmine_id = r.project_redmine_id
+                    WHERE r.project_redmine_id = :project_redmine_id
+                      AND r.captured_for_date = :captured_for_date
+                    ORDER BY r.captured_at DESC, r.id DESC
                     LIMIT 1
                     """
                 ),
@@ -586,20 +594,22 @@ def getSnapshotIssuesForProjectByDate(projectRedmineId: int, capturedForDate: st
                 text(
                     """
                     SELECT
-                        id,
-                        project_redmine_id,
-                        project_name,
-                        project_identifier,
-                        captured_for_date,
-                        captured_at,
-                        total_issues,
-                        total_baseline_estimate_hours,
-                        total_estimated_hours,
-                        total_spent_hours,
-                        total_spent_hours_year
-                    FROM issue_snapshot_runs
-                    WHERE project_redmine_id = :project_redmine_id
-                    ORDER BY captured_for_date DESC, captured_at DESC, id DESC
+                        r.id,
+                        r.project_redmine_id,
+                        COALESCE(p.name, r.project_name) AS project_name,
+                        COALESCE(p.identifier, r.project_identifier) AS project_identifier,
+                        r.captured_for_date,
+                        r.captured_at,
+                        r.total_issues,
+                        r.total_baseline_estimate_hours,
+                        r.total_estimated_hours,
+                        r.total_spent_hours,
+                        r.total_spent_hours_year
+                    FROM issue_snapshot_runs r
+                    LEFT JOIN projects p
+                        ON p.redmine_id = r.project_redmine_id
+                    WHERE r.project_redmine_id = :project_redmine_id
+                    ORDER BY r.captured_for_date DESC, r.captured_at DESC, r.id DESC
                     LIMIT 1
                     """
                 ),

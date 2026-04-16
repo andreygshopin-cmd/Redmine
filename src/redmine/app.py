@@ -588,6 +588,7 @@ PAGE_HTML = """<!doctype html>
         </p>
         <div class="row">
           <button id="captureSnapshotsButton" type="button">Получить срезы задач</button>
+          <button id="recaptureSnapshotsButton" type="button">Обновить последние срезы</button>
         </div>
         <div class="status" id="captureStatus"></div>
       </article>
@@ -629,7 +630,7 @@ PAGE_HTML = """<!doctype html>
           <span>Показывать выключенные</span>
         </label>
         <span class="toolbar-spacer"></span>
-        <button id="applyProjectsSettingsButton" type="button">Применить</button>
+        <button id="applyProjectsSettingsButton" type="button">Применить настройки сохранения</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -714,6 +715,7 @@ PAGE_HTML = """<!doctype html>
     const applyProjectsSettingsButton = document.getElementById("applyProjectsSettingsButton");
     const refreshProjectsButton = document.getElementById("refreshProjectsButton");
     const captureSnapshotsButton = document.getElementById("captureSnapshotsButton");
+    const recaptureSnapshotsButton = document.getElementById("recaptureSnapshotsButton");
     const deleteSnapshotsButton = document.getElementById("deleteSnapshotsButton");
     const pruneSnapshotsButton = document.getElementById("pruneSnapshotsButton");
     let captureStatusPollTimer = null;
@@ -811,6 +813,7 @@ PAGE_HTML = """<!doctype html>
         ["#snapshot-actions h2", "textContent", "Получение срезов задач"],
         ["#snapshot-actions p", "textContent", "Запрашивает срезы только для тех проектов, по которым на сегодняшнюю дату еще нет записи в базе данных."],
         ["#captureSnapshotsButton", "textContent", "Получить срезы задач"],
+        ["#recaptureSnapshotsButton", "textContent", "Обновить последние срезы"],
         ["#delete-snapshot h2", "textContent", "Удаление среза по дате"],
         ["#delete-snapshot p", "textContent", "Удаляет все срезы и все строки задач за выбранную календарную дату."],
         ["#deleteSnapshotsButton", "textContent", "Очистить срез на дату"],
@@ -820,7 +823,7 @@ PAGE_HTML = """<!doctype html>
         ["#projectsNameFilterInput", "placeholder", "Введите часть названия"],
         ["label[for='projectsFactFilterInput']", "textContent", "Мин. сумма факта за год по разработке и багфиксу"],
         ["#showDisabledProjectsLabel span", "textContent", "Показывать выключенные"],
-        ["#applyProjectsSettingsButton", "textContent", "Применить"],
+        ["#applyProjectsSettingsButton", "textContent", "Применить настройки сохранения"],
         ["#snapshot-runs-table h2", "textContent", "Последние срезы задач"],
         ["label[for='snapshotRunsProjectFilterInput']", "textContent", "Фильтр по проекту"],
         ["#snapshotRunsProjectFilterInput", "placeholder", "Введите часть названия проекта"],
@@ -1020,6 +1023,7 @@ PAGE_HTML = """<!doctype html>
           if (payload.error_message) {
             setStatus(captureStatus, payload.error_message, "error");
             captureSnapshotsButton.disabled = false;
+            recaptureSnapshotsButton.disabled = false;
             return;
           }
 
@@ -1032,6 +1036,7 @@ PAGE_HTML = """<!doctype html>
           }
 
           captureSnapshotsButton.disabled = false;
+          recaptureSnapshotsButton.disabled = false;
           return;
         }
 
@@ -1093,8 +1098,11 @@ PAGE_HTML = """<!doctype html>
         try {
           const redmineId = Number(project?.redmine_id ?? 0) || project?.redmine_id || "—";
           const identifier = String(project?.identifier ?? "");
+          const projectIssuesUrl = identifier
+            ? `https://redmine.sms-it.ru/projects/${encodeURIComponent(identifier)}/issues?utf8=%E2%9C%93&set_filter=1&type=IssueQuery&f%5B%5D=status_id&op%5Bstatus_id%5D=*&query%5Bsort_criteria%5D%5B0%5D%5B%5D=id&query%5Bsort_criteria%5D%5B0%5D%5B%5D=desc&t%5B%5D=cf_27&t%5B%5D=spent_hours&t%5B%5D=estimated_hours&c%5B%5D=tracker&c%5B%5D=parent&c%5B%5D=status&c%5B%5D=priority&c%5B%5D=subject&c%5B%5D=assigned_to&c%5B%5D=estimated_hours&saved_query_id=0&current_project_id=${encodeURIComponent(identifier)}`
+            : "";
           const identifierHtml = identifier
-            ? `<a class="project-link mono" href="https://redmine.sms-it.ru/projects/${encodeURIComponent(identifier)}/issues" target="_blank" rel="noreferrer">${identifier}</a>`
+            ? `<a class="project-link mono" href="${projectIssuesUrl}" target="_blank" rel="noreferrer">${identifier}</a>`
             : "—";
           const level = Math.max(Number(project?.hierarchy_level ?? 0) || 0, 0);
           const indent = level > 0 ? `${"--".repeat(level)} ` : "";
@@ -1334,6 +1342,7 @@ PAGE_HTML = """<!doctype html>
 
     async function captureSnapshots() {
       captureSnapshotsButton.disabled = true;
+      recaptureSnapshotsButton.disabled = true;
       setStatus(captureStatus, "Запускаем получение срезов...");
 
       try {
@@ -1354,6 +1363,34 @@ PAGE_HTML = """<!doctype html>
         stopCaptureProgressPolling();
         setStatus(captureStatus, error.message, "error");
         captureSnapshotsButton.disabled = false;
+        recaptureSnapshotsButton.disabled = false;
+      }
+    }
+
+    async function recaptureSnapshots() {
+      captureSnapshotsButton.disabled = true;
+      recaptureSnapshotsButton.disabled = true;
+      setStatus(captureStatus, "Запускаем обновление последних срезов...");
+
+      try {
+        const response = await fetch("/api/issues/snapshots/recapture", { method: "POST" });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.detail || "Ошибка обновления последних срезов.");
+        }
+
+        if (payload.captured_for_date) {
+          snapshotDateInput.value = payload.captured_for_date;
+        }
+
+        setStatus(captureStatus, payload.detail || "Фоновое обновление последних срезов запущено...");
+        startCaptureProgressPolling();
+      } catch (error) {
+        stopCaptureProgressPolling();
+        setStatus(captureStatus, error.message, "error");
+        captureSnapshotsButton.disabled = false;
+        recaptureSnapshotsButton.disabled = false;
       }
     }
 
@@ -1419,6 +1456,7 @@ PAGE_HTML = """<!doctype html>
     refreshProjectsButton.addEventListener("click", refreshProjects);
     applyProjectsSettingsButton.addEventListener("click", applyProjectsSettings);
     captureSnapshotsButton.addEventListener("click", captureSnapshots);
+    recaptureSnapshotsButton.addEventListener("click", recaptureSnapshots);
     deleteSnapshotsButton.addEventListener("click", deleteSnapshotsForDate);
     pruneSnapshotsButton.addEventListener("click", pruneSnapshots);
     projectsNameFilterInput.addEventListener("input", () => {
@@ -1921,7 +1959,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           {''.join(optionsHtml)}
         </select>
       </form>
-      <button type="button" id="recaptureSnapshotButton">Получить срез заново</button>
+      <button type="button" id="recaptureSnapshotButton">Обновить последний срез</button>
       <button type="button" id="deleteSnapshotButton">Удалить выбранный срез</button>
       </div>
       <div class="action-status" id="snapshotActionStatus"></div>
@@ -2280,6 +2318,39 @@ def recaptureIssueSnapshotByProject(project_redmine_id: int) -> dict[str, object
         "started": started,
         "captured_for_date": capturedForDate,
         "detail": f"Повторное получение среза по проекту «{project.get('name') or project_redmine_id}» запущено.",
+    }
+
+
+@app.post("/api/issues/snapshots/recapture")
+def recaptureIssueSnapshots() -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    requireProjectSyncConfig()
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+
+    if isIssueSnapshotCaptureRunning():
+        return {
+            "started": False,
+            "detail": "Другое получение срезов уже выполняется.",
+            **getIssueSnapshotCaptureStatus(),
+        }
+
+    capturedForDate = datetime.now(UTC).date().isoformat()
+    enabledProjects = [project for project in listStoredProjects() if bool(project.get("is_enabled"))]
+
+    for project in enabledProjects:
+        projectId = int(project.get("redmine_id") or 0)
+        if projectId:
+            deleteIssueSnapshotForProjectDate(projectId, capturedForDate)
+
+    started = startIssueSnapshotCaptureInBackground()
+    return {
+        **getIssueSnapshotCaptureStatus(),
+        "started": started,
+        "captured_for_date": capturedForDate,
+        "detail": "Обновление последних срезов запущено.",
     }
 
 
