@@ -676,6 +676,9 @@ PAGE_HTML = """<!doctype html>
           placeholder="Введите часть названия проекта"
         >
       </div>
+      <div class="filter-reset-wrap">
+        <button type="button" class="filter-reset-button" id="resetSnapshotFiltersButton">Сбросить фильтр</button>
+      </div>
       <div class="table-wrap">
         <table>
           <thead>
@@ -1876,21 +1879,45 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     issueRowsHtml: list[str] = []
     for issue in issues:
         issueId = issue.get("issue_redmine_id", "—")
+        subjectValue = escape(str(issue.get("subject") or "—"))
+        trackerValue = escape(str(issue.get("tracker_name") or "—"))
+        statusValue = escape(str(issue.get("status_name") or "—"))
+        doneRatioValue = escape(str(issue.get("done_ratio") if issue.get("done_ratio") is not None else 0))
+        baselineHoursValue = float(issue.get("baseline_estimate_hours") or 0)
+        estimatedHoursValue = float(issue.get("estimated_hours") or 0)
+        spentHoursValue = float(issue.get("spent_hours") or 0)
+        spentHoursYearValue = float(issue.get("spent_hours_year") or 0)
+        closedOnValue = escape(formatSnapshotPageDateTime(issue.get("closed_on")))
+        assignedToValue = escape(str(issue.get("assigned_to_name") or "—"))
+        fixedVersionValue = escape(str(issue.get("fixed_version_name") or "—"))
         issueRowsHtml.append(
             f"""
-            <tr>
+            <tr
+              data-issue-id="{escape(str(issueId))}"
+              data-subject="{subjectValue}"
+              data-tracker="{trackerValue}"
+              data-status="{statusValue}"
+              data-done-ratio="{doneRatioValue}"
+              data-baseline-estimate-hours="{baselineHoursValue}"
+              data-estimated-hours="{estimatedHoursValue}"
+              data-spent-hours="{spentHoursValue}"
+              data-spent-hours-year="{spentHoursYearValue}"
+              data-closed-on="{closedOnValue}"
+              data-assigned-to="{assignedToValue}"
+              data-fixed-version="{fixedVersionValue}"
+            >
               <td class="mono"><a class="issue-link" href="https://redmine.sms-it.ru/issues/{issueId}" target="_blank" rel="noreferrer">{issueId}</a></td>
-              <td class="subject-col">{escape(str(issue.get("subject") or "—"))}</td>
-              <td>{escape(str(issue.get("tracker_name") or "—"))}</td>
-              <td>{escape(str(issue.get("status_name") or "—"))}</td>
-              <td>{escape(str(issue.get("done_ratio") if issue.get("done_ratio") is not None else 0))}</td>
-              <td>{formatPageHours(issue.get("baseline_estimate_hours"))}</td>
-              <td>{formatPageHours(issue.get("estimated_hours"))}</td>
-              <td>{formatPageHours(issue.get("spent_hours"))}</td>
-              <td>{formatPageHours(issue.get("spent_hours_year"))}</td>
-              <td>{escape(formatSnapshotPageDateTime(issue.get("closed_on")))}</td>
-              <td>{escape(str(issue.get("assigned_to_name") or "—"))}</td>
-              <td>{escape(str(issue.get("fixed_version_name") or "—"))}</td>
+              <td class="subject-col">{subjectValue}</td>
+              <td>{trackerValue}</td>
+              <td>{statusValue}</td>
+              <td>{doneRatioValue}</td>
+              <td>{formatPageHours(baselineHoursValue)}</td>
+              <td>{formatPageHours(estimatedHoursValue)}</td>
+              <td>{formatPageHours(spentHoursValue)}</td>
+              <td>{formatPageHours(spentHoursYearValue)}</td>
+              <td>{closedOnValue}</td>
+              <td>{assignedToValue}</td>
+              <td>{fixedVersionValue}</td>
             </tr>
             """
         )
@@ -1963,6 +1990,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .summary-card {{ border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: #f8fbfc; }}
       .summary-label {{ color: var(--muted); font-size: 0.9rem; margin: 0 0 6px; }}
       .summary-value {{ font-size: 1.15rem; font-weight: 700; color: var(--text); }}
+      .filter-input-table {{ width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font: inherit; background: #ffffff; color: var(--text); }}
+      .filter-head th {{ top: 44px; background: #f7fbfc; padding-top: 8px; padding-bottom: 8px; z-index: 3; text-transform: none; }}
+      .filter-reset-wrap {{ display: flex; justify-content: flex-end; margin: 0 0 10px; }}
+      .filter-reset-button {{ background: #375d77; color: #ffffff; }}
       .table-wrap {{ max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
       table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); }}
       th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
@@ -1989,24 +2020,24 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       <button type="button" id="deleteSnapshotButton">Удалить выбранный срез</button>
       </div>
       <div class="action-status" id="snapshotActionStatus"></div>
-      <p class="meta">Проект: {projectName}. Дата среза: {capturedForDate}. Задач: {len(issues)}.</p>
+      <p class="meta">Проект: {projectName}. Дата среза: {capturedForDate}. Задач: <span id="visibleIssuesCount">{len(issues)}</span> из {len(issues)}.</p>
       <div class="summary-block">
         <div class="summary-row">
-          <div class="summary-card"><div class="summary-label">Базовая оценка, ч</div><div class="summary-value">{formatPageHours(totalBaselineEstimateHours)}</div></div>
-          <div class="summary-card"><div class="summary-label">План, ч</div><div class="summary-value">{formatPageHours(totalEstimatedHours)}</div></div>
-          <div class="summary-card"><div class="summary-label">Факт всего, ч</div><div class="summary-value">{formatPageHours(totalSpentHours)}</div></div>
-          <div class="summary-card"><div class="summary-label">Факт за год, ч</div><div class="summary-value">{formatPageHours(totalSpentHoursYear)}</div></div>
+          <div class="summary-card"><div class="summary-label">Базовая оценка, ч</div><div class="summary-value" id="summaryBaselineEstimate">{formatPageHours(totalBaselineEstimateHours)}</div></div>
+          <div class="summary-card"><div class="summary-label">План, ч</div><div class="summary-value" id="summaryEstimated">{formatPageHours(totalEstimatedHours)}</div></div>
+          <div class="summary-card"><div class="summary-label">Факт всего, ч</div><div class="summary-value" id="summarySpent">{formatPageHours(totalSpentHours)}</div></div>
+          <div class="summary-card"><div class="summary-label">Факт за год, ч</div><div class="summary-value" id="summarySpentYear">{formatPageHours(totalSpentHoursYear)}</div></div>
         </div>
         <div class="summary-row">
-          <div class="summary-card"><div class="summary-label">Разработка: факт за год, ч</div><div class="summary-value">{formatPageHours(developmentSpentHoursYear)}</div></div>
-          <div class="summary-card"><div class="summary-label">Процессы разработки: план, ч</div><div class="summary-value">{formatPageHours(developmentProcessEstimateHours)}</div></div>
-          <div class="summary-card"><div class="summary-label">Процессы разработки: факт за год, ч</div><div class="summary-value">{formatPageHours(developmentProcessSpentHoursYear)}</div></div>
-          <div class="summary-card"><div class="summary-label">Ошибка: оценка, ч</div><div class="summary-value">{formatPageHours(bugEstimateHours)}</div></div>
-          <div class="summary-card"><div class="summary-label">Ошибка: факт за год, ч</div><div class="summary-value">{formatPageHours(bugSpentHoursYear)}</div></div>
+          <div class="summary-card"><div class="summary-label">Разработка: факт за год, ч</div><div class="summary-value" id="summaryDevelopmentSpentYear">{formatPageHours(developmentSpentHoursYear)}</div></div>
+          <div class="summary-card"><div class="summary-label">Процессы разработки: план, ч</div><div class="summary-value" id="summaryDevelopmentProcessEstimated">{formatPageHours(developmentProcessEstimateHours)}</div></div>
+          <div class="summary-card"><div class="summary-label">Процессы разработки: факт за год, ч</div><div class="summary-value" id="summaryDevelopmentProcessSpentYear">{formatPageHours(developmentProcessSpentHoursYear)}</div></div>
+          <div class="summary-card"><div class="summary-label">Ошибка: оценка, ч</div><div class="summary-value" id="summaryBugEstimated">{formatPageHours(bugEstimateHours)}</div></div>
+          <div class="summary-card"><div class="summary-label">Ошибка: факт за год, ч</div><div class="summary-value" id="summaryBugSpentYear">{formatPageHours(bugSpentHoursYear)}</div></div>
         </div>
       </div>
       <div class="table-wrap">
-        <table>
+        <table id="snapshotIssuesTable">
         <thead>
           <tr>
             <th>ID</th>
@@ -2022,19 +2053,139 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <th>Исполнитель</th>
             <th>Версия</th>
           </tr>
+          <tr class="filter-head">
+            <th><input class="filter-input-table" type="text" data-filter-key="issueId" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="subject" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="tracker" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="status" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="doneRatio" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="baseline" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="estimated" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="spent" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="spentYear" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="closedOn" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="assignedTo" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="fixedVersion" placeholder="Фильтр"></th>
+          </tr>
         </thead>
-        <tbody>
+        <tbody id="snapshotIssuesTableBody">
           {''.join(issueRowsHtml)}
         </tbody>
       </table>
     </div>
     <script>
       const snapshotActionStatus = document.getElementById("snapshotActionStatus");
+      const visibleIssuesCount = document.getElementById("visibleIssuesCount");
+      const snapshotIssuesTableBody = document.getElementById("snapshotIssuesTableBody");
+      const snapshotIssueRows = Array.from(snapshotIssuesTableBody?.querySelectorAll("tr") || []);
+      const snapshotFilterInputs = Array.from(document.querySelectorAll("[data-filter-key]"));
+      const resetSnapshotFiltersButton = document.getElementById("resetSnapshotFiltersButton");
+      const summaryBaselineEstimate = document.getElementById("summaryBaselineEstimate");
+      const summaryEstimated = document.getElementById("summaryEstimated");
+      const summarySpent = document.getElementById("summarySpent");
+      const summarySpentYear = document.getElementById("summarySpentYear");
+      const summaryDevelopmentSpentYear = document.getElementById("summaryDevelopmentSpentYear");
+      const summaryDevelopmentProcessEstimated = document.getElementById("summaryDevelopmentProcessEstimated");
+      const summaryDevelopmentProcessSpentYear = document.getElementById("summaryDevelopmentProcessSpentYear");
+      const summaryBugEstimated = document.getElementById("summaryBugEstimated");
+      const summaryBugSpentYear = document.getElementById("summaryBugSpentYear");
 
       function setActionStatus(message) {{
         if (snapshotActionStatus) {{
           snapshotActionStatus.textContent = message;
         }}
+      }}
+
+      function formatFilterHours(value) {{
+        const parsed = Number(value ?? 0);
+        if (!Number.isFinite(parsed)) {{
+          return "0,0";
+        }}
+        return parsed.toFixed(1).replace(".", ",");
+      }}
+
+      function updateSnapshotSummaries(rows) {{
+        let baselineEstimate = 0;
+        let estimated = 0;
+        let spent = 0;
+        let spentYear = 0;
+        let developmentSpentYear = 0;
+        let developmentProcessEstimated = 0;
+        let developmentProcessSpentYear = 0;
+        let bugEstimated = 0;
+        let bugSpentYear = 0;
+
+        for (const row of rows) {{
+          const tracker = String(row.dataset.tracker || "").trim().toLowerCase();
+          const rowBaselineEstimate = Number(row.dataset.baselineEstimateHours || 0);
+          const rowEstimated = Number(row.dataset.estimatedHours || 0);
+          const rowSpent = Number(row.dataset.spentHours || 0);
+          const rowSpentYear = Number(row.dataset.spentHoursYear || 0);
+
+          baselineEstimate += rowBaselineEstimate;
+          estimated += rowEstimated;
+          spent += rowSpent;
+          spentYear += rowSpentYear;
+
+          if (tracker === "разработка") {{
+            developmentSpentYear += rowSpentYear;
+          }} else if (tracker === "процессы разработки") {{
+            developmentProcessEstimated += rowEstimated;
+            developmentProcessSpentYear += rowSpentYear;
+          }} else if (tracker === "ошибка") {{
+            bugEstimated += rowEstimated;
+            bugSpentYear += rowSpentYear;
+          }}
+        }}
+
+        if (visibleIssuesCount) visibleIssuesCount.textContent = String(rows.length);
+        if (summaryBaselineEstimate) summaryBaselineEstimate.textContent = formatFilterHours(baselineEstimate);
+        if (summaryEstimated) summaryEstimated.textContent = formatFilterHours(estimated);
+        if (summarySpent) summarySpent.textContent = formatFilterHours(spent);
+        if (summarySpentYear) summarySpentYear.textContent = formatFilterHours(spentYear);
+        if (summaryDevelopmentSpentYear) summaryDevelopmentSpentYear.textContent = formatFilterHours(developmentSpentYear);
+        if (summaryDevelopmentProcessEstimated) summaryDevelopmentProcessEstimated.textContent = formatFilterHours(developmentProcessEstimated);
+        if (summaryDevelopmentProcessSpentYear) summaryDevelopmentProcessSpentYear.textContent = formatFilterHours(developmentProcessSpentYear);
+        if (summaryBugEstimated) summaryBugEstimated.textContent = formatFilterHours(bugEstimated);
+        if (summaryBugSpentYear) summaryBugSpentYear.textContent = formatFilterHours(bugSpentYear);
+      }}
+
+      function applySnapshotTableFilters() {{
+        const filters = Object.fromEntries(snapshotFilterInputs.map((input) => [
+          input.dataset.filterKey,
+          String(input.value || "").trim().toLocaleLowerCase("ru")
+        ]));
+
+        const visibleRows = [];
+        for (const row of snapshotIssueRows) {{
+          const matches =
+            String(row.dataset.issueId || "").toLocaleLowerCase("ru").includes(filters.issueId || "") &&
+            String(row.dataset.subject || "").toLocaleLowerCase("ru").includes(filters.subject || "") &&
+            String(row.dataset.tracker || "").toLocaleLowerCase("ru").includes(filters.tracker || "") &&
+            String(row.dataset.status || "").toLocaleLowerCase("ru").includes(filters.status || "") &&
+            String(row.dataset.doneRatio || "").toLocaleLowerCase("ru").includes(filters.doneRatio || "") &&
+            formatFilterHours(row.dataset.baselineEstimateHours).toLocaleLowerCase("ru").includes(filters.baseline || "") &&
+            formatFilterHours(row.dataset.estimatedHours).toLocaleLowerCase("ru").includes(filters.estimated || "") &&
+            formatFilterHours(row.dataset.spentHours).toLocaleLowerCase("ru").includes(filters.spent || "") &&
+            formatFilterHours(row.dataset.spentHoursYear).toLocaleLowerCase("ru").includes(filters.spentYear || "") &&
+            String(row.dataset.closedOn || "").toLocaleLowerCase("ru").includes(filters.closedOn || "") &&
+            String(row.dataset.assignedTo || "").toLocaleLowerCase("ru").includes(filters.assignedTo || "") &&
+            String(row.dataset.fixedVersion || "").toLocaleLowerCase("ru").includes(filters.fixedVersion || "");
+
+          row.style.display = matches ? "" : "none";
+          if (matches) {{
+            visibleRows.push(row);
+          }}
+        }}
+
+        updateSnapshotSummaries(visibleRows);
+      }}
+
+      function resetSnapshotTableFilters() {{
+        snapshotFilterInputs.forEach((input) => {{
+          input.value = "";
+        }});
+        applySnapshotTableFilters();
       }}
 
       async function pollRecaptureStatus(targetDate) {{
@@ -2123,6 +2274,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 
         window.location.href = `/projects/{projectRedmineId}/latest-snapshot-issues`;
       }});
+
+      snapshotFilterInputs.forEach((input) => {{
+        input.addEventListener("input", applySnapshotTableFilters);
+      }});
+
+      resetSnapshotFiltersButton?.addEventListener("click", resetSnapshotTableFilters);
+
+      applySnapshotTableFilters();
     </script>
   </main>
 </body>
