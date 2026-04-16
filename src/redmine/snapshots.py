@@ -16,6 +16,7 @@ from src.redmine.db import (
 from src.redmine.redmine_client import (
     applySpentHoursYearByIssue,
     fetchAllIssuesForProject,
+    fetchAllProjectsFromRedmine,
     fetchSpentHoursByIssueForProjectYear,
 )
 
