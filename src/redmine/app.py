@@ -1990,10 +1990,16 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .summary-card {{ border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: #f8fbfc; }}
       .summary-label {{ color: var(--muted); font-size: 0.9rem; margin: 0 0 6px; }}
       .summary-value {{ font-size: 1.15rem; font-weight: 700; color: var(--text); }}
-      .filter-input-table {{ width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font: inherit; background: #ffffff; color: var(--text); }}
-      .filter-head th {{ top: 44px; background: #f7fbfc; padding-top: 8px; padding-bottom: 8px; z-index: 3; text-transform: none; }}
-      .filter-reset-wrap {{ display: flex; justify-content: flex-end; margin: 0 0 10px; }}
+      .filter-input-table,
+      .filter-select-table,
+      .filter-number-value,
+      .filter-number-op {{ width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font: inherit; background: #ffffff; color: var(--text); }}
+      .filter-select-table {{ min-height: 92px; }}
+      .filter-number-wrap {{ display: grid; grid-template-columns: 78px minmax(88px, 1fr); gap: 6px; }}
+      .filter-head th {{ top: var(--snapshot-filter-top, 44px); background: #f7fbfc; padding-top: 8px; padding-bottom: 8px; z-index: 3; text-transform: none; box-shadow: inset 0 1px 0 #d9e5eb; }}
+      .filter-reset-wrap {{ display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin: 0 0 10px; }}
       .filter-reset-button {{ background: #375d77; color: #ffffff; }}
+      .filter-tip {{ color: var(--muted); font-size: 0.92rem; }}
       .table-wrap {{ max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
       table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); }}
       th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
@@ -2036,6 +2042,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           <div class="summary-card"><div class="summary-label">Ошибка: факт за год, ч</div><div class="summary-value" id="summaryBugSpentYear">{formatPageHours(bugSpentHoursYear)}</div></div>
         </div>
       </div>
+      <div class="filter-reset-wrap">
+        <span class="filter-tip">Фильтры применяются к таблице и суммам выше.</span>
+        <button type="button" class="filter-reset-button" id="resetSnapshotFiltersButton">Сбросить фильтр</button>
+      </div>
       <div class="table-wrap">
         <table id="snapshotIssuesTable">
         <thead>
@@ -2054,18 +2064,18 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <th>Версия</th>
           </tr>
           <tr class="filter-head">
-            <th><input class="filter-input-table" type="text" data-filter-key="issueId" placeholder="Фильтр"></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="subject" placeholder="Фильтр"></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="tracker" placeholder="Фильтр"></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="status" placeholder="Фильтр"></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="doneRatio" placeholder="Фильтр"></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="baseline" placeholder="Фильтр"></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="estimated" placeholder="Фильтр"></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="spent" placeholder="Фильтр"></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="spentYear" placeholder="Фильтр"></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="closedOn" placeholder="Фильтр"></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="assignedTo" placeholder="Фильтр"></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="fixedVersion" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="issueId" data-filter-role="text" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="subject" data-filter-role="text" placeholder="Фильтр"></th>
+            <th><select class="filter-select-table" multiple data-filter-key="tracker" data-filter-role="multi"></select></th>
+            <th><select class="filter-select-table" multiple data-filter-key="status" data-filter-role="multi"></select></th>
+            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="doneRatio" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="1" data-filter-key="doneRatio" data-filter-role="value" placeholder="Число"></div></th>
+            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="baseline" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="baseline" data-filter-role="value" placeholder="Число"></div></th>
+            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="estimated" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="estimated" data-filter-role="value" placeholder="Число"></div></th>
+            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spent" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spent" data-filter-role="value" placeholder="Число"></div></th>
+            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spentYear" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spentYear" data-filter-role="value" placeholder="Число"></div></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="closedOn" data-filter-role="text" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="assignedTo" data-filter-role="text" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="fixedVersion" data-filter-role="text" placeholder="Фильтр"></th>
           </tr>
         </thead>
         <tbody id="snapshotIssuesTableBody">
@@ -2077,8 +2087,12 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const snapshotActionStatus = document.getElementById("snapshotActionStatus");
       const visibleIssuesCount = document.getElementById("visibleIssuesCount");
       const snapshotIssuesTableBody = document.getElementById("snapshotIssuesTableBody");
+      const snapshotIssuesTable = document.getElementById("snapshotIssuesTable");
       const snapshotIssueRows = Array.from(snapshotIssuesTableBody?.querySelectorAll("tr") || []);
-      const snapshotFilterInputs = Array.from(document.querySelectorAll("[data-filter-key]"));
+      const textFilterInputs = Array.from(document.querySelectorAll("[data-filter-role='text']"));
+      const multiSelectFilters = Array.from(document.querySelectorAll("[data-filter-role='multi']"));
+      const numericFilterControls = Array.from(document.querySelectorAll("[data-filter-role='op'], [data-filter-role='value']"));
+      const snapshotFilterInputs = [...textFilterInputs, ...multiSelectFilters, ...numericFilterControls];
       const resetSnapshotFiltersButton = document.getElementById("resetSnapshotFiltersButton");
       const summaryBaselineEstimate = document.getElementById("summaryBaselineEstimate");
       const summaryEstimated = document.getElementById("summaryEstimated");
@@ -2102,6 +2116,62 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           return "0,0";
         }}
         return parsed.toFixed(1).replace(".", ",");
+      }}
+
+      function updateSnapshotFilterHeaderOffset() {{
+        const headRow = snapshotIssuesTable?.querySelector("thead tr:first-child");
+        const tableElement = snapshotIssuesTable;
+        if (!headRow || !tableElement) {{
+          return;
+        }}
+        const height = Math.ceil(headRow.getBoundingClientRect().height || 44);
+        tableElement.style.setProperty("--snapshot-filter-top", `${{height}}px`);
+      }}
+
+      function populateSnapshotMultiSelects() {{
+        for (const select of multiSelectFilters) {{
+          const filterKey = select.dataset.filterKey;
+          if (!filterKey) {{
+            continue;
+          }}
+
+          const selectedValues = new Set(Array.from(select.selectedOptions).map((option) => option.value));
+          const values = Array.from(new Set(
+            snapshotIssueRows
+              .map((row) => String(row.dataset[filterKey] || "").trim())
+              .filter(Boolean)
+          )).sort((left, right) => left.localeCompare(right, "ru"));
+
+          select.innerHTML = "";
+          for (const value of values) {{
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = value;
+            option.selected = selectedValues.has(value);
+            select.appendChild(option);
+          }}
+
+        }}
+      }}
+
+      function matchesNumericFilter(rawValue, operator, filterValue) {{
+        if (filterValue === "" || operator === "") {{
+          return true;
+        }}
+
+        const left = Number(rawValue ?? 0);
+        const right = Number(String(filterValue).replace(",", "."));
+        if (!Number.isFinite(left) || !Number.isFinite(right)) {{
+          return false;
+        }}
+
+        if (operator === ">") {{
+          return left > right;
+        }}
+        if (operator === "<") {{
+          return left < right;
+        }}
+        return left === right;
       }}
 
       function updateSnapshotSummaries(rows) {{
@@ -2151,26 +2221,56 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }}
 
       function applySnapshotTableFilters() {{
-        const filters = Object.fromEntries(snapshotFilterInputs.map((input) => [
+        const textFilters = Object.fromEntries(textFilterInputs.map((input) => [
           input.dataset.filterKey,
           String(input.value || "").trim().toLocaleLowerCase("ru")
         ]));
 
+        const multiFilters = Object.fromEntries(multiSelectFilters.map((select) => [
+          select.dataset.filterKey,
+          new Set(Array.from(select.selectedOptions).map((option) => option.value.toLocaleLowerCase("ru")))
+        ]));
+
+        const numericFilters = {{
+          doneRatio: {{
+            operator: String(document.querySelector('[data-filter-key="doneRatio"][data-filter-role="op"]')?.value || ""),
+            value: String(document.querySelector('[data-filter-key="doneRatio"][data-filter-role="value"]')?.value || "").trim(),
+          }},
+          baseline: {{
+            operator: String(document.querySelector('[data-filter-key="baseline"][data-filter-role="op"]')?.value || ""),
+            value: String(document.querySelector('[data-filter-key="baseline"][data-filter-role="value"]')?.value || "").trim(),
+          }},
+          estimated: {{
+            operator: String(document.querySelector('[data-filter-key="estimated"][data-filter-role="op"]')?.value || ""),
+            value: String(document.querySelector('[data-filter-key="estimated"][data-filter-role="value"]')?.value || "").trim(),
+          }},
+          spent: {{
+            operator: String(document.querySelector('[data-filter-key="spent"][data-filter-role="op"]')?.value || ""),
+            value: String(document.querySelector('[data-filter-key="spent"][data-filter-role="value"]')?.value || "").trim(),
+          }},
+          spentYear: {{
+            operator: String(document.querySelector('[data-filter-key="spentYear"][data-filter-role="op"]')?.value || ""),
+            value: String(document.querySelector('[data-filter-key="spentYear"][data-filter-role="value"]')?.value || "").trim(),
+          }},
+        }};
+
         const visibleRows = [];
         for (const row of snapshotIssueRows) {{
+          const trackerValue = String(row.dataset.tracker || "").toLocaleLowerCase("ru");
+          const statusValue = String(row.dataset.status || "").toLocaleLowerCase("ru");
           const matches =
-            String(row.dataset.issueId || "").toLocaleLowerCase("ru").includes(filters.issueId || "") &&
-            String(row.dataset.subject || "").toLocaleLowerCase("ru").includes(filters.subject || "") &&
-            String(row.dataset.tracker || "").toLocaleLowerCase("ru").includes(filters.tracker || "") &&
-            String(row.dataset.status || "").toLocaleLowerCase("ru").includes(filters.status || "") &&
-            String(row.dataset.doneRatio || "").toLocaleLowerCase("ru").includes(filters.doneRatio || "") &&
-            formatFilterHours(row.dataset.baselineEstimateHours).toLocaleLowerCase("ru").includes(filters.baseline || "") &&
-            formatFilterHours(row.dataset.estimatedHours).toLocaleLowerCase("ru").includes(filters.estimated || "") &&
-            formatFilterHours(row.dataset.spentHours).toLocaleLowerCase("ru").includes(filters.spent || "") &&
-            formatFilterHours(row.dataset.spentHoursYear).toLocaleLowerCase("ru").includes(filters.spentYear || "") &&
-            String(row.dataset.closedOn || "").toLocaleLowerCase("ru").includes(filters.closedOn || "") &&
-            String(row.dataset.assignedTo || "").toLocaleLowerCase("ru").includes(filters.assignedTo || "") &&
-            String(row.dataset.fixedVersion || "").toLocaleLowerCase("ru").includes(filters.fixedVersion || "");
+            String(row.dataset.issueId || "").toLocaleLowerCase("ru").includes(textFilters.issueId || "") &&
+            String(row.dataset.subject || "").toLocaleLowerCase("ru").includes(textFilters.subject || "") &&
+            (!multiFilters.tracker?.size || multiFilters.tracker.has(trackerValue)) &&
+            (!multiFilters.status?.size || multiFilters.status.has(statusValue)) &&
+            matchesNumericFilter(row.dataset.doneRatio, numericFilters.doneRatio.operator, numericFilters.doneRatio.value) &&
+            matchesNumericFilter(row.dataset.baselineEstimateHours, numericFilters.baseline.operator, numericFilters.baseline.value) &&
+            matchesNumericFilter(row.dataset.estimatedHours, numericFilters.estimated.operator, numericFilters.estimated.value) &&
+            matchesNumericFilter(row.dataset.spentHours, numericFilters.spent.operator, numericFilters.spent.value) &&
+            matchesNumericFilter(row.dataset.spentHoursYear, numericFilters.spentYear.operator, numericFilters.spentYear.value) &&
+            String(row.dataset.closedOn || "").toLocaleLowerCase("ru").includes(textFilters.closedOn || "") &&
+            String(row.dataset.assignedTo || "").toLocaleLowerCase("ru").includes(textFilters.assignedTo || "") &&
+            String(row.dataset.fixedVersion || "").toLocaleLowerCase("ru").includes(textFilters.fixedVersion || "");
 
           row.style.display = matches ? "" : "none";
           if (matches) {{
@@ -2182,7 +2282,15 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }}
 
       function resetSnapshotTableFilters() {{
-        snapshotFilterInputs.forEach((input) => {{
+        textFilterInputs.forEach((input) => {{
+          input.value = "";
+        }});
+        multiSelectFilters.forEach((select) => {{
+          Array.from(select.options).forEach((option) => {{
+            option.selected = false;
+          }});
+        }});
+        numericFilterControls.forEach((input) => {{
           input.value = "";
         }});
         applySnapshotTableFilters();
@@ -2275,12 +2383,21 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         window.location.href = `/projects/{projectRedmineId}/latest-snapshot-issues`;
       }});
 
-      snapshotFilterInputs.forEach((input) => {{
+      textFilterInputs.forEach((input) => {{
         input.addEventListener("input", applySnapshotTableFilters);
+      }});
+      multiSelectFilters.forEach((select) => {{
+        select.addEventListener("change", applySnapshotTableFilters);
+      }});
+      numericFilterControls.forEach((control) => {{
+        control.addEventListener("input", applySnapshotTableFilters);
+        control.addEventListener("change", applySnapshotTableFilters);
       }});
 
       resetSnapshotFiltersButton?.addEventListener("click", resetSnapshotTableFilters);
-
+      populateSnapshotMultiSelects();
+      updateSnapshotFilterHeaderOffset();
+      window.addEventListener("resize", updateSnapshotFilterHeaderOffset);
       applySnapshotTableFilters();
     </script>
   </main>
