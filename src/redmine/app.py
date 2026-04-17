@@ -346,16 +346,32 @@ PAGE_HTML = """<!doctype html>
 
     .project-name-cell {
       white-space: nowrap;
+      position: relative;
     }
 
     .project-sticky-3.project-name-cell {
       min-width: 260px;
     }
 
-    .project-indent {
-      color: var(--muted);
-      font-weight: 600;
-      letter-spacing: 0.02em;
+    .project-tree {
+      display: inline-flex;
+      align-items: center;
+      position: relative;
+      padding-left: calc(var(--tree-level, 0) * 18px);
+    }
+
+    .project-tree::before {
+      content: "";
+      position: absolute;
+      left: calc((var(--tree-level, 0) - 1) * 18px + 6px);
+      top: 50%;
+      width: 10px;
+      border-top: 1px solid #bfd0db;
+      opacity: 0;
+    }
+
+    .project-tree.has-parent::before {
+      opacity: 0.8;
     }
 
     table {
@@ -1108,7 +1124,7 @@ PAGE_HTML = """<!doctype html>
             ? `<a class="project-link mono" href="${projectIssuesUrl}" target="_blank" rel="noreferrer">${identifier}</a>`
             : "—";
           const level = Math.max(Number(project?.hierarchy_level ?? 0) || 0, 0);
-          const indent = level > 0 ? `${"--".repeat(level)} ` : "";
+          const projectTreeClass = level > 0 ? "project-tree has-parent" : "project-tree";
           const row = document.createElement("tr");
           row.className = project?.is_enabled ? "" : "project-row-disabled";
           row.innerHTML = `
@@ -1120,7 +1136,7 @@ PAGE_HTML = """<!doctype html>
                 <button class="project-capture-button" type="button" data-project-id="${redmineId}" title="Получить срез по проекту" ${project?.is_enabled ? "" : "disabled"}>↓</button>
               </span>
             </td>
-            <td class="project-name-cell project-sticky-3"><span class="project-indent">${indent}</span><a class="project-link" href="/projects/${encodeURIComponent(redmineId)}/burndown" target="_blank" rel="noreferrer">${project?.name ?? "\u2014"}</a></td>
+            <td class="project-name-cell project-sticky-3"><span class="${projectTreeClass}" style="--tree-level:${level};"><a class="project-link" href="/projects/${encodeURIComponent(redmineId)}/burndown" target="_blank" rel="noreferrer">${project?.name ?? "\u2014"}</a></span></td>
             <td>${identifierHtml}</td>
             <td>${formatHours(project?.baseline_estimate_hours)}</td>
             <td>${formatHours(project?.development_estimate_hours)}</td>
@@ -1995,7 +2011,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .filter-number-value,
       .filter-number-op {{ width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font: inherit; background: #ffffff; color: var(--text); }}
       .filter-select-table {{ min-height: 92px; }}
-      .filter-number-wrap {{ display: grid; grid-template-columns: 78px minmax(88px, 1fr); gap: 6px; }}
+      .filter-number-op,
+      .filter-number-value {{ width: 64px; }}
+      .filter-number-wrap {{ display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }}
       .filter-head th {{ top: var(--snapshot-filter-top, 44px); background: #f7fbfc; padding-top: 8px; padding-bottom: 8px; z-index: 3; text-transform: none; box-shadow: inset 0 1px 0 #d9e5eb; }}
       .filter-reset-wrap {{ display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin: 0 0 10px; }}
       .filter-reset-button {{ background: #375d77; color: #ffffff; }}
@@ -2008,7 +2026,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .mono {{ font-family: Consolas, "Courier New", monospace; font-size: 0.95rem; white-space: nowrap; }}
       .issue-link {{ color: var(--blue); text-decoration: none; border-bottom: 1px dashed currentColor; font-weight: 700; }}
       .issue-link:hover {{ color: var(--orange); border-bottom-style: solid; }}
-      .subject-col {{ width: 24%; max-width: 24%; }}
+      .subject-col {{ width: 12%; max-width: 12%; }}
   </style>
 </head>
   <body>
