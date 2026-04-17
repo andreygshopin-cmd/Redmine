@@ -2015,7 +2015,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .summary-table td {{ border: 1px solid var(--line); padding: 12px 10px; vertical-align: middle; }}
       .summary-table thead th {{ position: static; background: #ffffff; color: var(--text); text-transform: none; font-size: 0.98rem; letter-spacing: 0; }}
       .summary-table tbody th {{ background: #ffffff; color: var(--text); text-transform: none; font-size: 1rem; font-weight: 500; }}
-      .summary-table .summary-metric {{ text-align: right; font-size: 1.02rem; font-weight: 700; color: #173b5a; white-space: nowrap; }}
+      .summary-table .summary-metric {{ text-align: right; font-size: 1.02rem; font-weight: 400; color: #173b5a; white-space: nowrap; }}
+      .summary-table .summary-percent {{ font-weight: 700; }}
       .summary-table .summary-empty {{ background: #ffffff; }}
       .filter-input-table,
       .filter-select-table,
@@ -2089,25 +2090,29 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-metric" id="summaryBaselineEstimate" rowspan="3">{formatPageHours(totalBaselineEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentEstimated">{formatPageHours(developmentEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentSpentYear">{formatPageHours(developmentSpentHoursYear)}</td>
-              <td class="summary-metric" id="summaryDevelopmentCombinedSpentYear" rowspan="2">{formatPageHours(developmentSpentHoursYear + developmentProcessSpentHoursYear)}</td>
-              <td class="summary-metric" id="summaryBugShareYear" rowspan="3">{formatPageHours((bugSpentHoursYear / (developmentSpentHoursYear + developmentProcessSpentHoursYear) * 100) if (developmentSpentHoursYear + developmentProcessSpentHoursYear) else 0)}</td>
+              <td class="summary-empty"></td>
+              <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentSpent">{formatPageHours(developmentSpentHours)}</td>
-              <td class="summary-metric" id="summaryDevelopmentCombinedSpent" rowspan="2">{formatPageHours(developmentSpentHours + developmentProcessSpentHours)}</td>
-              <td class="summary-metric" id="summaryBugShareAll" rowspan="3">{formatPageHours((bugSpentHours / (developmentSpentHours + developmentProcessSpentHours) * 100) if (developmentSpentHours + developmentProcessSpentHours) else 0)}</td>
+              <td class="summary-empty"></td>
+              <td class="summary-empty"></td>
             </tr>
             <tr>
               <th>Процессы разработки, ч</th>
               <td class="summary-metric" id="summaryDevelopmentProcessEstimated">{formatPageHours(developmentProcessEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentProcessSpentYear">{formatPageHours(developmentProcessSpentHoursYear)}</td>
+              <td class="summary-metric" id="summaryDevelopmentCombinedSpentYear">{formatPageHours(developmentSpentHoursYear + developmentProcessSpentHoursYear)}</td>
+              <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentProcessSpent">{formatPageHours(developmentProcessSpentHours)}</td>
+              <td class="summary-metric" id="summaryDevelopmentCombinedSpent">{formatPageHours(developmentSpentHours + developmentProcessSpentHours)}</td>
+              <td class="summary-metric summary-percent" id="summaryDevelopmentCoverageAll">{formatPageHours(((developmentSpentHours + developmentProcessSpentHours) / totalBaselineEstimateHours * 100) if totalBaselineEstimateHours else 0)}%</td>
             </tr>
             <tr>
               <th>Ошибка, ч</th>
               <td class="summary-metric" id="summaryBugEstimated">{formatPageHours(bugEstimateHours)}</td>
-              <td class="summary-metric" id="summaryBugSpentYear">{formatPageHours(bugSpentHoursYear)}</td>
-              <td class="summary-empty"></td>
-              <td class="summary-metric" id="summaryBugSpent">{formatPageHours(bugSpentHours)}</td>
-              <td class="summary-empty"></td>
+              <td class="summary-metric" id="summaryBugSpentYear" colspan="2">{formatPageHours(bugSpentHoursYear)}</td>
+              <td class="summary-metric summary-percent" id="summaryBugShareYear">{formatPageHours((bugSpentHoursYear / (developmentSpentHoursYear + developmentProcessSpentHoursYear) * 100) if (developmentSpentHoursYear + developmentProcessSpentHoursYear) else 0)}%</td>
+              <td class="summary-metric" id="summaryBugSpent" colspan="2">{formatPageHours(bugSpentHours)}</td>
+              <td class="summary-metric summary-percent" id="summaryBugShareAll">{formatPageHours((bugSpentHours / (developmentSpentHours + developmentProcessSpentHours) * 100) if (developmentSpentHours + developmentProcessSpentHours) else 0)}%</td>
             </tr>
             <tr>
               <th>Итого по разработке</th>
@@ -2181,6 +2186,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const summaryDevelopmentSpent = document.getElementById("summaryDevelopmentSpent");
       const summaryDevelopmentCombinedSpentYear = document.getElementById("summaryDevelopmentCombinedSpentYear");
       const summaryDevelopmentCombinedSpent = document.getElementById("summaryDevelopmentCombinedSpent");
+      const summaryDevelopmentCoverageAll = document.getElementById("summaryDevelopmentCoverageAll");
       const summaryDevelopmentTotalEstimated = document.getElementById("summaryDevelopmentTotalEstimated");
       const summaryDevelopmentGrandSpentYear = document.getElementById("summaryDevelopmentGrandSpentYear");
       const summaryDevelopmentGrandSpent = document.getElementById("summaryDevelopmentGrandSpent");
@@ -2331,6 +2337,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         const developmentGrandSpent = developmentCombinedSpent + bugSpent;
         if (summaryDevelopmentCombinedSpentYear) summaryDevelopmentCombinedSpentYear.textContent = formatFilterHours(developmentCombinedSpentYear);
         if (summaryDevelopmentCombinedSpent) summaryDevelopmentCombinedSpent.textContent = formatFilterHours(developmentCombinedSpent);
+        if (summaryDevelopmentCoverageAll) summaryDevelopmentCoverageAll.textContent = formatFilterPercent(baselineEstimate > 0 ? (developmentCombinedSpent / baselineEstimate) * 100 : 0);
         if (summaryDevelopmentTotalEstimated) summaryDevelopmentTotalEstimated.textContent = formatFilterHours(developmentTotalEstimated);
         if (summaryDevelopmentGrandSpentYear) summaryDevelopmentGrandSpentYear.textContent = formatFilterHours(developmentGrandSpentYear);
         if (summaryDevelopmentGrandSpent) summaryDevelopmentGrandSpent.textContent = formatFilterHours(developmentGrandSpent);
