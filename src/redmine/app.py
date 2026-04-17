@@ -2020,13 +2020,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .filter-tip {{ color: var(--muted); font-size: 0.92rem; }}
       .table-wrap {{ max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
       table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); }}
+      #snapshotIssuesTable {{ table-layout: fixed; }}
       th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
       th {{ position: sticky; top: 0; z-index: 2; background: #eef6f7; color: #426179; text-transform: uppercase; font-size: 0.88rem; }}
       tr:last-child td {{ border-bottom: 0; }}
       .mono {{ font-family: Consolas, "Courier New", monospace; font-size: 0.95rem; white-space: nowrap; }}
       .issue-link {{ color: var(--blue); text-decoration: none; border-bottom: 1px dashed currentColor; font-weight: 700; }}
       .issue-link:hover {{ color: var(--orange); border-bottom-style: solid; }}
-      .subject-col {{ width: 12%; max-width: 12%; }}
+      .subject-col {{ width: 16%; min-width: 16%; max-width: 16%; white-space: normal; word-break: break-word; }}
   </style>
 </head>
   <body>
@@ -2082,18 +2083,18 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <th>Версия</th>
           </tr>
           <tr class="filter-head">
-            <th><input class="filter-input-table" type="text" data-filter-key="issueId" data-filter-role="text" placeholder="Фильтр"></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="subject" data-filter-role="text" placeholder="Фильтр"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="issueId" data-filter-role="text"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="subject" data-filter-role="text"></th>
             <th><select class="filter-select-table" multiple data-filter-key="tracker" data-filter-role="multi"></select></th>
             <th><select class="filter-select-table" multiple data-filter-key="status" data-filter-role="multi"></select></th>
-            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="doneRatio" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="1" data-filter-key="doneRatio" data-filter-role="value" placeholder="Число"></div></th>
-            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="baseline" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="baseline" data-filter-role="value" placeholder="Число"></div></th>
-            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="estimated" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="estimated" data-filter-role="value" placeholder="Число"></div></th>
-            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spent" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spent" data-filter-role="value" placeholder="Число"></div></th>
-            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spentYear" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spentYear" data-filter-role="value" placeholder="Число"></div></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="closedOn" data-filter-role="text" placeholder="Фильтр"></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="assignedTo" data-filter-role="text" placeholder="Фильтр"></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="fixedVersion" data-filter-role="text" placeholder="Фильтр"></th>
+            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="doneRatio" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="1" data-filter-key="doneRatio" data-filter-role="value"></div></th>
+            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="baseline" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="baseline" data-filter-role="value"></div></th>
+            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="estimated" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="estimated" data-filter-role="value"></div></th>
+            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spent" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spent" data-filter-role="value"></div></th>
+            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spentYear" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spentYear" data-filter-role="value"></div></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="closedOn" data-filter-role="text"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="assignedTo" data-filter-role="text"></th>
+            <th><input class="filter-input-table" type="text" data-filter-key="fixedVersion" data-filter-role="text"></th>
           </tr>
         </thead>
         <tbody id="snapshotIssuesTableBody">
