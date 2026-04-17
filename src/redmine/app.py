@@ -2090,21 +2090,17 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-metric" id="summaryBaselineEstimate" rowspan="2">{formatPageHours(totalBaselineEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentEstimated">{formatPageHours(developmentEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentSpentYear">{formatPageHours(developmentSpentHoursYear)}</td>
-              <td class="summary-empty"></td>
-              <td class="summary-empty"></td>
+              <td class="summary-metric" id="summaryDevelopmentCombinedSpentYear" rowspan="2">{formatPageHours(developmentSpentHoursYear + developmentProcessSpentHoursYear)}</td>
+              <td class="summary-empty" rowspan="2"></td>
               <td class="summary-metric" id="summaryDevelopmentSpent">{formatPageHours(developmentSpentHours)}</td>
-              <td class="summary-empty"></td>
-              <td class="summary-empty"></td>
+              <td class="summary-metric" id="summaryDevelopmentCombinedSpent" rowspan="2">{formatPageHours(developmentSpentHours + developmentProcessSpentHours)}</td>
+              <td class="summary-metric summary-percent" id="summaryDevelopmentCoverageAll" rowspan="2">{formatPageHours(((developmentSpentHours + developmentProcessSpentHours) / totalBaselineEstimateHours * 100) if totalBaselineEstimateHours else 0)}%</td>
             </tr>
             <tr>
               <th>Процессы разработки, ч</th>
               <td class="summary-metric" id="summaryDevelopmentProcessEstimated">{formatPageHours(developmentProcessEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentProcessSpentYear">{formatPageHours(developmentProcessSpentHoursYear)}</td>
-              <td class="summary-metric" id="summaryDevelopmentCombinedSpentYear">{formatPageHours(developmentSpentHoursYear + developmentProcessSpentHoursYear)}</td>
-              <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentProcessSpent">{formatPageHours(developmentProcessSpentHours)}</td>
-              <td class="summary-metric" id="summaryDevelopmentCombinedSpent">{formatPageHours(developmentSpentHours + developmentProcessSpentHours)}</td>
-              <td class="summary-metric summary-percent" id="summaryDevelopmentCoverageAll">{formatPageHours(((developmentSpentHours + developmentProcessSpentHours) / totalBaselineEstimateHours * 100) if totalBaselineEstimateHours else 0)}%</td>
             </tr>
             <tr>
               <th>Ошибка, ч</th>
