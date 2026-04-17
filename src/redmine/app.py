@@ -1933,7 +1933,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td>{formatPageHours(spentHoursYearValue)}</td>
               <td>{closedOnValue}</td>
               <td>{assignedToValue}</td>
-              <td>{fixedVersionValue}</td>
+              <td class="version-col">{fixedVersionValue}</td>
             </tr>
             """
         )
@@ -1945,21 +1945,29 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     totalEstimatedHours = sum(float(issue.get("estimated_hours") or 0) for issue in issues)
     totalSpentHours = sum(float(issue.get("spent_hours") or 0) for issue in issues)
     totalSpentHoursYear = sum(float(issue.get("spent_hours_year") or 0) for issue in issues)
+    developmentEstimateHours = 0.0
+    developmentSpentHours = 0.0
     developmentSpentHoursYear = 0.0
     developmentProcessEstimateHours = 0.0
+    developmentProcessSpentHours = 0.0
     developmentProcessSpentHoursYear = 0.0
     bugEstimateHours = 0.0
+    bugSpentHours = 0.0
     bugSpentHoursYear = 0.0
 
     for issue in issues:
         trackerName = str(issue.get("tracker_name") or "").strip().lower()
         if trackerName == "разработка":
+            developmentEstimateHours += float(issue.get("estimated_hours") or 0)
+            developmentSpentHours += float(issue.get("spent_hours") or 0)
             developmentSpentHoursYear += float(issue.get("spent_hours_year") or 0)
         elif trackerName == "процессы разработки":
             developmentProcessEstimateHours += float(issue.get("estimated_hours") or 0)
+            developmentProcessSpentHours += float(issue.get("spent_hours") or 0)
             developmentProcessSpentHoursYear += float(issue.get("spent_hours_year") or 0)
         elif trackerName == "ошибка":
             bugEstimateHours += float(issue.get("estimated_hours") or 0)
+            bugSpentHours += float(issue.get("spent_hours") or 0)
             bugSpentHoursYear += float(issue.get("spent_hours_year") or 0)
 
     projectName = escape(str(snapshotRun.get("project_name") or "—"))
@@ -2001,11 +2009,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #ff6c0e; color: #ffffff; }}
       .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
       .action-status {{ color: var(--muted); margin: 0 0 18px; min-height: 22px; }}
-      .summary-block {{ display: grid; gap: 10px; margin: 0 0 20px; }}
-      .summary-row {{ display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }}
-      .summary-card {{ border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: #f8fbfc; }}
-      .summary-label {{ color: var(--muted); font-size: 0.9rem; margin: 0 0 6px; }}
-      .summary-value {{ font-size: 1.15rem; font-weight: 700; color: var(--text); }}
+      .summary-block {{ margin: 0 0 20px; }}
+      .summary-table {{ width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid var(--line); }}
+      .summary-table th,
+      .summary-table td {{ border: 1px solid var(--line); padding: 12px 10px; vertical-align: middle; }}
+      .summary-table thead th {{ position: static; background: #ffffff; color: var(--text); text-transform: none; font-size: 0.98rem; letter-spacing: 0; }}
+      .summary-table tbody th {{ background: #ffffff; color: var(--text); text-transform: none; font-size: 1rem; font-weight: 500; }}
+      .summary-table .summary-metric {{ text-align: right; font-size: 1.02rem; font-weight: 700; color: #173b5a; white-space: nowrap; }}
+      .summary-table .summary-empty {{ background: #ffffff; }}
       .filter-input-table,
       .filter-select-table,
       .filter-number-value,
@@ -2027,7 +2038,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .mono {{ font-family: Consolas, "Courier New", monospace; font-size: 0.95rem; white-space: nowrap; }}
       .issue-link {{ color: var(--blue); text-decoration: none; border-bottom: 1px dashed currentColor; font-weight: 700; }}
       .issue-link:hover {{ color: var(--orange); border-bottom-style: solid; }}
-      .subject-col {{ width: 16%; min-width: 16%; max-width: 16%; white-space: normal; word-break: break-word; }}
+      .subject-col {{ width: 32%; min-width: 32%; max-width: 32%; white-space: normal; word-break: break-word; }}
+      .version-col {{ width: 18%; min-width: 18%; max-width: 18%; white-space: normal; word-break: break-word; }}
   </style>
 </head>
   <body>
@@ -2047,19 +2059,47 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       <div class="action-status" id="snapshotActionStatus"></div>
       <p class="meta">Проект: {projectName}. Дата среза: {capturedForDate}. Задач: <span id="visibleIssuesCount">{len(issues)}</span> из {len(issues)}.</p>
       <div class="summary-block">
-        <div class="summary-row">
-          <div class="summary-card"><div class="summary-label">Базовая оценка, ч</div><div class="summary-value" id="summaryBaselineEstimate">{formatPageHours(totalBaselineEstimateHours)}</div></div>
-          <div class="summary-card"><div class="summary-label">План, ч</div><div class="summary-value" id="summaryEstimated">{formatPageHours(totalEstimatedHours)}</div></div>
-          <div class="summary-card"><div class="summary-label">Факт всего, ч</div><div class="summary-value" id="summarySpent">{formatPageHours(totalSpentHours)}</div></div>
-          <div class="summary-card"><div class="summary-label">Факт за год, ч</div><div class="summary-value" id="summarySpentYear">{formatPageHours(totalSpentHoursYear)}</div></div>
-        </div>
-        <div class="summary-row">
-          <div class="summary-card"><div class="summary-label">Разработка: факт за год, ч</div><div class="summary-value" id="summaryDevelopmentSpentYear">{formatPageHours(developmentSpentHoursYear)}</div></div>
-          <div class="summary-card"><div class="summary-label">Процессы разработки: план, ч</div><div class="summary-value" id="summaryDevelopmentProcessEstimated">{formatPageHours(developmentProcessEstimateHours)}</div></div>
-          <div class="summary-card"><div class="summary-label">Процессы разработки: факт за год, ч</div><div class="summary-value" id="summaryDevelopmentProcessSpentYear">{formatPageHours(developmentProcessSpentHoursYear)}</div></div>
-          <div class="summary-card"><div class="summary-label">Ошибка: оценка, ч</div><div class="summary-value" id="summaryBugEstimated">{formatPageHours(bugEstimateHours)}</div></div>
-          <div class="summary-card"><div class="summary-label">Ошибка: факт за год, ч</div><div class="summary-value" id="summaryBugSpentYear">{formatPageHours(bugSpentHoursYear)}</div></div>
-        </div>
+        <table class="summary-table">
+          <thead>
+            <tr>
+              <th style="width: 33%"></th>
+              <th>Базовая оценка</th>
+              <th>План</th>
+              <th>Факт за год</th>
+              <th>Факт всего</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th>Все задачи</th>
+              <td class="summary-metric" id="summaryBaselineEstimate">{formatPageHours(totalBaselineEstimateHours)}</td>
+              <td class="summary-metric" id="summaryEstimated">{formatPageHours(totalEstimatedHours)}</td>
+              <td class="summary-metric" id="summarySpentYear">{formatPageHours(totalSpentHoursYear)}</td>
+              <td class="summary-metric" id="summarySpent">{formatPageHours(totalSpentHours)}</td>
+            </tr>
+            <tr>
+              <th>Разработка, ч</th>
+              <td class="summary-empty"></td>
+              <td class="summary-metric" id="summaryDevelopmentEstimated">{formatPageHours(developmentEstimateHours)}</td>
+              <td class="summary-metric" id="summaryDevelopmentSpentYear">{formatPageHours(developmentSpentHoursYear)}</td>
+              <td class="summary-metric" id="summaryDevelopmentSpent">{formatPageHours(developmentSpentHours)}</td>
+            </tr>
+            <tr>
+              <th>Процессы разработки, ч</th>
+              <td class="summary-empty"></td>
+              <td class="summary-metric" id="summaryDevelopmentProcessEstimated">{formatPageHours(developmentProcessEstimateHours)}</td>
+              <td class="summary-metric" id="summaryDevelopmentProcessSpentYear">{formatPageHours(developmentProcessSpentHoursYear)}</td>
+              <td class="summary-metric" id="summaryDevelopmentProcessSpent">{formatPageHours(developmentProcessSpentHours)}</td>
+            </tr>
+            <tr>
+              <th>Ошибка, ч</th>
+              <td class="summary-empty"></td>
+              <td class="summary-metric" id="summaryBugEstimated">{formatPageHours(bugEstimateHours)}</td>
+              <td class="summary-metric" id="summaryBugSpentYear">{formatPageHours(bugSpentHoursYear)}</td>
+              <td class="summary-metric" id="summaryBugSpent">{formatPageHours(bugSpentHours)}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
       <div class="filter-reset-wrap">
         <span class="filter-tip">Фильтры применяются к таблице и суммам выше.</span>
@@ -2080,7 +2120,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <th>Факт за год, ч</th>
             <th>Закрыта</th>
             <th>Исполнитель</th>
-            <th>Версия</th>
+            <th class="version-col">Версия</th>
           </tr>
           <tr class="filter-head">
             <th><input class="filter-input-table" type="text" data-filter-key="issueId" data-filter-role="text"></th>
@@ -2117,10 +2157,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const summaryEstimated = document.getElementById("summaryEstimated");
       const summarySpent = document.getElementById("summarySpent");
       const summarySpentYear = document.getElementById("summarySpentYear");
+      const summaryDevelopmentEstimated = document.getElementById("summaryDevelopmentEstimated");
+      const summaryDevelopmentSpent = document.getElementById("summaryDevelopmentSpent");
       const summaryDevelopmentSpentYear = document.getElementById("summaryDevelopmentSpentYear");
       const summaryDevelopmentProcessEstimated = document.getElementById("summaryDevelopmentProcessEstimated");
+      const summaryDevelopmentProcessSpent = document.getElementById("summaryDevelopmentProcessSpent");
       const summaryDevelopmentProcessSpentYear = document.getElementById("summaryDevelopmentProcessSpentYear");
       const summaryBugEstimated = document.getElementById("summaryBugEstimated");
+      const summaryBugSpent = document.getElementById("summaryBugSpent");
       const summaryBugSpentYear = document.getElementById("summaryBugSpentYear");
 
       function setActionStatus(message) {{
@@ -2198,10 +2242,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         let estimated = 0;
         let spent = 0;
         let spentYear = 0;
+        let developmentEstimated = 0;
+        let developmentSpent = 0;
         let developmentSpentYear = 0;
         let developmentProcessEstimated = 0;
+        let developmentProcessSpent = 0;
         let developmentProcessSpentYear = 0;
         let bugEstimated = 0;
+        let bugSpent = 0;
         let bugSpentYear = 0;
 
         for (const row of rows) {{
@@ -2217,12 +2265,16 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           spentYear += rowSpentYear;
 
           if (tracker === "разработка") {{
+            developmentEstimated += rowEstimated;
+            developmentSpent += rowSpent;
             developmentSpentYear += rowSpentYear;
           }} else if (tracker === "процессы разработки") {{
             developmentProcessEstimated += rowEstimated;
+            developmentProcessSpent += rowSpent;
             developmentProcessSpentYear += rowSpentYear;
           }} else if (tracker === "ошибка") {{
             bugEstimated += rowEstimated;
+            bugSpent += rowSpent;
             bugSpentYear += rowSpentYear;
           }}
         }}
@@ -2232,10 +2284,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if (summaryEstimated) summaryEstimated.textContent = formatFilterHours(estimated);
         if (summarySpent) summarySpent.textContent = formatFilterHours(spent);
         if (summarySpentYear) summarySpentYear.textContent = formatFilterHours(spentYear);
+        if (summaryDevelopmentEstimated) summaryDevelopmentEstimated.textContent = formatFilterHours(developmentEstimated);
+        if (summaryDevelopmentSpent) summaryDevelopmentSpent.textContent = formatFilterHours(developmentSpent);
         if (summaryDevelopmentSpentYear) summaryDevelopmentSpentYear.textContent = formatFilterHours(developmentSpentYear);
         if (summaryDevelopmentProcessEstimated) summaryDevelopmentProcessEstimated.textContent = formatFilterHours(developmentProcessEstimated);
+        if (summaryDevelopmentProcessSpent) summaryDevelopmentProcessSpent.textContent = formatFilterHours(developmentProcessSpent);
         if (summaryDevelopmentProcessSpentYear) summaryDevelopmentProcessSpentYear.textContent = formatFilterHours(developmentProcessSpentYear);
         if (summaryBugEstimated) summaryBugEstimated.textContent = formatFilterHours(bugEstimated);
+        if (summaryBugSpent) summaryBugSpent.textContent = formatFilterHours(bugSpent);
         if (summaryBugSpentYear) summaryBugSpentYear.textContent = formatFilterHours(bugSpentYear);
       }}
 
