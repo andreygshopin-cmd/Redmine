@@ -1927,9 +1927,116 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       line-height: 1.6;
     }}
 
+    .legend-panel {{
+      margin-top: 18px;
+      padding: 18px 20px 20px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+    }}
+
+    .legend-title {{
+      margin: 0 0 14px;
+      font-size: 1.05rem;
+    }}
+
+    .legend-grid {{
+      display: grid;
+      grid-template-columns: minmax(280px, 360px) minmax(320px, 1fr);
+      gap: 18px 24px;
+      align-items: start;
+    }}
+
+    .legend-list,
+    .formula-list {{
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }}
+
+    .legend-list li,
+    .formula-list li {{
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      margin: 0 0 12px;
+      line-height: 1.5;
+      color: var(--text);
+    }}
+
+    .legend-swatch {{
+      width: 28px;
+      min-width: 28px;
+      height: 14px;
+      margin-top: 4px;
+      border-radius: 999px;
+      border: 2px solid transparent;
+      background: transparent;
+    }}
+
+    .legend-swatch.budget-line {{
+      border-color: #ff6c0e;
+    }}
+
+    .legend-swatch.forecast-line {{
+      border-color: #375d77;
+    }}
+
+    .legend-swatch.current-line {{
+      border-color: #0f9bb8;
+    }}
+
+    .legend-swatch.remaining-line {{
+      border-color: #7b8c9d;
+    }}
+
+    .legend-swatch.dev-bar {{
+      background: rgba(82, 206, 230, 0.38);
+      border-color: rgba(82, 206, 230, 0.9);
+      border-radius: 4px;
+    }}
+
+    .legend-swatch.bug-bar {{
+      background: rgba(255, 108, 14, 0.30);
+      border-color: rgba(255, 108, 14, 0.85);
+      border-radius: 4px;
+    }}
+
+    .legend-swatch.dev-rem-bar {{
+      background: rgba(55, 93, 119, 0.18);
+      border-color: rgba(55, 93, 119, 0.65);
+      border-radius: 4px;
+    }}
+
+    .legend-swatch.bug-rem-bar {{
+      background: rgba(255, 198, 0, 0.25);
+      border-color: rgba(255, 198, 0, 0.9);
+      border-radius: 4px;
+    }}
+
+    .legend-name {{
+      font-weight: 700;
+      margin: 0 0 2px;
+    }}
+
+    .legend-text,
+    .formula-text {{
+      color: var(--muted);
+    }}
+
+    .legend-note {{
+      margin: 12px 0 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }}
+
     @media (max-width: 900px) {{
       .chart-wrap {{
         min-height: 420px;
+      }}
+
+      .legend-grid {{
+        grid-template-columns: 1fr;
       }}
     }}
   </style>
@@ -1966,6 +2073,101 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       </div>
       <div id="burndownEmptyState" class="empty-state" style="display:none;">
         За апрель текущего года по проекту пока нет срезов, поэтому построить диаграмму еще не из чего.
+      </div>
+    </section>
+
+    <section class="legend-panel">
+      <h2 class="legend-title">Легенда и правила расчета</h2>
+      <div class="legend-grid">
+        <div>
+          <ul class="legend-list">
+            <li>
+              <span class="legend-swatch budget-line"></span>
+              <div>
+                <div class="legend-name">Бюджет</div>
+                <div class="legend-text">Оранжевая линия. Для каждого среза: сумма базовых оценок всех задач среза × P1 × P2.</div>
+              </div>
+            </li>
+            <li>
+              <span class="legend-swatch forecast-line"></span>
+              <div>
+                <div class="legend-name">Объем.Прогноз</div>
+                <div class="legend-text">Темно-синяя линия. Складывается по всем Feature и по виртуальной Feature для задач без Feature.</div>
+              </div>
+            </li>
+            <li>
+              <span class="legend-swatch current-line"></span>
+              <div>
+                <div class="legend-name">Объем.Текущий</div>
+                <div class="legend-text">Голубая линия. Равна сумме «Объема разработки» и «Объема ошибок», поэтому проходит по верхней точке текущего stacked-столбика.</div>
+              </div>
+            </li>
+            <li>
+              <span class="legend-swatch remaining-line"></span>
+              <div>
+                <div class="legend-name">Объем.Остаток</div>
+                <div class="legend-text">Серо-синяя линия. Равна сумме «Остатка разработки» и «Остатка ошибок».</div>
+              </div>
+            </li>
+            <li>
+              <span class="legend-swatch dev-bar"></span>
+              <div>
+                <div class="legend-name">Объем разработки</div>
+                <div class="legend-text">Полупрозрачный голубой столбик. В stack с ним выше идет «Объем ошибок».</div>
+              </div>
+            </li>
+            <li>
+              <span class="legend-swatch bug-bar"></span>
+              <div>
+                <div class="legend-name">Объем ошибок</div>
+                <div class="legend-text">Полупрозрачный оранжевый столбик поверх объема разработки.</div>
+              </div>
+            </li>
+            <li>
+              <span class="legend-swatch dev-rem-bar"></span>
+              <div>
+                <div class="legend-name">Остаток разработки</div>
+                <div class="legend-text">Полупрозрачный серо-синий столбик. В stack с ним выше идет «Остаток ошибок».</div>
+              </div>
+            </li>
+            <li>
+              <span class="legend-swatch bug-rem-bar"></span>
+              <div>
+                <div class="legend-name">Остаток ошибок</div>
+                <div class="legend-text">Полупрозрачный желтый столбик поверх остатка разработки.</div>
+              </div>
+            </li>
+          </ul>
+        </div>
+        <div>
+          <ul class="formula-list">
+            <li>
+              <div>
+                <div class="legend-name">Разработка</div>
+                <div class="formula-text">Если статус задачи «Закрыта», «Решена» или «Отказ», то объем = факт, остаток = 0. Для остальных статусов: объем = max(план, факт), остаток = max(0, план − факт).</div>
+              </div>
+            </li>
+            <li>
+              <div>
+                <div class="legend-name">Процессы разработки</div>
+                <div class="formula-text">Объем = max(план, факт), остаток всегда = 0.</div>
+              </div>
+            </li>
+            <li>
+              <div>
+                <div class="legend-name">Ошибка</div>
+                <div class="formula-text">Логика такая же, как у «Разработки»: закрытые/решенные/отказанные задачи дают объем = факт и остаток = 0, остальные — max(план, факт) и max(0, план − факт).</div>
+              </div>
+            </li>
+            <li>
+              <div>
+                <div class="legend-name">Feature и виртуальная Feature</div>
+                <div class="formula-text">Для каждой Feature отдельно собираются объем/остаток по разработке и по ошибкам. Если Feature в статусе «Готов*», «Закрыта» или «Решена», прогноз = разработка + ошибки. Иначе прогноз = max(текущий объем, сумма базовых оценок задач Feature и самой Feature × P1 × P2). Для задач без Feature считается отдельная виртуальная Feature по тем же правилам.</div>
+              </div>
+            </li>
+          </ul>
+          <p class="legend-note">Итоговые линии «Объем.Текущий», «Объем.Остаток» и «Объем.Прогноз» — это суммы по всем Feature и по виртуальной Feature в выбранном апрельском срезе.</p>
+        </div>
       </div>
     </section>
   </main>
