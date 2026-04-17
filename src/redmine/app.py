@@ -1,5 +1,7 @@
 ﻿from datetime import UTC, datetime
 from html import escape
+import json
+from datetime import date, timedelta
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
@@ -13,6 +15,7 @@ from src.redmine.db import (
     deleteIssueSnapshotsForDate,
     ensureIssueSnapshotTables,
     ensureProjectsTable,
+    getSnapshotRunsWithIssuesForProjectYear,
     getSnapshotIssuesForProjectByDate,
     listRecentIssueSnapshotRuns,
     listStoredProjects,
@@ -1598,11 +1601,173 @@ def formatSnapshotPageDateTime(value: object) -> str:
     return str(value).replace("T", " ").replace("+00:00", " UTC")
 
 
-def buildBurndownPlaceholderPage(projectRedmineId: int) -> str:
-    projects = listStoredProjects()
-    project = next((item for item in projects if int(item.get("redmine_id") or 0) == projectRedmineId), None)
-    projectName = escape(str(project.get("name") or "—")) if project else "—"
-    projectIdentifier = escape(str(project.get("identifier") or "—")) if project else "—"
+def normalizeBurndownText(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def isBurndownClosedTaskStatus(statusName: object) -> bool:
+    return normalizeBurndownText(statusName) in {"закрыта", "решена", "отказ"}
+
+
+def isBurndownReadyFeatureStatus(statusName: object) -> bool:
+    normalized = normalizeBurndownText(statusName)
+    return normalized.startswith("готов") or normalized in {"закрыта", "решена"}
+
+
+def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str, object]]:
+    issuesById: dict[int, dict[str, object]] = {}
+    for issue in issues:
+        try:
+            issueId = int(issue.get("issue_redmine_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if issueId:
+            issuesById[issueId] = issue
+
+    resolvedFeatureIds: dict[int, int | None] = {}
+
+    def resolveFeatureId(issueId: int, visited: set[int] | None = None) -> int | None:
+        if issueId in resolvedFeatureIds:
+            return resolvedFeatureIds[issueId]
+
+        issue = issuesById.get(issueId)
+        if issue is None:
+            resolvedFeatureIds[issueId] = None
+            return None
+
+        trackerName = normalizeBurndownText(issue.get("tracker_name"))
+        if trackerName == "feature":
+            resolvedFeatureIds[issueId] = issueId
+            return issueId
+
+        if visited is None:
+            visited = set()
+        if issueId in visited:
+            resolvedFeatureIds[issueId] = None
+            return None
+        visited.add(issueId)
+
+        try:
+            parentIssueId = int(issue.get("parent_issue_redmine_id") or 0)
+        except (TypeError, ValueError):
+            parentIssueId = 0
+
+        if not parentIssueId:
+            resolvedFeatureIds[issueId] = None
+            return None
+
+        featureId = resolveFeatureId(parentIssueId, visited)
+        resolvedFeatureIds[issueId] = featureId
+        return featureId
+
+    groupsByKey: dict[str, dict[str, object]] = {}
+
+    for issue in issues:
+        try:
+            issueId = int(issue.get("issue_redmine_id") or 0)
+        except (TypeError, ValueError):
+            continue
+
+        featureId = resolveFeatureId(issueId) if issueId else None
+        groupKey = str(featureId) if featureId is not None else "virtual"
+        group = groupsByKey.setdefault(
+            groupKey,
+            {
+                "group_key": groupKey,
+                "is_virtual": featureId is None,
+                "is_ready": False,
+                "baseline_total": 0.0,
+                "development_volume": 0.0,
+                "development_remaining": 0.0,
+                "bug_volume": 0.0,
+                "bug_remaining": 0.0,
+            },
+        )
+
+        baselineEstimateHours = float(issue.get("baseline_estimate_hours") or 0)
+        group["baseline_total"] = float(group["baseline_total"]) + baselineEstimateHours
+
+        trackerName = normalizeBurndownText(issue.get("tracker_name"))
+        statusName = issue.get("status_name")
+        planHours = float(issue.get("estimated_hours") or 0)
+        factHours = float(issue.get("spent_hours") or 0)
+
+        if featureId is not None and featureId == issueId and trackerName == "feature":
+            group["is_ready"] = isBurndownReadyFeatureStatus(statusName)
+            continue
+
+        if trackerName == "разработка":
+            if isBurndownClosedTaskStatus(statusName):
+                volume = factHours
+                remaining = 0.0
+            else:
+                volume = max(planHours, factHours)
+                remaining = max(0.0, planHours - factHours)
+            group["development_volume"] = float(group["development_volume"]) + volume
+            group["development_remaining"] = float(group["development_remaining"]) + remaining
+        elif trackerName == "процессы разработки":
+            volume = max(planHours, factHours)
+            group["development_volume"] = float(group["development_volume"]) + volume
+        elif trackerName == "ошибка":
+            if isBurndownClosedTaskStatus(statusName):
+                volume = factHours
+                remaining = 0.0
+            else:
+                volume = max(planHours, factHours)
+                remaining = max(0.0, planHours - factHours)
+            group["bug_volume"] = float(group["bug_volume"]) + volume
+            group["bug_remaining"] = float(group["bug_remaining"]) + remaining
+
+    return list(groupsByKey.values())
+
+
+def buildBurndownChartSeeds(snapshotRuns: list[dict[str, object]]) -> list[dict[str, object]]:
+    chartSeeds: list[dict[str, object]] = []
+
+    for snapshotRun in snapshotRuns:
+        chartSeeds.append(
+            {
+                "date": str(snapshotRun.get("captured_for_date") or ""),
+                "budget_baseline_total": float(snapshotRun.get("total_baseline_estimate_hours") or 0),
+                "groups": buildBurndownFeatureGroups(list(snapshotRun.get("issues") or [])),
+            }
+        )
+
+    return chartSeeds
+
+
+def buildBurndownDateLabels(year: int) -> list[str]:
+    currentDate = date(year, 1, 1)
+    lastDate = date(year, 12, 31)
+    labels: list[str] = []
+
+    while currentDate <= lastDate:
+        labels.append(currentDate.isoformat())
+        currentDate += timedelta(days=1)
+
+    return labels
+
+
+def buildBurndownPage(projectRedmineId: int) -> str:
+    currentYear = datetime.now(UTC).year
+    burndownPayload = getSnapshotRunsWithIssuesForProjectYear(projectRedmineId, currentYear)
+    storedProjects = listStoredProjects()
+    storedProject = next(
+        (item for item in storedProjects if int(item.get("redmine_id") or 0) == projectRedmineId),
+        None,
+    )
+
+    projectInfo = burndownPayload.get("project") or {}
+    projectName = escape(
+        str(projectInfo.get("project_name") or (storedProject.get("name") if storedProject else "—"))
+    )
+    projectIdentifier = escape(
+        str(projectInfo.get("project_identifier") or (storedProject.get("identifier") if storedProject else "—"))
+    )
+    snapshotRuns = list(burndownPayload.get("snapshot_runs") or [])
+    chartSeeds = buildBurndownChartSeeds(snapshotRuns)
+    chartDatesJson = json.dumps(buildBurndownDateLabels(currentYear), ensure_ascii=False)
+    chartSeedsJson = json.dumps(chartSeeds, ensure_ascii=False)
 
     return f"""<!doctype html>
 <html lang="ru">
@@ -1611,34 +1776,512 @@ def buildBurndownPlaceholderPage(projectRedmineId: int) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Диаграмма сгорания</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <style>
     :root {{
       color-scheme: light;
       --bg: #ffffff;
       --panel: #ffffff;
+      --panel-soft: #f5fafb;
       --line: #d9e5eb;
       --text: #16324a;
       --muted: #64798d;
-      --blue: #375d77;
-      --orange: #ff6c0e;
+      --blue-302: #375d77;
+      --yellow-109: #ffc600;
+      --cyan-310: #52cee6;
+      --orange-1585: #ff6c0e;
+      --shadow-soft: 0 12px 24px rgba(22, 50, 74, 0.06);
     }}
+
     * {{ box-sizing: border-box; }}
-    body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
-    main {{ max-width: 1200px; margin: 0 auto; padding: 24px 20px 48px; }}
-    .back-link {{ color: var(--blue); text-decoration: none; font-weight: 600; }}
-    .back-link:hover {{ color: var(--orange); }}
-    h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
-    .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
-    .placeholder {{ border: 1px dashed var(--line); border-radius: 8px; padding: 32px; color: var(--muted); background: #f9fcfd; }}
+
+    body {{
+      margin: 0;
+      font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }}
+
+    main {{
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px 20px 48px;
+    }}
+
+    .back-link {{
+      color: var(--blue-302);
+      text-decoration: none;
+      font-weight: 700;
+      border-bottom: 1px dashed currentColor;
+    }}
+
+    .back-link:hover {{
+      color: var(--orange-1585);
+    }}
+
+    h1 {{
+      margin: 18px 0 12px;
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }}
+
+    .meta {{
+      color: var(--muted);
+      margin: 0 0 18px;
+      font-size: 1rem;
+      line-height: 1.6;
+    }}
+
+    .controls-panel,
+    .chart-panel {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow-soft);
+    }}
+
+    .controls-panel {{
+      display: flex;
+      gap: 16px;
+      align-items: end;
+      flex-wrap: wrap;
+      padding: 18px 20px;
+      margin: 0 0 18px;
+    }}
+
+    .field {{
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 240px;
+    }}
+
+    .field label {{
+      font-weight: 700;
+    }}
+
+    .field-note {{
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.4;
+    }}
+
+    .field input {{
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font: inherit;
+      color: var(--text);
+      background: #ffffff;
+    }}
+
+    .chart-panel {{
+      padding: 18px 20px 20px;
+    }}
+
+    .chart-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      margin: 0 0 14px;
+    }}
+
+    .chart-title {{
+      margin: 0;
+      font-size: 1.2rem;
+    }}
+
+    .chart-subtitle {{
+      margin: 4px 0 0;
+      color: var(--muted);
+    }}
+
+    .chart-status {{
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }}
+
+    .chart-wrap {{
+      position: relative;
+      min-height: 560px;
+    }}
+
+    .empty-state {{
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 24px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      line-height: 1.6;
+    }}
+
+    @media (max-width: 900px) {{
+      .chart-wrap {{
+        min-height: 420px;
+      }}
+    }}
   </style>
 </head>
 <body>
   <main>
     <a class="back-link" href="/">← К списку проектов</a>
     <h1>Диаграмма сгорания проекта</h1>
-    <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}. ID: {projectRedmineId}.</p>
-    <div class="placeholder">Страница подготовки диаграммы готова. Саму диаграмму добавим следующим шагом.</div>
+    <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}. Период диаграммы: 01.01.{currentYear} — 31.12.{currentYear}. Срезов за год: {len(chartSeeds)}.</p>
+
+    <section class="controls-panel">
+      <div class="field">
+        <label for="p1Input">P1 = факт / база</label>
+        <input id="p1Input" type="text" inputmode="decimal" value="1,0">
+        <div class="field-note">Используется в расчете бюджета и прогнозного объема.</div>
+      </div>
+      <div class="field">
+        <label for="p2Input">P2 = факт с багами / факт</label>
+        <input id="p2Input" type="text" inputmode="decimal" value="1,0">
+        <div class="field-note">Изменения пересчитываются сразу после ввода без перезагрузки страницы.</div>
+      </div>
+    </section>
+
+    <section class="chart-panel">
+      <div class="chart-head">
+        <div>
+          <h2 class="chart-title">Бюджет, прогноз, текущий объем и остаток</h2>
+          <p class="chart-subtitle">Линии показывают общие значения, а полупрозрачные столбики — состав по разработке и ошибкам.</p>
+        </div>
+        <div class="chart-status" id="burndownStatus"></div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="burndownChart"></canvas>
+      </div>
+      <div id="burndownEmptyState" class="empty-state" style="display:none;">
+        За текущий год по проекту пока нет срезов, поэтому построить диаграмму еще не из чего.
+      </div>
+    </section>
   </main>
+
+  <script>
+    const burndownDateLabels = {chartDatesJson};
+    const burndownSnapshots = {chartSeedsJson};
+
+    const p1Input = document.getElementById("p1Input");
+    const p2Input = document.getElementById("p2Input");
+    const statusNode = document.getElementById("burndownStatus");
+    const chartCanvas = document.getElementById("burndownChart");
+    const emptyState = document.getElementById("burndownEmptyState");
+
+    function parseFactor(rawValue, fallbackValue) {{
+      const normalized = String(rawValue ?? "").trim().replace(",", ".");
+      const parsed = Number.parseFloat(normalized);
+      return Number.isFinite(parsed) ? parsed : fallbackValue;
+    }}
+
+    function formatHours(value) {{
+      return Number(value || 0).toLocaleString("ru-RU", {{
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      }});
+    }}
+
+    function formatDateLabel(value) {{
+      const parts = String(value || "").split("-");
+      if (parts.length !== 3) {{
+        return String(value || "");
+      }}
+      return `${{parts[2]}}.${{parts[1]}}.${{parts[0]}}`;
+    }}
+
+    function computeSnapshotMetrics(snapshot, p1Value, p2Value) {{
+      const groups = Array.isArray(snapshot?.groups) ? snapshot.groups : [];
+      let forecast = 0;
+      let currentDevelopment = 0;
+      let currentBugs = 0;
+      let remainingDevelopment = 0;
+      let remainingBugs = 0;
+
+      for (const group of groups) {{
+        const baselineTotal = Number(group?.baseline_total || 0);
+        const developmentVolume = Number(group?.development_volume || 0);
+        const bugVolume = Number(group?.bug_volume || 0);
+        const developmentRemaining = Number(group?.development_remaining || 0);
+        const bugRemaining = Number(group?.bug_remaining || 0);
+        const currentTotal = developmentVolume + bugVolume;
+        const forecastFloor = baselineTotal * p1Value * p2Value;
+        const groupForecast = group?.is_ready ? currentTotal : Math.max(currentTotal, forecastFloor);
+
+        forecast += groupForecast;
+        currentDevelopment += developmentVolume;
+        currentBugs += bugVolume;
+        remainingDevelopment += developmentRemaining;
+        remainingBugs += bugRemaining;
+      }}
+
+      return {{
+        budget: Number(snapshot?.budget_baseline_total || 0) * p1Value * p2Value,
+        forecast,
+        currentDevelopment,
+        currentBugs,
+        currentTotal: currentDevelopment + currentBugs,
+        remainingDevelopment,
+        remainingBugs,
+        remainingTotal: remainingDevelopment + remainingBugs,
+      }};
+    }}
+
+    let burndownChart = null;
+
+    function buildBurndownDatasets(p1Value, p2Value) {{
+      const metricsByDate = new Map();
+      for (const snapshot of burndownSnapshots) {{
+        metricsByDate.set(String(snapshot?.date || ""), computeSnapshotMetrics(snapshot, p1Value, p2Value));
+      }}
+
+      const budgetData = [];
+      const forecastData = [];
+      const currentTotalData = [];
+      const currentDevelopmentData = [];
+      const currentBugData = [];
+      const remainingTotalData = [];
+      const remainingDevelopmentData = [];
+      const remainingBugData = [];
+
+      for (const currentDate of burndownDateLabels) {{
+        const metrics = metricsByDate.get(currentDate);
+        if (!metrics) {{
+          budgetData.push(null);
+          forecastData.push(null);
+          currentTotalData.push(null);
+          currentDevelopmentData.push(null);
+          currentBugData.push(null);
+          remainingTotalData.push(null);
+          remainingDevelopmentData.push(null);
+          remainingBugData.push(null);
+          continue;
+        }}
+
+        budgetData.push(metrics.budget);
+        forecastData.push(metrics.forecast);
+        currentTotalData.push(metrics.currentTotal);
+        currentDevelopmentData.push(metrics.currentDevelopment);
+        currentBugData.push(metrics.currentBugs);
+        remainingTotalData.push(metrics.remainingTotal);
+        remainingDevelopmentData.push(metrics.remainingDevelopment);
+        remainingBugData.push(metrics.remainingBugs);
+      }}
+
+      return {{
+        budgetData,
+        forecastData,
+        currentTotalData,
+        currentDevelopmentData,
+        currentBugData,
+        remainingTotalData,
+        remainingDevelopmentData,
+        remainingBugData,
+      }};
+    }}
+
+    function renderBurndownChart() {{
+      const p1Value = parseFactor(p1Input.value, 1);
+      const p2Value = parseFactor(p2Input.value, 1);
+
+      if (!burndownSnapshots.length) {{
+        emptyState.style.display = "block";
+        chartCanvas.style.display = "none";
+        statusNode.textContent = "За текущий год пока нет срезов для расчета диаграммы.";
+        return;
+      }}
+
+      emptyState.style.display = "none";
+      chartCanvas.style.display = "block";
+
+      if (typeof Chart === "undefined") {{
+        statusNode.textContent = "Не удалось загрузить библиотеку графиков.";
+        return;
+      }}
+
+      const datasets = buildBurndownDatasets(p1Value, p2Value);
+      statusNode.textContent = `P1 = ${{formatHours(p1Value)}}, P2 = ${{formatHours(p2Value)}}. Срезов в расчете: ${{burndownSnapshots.length}}.`;
+
+      const chartConfig = {{
+        data: {{
+          labels: burndownDateLabels,
+          datasets: [
+            {{
+              type: "bar",
+              label: "Объем разработки",
+              data: datasets.currentDevelopmentData,
+              stack: "current",
+              backgroundColor: "rgba(82, 206, 230, 0.38)",
+              borderColor: "rgba(82, 206, 230, 0.9)",
+              borderWidth: 1,
+              order: 3,
+            }},
+            {{
+              type: "bar",
+              label: "Объем ошибок",
+              data: datasets.currentBugData,
+              stack: "current",
+              backgroundColor: "rgba(255, 108, 14, 0.30)",
+              borderColor: "rgba(255, 108, 14, 0.85)",
+              borderWidth: 1,
+              order: 3,
+            }},
+            {{
+              type: "bar",
+              label: "Остаток разработки",
+              data: datasets.remainingDevelopmentData,
+              stack: "remaining",
+              backgroundColor: "rgba(55, 93, 119, 0.18)",
+              borderColor: "rgba(55, 93, 119, 0.65)",
+              borderWidth: 1,
+              order: 3,
+            }},
+            {{
+              type: "bar",
+              label: "Остаток ошибок",
+              data: datasets.remainingBugData,
+              stack: "remaining",
+              backgroundColor: "rgba(255, 198, 0, 0.25)",
+              borderColor: "rgba(255, 198, 0, 0.9)",
+              borderWidth: 1,
+              order: 3,
+            }},
+            {{
+              type: "line",
+              label: "Бюджет",
+              data: datasets.budgetData,
+              borderColor: "#ff6c0e",
+              backgroundColor: "#ff6c0e",
+              borderWidth: 3,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              spanGaps: true,
+              tension: 0.2,
+              order: 1,
+            }},
+            {{
+              type: "line",
+              label: "Объем.Прогноз",
+              data: datasets.forecastData,
+              borderColor: "#375d77",
+              backgroundColor: "#375d77",
+              borderWidth: 3,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              spanGaps: true,
+              tension: 0.2,
+              order: 1,
+            }},
+            {{
+              type: "line",
+              label: "Объем.Текущий",
+              data: datasets.currentTotalData,
+              borderColor: "#0f9bb8",
+              backgroundColor: "#0f9bb8",
+              borderWidth: 2,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              spanGaps: true,
+              tension: 0.15,
+              order: 1,
+            }},
+            {{
+              type: "line",
+              label: "Объем.Остаток",
+              data: datasets.remainingTotalData,
+              borderColor: "#7b8c9d",
+              backgroundColor: "#7b8c9d",
+              borderWidth: 2,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              spanGaps: true,
+              tension: 0.15,
+              order: 1,
+            }},
+          ],
+        }},
+        options: {{
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {{
+            mode: "index",
+            intersect: false,
+          }},
+          plugins: {{
+            legend: {{
+              position: "bottom",
+              labels: {{
+                usePointStyle: true,
+                boxWidth: 12,
+              }},
+            }},
+            tooltip: {{
+              callbacks: {{
+                title(items) {{
+                  return items.length ? formatDateLabel(items[0].label) : "";
+                }},
+                label(context) {{
+                  return `${{context.dataset.label}}: ${{formatHours(context.parsed.y)}}`;
+                }},
+              }},
+            }},
+          }},
+          scales: {{
+            x: {{
+              stacked: true,
+              ticks: {{
+                autoSkip: false,
+                maxRotation: 0,
+                minRotation: 0,
+                callback(value) {{
+                  const label = this.getLabelForValue(value);
+                  return String(label || "").endsWith("-01") ? formatDateLabel(label).slice(0, 5) : "";
+                }},
+              }},
+              grid: {{
+                display: false,
+              }},
+            }},
+            y: {{
+              stacked: true,
+              beginAtZero: true,
+              ticks: {{
+                callback(value) {{
+                  return formatHours(value);
+                }},
+              }},
+            }},
+          }},
+        }},
+      }};
+
+      if (burndownChart) {{
+        burndownChart.data = chartConfig.data;
+        burndownChart.options = chartConfig.options;
+        burndownChart.update();
+        return;
+      }}
+
+      burndownChart = new Chart(chartCanvas, chartConfig);
+    }}
+
+    let rerenderTimer = null;
+
+    function scheduleBurndownRender() {{
+      if (rerenderTimer) {{
+        window.clearTimeout(rerenderTimer);
+      }}
+      rerenderTimer = window.setTimeout(renderBurndownChart, 180);
+    }}
+
+    p1Input.addEventListener("input", scheduleBurndownRender);
+    p2Input.addEventListener("input", scheduleBurndownRender);
+
+    renderBurndownChart();
+  </script>
 </body>
 </html>"""
 
@@ -2573,7 +3216,8 @@ def getProjectBurndownPage(project_redmine_id: int) -> HTMLResponse:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureProjectsTable()
-    return HTMLResponse(buildBurndownPlaceholderPage(project_redmine_id))
+    ensureIssueSnapshotTables()
+    return HTMLResponse(buildBurndownPage(project_redmine_id))
 
 
 @app.post("/api/projects/refresh")

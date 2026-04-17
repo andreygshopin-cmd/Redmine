@@ -656,6 +656,93 @@ def getSnapshotIssuesForProjectByDate(projectRedmineId: int, capturedForDate: st
         }
 
 
+def getSnapshotRunsWithIssuesForProjectYear(projectRedmineId: int, year: int) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    yearStart = f"{year}-01-01"
+    yearEnd = f"{year}-12-31"
+
+    with engine.connect() as connection:
+        runRows = connection.execute(
+            text(
+                """
+                SELECT
+                    r.id,
+                    r.project_redmine_id,
+                    COALESCE(p.name, r.project_name) AS project_name,
+                    COALESCE(p.identifier, r.project_identifier) AS project_identifier,
+                    r.captured_for_date,
+                    r.captured_at,
+                    r.total_issues,
+                    r.total_baseline_estimate_hours,
+                    r.total_estimated_hours,
+                    r.total_spent_hours,
+                    r.total_spent_hours_year
+                FROM issue_snapshot_runs r
+                LEFT JOIN projects p
+                    ON p.redmine_id = r.project_redmine_id
+                WHERE r.project_redmine_id = :project_redmine_id
+                  AND r.captured_for_date BETWEEN :year_start AND :year_end
+                ORDER BY r.captured_for_date ASC, r.captured_at ASC, r.id ASC
+                """
+            ),
+            {
+                "project_redmine_id": projectRedmineId,
+                "year_start": yearStart,
+                "year_end": yearEnd,
+            },
+        ).mappings().all()
+
+        if not runRows:
+            return {"project": None, "snapshot_runs": []}
+
+        runIds = [int(row["id"]) for row in runRows]
+        issueRows = connection.execute(
+            text(
+                """
+                SELECT
+                    snapshot_run_id,
+                    issue_redmine_id,
+                    subject,
+                    tracker_name,
+                    status_name,
+                    parent_issue_redmine_id,
+                    baseline_estimate_hours,
+                    estimated_hours,
+                    spent_hours,
+                    spent_hours_year,
+                    closed_on
+                FROM issue_snapshot_items
+                WHERE snapshot_run_id IN :run_ids
+                ORDER BY snapshot_run_id ASC, issue_redmine_id ASC
+                """
+            ).bindparams(bindparam("run_ids", expanding=True)),
+            {"run_ids": runIds},
+        ).mappings().all()
+
+    issuesByRunId: dict[int, list[dict[str, object]]] = {}
+    for row in issueRows:
+        runId = int(row["snapshot_run_id"])
+        issuesByRunId.setdefault(runId, []).append(dict(row))
+
+    firstRun = dict(runRows[0])
+    return {
+        "project": {
+            "project_redmine_id": int(firstRun["project_redmine_id"]),
+            "project_name": str(firstRun["project_name"] or "—"),
+            "project_identifier": str(firstRun["project_identifier"] or "—"),
+        },
+        "snapshot_runs": [
+            {
+                **dict(row),
+                "issues": issuesByRunId.get(int(row["id"]), []),
+            }
+            for row in runRows
+        ],
+    }
+
+
 def listProjectsWithoutSnapshotForDate(capturedForDate: str) -> list[dict[str, object]]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")

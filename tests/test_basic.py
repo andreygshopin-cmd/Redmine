@@ -148,14 +148,15 @@ def testGetLatestSnapshotIssuesForProjectPageReturnsHtml(monkeypatch) -> None:
     monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
     monkeypatch.setattr(
         app_module,
-        "getLatestSnapshotIssuesForProject",
-        lambda projectRedmineId: {
+        "getSnapshotIssuesForProjectByDate",
+        lambda projectRedmineId, capturedForDate=None: {
             "snapshot_run": {
                 "project_redmine_id": projectRedmineId,
                 "project_name": "Billing",
                 "captured_for_date": "2026-04-13",
             },
             "issues": [{"issue_redmine_id": 501, "subject": "Add chart"}],
+            "available_dates": ["2026-04-13"],
         },
     )
 
@@ -168,13 +169,52 @@ def testGetLatestSnapshotIssuesForProjectPageReturnsHtml(monkeypatch) -> None:
     assert "Add chart" in body
 
 
-def testGetProjectBurndownPageReturnsPlaceholder(monkeypatch) -> None:
+def testGetProjectBurndownPageReturnsChartPage(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
     monkeypatch.setattr(app_module, "ensureProjectsTable", lambda: None)
+    monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
     monkeypatch.setattr(
         app_module,
         "listStoredProjects",
         lambda: [{"redmine_id": 10, "name": "Billing", "identifier": "billing"}],
+    )
+    monkeypatch.setattr(
+        app_module,
+        "getSnapshotRunsWithIssuesForProjectYear",
+        lambda projectRedmineId, year: {
+            "project": {
+                "project_redmine_id": projectRedmineId,
+                "project_name": "Billing",
+                "project_identifier": "billing",
+            },
+            "snapshot_runs": [
+                {
+                    "id": 1,
+                    "captured_for_date": f"{year}-04-13",
+                    "total_baseline_estimate_hours": 12.0,
+                    "issues": [
+                        {
+                            "issue_redmine_id": 501,
+                            "tracker_name": "Feature",
+                            "status_name": "В работе",
+                            "baseline_estimate_hours": 12.0,
+                            "estimated_hours": 0.0,
+                            "spent_hours": 0.0,
+                            "parent_issue_redmine_id": None,
+                        },
+                        {
+                            "issue_redmine_id": 502,
+                            "tracker_name": "Разработка",
+                            "status_name": "В работе",
+                            "baseline_estimate_hours": 0.0,
+                            "estimated_hours": 10.0,
+                            "spent_hours": 4.0,
+                            "parent_issue_redmine_id": 501,
+                        },
+                    ],
+                }
+            ],
+        },
     )
 
     response = client.get("/projects/10/burndown")
@@ -182,6 +222,8 @@ def testGetProjectBurndownPageReturnsPlaceholder(monkeypatch) -> None:
     assert response.status_code == 200
     assert "Диаграмма сгорания проекта" in response.text
     assert "Billing" in response.text
+    assert "P1 = факт / база" in response.text
+    assert "Объем.Прогноз" in response.text
 
 
 def testSnapshotIssuesPageUsesCleanRussianText(monkeypatch) -> None:
@@ -189,14 +231,15 @@ def testSnapshotIssuesPageUsesCleanRussianText(monkeypatch) -> None:
     monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
     monkeypatch.setattr(
         app_module,
-        "getLatestSnapshotIssuesForProject",
-        lambda projectRedmineId: {
+        "getSnapshotIssuesForProjectByDate",
+        lambda projectRedmineId, capturedForDate=None: {
             "snapshot_run": {
                 "project_redmine_id": projectRedmineId,
                 "project_name": "Billing",
                 "captured_for_date": "2026-04-14",
             },
             "issues": [{"issue_redmine_id": 501, "subject": "Add chart", "baseline_estimate_hours": 3.5}],
+            "available_dates": ["2026-04-14"],
         },
     )
 
