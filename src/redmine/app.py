@@ -2112,6 +2112,20 @@ def buildBurndownPage(projectRedmineId: int) -> str:
 
       const datasets = buildBurndownDatasets(p1Value, p2Value);
       statusNode.textContent = `P1 = ${{formatHours(p1Value)}}, P2 = ${{formatHours(p2Value)}}. Срезов в расчете: ${{burndownSnapshots.length}}.`;
+      const allChartValues = [
+        ...datasets.budgetData,
+        ...datasets.forecastData,
+        ...datasets.currentTotalData,
+        ...datasets.remainingTotalData,
+        ...datasets.currentDevelopmentData,
+        ...datasets.currentBugData,
+        ...datasets.remainingDevelopmentData,
+        ...datasets.remainingBugData,
+      ].filter((value) => value !== null && value !== undefined);
+      const maxChartValue = allChartValues.length
+        ? Math.max(...allChartValues.map((value) => Number(value || 0)))
+        : 0;
+      const chartMax = maxChartValue > 0 ? maxChartValue * 1.08 : 10;
 
       const chartConfig = {{
         data: {{
@@ -2125,6 +2139,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
               backgroundColor: "rgba(82, 206, 230, 0.38)",
               borderColor: "rgba(82, 206, 230, 0.9)",
               borderWidth: 1,
+              yAxisID: "yBars",
               order: 3,
             }},
             {{
@@ -2135,6 +2150,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
               backgroundColor: "rgba(255, 108, 14, 0.30)",
               borderColor: "rgba(255, 108, 14, 0.85)",
               borderWidth: 1,
+              yAxisID: "yBars",
               order: 3,
             }},
             {{
@@ -2145,6 +2161,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
               backgroundColor: "rgba(55, 93, 119, 0.18)",
               borderColor: "rgba(55, 93, 119, 0.65)",
               borderWidth: 1,
+              yAxisID: "yBars",
               order: 3,
             }},
             {{
@@ -2155,6 +2172,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
               backgroundColor: "rgba(255, 198, 0, 0.25)",
               borderColor: "rgba(255, 198, 0, 0.9)",
               borderWidth: 1,
+              yAxisID: "yBars",
               order: 3,
             }},
             {{
@@ -2168,6 +2186,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
               pointHoverRadius: 4,
               spanGaps: true,
               tension: 0.2,
+              yAxisID: "yLines",
               order: 1,
             }},
             {{
@@ -2181,6 +2200,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
               pointHoverRadius: 4,
               spanGaps: true,
               tension: 0.2,
+              yAxisID: "yLines",
               order: 1,
             }},
             {{
@@ -2194,6 +2214,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
               pointHoverRadius: 4,
               spanGaps: true,
               tension: 0.15,
+              yAxisID: "yLines",
               order: 1,
             }},
             {{
@@ -2207,6 +2228,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
               pointHoverRadius: 4,
               spanGaps: true,
               tension: 0.15,
+              yAxisID: "yLines",
               order: 1,
             }},
           ],
@@ -2253,13 +2275,24 @@ def buildBurndownPage(projectRedmineId: int) -> str:
                 display: false,
               }},
             }},
-            y: {{
+            yBars: {{
               stacked: true,
               beginAtZero: true,
+              max: chartMax,
               ticks: {{
                 callback(value) {{
                   return formatHours(value);
                 }},
+              }},
+            }},
+            yLines: {{
+              position: "left",
+              beginAtZero: true,
+              stacked: false,
+              max: chartMax,
+              display: false,
+              grid: {{
+                display: false,
               }},
             }},
           }},
