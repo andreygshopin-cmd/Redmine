@@ -2087,7 +2087,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             </tr>
             <tr>
               <th>Разработка, ч</th>
-              <td class="summary-metric" id="summaryBaselineEstimate" rowspan="3">{formatPageHours(totalBaselineEstimateHours)}</td>
+              <td class="summary-metric" id="summaryBaselineEstimate" rowspan="2">{formatPageHours(totalBaselineEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentEstimated">{formatPageHours(developmentEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentSpentYear">{formatPageHours(developmentSpentHoursYear)}</td>
               <td class="summary-empty"></td>
@@ -2108,6 +2108,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             </tr>
             <tr>
               <th>Ошибка, ч</th>
+              <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryBugEstimated">{formatPageHours(bugEstimateHours)}</td>
               <td class="summary-metric" id="summaryBugSpentYear" colspan="2">{formatPageHours(bugSpentHoursYear)}</td>
               <td class="summary-metric summary-percent" id="summaryBugShareYear">{formatPageHours((bugSpentHoursYear / (developmentSpentHoursYear + developmentProcessSpentHoursYear) * 100) if (developmentSpentHoursYear + developmentProcessSpentHoursYear) else 0)}%</td>
