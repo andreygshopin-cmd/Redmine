@@ -1924,14 +1924,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             >
               <td class="mono"><a class="issue-link" href="https://redmine.sms-it.ru/issues/{issueId}" target="_blank" rel="noreferrer">{issueId}</a></td>
               <td class="subject-col">{subjectValue}</td>
-              <td>{trackerValue}</td>
-              <td>{statusValue}</td>
+              <td class="tracker-col">{trackerValue}</td>
+              <td class="status-col">{statusValue}</td>
               <td>{doneRatioValue}</td>
               <td>{formatPageHours(baselineHoursValue)}</td>
               <td>{formatPageHours(estimatedHoursValue)}</td>
               <td>{formatPageHours(spentHoursValue)}</td>
               <td>{formatPageHours(spentHoursYearValue)}</td>
-              <td>{closedOnValue}</td>
+              <td class="closed-col">{closedOnValue}</td>
               <td>{assignedToValue}</td>
               <td class="version-col">{fixedVersionValue}</td>
             </tr>
@@ -2031,15 +2031,18 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .filter-tip {{ color: var(--muted); font-size: 0.92rem; }}
       .table-wrap {{ max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
       table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); }}
-      #snapshotIssuesTable {{ table-layout: fixed; }}
+      #snapshotIssuesTable {{ min-width: 1800px; table-layout: auto; }}
       th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
       th {{ position: sticky; top: 0; z-index: 2; background: #eef6f7; color: #426179; text-transform: uppercase; font-size: 0.88rem; }}
       tr:last-child td {{ border-bottom: 0; }}
       .mono {{ font-family: Consolas, "Courier New", monospace; font-size: 0.95rem; white-space: nowrap; }}
       .issue-link {{ color: var(--blue); text-decoration: none; border-bottom: 1px dashed currentColor; font-weight: 700; }}
       .issue-link:hover {{ color: var(--orange); border-bottom-style: solid; }}
-      .subject-col {{ width: 32%; min-width: 32%; max-width: 32%; white-space: normal; word-break: break-word; }}
-      .version-col {{ width: 18%; min-width: 18%; max-width: 18%; white-space: normal; word-break: break-word; }}
+      .subject-col {{ width: 420px; min-width: 420px; max-width: 420px; white-space: normal; word-break: break-word; }}
+      .tracker-col {{ width: 170px; min-width: 170px; max-width: 170px; white-space: normal; word-break: break-word; }}
+      .status-col {{ width: 170px; min-width: 170px; max-width: 170px; white-space: normal; word-break: break-word; }}
+      .closed-col {{ width: 190px; min-width: 190px; max-width: 190px; white-space: normal; word-break: break-word; }}
+      .version-col {{ width: 360px; min-width: 360px; max-width: 360px; white-space: normal; word-break: break-word; }}
   </style>
 </head>
   <body>
@@ -2065,38 +2068,55 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <th style="width: 33%"></th>
               <th>Базовая оценка</th>
               <th>План</th>
-              <th>Факт за год</th>
-              <th>Факт всего</th>
+              <th colspan="2">Факт (год)</th>
+              <th>% (год)</th>
+              <th colspan="2">Факт (всего)</th>
+              <th>% (всего)</th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <th>Все задачи</th>
-              <td class="summary-metric" id="summaryBaselineEstimate">{formatPageHours(totalBaselineEstimateHours)}</td>
+              <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryEstimated">{formatPageHours(totalEstimatedHours)}</td>
-              <td class="summary-metric" id="summarySpentYear">{formatPageHours(totalSpentHoursYear)}</td>
-              <td class="summary-metric" id="summarySpent">{formatPageHours(totalSpentHours)}</td>
+              <td class="summary-metric" id="summarySpentYear" colspan="2">{formatPageHours(totalSpentHoursYear)}</td>
+              <td class="summary-empty"></td>
+              <td class="summary-metric" id="summarySpent" colspan="2">{formatPageHours(totalSpentHours)}</td>
+              <td class="summary-empty"></td>
             </tr>
             <tr>
               <th>Разработка, ч</th>
-              <td class="summary-empty"></td>
+              <td class="summary-metric" id="summaryBaselineEstimate" rowspan="3">{formatPageHours(totalBaselineEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentEstimated">{formatPageHours(developmentEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentSpentYear">{formatPageHours(developmentSpentHoursYear)}</td>
+              <td class="summary-metric" id="summaryDevelopmentCombinedSpentYear" rowspan="2">{formatPageHours(developmentSpentHoursYear + developmentProcessSpentHoursYear)}</td>
+              <td class="summary-metric" id="summaryBugShareYear" rowspan="3">{formatPageHours((bugSpentHoursYear / (developmentSpentHoursYear + developmentProcessSpentHoursYear) * 100) if (developmentSpentHoursYear + developmentProcessSpentHoursYear) else 0)}</td>
               <td class="summary-metric" id="summaryDevelopmentSpent">{formatPageHours(developmentSpentHours)}</td>
+              <td class="summary-metric" id="summaryDevelopmentCombinedSpent" rowspan="2">{formatPageHours(developmentSpentHours + developmentProcessSpentHours)}</td>
+              <td class="summary-metric" id="summaryBugShareAll" rowspan="3">{formatPageHours((bugSpentHours / (developmentSpentHours + developmentProcessSpentHours) * 100) if (developmentSpentHours + developmentProcessSpentHours) else 0)}</td>
             </tr>
             <tr>
               <th>Процессы разработки, ч</th>
-              <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentProcessEstimated">{formatPageHours(developmentProcessEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentProcessSpentYear">{formatPageHours(developmentProcessSpentHoursYear)}</td>
               <td class="summary-metric" id="summaryDevelopmentProcessSpent">{formatPageHours(developmentProcessSpentHours)}</td>
             </tr>
             <tr>
               <th>Ошибка, ч</th>
-              <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryBugEstimated">{formatPageHours(bugEstimateHours)}</td>
               <td class="summary-metric" id="summaryBugSpentYear">{formatPageHours(bugSpentHoursYear)}</td>
+              <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryBugSpent">{formatPageHours(bugSpentHours)}</td>
+              <td class="summary-empty"></td>
+            </tr>
+            <tr>
+              <th>Итого по разработке</th>
+              <td class="summary-empty"></td>
+              <td class="summary-metric" id="summaryDevelopmentTotalEstimated">{formatPageHours(developmentEstimateHours + developmentProcessEstimateHours + bugEstimateHours)}</td>
+              <td class="summary-metric" id="summaryDevelopmentGrandSpentYear" colspan="2">{formatPageHours(developmentSpentHoursYear + developmentProcessSpentHoursYear + bugSpentHoursYear)}</td>
+              <td class="summary-empty"></td>
+              <td class="summary-metric" id="summaryDevelopmentGrandSpent" colspan="2">{formatPageHours(developmentSpentHours + developmentProcessSpentHours + bugSpentHours)}</td>
+              <td class="summary-empty"></td>
             </tr>
           </tbody>
         </table>
@@ -2111,30 +2131,30 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           <tr>
             <th>ID</th>
             <th class="subject-col">Тема</th>
-            <th>Трекер</th>
-            <th>Статус</th>
+            <th class="tracker-col">Трекер</th>
+            <th class="status-col">Статус</th>
             <th>Готово, %</th>
             <th>Базовая оценка, ч</th>
             <th>План, ч</th>
             <th>Факт всего, ч</th>
             <th>Факт за год, ч</th>
-            <th>Закрыта</th>
+            <th class="closed-col">Закрыта</th>
             <th>Исполнитель</th>
             <th class="version-col">Версия</th>
           </tr>
           <tr class="filter-head">
             <th><input class="filter-input-table" type="text" data-filter-key="issueId" data-filter-role="text"></th>
             <th><input class="filter-input-table" type="text" data-filter-key="subject" data-filter-role="text"></th>
-            <th><select class="filter-select-table" multiple data-filter-key="tracker" data-filter-role="multi"></select></th>
-            <th><select class="filter-select-table" multiple data-filter-key="status" data-filter-role="multi"></select></th>
+            <th class="tracker-col"><select class="filter-select-table" multiple data-filter-key="tracker" data-filter-role="multi"></select></th>
+            <th class="status-col"><select class="filter-select-table" multiple data-filter-key="status" data-filter-role="multi"></select></th>
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="doneRatio" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="1" data-filter-key="doneRatio" data-filter-role="value"></div></th>
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="baseline" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="baseline" data-filter-role="value"></div></th>
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="estimated" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="estimated" data-filter-role="value"></div></th>
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spent" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spent" data-filter-role="value"></div></th>
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spentYear" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spentYear" data-filter-role="value"></div></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="closedOn" data-filter-role="text"></th>
+            <th class="closed-col"><input class="filter-input-table" type="text" data-filter-key="closedOn" data-filter-role="text"></th>
             <th><input class="filter-input-table" type="text" data-filter-key="assignedTo" data-filter-role="text"></th>
-            <th><input class="filter-input-table" type="text" data-filter-key="fixedVersion" data-filter-role="text"></th>
+            <th class="version-col"><input class="filter-input-table" type="text" data-filter-key="fixedVersion" data-filter-role="text"></th>
           </tr>
         </thead>
         <tbody id="snapshotIssuesTableBody">
@@ -2159,6 +2179,13 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const summarySpentYear = document.getElementById("summarySpentYear");
       const summaryDevelopmentEstimated = document.getElementById("summaryDevelopmentEstimated");
       const summaryDevelopmentSpent = document.getElementById("summaryDevelopmentSpent");
+      const summaryDevelopmentCombinedSpentYear = document.getElementById("summaryDevelopmentCombinedSpentYear");
+      const summaryDevelopmentCombinedSpent = document.getElementById("summaryDevelopmentCombinedSpent");
+      const summaryDevelopmentTotalEstimated = document.getElementById("summaryDevelopmentTotalEstimated");
+      const summaryDevelopmentGrandSpentYear = document.getElementById("summaryDevelopmentGrandSpentYear");
+      const summaryDevelopmentGrandSpent = document.getElementById("summaryDevelopmentGrandSpent");
+      const summaryBugShareYear = document.getElementById("summaryBugShareYear");
+      const summaryBugShareAll = document.getElementById("summaryBugShareAll");
       const summaryDevelopmentSpentYear = document.getElementById("summaryDevelopmentSpentYear");
       const summaryDevelopmentProcessEstimated = document.getElementById("summaryDevelopmentProcessEstimated");
       const summaryDevelopmentProcessSpent = document.getElementById("summaryDevelopmentProcessSpent");
@@ -2179,6 +2206,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           return "0,0";
         }}
         return parsed.toFixed(1).replace(".", ",");
+      }}
+
+      function formatFilterPercent(value) {{
+        return `${{formatFilterHours(value)}}%`;
       }}
 
       function updateSnapshotFilterHeaderOffset() {{
@@ -2293,6 +2324,18 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if (summaryBugEstimated) summaryBugEstimated.textContent = formatFilterHours(bugEstimated);
         if (summaryBugSpent) summaryBugSpent.textContent = formatFilterHours(bugSpent);
         if (summaryBugSpentYear) summaryBugSpentYear.textContent = formatFilterHours(bugSpentYear);
+        const developmentCombinedSpentYear = developmentSpentYear + developmentProcessSpentYear;
+        const developmentCombinedSpent = developmentSpent + developmentProcessSpent;
+        const developmentTotalEstimated = developmentEstimated + developmentProcessEstimated + bugEstimated;
+        const developmentGrandSpentYear = developmentCombinedSpentYear + bugSpentYear;
+        const developmentGrandSpent = developmentCombinedSpent + bugSpent;
+        if (summaryDevelopmentCombinedSpentYear) summaryDevelopmentCombinedSpentYear.textContent = formatFilterHours(developmentCombinedSpentYear);
+        if (summaryDevelopmentCombinedSpent) summaryDevelopmentCombinedSpent.textContent = formatFilterHours(developmentCombinedSpent);
+        if (summaryDevelopmentTotalEstimated) summaryDevelopmentTotalEstimated.textContent = formatFilterHours(developmentTotalEstimated);
+        if (summaryDevelopmentGrandSpentYear) summaryDevelopmentGrandSpentYear.textContent = formatFilterHours(developmentGrandSpentYear);
+        if (summaryDevelopmentGrandSpent) summaryDevelopmentGrandSpent.textContent = formatFilterHours(developmentGrandSpent);
+        if (summaryBugShareYear) summaryBugShareYear.textContent = formatFilterPercent(developmentCombinedSpentYear > 0 ? (bugSpentYear / developmentCombinedSpentYear) * 100 : 0);
+        if (summaryBugShareAll) summaryBugShareAll.textContent = formatFilterPercent(developmentCombinedSpent > 0 ? (bugSpent / developmentCombinedSpent) * 100 : 0);
       }}
 
       function applySnapshotTableFilters() {{
