@@ -1736,9 +1736,12 @@ def buildBurndownChartSeeds(snapshotRuns: list[dict[str, object]]) -> list[dict[
     return chartSeeds
 
 
-def buildBurndownDateLabels(year: int) -> list[str]:
-    currentDate = date(year, 1, 1)
-    lastDate = date(year, 12, 31)
+def buildBurndownDateLabels(year: int, month: int) -> list[str]:
+    currentDate = date(year, month, 1)
+    if month == 12:
+        lastDate = date(year, 12, 31)
+    else:
+        lastDate = date(year, month + 1, 1) - timedelta(days=1)
     labels: list[str] = []
 
     while currentDate <= lastDate:
@@ -1750,6 +1753,7 @@ def buildBurndownDateLabels(year: int) -> list[str]:
 
 def buildBurndownPage(projectRedmineId: int) -> str:
     currentYear = datetime.now(UTC).year
+    targetMonth = 4
     burndownPayload = getSnapshotRunsWithIssuesForProjectYear(projectRedmineId, currentYear)
     storedProjects = listStoredProjects()
     storedProject = next(
@@ -1764,9 +1768,13 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     projectIdentifier = escape(
         str(projectInfo.get("project_identifier") or (storedProject.get("identifier") if storedProject else "—"))
     )
-    snapshotRuns = list(burndownPayload.get("snapshot_runs") or [])
+    snapshotRuns = [
+        snapshotRun
+        for snapshotRun in list(burndownPayload.get("snapshot_runs") or [])
+        if str(snapshotRun.get("captured_for_date") or "").startswith(f"{currentYear}-{targetMonth:02d}-")
+    ]
     chartSeeds = buildBurndownChartSeeds(snapshotRuns)
-    chartDatesJson = json.dumps(buildBurndownDateLabels(currentYear), ensure_ascii=False)
+    chartDatesJson = json.dumps(buildBurndownDateLabels(currentYear, targetMonth), ensure_ascii=False)
     chartSeedsJson = json.dumps(chartSeeds, ensure_ascii=False)
 
     return f"""<!doctype html>
@@ -1930,17 +1938,17 @@ def buildBurndownPage(projectRedmineId: int) -> str:
   <main>
     <a class="back-link" href="/">← К списку проектов</a>
     <h1>Диаграмма сгорания проекта</h1>
-    <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}. Период диаграммы: 01.01.{currentYear} — 31.12.{currentYear}. Срезов за год: {len(chartSeeds)}.</p>
+    <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}. Период диаграммы: 01.04.{currentYear} — 30.04.{currentYear}. Срезов за апрель: {len(chartSeeds)}.</p>
 
     <section class="controls-panel">
       <div class="field">
         <label for="p1Input">P1 = факт / база</label>
-        <input id="p1Input" type="text" inputmode="decimal" value="1,0">
+        <input id="p1Input" type="text" inputmode="decimal" value="1,5">
         <div class="field-note">Используется в расчете бюджета и прогнозного объема.</div>
       </div>
       <div class="field">
         <label for="p2Input">P2 = факт с багами / факт</label>
-        <input id="p2Input" type="text" inputmode="decimal" value="1,0">
+        <input id="p2Input" type="text" inputmode="decimal" value="1,5">
         <div class="field-note">Изменения пересчитываются сразу после ввода без перезагрузки страницы.</div>
       </div>
     </section>
@@ -1957,7 +1965,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         <canvas id="burndownChart"></canvas>
       </div>
       <div id="burndownEmptyState" class="empty-state" style="display:none;">
-        За текущий год по проекту пока нет срезов, поэтому построить диаграмму еще не из чего.
+        За апрель текущего года по проекту пока нет срезов, поэтому построить диаграмму еще не из чего.
       </div>
     </section>
   </main>
@@ -2090,7 +2098,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       if (!burndownSnapshots.length) {{
         emptyState.style.display = "block";
         chartCanvas.style.display = "none";
-        statusNode.textContent = "За текущий год пока нет срезов для расчета диаграммы.";
+        statusNode.textContent = "За апрель текущего года пока нет срезов для расчета диаграммы.";
         return;
       }}
 
