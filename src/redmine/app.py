@@ -2091,14 +2091,14 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     }}
 
     .legend-swatch.dev-rem-bar {{
-      background: rgba(55, 93, 119, 0.18);
-      border-color: rgba(55, 93, 119, 0.65);
+      background: #52cee6;
+      border-color: #52cee6;
       border-radius: 4px;
     }}
 
     .legend-swatch.bug-rem-bar {{
-      background: rgba(255, 198, 0, 0.25);
-      border-color: rgba(255, 198, 0, 0.9);
+      background: #ffc600;
+      border-color: #ffc600;
       border-radius: 4px;
     }}
 
@@ -2215,14 +2215,14 @@ def buildBurndownPage(projectRedmineId: int) -> str:
               <span class="legend-swatch dev-rem-bar"></span>
               <div>
                 <div class="legend-name">Остаток разработки</div>
-                <div class="legend-text">Полупрозрачный серо-синий столбик. В stack с ним выше идет «Остаток ошибок».</div>
+                <div class="legend-text">Непрозрачный голубой столбик. В stack с ним выше идет «Остаток ошибок».</div>
               </div>
             </li>
             <li>
               <span class="legend-swatch bug-rem-bar"></span>
               <div>
                 <div class="legend-name">Остаток ошибок</div>
-                <div class="legend-text">Полупрозрачный желтый столбик поверх остатка разработки.</div>
+                <div class="legend-text">Непрозрачный желтый столбик поверх остатка разработки.</div>
               </div>
             </li>
           </ul>
@@ -2448,8 +2448,8 @@ def buildBurndownPage(projectRedmineId: int) -> str:
               label: "Остаток разработки",
               data: datasets.remainingDevelopmentData,
               stack: "remaining",
-              backgroundColor: "rgba(55, 93, 119, 0.18)",
-              borderColor: "rgba(55, 93, 119, 0.65)",
+              backgroundColor: "#52cee6",
+              borderColor: "#52cee6",
               borderWidth: 1,
               yAxisID: "yBars",
               order: 3,
@@ -2459,8 +2459,8 @@ def buildBurndownPage(projectRedmineId: int) -> str:
               label: "Остаток ошибок",
               data: datasets.remainingBugData,
               stack: "remaining",
-              backgroundColor: "rgba(255, 198, 0, 0.25)",
-              borderColor: "rgba(255, 198, 0, 0.9)",
+              backgroundColor: "#ffc600",
+              borderColor: "#ffc600",
               borderWidth: 1,
               yAxisID: "yBars",
               order: 3,
