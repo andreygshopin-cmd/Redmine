@@ -1812,7 +1812,13 @@ def buildSnapshotComparisonRows(
         rightIssue = rightIssuesById.get(issueId)
         baseIssue = rightIssue or leftIssue or {}
         changedValues: dict[str, dict[str, object]] = {}
-        rowHasChanges = False
+        existenceChanged = (leftIssue is None) != (rightIssue is None)
+        rowHasChanges = existenceChanged
+        changeKind = (
+            "new"
+            if leftIssue is None and rightIssue is not None
+            else "deleted" if leftIssue is not None and rightIssue is None else "changed"
+        )
 
         for fieldKey in selectedFields:
             leftValue = getSnapshotCompareNumericValue(leftIssue, fieldKey)
@@ -1838,6 +1844,7 @@ def buildSnapshotComparisonRows(
                 "tracker_name": str(baseIssue.get("tracker_name") or "—"),
                 "left_status_name": str(leftIssue.get("status_name") or "—") if leftIssue else "—",
                 "right_status_name": str(rightIssue.get("status_name") or "—") if rightIssue else "—",
+                "change_kind": changeKind,
                 "values": changedValues,
             }
         )
@@ -1995,9 +2002,15 @@ def buildSnapshotComparisonPage(
                 f'<td class="mono compare-value{changedClass}">{formatPageHours(valueInfo["right_value"])}</td>'
             )
 
+        rowBadgeHtml = ""
+        if row["change_kind"] == "new":
+            rowBadgeHtml = '<span class="compare-badge compare-badge-new">Новая</span>'
+        elif row["change_kind"] == "deleted":
+            rowBadgeHtml = '<span class="compare-badge compare-badge-deleted">Удалена</span>'
+
         bodyRows.append(
             "<tr>"
-            f'<td class="mono">{row["issue_redmine_id"]}</td>'
+            f'<td class="mono"><span class="compare-id-cell">{row["issue_redmine_id"]}{rowBadgeHtml}</span></td>'
             f'<td class="subject-col">{escape(str(row["subject"]))}</td>'
             f'<td>{escape(str(row["tracker_name"]))}</td>'
             f'<td>{escape(str(row["left_status_name"]))}</td>'
@@ -2068,6 +2081,21 @@ def buildSnapshotComparisonPage(
     .subhead {{ display: inline-block; margin-top: 4px; color: var(--muted); text-transform: none; font-size: 0.82rem; font-weight: 500; }}
     .compare-value {{ text-align: right; }}
     .changed-value {{ background: var(--highlight); }}
+    .compare-id-cell {{ display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }}
+    .compare-badge {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: none;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }}
+    .compare-badge-new {{ background: rgba(56, 161, 105, 0.16); color: #2f855a; }}
+    .compare-badge-deleted {{ background: rgba(229, 62, 62, 0.16); color: #c53030; }}
     .empty-state {{ border: 1px dashed var(--line); border-radius: 8px; padding: 24px; background: #f7fbfc; color: var(--muted); line-height: 1.6; }}
   </style>
 </head>
