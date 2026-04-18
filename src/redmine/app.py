@@ -1610,6 +1610,109 @@ def formatSnapshotPageDateTime(value: object) -> str:
     return str(value).replace("T", " ").replace("+00:00", " UTC")
 
 
+def buildProjectRedmineIssuesUrl(projectIdentifier: object) -> str:
+    projectIdentifierRaw = str(projectIdentifier or "").strip()
+    if not projectIdentifierRaw:
+        return ""
+
+    return (
+        "https://redmine.sms-it.ru/projects/"
+        f"{quote(projectIdentifierRaw)}/issues?utf8=%E2%9C%93&set_filter=1&type=IssueQuery"
+        "&f%5B%5D=status_id&op%5Bstatus_id%5D=*&query%5Bsort_criteria%5D%5B0%5D%5B%5D=id"
+        "&query%5Bsort_criteria%5D%5B0%5D%5B%5D=desc&t%5B%5D=cf_27&t%5B%5D=spent_hours"
+        "&t%5B%5D=estimated_hours&c%5B%5D=tracker&c%5B%5D=parent&c%5B%5D=status"
+        "&c%5B%5D=priority&c%5B%5D=subject&c%5B%5D=assigned_to&c%5B%5D=estimated_hours"
+        f"&saved_query_id=0&current_project_id={quote(projectIdentifierRaw)}"
+    )
+
+
+def buildProjectContextNavCss() -> str:
+    return """
+    .context-nav-panel {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin: 0 0 18px;
+    }
+    .context-nav-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      text-decoration: none;
+      font-weight: 700;
+      transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
+      box-shadow: 0 8px 16px rgba(22, 50, 74, 0.08);
+    }
+    .context-nav-button:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.03);
+    }
+    .context-nav-button[aria-current="page"] {
+      box-shadow: inset 0 0 0 2px rgba(22, 50, 74, 0.28);
+      cursor: default;
+    }
+    .context-nav-home {
+      background: #375d77;
+      color: #ffffff;
+    }
+    .context-nav-snapshots {
+      background: #ffc600;
+      color: #16324a;
+    }
+    .context-nav-compare {
+      background: #52cee6;
+      color: #16324a;
+    }
+    .context-nav-burndown {
+      background: #ff6c0e;
+      color: #ffffff;
+    }
+    .context-nav-redmine {
+      background: #64798d;
+      color: #ffffff;
+    }
+    """
+
+
+def buildProjectContextNavPanel(
+    projectRedmineId: int,
+    projectIdentifier: object,
+    *,
+    currentPage: str,
+    snapshotUrl: str | None = None,
+    compareUrl: str | None = None,
+    burndownUrl: str | None = None,
+) -> str:
+    resolvedSnapshotUrl = snapshotUrl or f"/projects/{projectRedmineId}/latest-snapshot-issues"
+    resolvedCompareUrl = compareUrl or f"/projects/{projectRedmineId}/compare-snapshots"
+    resolvedBurndownUrl = burndownUrl or f"/projects/{projectRedmineId}/burndown"
+    redmineUrl = buildProjectRedmineIssuesUrl(projectIdentifier)
+
+    buttons = [
+        ("home", "/", "К списку проектов", "context-nav-home", False),
+        ("snapshots", resolvedSnapshotUrl, "Срезы проекта", "context-nav-snapshots", False),
+        ("compare", resolvedCompareUrl, "Сравнение срезов", "context-nav-compare", False),
+        ("burndown", resolvedBurndownUrl, "Диаграмма сгорания", "context-nav-burndown", False),
+    ]
+    if redmineUrl:
+        buttons.append(("redmine", redmineUrl, "Открыть в Redmine", "context-nav-redmine", True))
+
+    htmlParts: list[str] = ['<nav class="context-nav-panel">']
+    for key, href, label, cssClass, isExternal in buttons:
+        currentAttr = ' aria-current="page"' if key == currentPage else ""
+        targetAttrs = ' target="_blank" rel="noreferrer"' if isExternal else ""
+        htmlParts.append(
+            f'<a class="context-nav-button {cssClass}" href="{escape(str(href))}"{currentAttr}{targetAttrs}>{escape(label)}</a>'
+        )
+    htmlParts.append("</nav>")
+    return "".join(htmlParts)
+
+
 def buildSnapshotSummaryView(summary: dict[str, object] | None) -> dict[str, float]:
     source = dict(summary or {})
     baselineEstimateHours = float(source.get("baseline_estimate_hours") or 0)
@@ -1866,6 +1969,23 @@ def buildSnapshotComparisonPage(
         (item for item in storedProjects if int(item.get("redmine_id") or 0) == projectRedmineId),
         None,
     )
+    projectIdentifierRaw = str((storedProject or {}).get("identifier") or "").strip()
+    compareQueryParts = []
+    if leftDate:
+        compareQueryParts.append(f"left_date={quote(str(leftDate))}")
+    if rightDate:
+        compareQueryParts.append(f"right_date={quote(str(rightDate))}")
+    for fieldKey in normalizedFields:
+        compareQueryParts.append(f"field={quote(str(fieldKey))}")
+    currentCompareUrl = f"/projects/{projectRedmineId}/compare-snapshots"
+    if compareQueryParts:
+        currentCompareUrl += f"?{'&'.join(compareQueryParts)}"
+    navPanelHtml = buildProjectContextNavPanel(
+        projectRedmineId,
+        projectIdentifierRaw,
+        currentPage="compare",
+        compareUrl=currentCompareUrl,
+    )
 
     if not availableDates or resolvedLeftDate is None or resolvedRightDate is None:
         projectName = escape(str((storedProject or {}).get("name") or "—"))
@@ -1887,8 +2007,7 @@ def buildSnapshotComparisonPage(
   <style>
     body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
     main {{ max-width: 1280px; margin: 0 auto; padding: 24px 20px 48px; }}
-    .back-link {{ color: #375d77; text-decoration: none; font-weight: 700; border-bottom: 1px dashed currentColor; }}
-    .back-link:hover {{ color: #ff6c0e; }}
+    {buildProjectContextNavCss()}
     h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; }}
     .meta {{ color: #64798d; margin: 0 0 18px; line-height: 1.6; }}
     .controls-panel {{ border: 1px solid #d9e5eb; border-radius: 8px; padding: 18px 20px; background: #ffffff; }}
@@ -1904,7 +2023,7 @@ def buildSnapshotComparisonPage(
 </head>
 <body>
   <main>
-    <a class="back-link" href="/">← К списку проектов</a>
+    {navPanelHtml}
     <h1>Сравнение срезов проекта</h1>
     <p class="meta">Проект: {projectName}. Для сравнения нужен хотя бы один сохраненный срез.</p>
     <section class="controls-panel">
@@ -2019,18 +2138,16 @@ def buildSnapshotComparisonPage(
             + "</tr>"
         )
 
-    compareUrlFromBurndown = f"/projects/{projectRedmineId}/burndown"
     latestSnapshotUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues?captured_for_date={quote(str(resolvedRightDate))}"
-    redmineIssuesUrl = (
-        "https://redmine.sms-it.ru/projects/"
-        f"{quote(projectIdentifierRaw)}/issues?utf8=%E2%9C%93&set_filter=1&type=IssueQuery"
-        "&f%5B%5D=status_id&op%5Bstatus_id%5D=*&query%5Bsort_criteria%5D%5B0%5D%5B%5D=id"
-        "&query%5Bsort_criteria%5D%5B0%5D%5B%5D=desc&t%5B%5D=cf_27&t%5B%5D=spent_hours"
-        "&t%5B%5D=estimated_hours&c%5B%5D=tracker&c%5B%5D=parent&c%5B%5D=status"
-        "&c%5B%5D=priority&c%5B%5D=subject&c%5B%5D=assigned_to&c%5B%5D=estimated_hours"
-        f"&saved_query_id=0&current_project_id={quote(projectIdentifierRaw)}"
-        if projectIdentifierRaw
-        else ""
+    compareUrlCurrent = f"/projects/{projectRedmineId}/compare-snapshots?left_date={quote(str(resolvedLeftDate))}&right_date={quote(str(resolvedRightDate))}"
+    for fieldKey in normalizedFields:
+        compareUrlCurrent += f"&field={quote(str(fieldKey))}"
+    navPanelHtml = buildProjectContextNavPanel(
+        projectRedmineId,
+        projectIdentifierRaw,
+        currentPage="compare",
+        snapshotUrl=latestSnapshotUrl,
+        compareUrl=compareUrlCurrent,
     )
 
     return f"""<!doctype html>
@@ -2055,13 +2172,9 @@ def buildSnapshotComparisonPage(
     * {{ box-sizing: border-box; }}
     body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
     main {{ max-width: 1480px; margin: 0 auto; padding: 24px 20px 48px; }}
-    .back-link {{ color: var(--blue); text-decoration: none; font-weight: 700; border-bottom: 1px dashed currentColor; }}
-    .back-link:hover {{ color: var(--orange); }}
+    {buildProjectContextNavCss()}
     h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; }}
     .meta {{ color: var(--muted); margin: 0 0 14px; line-height: 1.6; }}
-    .page-links {{ display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 18px; }}
-    .page-link-button {{ display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; text-decoration: none; color: var(--blue); background: #ffffff; font-weight: 700; }}
-    .page-link-button:hover {{ border-color: var(--orange); color: var(--orange); }}
     .controls-panel {{ border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; background: var(--panel); margin: 0 0 18px; }}
     .controls-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; align-items: start; }}
     .field {{ display: flex; flex-direction: column; gap: 6px; }}
@@ -2101,14 +2214,9 @@ def buildSnapshotComparisonPage(
 </head>
 <body>
   <main>
-    <a class="back-link" href="/">← К списку проектов</a>
+    {navPanelHtml}
     <h1>Сравнение срезов проекта</h1>
     <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}. По умолчанию сравниваются последний и предпоследний срезы.</p>
-    <div class="page-links">
-      <a class="page-link-button" href="{compareUrlFromBurndown}" target="_blank" rel="noreferrer">Диаграмма сгорания</a>
-      <a class="page-link-button" href="{latestSnapshotUrl}" target="_blank" rel="noreferrer">Задачи среза</a>
-      {f'<a class="page-link-button" href="{escape(redmineIssuesUrl)}" target="_blank" rel="noreferrer">Открыть в Redmine</a>' if redmineIssuesUrl else ''}
-    </div>
     <section class="controls-panel">
       <form method="get">
         <div class="controls-grid">
@@ -2324,16 +2432,11 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     ).strip()
     projectIdentifier = escape(projectIdentifierRaw or "—")
     snapshotIssuesUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
-    redmineIssuesUrl = (
-        "https://redmine.sms-it.ru/projects/"
-        f"{quote(projectIdentifierRaw)}/issues?utf8=%E2%9C%93&set_filter=1&type=IssueQuery"
-        "&f%5B%5D=status_id&op%5Bstatus_id%5D=*&query%5Bsort_criteria%5D%5B0%5D%5B%5D=id"
-        "&query%5Bsort_criteria%5D%5B0%5D%5B%5D=desc&t%5B%5D=cf_27&t%5B%5D=spent_hours"
-        "&t%5B%5D=estimated_hours&c%5B%5D=tracker&c%5B%5D=parent&c%5B%5D=status"
-        "&c%5B%5D=priority&c%5B%5D=subject&c%5B%5D=assigned_to&c%5B%5D=estimated_hours"
-        f"&saved_query_id=0&current_project_id={quote(projectIdentifierRaw)}"
-        if projectIdentifierRaw
-        else ""
+    navPanelHtml = buildProjectContextNavPanel(
+        projectRedmineId,
+        projectIdentifierRaw,
+        currentPage="burndown",
+        snapshotUrl=snapshotIssuesUrl,
     )
     snapshotRuns = [
         snapshotRun
@@ -2382,17 +2485,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       margin: 0 auto;
       padding: 24px 20px 48px;
     }}
-
-    .back-link {{
-      color: var(--blue-302);
-      text-decoration: none;
-      font-weight: 700;
-      border-bottom: 1px dashed currentColor;
-    }}
-
-    .back-link:hover {{
-      color: var(--orange-1585);
-    }}
+    {buildProjectContextNavCss()}
 
     h1 {{
       margin: 18px 0 12px;
@@ -2406,31 +2499,6 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       margin: 0 0 18px;
       font-size: 1rem;
       line-height: 1.6;
-    }}
-
-    .page-links {{
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin: 0 0 18px;
-    }}
-
-    .page-link-button {{
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 14px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      text-decoration: none;
-      color: var(--blue-302);
-      background: #ffffff;
-      font-weight: 700;
-    }}
-
-    .page-link-button:hover {{
-      border-color: var(--orange-1585);
-      color: var(--orange-1585);
     }}
 
     .controls-panel,
@@ -2635,14 +2703,9 @@ def buildBurndownPage(projectRedmineId: int) -> str:
 </head>
 <body>
   <main>
-    <a class="back-link" href="/">← К списку проектов</a>
+    {navPanelHtml}
     <h1>Диаграмма сгорания проекта</h1>
     <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}. Период диаграммы: 01.04.{currentYear} — 30.04.{currentYear}. Срезов за апрель: {len(chartSeeds)}.</p>
-    <div class="page-links">
-      <a class="page-link-button" href="{snapshotIssuesUrl}">Срезы проекта</a>
-      <a class="page-link-button" href="/projects/{projectRedmineId}/compare-snapshots">Сравнить срезы</a>
-      {f'<a class="page-link-button" href="{escape(redmineIssuesUrl)}" target="_blank" rel="noreferrer">Открыть в Redmine</a>' if redmineIssuesUrl else ''}
-    </div>
 
     <section class="controls-panel">
       <div class="field">
@@ -3343,30 +3406,41 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     snapshotRun = snapshotPayload["snapshot_run"]
     issues = snapshotPayload["issues"]
     availableDates = [str(value) for value in snapshotPayload.get("available_dates") or []]
+    storedProjects = listStoredProjects()
+    storedProject = next(
+        (item for item in storedProjects if int(item.get("redmine_id") or 0) == projectRedmineId),
+        None,
+    )
+    storedProjectIdentifierRaw = str((storedProject or {}).get("identifier") or "").strip()
 
     if snapshotRun is None:
         optionsHtml = "".join(
             f'<option value="{escape(dateValue)}">{escape(dateValue)}</option>' for dateValue in availableDates
+        )
+        navPanelHtml = buildProjectContextNavPanel(
+            projectRedmineId,
+            storedProjectIdentifierRaw,
+            currentPage="snapshots",
         )
         return f"""<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Задачи последнего среза</title>
+  <title>Задачи среза проекта</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <style>
     body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
     main {{ max-width: 1200px; margin: 0 auto; padding: 24px 20px 48px; }}
-    .back-link {{ color: #375d77; text-decoration: none; font-weight: 600; }}
+    {buildProjectContextNavCss()}
     h1 {{ margin: 18px 0 12px; font-size: 2rem; }}
     .meta {{ color: #64798d; margin: 0 0 24px; }}
   </style>
 </head>
 <body>
     <main>
-      <a class="back-link" href="/">← К списку проектов</a>
-      <h1>Задачи последнего среза проекта</h1>
+      {navPanelHtml}
+      <h1>Задачи среза проекта</h1>
       <form method="get">
         <label for="capturedForDate">Дата среза</label>
         <select id="capturedForDate" name="captured_for_date" onchange="this.form.submit()">
@@ -3397,8 +3471,26 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     bugSpentHoursYear = summaryView["bug_spent_hours_year"]
 
     projectName = escape(str(snapshotRun.get("project_name") or "—"))
-    capturedForDate = escape(str(snapshotRun.get("captured_for_date") or "—"))
-    selectedDate = str(snapshotRun.get("captured_for_date") or "")
+    capturedForDateRaw = str(snapshotRun.get("captured_for_date") or "")
+    capturedForDate = escape(capturedForDateRaw or "—")
+    selectedDate = capturedForDateRaw
+    projectIdentifierRaw = str(
+        snapshotRun.get("project_identifier")
+        or (storedProject.get("identifier") if storedProject else "")
+    ).strip()
+    snapshotPageUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
+    if selectedDate:
+        snapshotPageUrl += f"?captured_for_date={quote(selectedDate)}"
+    comparePageUrl = f"/projects/{projectRedmineId}/compare-snapshots"
+    if selectedDate:
+        comparePageUrl += f"?right_date={quote(selectedDate)}"
+    navPanelHtml = buildProjectContextNavPanel(
+        projectRedmineId,
+        projectIdentifierRaw,
+        currentPage="snapshots",
+        snapshotUrl=snapshotPageUrl,
+        compareUrl=comparePageUrl,
+    )
     initialIssuesJson = json.dumps(issues, ensure_ascii=False, default=str)
     initialSummaryJson = json.dumps(summaryView, ensure_ascii=False, default=str)
     initialFilterOptionsJson = json.dumps(snapshotPayload.get("filter_options") or {}, ensure_ascii=False, default=str)
@@ -3417,7 +3509,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Задачи последнего среза</title>
+  <title>Задачи среза проекта</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
     <style>
       :root {{
@@ -3433,17 +3525,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       * {{ box-sizing: border-box; }}
       body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
       main {{ max-width: 1440px; margin: 0 auto; padding: 24px 20px 48px; }}
+      {buildProjectContextNavCss()}
       .toolbar {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 0 0 16px; }}
-      .back-link {{ color: var(--blue); text-decoration: none; font-weight: 600; }}
-      .back-link:hover {{ color: var(--orange); }}
       h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
       form {{ display: flex; gap: 10px; align-items: center; margin: 0; flex-wrap: wrap; }}
       label {{ font-weight: 600; }}
       select,
       input[type="number"] {{ border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }}
       button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #ff6c0e; color: #ffffff; }}
-      .toolbar-link-button {{ display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; text-decoration: none; background: #375d77; color: #ffffff; }}
-      .toolbar-link-button:hover {{ background: #2d4d63; color: #ffffff; }}
       .secondary-button {{ background: #375d77; color: #ffffff; }}
       .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
       .action-status {{ color: var(--muted); margin: 0 0 18px; min-height: 22px; }}
@@ -3490,11 +3579,11 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .closed-col {{ width: 190px; min-width: 190px; max-width: 190px; white-space: normal; word-break: break-word; }}
       .version-col {{ width: 360px; min-width: 360px; max-width: 360px; white-space: normal; word-break: break-word; }}
   </style>
-</head>
+    </head>
   <body>
     <main>
-      <a class="back-link" href="/">← К списку проектов</a>
-      <h1>Задачи последнего среза проекта</h1>
+      {navPanelHtml}
+      <h1>Задачи среза проекта</h1>
       <div class="toolbar">
       <form method="get">
         <label for="capturedForDate">Дата среза</label>
@@ -3505,7 +3594,6 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       <label class="page-size-label" for="snapshotPageSizeInput">Задач на странице</label>
       <input class="page-size-input" id="snapshotPageSizeInput" type="number" min="10" max="10000" step="10" value="{initialPageSize}">
       <button type="button" class="secondary-button" id="applySnapshotPageSizeButton">Показать</button>
-      <a class="toolbar-link-button" href="/projects/{projectRedmineId}/compare-snapshots?right_date={quote(selectedDate)}" target="_blank" rel="noreferrer">Сравнить срезы</a>
       <button type="button" class="secondary-button" id="exportSnapshotCsvButton">Выгрузить CSV</button>
       <button type="button" id="recaptureSnapshotButton">Обновить последний срез</button>
       <button type="button" id="deleteSnapshotButton">Удалить выбранный срез</button>
