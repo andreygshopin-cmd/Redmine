@@ -1628,12 +1628,34 @@ def buildProjectRedmineIssuesUrl(projectIdentifier: object) -> str:
 
 def buildProjectContextNavCss() -> str:
     return """
+    .context-nav-shell {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      margin: 0 0 18px;
+    }
+    .context-nav-brand {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      text-decoration: none;
+    }
+    .context-nav-logo {
+      display: block;
+      width: 220px;
+      max-width: 100%;
+      height: auto;
+    }
     .context-nav-panel {
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
       align-items: center;
-      margin: 0 0 18px;
+      justify-content: flex-end;
+      flex: 1 1 auto;
+      margin: 0;
     }
     .context-nav-button {
       display: inline-flex;
@@ -1652,9 +1674,15 @@ def buildProjectContextNavCss() -> str:
       transform: translateY(-1px);
       filter: brightness(1.03);
     }
-    .context-nav-button[aria-current="page"] {
-      box-shadow: inset 0 0 0 2px rgba(22, 50, 74, 0.28);
-      cursor: default;
+    @media (max-width: 900px) {
+      .context-nav-shell {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .context-nav-panel {
+        justify-content: flex-start;
+        width: 100%;
+      }
     }
     .context-nav-home {
       background: #375d77;
@@ -1702,14 +1730,22 @@ def buildProjectContextNavPanel(
     if redmineUrl:
         buttons.append(("redmine", redmineUrl, "Открыть в Redmine", "context-nav-redmine", True))
 
-    htmlParts: list[str] = ['<nav class="context-nav-panel">']
-    for key, href, label, cssClass, isExternal in buttons:
-        currentAttr = ' aria-current="page"' if key == currentPage else ""
+    visibleButtons = [button for button in buttons if button[0] != currentPage]
+
+    htmlParts: list[str] = [
+        '<div class="context-nav-shell">',
+        '<a class="context-nav-brand" href="/" aria-label="На главную">',
+        '<img class="context-nav-logo" src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">',
+        "</a>",
+        '<nav class="context-nav-panel">',
+    ]
+    for _, href, label, cssClass, isExternal in visibleButtons:
         targetAttrs = ' target="_blank" rel="noreferrer"' if isExternal else ""
         htmlParts.append(
-            f'<a class="context-nav-button {cssClass}" href="{escape(str(href))}"{currentAttr}{targetAttrs}>{escape(label)}</a>'
+            f'<a class="context-nav-button {cssClass}" href="{escape(str(href))}"{targetAttrs}>{escape(label)}</a>'
         )
     htmlParts.append("</nav>")
+    htmlParts.append("</div>")
     return "".join(htmlParts)
 
 
