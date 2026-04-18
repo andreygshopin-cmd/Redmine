@@ -23,6 +23,7 @@ from src.redmine.db import (
     getSnapshotIssuesForProjectByDate,
     listFilteredSnapshotIssuesForProjectByDate,
     listRecentIssueSnapshotRuns,
+    listSnapshotDatesForProject,
     listStoredProjects,
     pruneUnchangedIssueSnapshots,
     syncProjects,
@@ -710,6 +711,7 @@ PAGE_HTML = """<!doctype html>
               <th>ID</th>
               <th>Дата среза</th>
               <th>Проект</th>
+              <th>Сравнение</th>
               <th>Идентификатор</th>
               <th>Задач</th>
               <th>Базовая оценка, ч</th>
@@ -1224,16 +1226,18 @@ PAGE_HTML = """<!doctype html>
       snapshotRunsCount.textContent = `Всего срезов в базе: ${totalCount}. Показано: ${filteredRuns.length}`;
 
       if (!filteredRuns.length) {
-        snapshotRunsTableBody.innerHTML = '<tr><td colspan="10">Срезов пока нет.</td></tr>';
+        snapshotRunsTableBody.innerHTML = '<tr><td colspan="11">Срезов пока нет.</td></tr>';
         return;
       }
 
       for (const run of filteredRuns) {
         const row = document.createElement("tr");
+        const compareUrl = `/projects/${encodeURIComponent(run.project_redmine_id ?? "")}/compare-snapshots?right_date=${encodeURIComponent(run.captured_for_date ?? "")}`;
         row.innerHTML = `
           <td class="mono">${run.id ?? "—"}</td>
           <td class="mono">${run.captured_for_date ?? "—"}</td>
           <td>${run.project_name ?? "—"}</td>
+          <td><a class="project-link" href="${compareUrl}" target="_blank" rel="noreferrer">Сравнить</a></td>
           <td class="mono">${run.project_identifier ?? "—"}</td>
           <td>${run.total_issues ?? 0}</td>
           <td>${formatHours(run.total_baseline_estimate_hours)}</td>
@@ -1688,6 +1692,439 @@ def buildSnapshotIssueFiltersPayload(
         "assigned_to": assignedTo or "",
         "fixed_version": fixedVersion or "",
     }
+
+
+SNAPSHOT_COMPARE_FIELD_CONFIG: list[dict[str, object]] = [
+    {
+        "key": "baseline",
+        "label": "Базовая оценка",
+        "issue_key": "baseline_estimate_hours",
+        "tracker_names": None,
+    },
+    {
+        "key": "development_estimate",
+        "label": "Разработка: оценка",
+        "issue_key": "estimated_hours",
+        "tracker_names": {"разработка", "процессы разработки"},
+    },
+    {
+        "key": "development_spent_year",
+        "label": "Разработка: факт за год",
+        "issue_key": "spent_hours_year",
+        "tracker_names": {"разработка", "процессы разработки"},
+    },
+]
+
+SNAPSHOT_COMPARE_FIELD_BY_KEY = {
+    str(item["key"]): item for item in SNAPSHOT_COMPARE_FIELD_CONFIG
+}
+
+
+def normalizeSnapshotCompareFields(selectedFields: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    for fieldKey in selectedFields or []:
+        key = str(fieldKey or "").strip()
+        if key in SNAPSHOT_COMPARE_FIELD_BY_KEY and key not in normalized:
+            normalized.append(key)
+    return normalized or ["baseline"]
+
+
+def resolveSnapshotCompareDates(
+    availableDates: list[str],
+    leftDate: str | None,
+    rightDate: str | None,
+) -> tuple[str | None, str | None]:
+    if not availableDates:
+        return None, None
+
+    validLeft = leftDate if leftDate in availableDates else None
+    validRight = rightDate if rightDate in availableDates else None
+
+    if validLeft is None and validRight is None:
+        validRight = availableDates[0]
+        validLeft = availableDates[1] if len(availableDates) > 1 else availableDates[0]
+        return validLeft, validRight
+
+    if validRight is not None and validLeft is None:
+        rightIndex = availableDates.index(validRight)
+        validLeft = availableDates[rightIndex + 1] if rightIndex + 1 < len(availableDates) else (
+            availableDates[0] if availableDates[0] != validRight else validRight
+        )
+        return validLeft, validRight
+
+    if validLeft is not None and validRight is None:
+        leftIndex = availableDates.index(validLeft)
+        validRight = availableDates[leftIndex - 1] if leftIndex - 1 >= 0 else availableDates[0]
+        if validRight == validLeft and len(availableDates) > 1:
+            validRight = availableDates[1]
+        return validLeft, validRight
+
+    return validLeft, validRight
+
+
+def getSnapshotCompareNumericValue(issue: dict[str, object] | None, compareFieldKey: str) -> float:
+    if issue is None:
+        return 0.0
+
+    fieldConfig = SNAPSHOT_COMPARE_FIELD_BY_KEY[compareFieldKey]
+    trackerNames = fieldConfig.get("tracker_names")
+    if trackerNames:
+        trackerName = normalizeBurndownText(issue.get("tracker_name"))
+        if trackerName not in trackerNames:
+            return 0.0
+
+    rawValue = issue.get(str(fieldConfig["issue_key"]))
+    try:
+        return float(rawValue or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def buildSnapshotComparisonRows(
+    leftIssues: list[dict[str, object]],
+    rightIssues: list[dict[str, object]],
+    selectedFields: list[str],
+) -> tuple[list[dict[str, object]], dict[str, int]]:
+    leftIssuesById: dict[int, dict[str, object]] = {}
+    rightIssuesById: dict[int, dict[str, object]] = {}
+
+    for issue in leftIssues:
+        try:
+            issueId = int(issue.get("issue_redmine_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if issueId:
+            leftIssuesById[issueId] = issue
+
+    for issue in rightIssues:
+        try:
+            issueId = int(issue.get("issue_redmine_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if issueId:
+            rightIssuesById[issueId] = issue
+
+    fieldChangeCounts = {fieldKey: 0 for fieldKey in selectedFields}
+    changedRows: list[dict[str, object]] = []
+
+    for issueId in sorted(set(leftIssuesById.keys()) | set(rightIssuesById.keys())):
+        leftIssue = leftIssuesById.get(issueId)
+        rightIssue = rightIssuesById.get(issueId)
+        baseIssue = rightIssue or leftIssue or {}
+        changedValues: dict[str, dict[str, object]] = {}
+        rowHasChanges = False
+
+        for fieldKey in selectedFields:
+            leftValue = getSnapshotCompareNumericValue(leftIssue, fieldKey)
+            rightValue = getSnapshotCompareNumericValue(rightIssue, fieldKey)
+            isChanged = abs(leftValue - rightValue) > 1e-9
+            if isChanged:
+                fieldChangeCounts[fieldKey] += 1
+                rowHasChanges = True
+
+            changedValues[fieldKey] = {
+                "left_value": leftValue,
+                "right_value": rightValue,
+                "is_changed": isChanged,
+            }
+
+        if not rowHasChanges:
+            continue
+
+        changedRows.append(
+            {
+                "issue_redmine_id": issueId,
+                "subject": str(baseIssue.get("subject") or "—"),
+                "tracker_name": str(baseIssue.get("tracker_name") or "—"),
+                "left_status_name": str(leftIssue.get("status_name") or "—") if leftIssue else "—",
+                "right_status_name": str(rightIssue.get("status_name") or "—") if rightIssue else "—",
+                "values": changedValues,
+            }
+        )
+
+    return changedRows, fieldChangeCounts
+
+
+def buildSnapshotComparisonPage(
+    projectRedmineId: int,
+    leftDate: str | None = None,
+    rightDate: str | None = None,
+    selectedFields: list[str] | None = None,
+) -> str:
+    availableDates = listSnapshotDatesForProject(projectRedmineId)
+    normalizedFields = normalizeSnapshotCompareFields(selectedFields)
+    resolvedLeftDate, resolvedRightDate = resolveSnapshotCompareDates(availableDates, leftDate, rightDate)
+    storedProjects = listStoredProjects()
+    storedProject = next(
+        (item for item in storedProjects if int(item.get("redmine_id") or 0) == projectRedmineId),
+        None,
+    )
+
+    if not availableDates or resolvedLeftDate is None or resolvedRightDate is None:
+        projectName = escape(str((storedProject or {}).get("name") or "—"))
+        compareFieldsHtml = "".join(
+            (
+                f'<label class="compare-field-option"><input type="checkbox" name="field" value="{escape(str(field["key"]))}"'
+                f'{" checked" if str(field["key"]) in normalizedFields else ""}>'
+                f'<span>{escape(str(field["label"]))}</span></label>'
+            )
+            for field in SNAPSHOT_COMPARE_FIELD_CONFIG
+        )
+        return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Сравнение срезов</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
+    main {{ max-width: 1280px; margin: 0 auto; padding: 24px 20px 48px; }}
+    .back-link {{ color: #375d77; text-decoration: none; font-weight: 700; border-bottom: 1px dashed currentColor; }}
+    .back-link:hover {{ color: #ff6c0e; }}
+    h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; }}
+    .meta {{ color: #64798d; margin: 0 0 18px; line-height: 1.6; }}
+    .controls-panel {{ border: 1px solid #d9e5eb; border-radius: 8px; padding: 18px 20px; background: #ffffff; }}
+    .controls-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }}
+    .field {{ display: flex; flex-direction: column; gap: 6px; }}
+    .field label {{ font-weight: 700; }}
+    select {{ border: 1px solid #d9e5eb; border-radius: 6px; padding: 10px 12px; font: inherit; }}
+    .compare-field-group {{ display: flex; flex-direction: column; gap: 8px; }}
+    .compare-field-option {{ display: flex; align-items: center; gap: 8px; color: #16324a; }}
+    button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; background: #ff6c0e; color: #ffffff; }}
+    .empty-state {{ margin-top: 18px; border: 1px dashed #d9e5eb; border-radius: 8px; padding: 24px; background: #f7fbfc; color: #64798d; }}
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back-link" href="/">← К списку проектов</a>
+    <h1>Сравнение срезов проекта</h1>
+    <p class="meta">Проект: {projectName}. Для сравнения нужен хотя бы один сохраненный срез.</p>
+    <section class="controls-panel">
+      <form method="get">
+        <div class="controls-grid">
+          <div class="field">
+            <label for="leftDate">Дата среза 1</label>
+            <select id="leftDate" name="left_date"><option value="">Нет срезов</option></select>
+          </div>
+          <div class="field">
+            <label for="rightDate">Дата среза 2</label>
+            <select id="rightDate" name="right_date"><option value="">Нет срезов</option></select>
+          </div>
+          <div class="field">
+            <label>Поля для сравнения</label>
+            <div class="compare-field-group">{compareFieldsHtml}</div>
+          </div>
+        </div>
+        <p><button type="submit">Сравнить</button></p>
+      </form>
+    </section>
+    <div class="empty-state">Для этого проекта пока нет срезов, поэтому сравнивать еще нечего.</div>
+  </main>
+</body>
+</html>"""
+
+    leftPayload = getSnapshotIssuesForProjectByDate(projectRedmineId, resolvedLeftDate)
+    rightPayload = getSnapshotIssuesForProjectByDate(projectRedmineId, resolvedRightDate)
+    leftRun = leftPayload.get("snapshot_run") or {}
+    rightRun = rightPayload.get("snapshot_run") or {}
+    projectName = escape(
+        str(
+            rightRun.get("project_name")
+            or leftRun.get("project_name")
+            or (storedProject.get("name") if storedProject else "—")
+        )
+    )
+    projectIdentifierRaw = str(
+        rightRun.get("project_identifier")
+        or leftRun.get("project_identifier")
+        or (storedProject.get("identifier") if storedProject else "")
+    ).strip()
+    projectIdentifier = escape(projectIdentifierRaw or "—")
+    comparisonRows, fieldChangeCounts = buildSnapshotComparisonRows(
+        list(leftPayload.get("issues") or []),
+        list(rightPayload.get("issues") or []),
+        normalizedFields,
+    )
+
+    fieldOptionsHtml = "".join(
+        (
+            f'<label class="compare-field-option"><input type="checkbox" name="field" value="{escape(str(field["key"]))}"'
+            f'{" checked" if str(field["key"]) in normalizedFields else ""}>'
+            f'<span>{escape(str(field["label"]))}</span></label>'
+        )
+        for field in SNAPSHOT_COMPARE_FIELD_CONFIG
+    )
+    leftDateOptionsHtml = "".join(
+        f'<option value="{escape(dateValue)}"{" selected" if dateValue == resolvedLeftDate else ""}>{escape(dateValue)}</option>'
+        for dateValue in availableDates
+    )
+    rightDateOptionsHtml = "".join(
+        f'<option value="{escape(dateValue)}"{" selected" if dateValue == resolvedRightDate else ""}>{escape(dateValue)}</option>'
+        for dateValue in availableDates
+    )
+
+    selectedFieldLabels = [
+        escape(str(SNAPSHOT_COMPARE_FIELD_BY_KEY[fieldKey]["label"])) for fieldKey in normalizedFields
+    ]
+    compareSummaryHtml = " · ".join(
+        f"{escape(str(SNAPSHOT_COMPARE_FIELD_BY_KEY[fieldKey]['label']))}: {fieldChangeCounts[fieldKey]}"
+        for fieldKey in normalizedFields
+    )
+
+    headerCells = []
+    for fieldKey in normalizedFields:
+        fieldLabel = escape(str(SNAPSHOT_COMPARE_FIELD_BY_KEY[fieldKey]["label"]))
+        headerCells.append(
+            f'<th>{fieldLabel}<br><span class="subhead">{escape(str(resolvedLeftDate))}</span></th>'
+        )
+        headerCells.append(
+            f'<th>{fieldLabel}<br><span class="subhead">{escape(str(resolvedRightDate))}</span></th>'
+        )
+
+    bodyRows = []
+    for row in comparisonRows:
+        valueCells = []
+        for fieldKey in normalizedFields:
+            valueInfo = row["values"][fieldKey]
+            changedClass = " changed-value" if valueInfo["is_changed"] else ""
+            valueCells.append(
+                f'<td class="mono compare-value{changedClass}">{formatPageHours(valueInfo["left_value"])}</td>'
+            )
+            valueCells.append(
+                f'<td class="mono compare-value{changedClass}">{formatPageHours(valueInfo["right_value"])}</td>'
+            )
+
+        bodyRows.append(
+            "<tr>"
+            f'<td class="mono">{row["issue_redmine_id"]}</td>'
+            f'<td class="subject-col">{escape(str(row["subject"]))}</td>'
+            f'<td>{escape(str(row["tracker_name"]))}</td>'
+            f'<td>{escape(str(row["left_status_name"]))}</td>'
+            f'<td>{escape(str(row["right_status_name"]))}</td>'
+            + "".join(valueCells)
+            + "</tr>"
+        )
+
+    compareUrlFromBurndown = f"/projects/{projectRedmineId}/burndown"
+    latestSnapshotUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues?captured_for_date={quote(str(resolvedRightDate))}"
+    redmineIssuesUrl = (
+        "https://redmine.sms-it.ru/projects/"
+        f"{quote(projectIdentifierRaw)}/issues?utf8=%E2%9C%93&set_filter=1&type=IssueQuery"
+        "&f%5B%5D=status_id&op%5Bstatus_id%5D=*&query%5Bsort_criteria%5D%5B0%5D%5B%5D=id"
+        "&query%5Bsort_criteria%5D%5B0%5D%5B%5D=desc&t%5B%5D=cf_27&t%5B%5D=spent_hours"
+        "&t%5B%5D=estimated_hours&c%5B%5D=tracker&c%5B%5D=parent&c%5B%5D=status"
+        "&c%5B%5D=priority&c%5B%5D=subject&c%5B%5D=assigned_to&c%5B%5D=estimated_hours"
+        f"&saved_query_id=0&current_project_id={quote(projectIdentifierRaw)}"
+        if projectIdentifierRaw
+        else ""
+    )
+
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Сравнение срезов</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue: #375d77;
+      --orange: #ff6c0e;
+      --highlight: rgba(255, 198, 0, 0.20);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
+    main {{ max-width: 1480px; margin: 0 auto; padding: 24px 20px 48px; }}
+    .back-link {{ color: var(--blue); text-decoration: none; font-weight: 700; border-bottom: 1px dashed currentColor; }}
+    .back-link:hover {{ color: var(--orange); }}
+    h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; }}
+    .meta {{ color: var(--muted); margin: 0 0 14px; line-height: 1.6; }}
+    .page-links {{ display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 18px; }}
+    .page-link-button {{ display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; text-decoration: none; color: var(--blue); background: #ffffff; font-weight: 700; }}
+    .page-link-button:hover {{ border-color: var(--orange); color: var(--orange); }}
+    .controls-panel {{ border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; background: var(--panel); margin: 0 0 18px; }}
+    .controls-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; align-items: start; }}
+    .field {{ display: flex; flex-direction: column; gap: 6px; }}
+    .field label {{ font-weight: 700; }}
+    select {{ border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }}
+    .compare-field-group {{ display: flex; flex-direction: column; gap: 8px; padding-top: 2px; }}
+    .compare-field-option {{ display: flex; align-items: center; gap: 8px; color: var(--text); }}
+    button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; background: var(--orange); color: #ffffff; }}
+    .summary-note {{ color: var(--muted); margin: 0 0 14px; }}
+    .table-wrap {{ overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
+    table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: #ffffff; min-width: 1080px; }}
+    th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
+    th {{ position: sticky; top: 0; z-index: 2; background: #eef6f7; color: #426179; text-transform: uppercase; font-size: 0.88rem; }}
+    tr:last-child td {{ border-bottom: 0; }}
+    .mono {{ font-family: Consolas, "Courier New", monospace; font-size: 0.95rem; white-space: nowrap; }}
+    .subject-col {{ min-width: 340px; max-width: 520px; white-space: normal; word-break: break-word; }}
+    .subhead {{ display: inline-block; margin-top: 4px; color: var(--muted); text-transform: none; font-size: 0.82rem; font-weight: 500; }}
+    .compare-value {{ text-align: right; }}
+    .changed-value {{ background: var(--highlight); }}
+    .empty-state {{ border: 1px dashed var(--line); border-radius: 8px; padding: 24px; background: #f7fbfc; color: var(--muted); line-height: 1.6; }}
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back-link" href="/">← К списку проектов</a>
+    <h1>Сравнение срезов проекта</h1>
+    <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}. По умолчанию сравниваются последний и предпоследний срезы.</p>
+    <div class="page-links">
+      <a class="page-link-button" href="{compareUrlFromBurndown}" target="_blank" rel="noreferrer">Диаграмма сгорания</a>
+      <a class="page-link-button" href="{latestSnapshotUrl}" target="_blank" rel="noreferrer">Задачи среза</a>
+      {f'<a class="page-link-button" href="{escape(redmineIssuesUrl)}" target="_blank" rel="noreferrer">Открыть в Redmine</a>' if redmineIssuesUrl else ''}
+    </div>
+    <section class="controls-panel">
+      <form method="get">
+        <div class="controls-grid">
+          <div class="field">
+            <label for="leftDate">Дата среза 1</label>
+            <select id="leftDate" name="left_date">{leftDateOptionsHtml}</select>
+          </div>
+          <div class="field">
+            <label for="rightDate">Дата среза 2</label>
+            <select id="rightDate" name="right_date">{rightDateOptionsHtml}</select>
+          </div>
+          <div class="field">
+            <label>Поля для сравнения</label>
+            <div class="compare-field-group">{fieldOptionsHtml}</div>
+          </div>
+        </div>
+        <p><button type="submit">Сравнить</button></p>
+      </form>
+    </section>
+    <p class="summary-note">Поля сравнения: {", ".join(selectedFieldLabels)}. Изменившихся задач: {len(comparisonRows)}. {compareSummaryHtml}</p>
+    {
+        f'''
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Тема</th>
+            <th>Трекер</th>
+            <th>Статус<br><span class="subhead">{escape(str(resolvedLeftDate))}</span></th>
+            <th>Статус<br><span class="subhead">{escape(str(resolvedRightDate))}</span></th>
+            {"".join(headerCells)}
+          </tr>
+        </thead>
+        <tbody>
+          {"".join(bodyRows)}
+        </tbody>
+      </table>
+    </div>
+        ''' if comparisonRows else '<div class="empty-state">По выбранным полям между этими двумя срезами изменений не найдено.</div>'
+    }
+  </main>
+</body>
+</html>"""
 
 
 def normalizeBurndownText(value: object) -> str:
@@ -2175,6 +2612,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}. Период диаграммы: 01.04.{currentYear} — 30.04.{currentYear}. Срезов за апрель: {len(chartSeeds)}.</p>
     <div class="page-links">
       <a class="page-link-button" href="{snapshotIssuesUrl}">Срезы проекта</a>
+      <a class="page-link-button" href="/projects/{projectRedmineId}/compare-snapshots">Сравнить срезы</a>
       {f'<a class="page-link-button" href="{escape(redmineIssuesUrl)}" target="_blank" rel="noreferrer">Открыть в Redmine</a>' if redmineIssuesUrl else ''}
     </div>
 
@@ -2977,6 +3415,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       select,
       input[type="number"] {{ border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }}
       button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #ff6c0e; color: #ffffff; }}
+      .toolbar-link-button {{ display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; text-decoration: none; background: #375d77; color: #ffffff; }}
+      .toolbar-link-button:hover {{ background: #2d4d63; color: #ffffff; }}
       .secondary-button {{ background: #375d77; color: #ffffff; }}
       .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
       .action-status {{ color: var(--muted); margin: 0 0 18px; min-height: 22px; }}
@@ -3038,6 +3478,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       <label class="page-size-label" for="snapshotPageSizeInput">Задач на странице</label>
       <input class="page-size-input" id="snapshotPageSizeInput" type="number" min="10" max="10000" step="10" value="{initialPageSize}">
       <button type="button" class="secondary-button" id="applySnapshotPageSizeButton">Показать</button>
+      <a class="toolbar-link-button" href="/projects/{projectRedmineId}/compare-snapshots?right_date={quote(selectedDate)}" target="_blank" rel="noreferrer">Сравнить срезы</a>
       <button type="button" class="secondary-button" id="exportSnapshotCsvButton">Выгрузить CSV</button>
       <button type="button" id="recaptureSnapshotButton">Обновить последний срез</button>
       <button type="button" id="deleteSnapshotButton">Удалить выбранный срез</button>
@@ -3835,6 +4276,21 @@ def exportProjectLatestSnapshotIssuesCsv(
         media_type="text/csv; charset=windows-1251",
         headers={"Content-Disposition": f'attachment; filename="{fileName}"'},
     )
+
+
+@app.get("/projects/{project_redmine_id}/compare-snapshots", response_class=HTMLResponse)
+def getProjectSnapshotComparePage(
+    project_redmine_id: int,
+    left_date: str | None = Query(None, description="Дата первого среза в формате YYYY-MM-DD"),
+    right_date: str | None = Query(None, description="Дата второго среза в формате YYYY-MM-DD"),
+    field: list[str] = Query([]),
+) -> HTMLResponse:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+    return HTMLResponse(buildSnapshotComparisonPage(project_redmine_id, left_date, right_date, field))
 
 
 @app.get("/projects/{project_redmine_id}/burndown", response_class=HTMLResponse)
