@@ -1,6 +1,5 @@
 ﻿from datetime import UTC, datetime
 from html import escape
-import codecs
 import csv
 import io
 import json
@@ -3830,10 +3829,10 @@ def exportProjectLatestSnapshotIssuesCsv(
     fileDate = str(snapshotRun.get("captured_for_date") or "latest")
     fileName = f"snapshot_{safeIdentifier}_{fileDate}.csv"
     csvText = output.getvalue()
-    csvBytes = codecs.BOM_UTF16_LE + csvText.encode("utf-16le")
+    csvBytes = csvText.encode("cp1251", errors="replace")
     return Response(
         content=csvBytes,
-        media_type="text/csv; charset=utf-16le",
+        media_type="text/csv; charset=windows-1251",
         headers={"Content-Disposition": f'attachment; filename="{fileName}"'},
     )
 
