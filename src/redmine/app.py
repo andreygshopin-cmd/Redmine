@@ -4,6 +4,7 @@ import csv
 import io
 import json
 from datetime import date, timedelta
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
@@ -1853,8 +1854,21 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     projectName = escape(
         str(projectInfo.get("project_name") or (storedProject.get("name") if storedProject else "—"))
     )
-    projectIdentifier = escape(
-        str(projectInfo.get("project_identifier") or (storedProject.get("identifier") if storedProject else "—"))
+    projectIdentifierRaw = str(
+        projectInfo.get("project_identifier") or (storedProject.get("identifier") if storedProject else "")
+    ).strip()
+    projectIdentifier = escape(projectIdentifierRaw or "—")
+    snapshotIssuesUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
+    redmineIssuesUrl = (
+        "https://redmine.sms-it.ru/projects/"
+        f"{quote(projectIdentifierRaw)}/issues?utf8=%E2%9C%93&set_filter=1&type=IssueQuery"
+        "&f%5B%5D=status_id&op%5Bstatus_id%5D=*&query%5Bsort_criteria%5D%5B0%5D%5B%5D=id"
+        "&query%5Bsort_criteria%5D%5B0%5D%5B%5D=desc&t%5B%5D=cf_27&t%5B%5D=spent_hours"
+        "&t%5B%5D=estimated_hours&c%5B%5D=tracker&c%5B%5D=parent&c%5B%5D=status"
+        "&c%5B%5D=priority&c%5B%5D=subject&c%5B%5D=assigned_to&c%5B%5D=estimated_hours"
+        f"&saved_query_id=0&current_project_id={quote(projectIdentifierRaw)}"
+        if projectIdentifierRaw
+        else ""
     )
     snapshotRuns = [
         snapshotRun
@@ -1927,6 +1941,31 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       margin: 0 0 18px;
       font-size: 1rem;
       line-height: 1.6;
+    }}
+
+    .page-links {{
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 0 0 18px;
+    }}
+
+    .page-link-button {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      text-decoration: none;
+      color: var(--blue-302);
+      background: #ffffff;
+      font-weight: 700;
+    }}
+
+    .page-link-button:hover {{
+      border-color: var(--orange-1585);
+      color: var(--orange-1585);
     }}
 
     .controls-panel,
@@ -2134,6 +2173,10 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     <a class="back-link" href="/">← К списку проектов</a>
     <h1>Диаграмма сгорания проекта</h1>
     <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}. Период диаграммы: 01.04.{currentYear} — 30.04.{currentYear}. Срезов за апрель: {len(chartSeeds)}.</p>
+    <div class="page-links">
+      <a class="page-link-button" href="{snapshotIssuesUrl}">Срезы проекта</a>
+      {f'<a class="page-link-button" href="{escape(redmineIssuesUrl)}" target="_blank" rel="noreferrer">Открыть в Redmine</a>' if redmineIssuesUrl else ''}
+    </div>
 
     <section class="controls-panel">
       <div class="field">
