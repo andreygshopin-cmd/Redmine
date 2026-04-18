@@ -1684,10 +1684,6 @@ def buildProjectContextNavCss() -> str:
         width: 100%;
       }
     }
-    .context-nav-home {
-      background: #375d77;
-      color: #ffffff;
-    }
     .context-nav-snapshots {
       background: #ffc600;
       color: #16324a;
@@ -1701,7 +1697,7 @@ def buildProjectContextNavCss() -> str:
       color: #ffffff;
     }
     .context-nav-redmine {
-      background: #64798d;
+      background: #375d77;
       color: #ffffff;
     }
     """
@@ -1722,7 +1718,6 @@ def buildProjectContextNavPanel(
     redmineUrl = buildProjectRedmineIssuesUrl(projectIdentifier)
 
     buttons = [
-        ("home", "/", "К списку проектов", "context-nav-home", False),
         ("snapshots", resolvedSnapshotUrl, "Срезы проекта", "context-nav-snapshots", False),
         ("compare", resolvedCompareUrl, "Сравнение срезов", "context-nav-compare", False),
         ("burndown", resolvedBurndownUrl, "Диаграмма сгорания", "context-nav-burndown", False),
