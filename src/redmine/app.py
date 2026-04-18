@@ -2735,7 +2735,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
 <body>
   <main>
     {navPanelHtml}
-    <h1>Диаграмма сгорания проекта</h1>
+    <h1>Диаграмма сгорания</h1>
     <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}. Период диаграммы: 01.04.{currentYear} — 30.04.{currentYear}. Срезов за апрель: {len(chartSeeds)}.</p>
 
     <section class="controls-panel">
@@ -3558,6 +3558,15 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       main {{ max-width: 1440px; margin: 0 auto; padding: 24px 20px 48px; }}
       {buildProjectContextNavCss()}
       .toolbar {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 0 0 16px; }}
+      .toolbar button {{
+        background: #ffffff;
+        color: var(--text);
+        border: 1px solid var(--line);
+        box-shadow: none;
+      }}
+      .toolbar button:hover {{
+        background: #f7fbfc;
+      }}
       h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
       form {{ display: flex; gap: 10px; align-items: center; margin: 0; flex-wrap: wrap; }}
       label {{ font-weight: 600; }}
