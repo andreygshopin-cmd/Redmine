@@ -1,10 +1,12 @@
 ﻿from datetime import UTC, datetime
 from html import escape
+import csv
+import io
 import json
 from datetime import date, timedelta
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
 from src.redmine.config import loadConfig
@@ -15,8 +17,10 @@ from src.redmine.db import (
     deleteIssueSnapshotsForDate,
     ensureIssueSnapshotTables,
     ensureProjectsTable,
+    getFilteredSnapshotIssuesForProjectByDate,
     getSnapshotRunsWithIssuesForProjectYear,
     getSnapshotIssuesForProjectByDate,
+    listFilteredSnapshotIssuesForProjectByDate,
     listRecentIssueSnapshotRuns,
     listStoredProjects,
     pruneUnchangedIssueSnapshots,
@@ -1601,6 +1605,90 @@ def formatSnapshotPageDateTime(value: object) -> str:
     return str(value).replace("T", " ").replace("+00:00", " UTC")
 
 
+def buildSnapshotSummaryView(summary: dict[str, object] | None) -> dict[str, float]:
+    source = dict(summary or {})
+    baselineEstimateHours = float(source.get("baseline_estimate_hours") or 0)
+    estimatedHours = float(source.get("estimated_hours") or 0)
+    spentHours = float(source.get("spent_hours") or 0)
+    spentHoursYear = float(source.get("spent_hours_year") or 0)
+    developmentEstimatedHours = float(source.get("development_estimated_hours") or 0)
+    developmentSpentHours = float(source.get("development_spent_hours") or 0)
+    developmentSpentHoursYear = float(source.get("development_spent_hours_year") or 0)
+    developmentProcessEstimatedHours = float(source.get("development_process_estimated_hours") or 0)
+    developmentProcessSpentHours = float(source.get("development_process_spent_hours") or 0)
+    developmentProcessSpentHoursYear = float(source.get("development_process_spent_hours_year") or 0)
+    bugEstimatedHours = float(source.get("bug_estimated_hours") or 0)
+    bugSpentHours = float(source.get("bug_spent_hours") or 0)
+    bugSpentHoursYear = float(source.get("bug_spent_hours_year") or 0)
+
+    developmentCombinedSpentHours = developmentSpentHours + developmentProcessSpentHours
+    developmentCombinedSpentHoursYear = developmentSpentHoursYear + developmentProcessSpentHoursYear
+
+    return {
+        "baseline_estimate_hours": baselineEstimateHours,
+        "estimated_hours": estimatedHours,
+        "spent_hours": spentHours,
+        "spent_hours_year": spentHoursYear,
+        "development_estimated_hours": developmentEstimatedHours,
+        "development_spent_hours": developmentSpentHours,
+        "development_spent_hours_year": developmentSpentHoursYear,
+        "development_process_estimated_hours": developmentProcessEstimatedHours,
+        "development_process_spent_hours": developmentProcessSpentHours,
+        "development_process_spent_hours_year": developmentProcessSpentHoursYear,
+        "bug_estimated_hours": bugEstimatedHours,
+        "bug_spent_hours": bugSpentHours,
+        "bug_spent_hours_year": bugSpentHoursYear,
+        "development_combined_spent_hours": developmentCombinedSpentHours,
+        "development_combined_spent_hours_year": developmentCombinedSpentHoursYear,
+        "development_total_estimated_hours": developmentEstimatedHours + developmentProcessEstimatedHours + bugEstimatedHours,
+        "development_grand_spent_hours": developmentCombinedSpentHours + bugSpentHours,
+        "development_grand_spent_hours_year": developmentCombinedSpentHoursYear + bugSpentHoursYear,
+        "development_coverage_all_percent": (developmentCombinedSpentHours / baselineEstimateHours * 100) if baselineEstimateHours else 0,
+        "bug_share_year_percent": (bugSpentHoursYear / developmentCombinedSpentHoursYear * 100) if developmentCombinedSpentHoursYear else 0,
+        "bug_share_all_percent": (bugSpentHours / developmentCombinedSpentHours * 100) if developmentCombinedSpentHours else 0,
+    }
+
+
+def buildSnapshotIssueFiltersPayload(
+    issueId: str | None = None,
+    subject: str | None = None,
+    trackerNames: list[str] | None = None,
+    statusNames: list[str] | None = None,
+    doneRatioOp: str | None = None,
+    doneRatioValue: str | None = None,
+    baselineOp: str | None = None,
+    baselineValue: str | None = None,
+    estimatedOp: str | None = None,
+    estimatedValue: str | None = None,
+    spentOp: str | None = None,
+    spentValue: str | None = None,
+    spentYearOp: str | None = None,
+    spentYearValue: str | None = None,
+    closedOn: str | None = None,
+    assignedTo: str | None = None,
+    fixedVersion: str | None = None,
+) -> dict[str, object]:
+    return {
+        "issue_id": issueId or "",
+        "subject": subject or "",
+        "tracker_names": trackerNames or [],
+        "status_names": statusNames or [],
+        "done_ratio_op": doneRatioOp or "",
+        "done_ratio_value": doneRatioValue or "",
+        "baseline_op": baselineOp or "",
+        "baseline_value": baselineValue or "",
+        "estimated_op": estimatedOp or "",
+        "estimated_value": estimatedValue or "",
+        "spent_op": spentOp or "",
+        "spent_value": spentValue or "",
+        "spent_year_op": spentYearOp or "",
+        "spent_year_value": spentYearValue or "",
+        "closed_on": closedOn or "",
+        "assigned_to": assignedTo or "",
+        "fixed_version": fixedVersion or "",
+    }
+
+
 def normalizeBurndownText(value: object) -> str:
     return str(value or "").strip().lower()
 
@@ -2738,7 +2826,12 @@ def buildSnapshotRulesPage() -> str:
 
 
 def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: str | None = None) -> str:
-    snapshotPayload = getSnapshotIssuesForProjectByDate(projectRedmineId, capturedForDate)
+    snapshotPayload = getFilteredSnapshotIssuesForProjectByDate(
+        projectRedmineId,
+        capturedForDate,
+        page=1,
+        pageSize=1000,
+    )
     snapshotRun = snapshotPayload["snapshot_run"]
     issues = snapshotPayload["issues"]
     availableDates = [str(value) for value in snapshotPayload.get("available_dates") or []]
@@ -2778,87 +2871,34 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
   </body>
 </html>"""
 
-    issueRowsHtml: list[str] = []
-    for issue in issues:
-        issueId = issue.get("issue_redmine_id", "—")
-        subjectValue = escape(str(issue.get("subject") or "—"))
-        trackerValue = escape(str(issue.get("tracker_name") or "—"))
-        statusValue = escape(str(issue.get("status_name") or "—"))
-        doneRatioValue = escape(str(issue.get("done_ratio") if issue.get("done_ratio") is not None else 0))
-        baselineHoursValue = float(issue.get("baseline_estimate_hours") or 0)
-        estimatedHoursValue = float(issue.get("estimated_hours") or 0)
-        spentHoursValue = float(issue.get("spent_hours") or 0)
-        spentHoursYearValue = float(issue.get("spent_hours_year") or 0)
-        closedOnValue = escape(formatSnapshotPageDateTime(issue.get("closed_on")))
-        assignedToValue = escape(str(issue.get("assigned_to_name") or "—"))
-        fixedVersionValue = escape(str(issue.get("fixed_version_name") or "—"))
-        issueRowsHtml.append(
-            f"""
-            <tr
-              data-issue-id="{escape(str(issueId))}"
-              data-subject="{subjectValue}"
-              data-tracker="{trackerValue}"
-              data-status="{statusValue}"
-              data-done-ratio="{doneRatioValue}"
-              data-baseline-estimate-hours="{baselineHoursValue}"
-              data-estimated-hours="{estimatedHoursValue}"
-              data-spent-hours="{spentHoursValue}"
-              data-spent-hours-year="{spentHoursYearValue}"
-              data-closed-on="{closedOnValue}"
-              data-assigned-to="{assignedToValue}"
-              data-fixed-version="{fixedVersionValue}"
-            >
-              <td class="mono"><a class="issue-link" href="https://redmine.sms-it.ru/issues/{issueId}" target="_blank" rel="noreferrer">{issueId}</a></td>
-              <td class="subject-col">{subjectValue}</td>
-              <td class="tracker-col">{trackerValue}</td>
-              <td class="status-col">{statusValue}</td>
-              <td>{doneRatioValue}</td>
-              <td>{formatPageHours(baselineHoursValue)}</td>
-              <td>{formatPageHours(estimatedHoursValue)}</td>
-              <td>{formatPageHours(spentHoursValue)}</td>
-              <td>{formatPageHours(spentHoursYearValue)}</td>
-              <td class="closed-col">{closedOnValue}</td>
-              <td>{assignedToValue}</td>
-              <td class="version-col">{fixedVersionValue}</td>
-            </tr>
-            """
-        )
+    issueRowsHtml = ['<tr><td colspan="12">Загружаем задачи...</td></tr>']
 
-    if not issueRowsHtml:
-        issueRowsHtml.append('<tr><td colspan="12">В последнем срезе задач нет.</td></tr>')
-
-    totalBaselineEstimateHours = sum(float(issue.get("baseline_estimate_hours") or 0) for issue in issues)
-    totalEstimatedHours = sum(float(issue.get("estimated_hours") or 0) for issue in issues)
-    totalSpentHours = sum(float(issue.get("spent_hours") or 0) for issue in issues)
-    totalSpentHoursYear = sum(float(issue.get("spent_hours_year") or 0) for issue in issues)
-    developmentEstimateHours = 0.0
-    developmentSpentHours = 0.0
-    developmentSpentHoursYear = 0.0
-    developmentProcessEstimateHours = 0.0
-    developmentProcessSpentHours = 0.0
-    developmentProcessSpentHoursYear = 0.0
-    bugEstimateHours = 0.0
-    bugSpentHours = 0.0
-    bugSpentHoursYear = 0.0
-
-    for issue in issues:
-        trackerName = str(issue.get("tracker_name") or "").strip().lower()
-        if trackerName == "разработка":
-            developmentEstimateHours += float(issue.get("estimated_hours") or 0)
-            developmentSpentHours += float(issue.get("spent_hours") or 0)
-            developmentSpentHoursYear += float(issue.get("spent_hours_year") or 0)
-        elif trackerName == "процессы разработки":
-            developmentProcessEstimateHours += float(issue.get("estimated_hours") or 0)
-            developmentProcessSpentHours += float(issue.get("spent_hours") or 0)
-            developmentProcessSpentHoursYear += float(issue.get("spent_hours_year") or 0)
-        elif trackerName == "ошибка":
-            bugEstimateHours += float(issue.get("estimated_hours") or 0)
-            bugSpentHours += float(issue.get("spent_hours") or 0)
-            bugSpentHoursYear += float(issue.get("spent_hours_year") or 0)
+    summaryView = buildSnapshotSummaryView(snapshotPayload.get("summary"))
+    totalBaselineEstimateHours = summaryView["baseline_estimate_hours"]
+    totalEstimatedHours = summaryView["estimated_hours"]
+    totalSpentHours = summaryView["spent_hours"]
+    totalSpentHoursYear = summaryView["spent_hours_year"]
+    developmentEstimateHours = summaryView["development_estimated_hours"]
+    developmentSpentHours = summaryView["development_spent_hours"]
+    developmentSpentHoursYear = summaryView["development_spent_hours_year"]
+    developmentProcessEstimateHours = summaryView["development_process_estimated_hours"]
+    developmentProcessSpentHours = summaryView["development_process_spent_hours"]
+    developmentProcessSpentHoursYear = summaryView["development_process_spent_hours_year"]
+    bugEstimateHours = summaryView["bug_estimated_hours"]
+    bugSpentHours = summaryView["bug_spent_hours"]
+    bugSpentHoursYear = summaryView["bug_spent_hours_year"]
 
     projectName = escape(str(snapshotRun.get("project_name") or "—"))
     capturedForDate = escape(str(snapshotRun.get("captured_for_date") or "—"))
     selectedDate = str(snapshotRun.get("captured_for_date") or "")
+    initialIssuesJson = json.dumps(issues, ensure_ascii=False, default=str)
+    initialSummaryJson = json.dumps(summaryView, ensure_ascii=False, default=str)
+    initialFilterOptionsJson = json.dumps(snapshotPayload.get("filter_options") or {}, ensure_ascii=False, default=str)
+    initialFilteredIssues = int(snapshotPayload.get("total_filtered_issues") or 0)
+    initialTotalIssues = int(snapshotPayload.get("total_all_issues") or 0)
+    initialPage = int(snapshotPayload.get("page") or 1)
+    initialTotalPages = int(snapshotPayload.get("total_pages") or 1)
+    initialPageSize = int(snapshotPayload.get("page_size") or 1000)
     optionsHtml = ["<option value=\"\">Последний срез</option>"]
     for dateValue in availableDates:
         selectedAttr = " selected" if dateValue == selectedDate else ""
@@ -2889,10 +2929,12 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .back-link {{ color: var(--blue); text-decoration: none; font-weight: 600; }}
       .back-link:hover {{ color: var(--orange); }}
       h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
-      form {{ display: flex; gap: 10px; align-items: center; margin: 0; }}
+      form {{ display: flex; gap: 10px; align-items: center; margin: 0; flex-wrap: wrap; }}
       label {{ font-weight: 600; }}
-      select {{ border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }}
+      select,
+      input[type="number"] {{ border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }}
       button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #ff6c0e; color: #ffffff; }}
+      .secondary-button {{ background: #375d77; color: #ffffff; }}
       .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
       .action-status {{ color: var(--muted); margin: 0 0 18px; min-height: 22px; }}
       .summary-block {{ margin: 0 0 20px; }}
@@ -2913,9 +2955,16 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .filter-number-value {{ width: 64px; }}
       .filter-number-wrap {{ display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }}
       .filter-head th {{ top: var(--snapshot-filter-top, 44px); background: #f7fbfc; padding-top: 8px; padding-bottom: 8px; z-index: 3; text-transform: none; box-shadow: inset 0 1px 0 #d9e5eb; }}
-      .filter-reset-wrap {{ display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin: 0 0 10px; }}
+      .filter-reset-wrap {{ display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 0 0 10px; flex-wrap: wrap; }}
+      .table-actions {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
       .filter-reset-button {{ background: #375d77; color: #ffffff; }}
+      .csv-export-button {{ background: #375d77; color: #ffffff; }}
       .filter-tip {{ color: var(--muted); font-size: 0.92rem; }}
+      .page-size-label {{ color: var(--muted); }}
+      .page-size-input {{ width: 110px; }}
+      .pagination-wrap {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 12px; flex-wrap: wrap; }}
+      .pagination-buttons {{ display: flex; gap: 8px; align-items: center; }}
+      .pagination-info {{ color: var(--muted); font-size: 0.94rem; }}
       .table-wrap {{ max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
       table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); }}
       #snapshotIssuesTable {{ min-width: 1800px; table-layout: auto; }}
@@ -2943,11 +2992,15 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           {''.join(optionsHtml)}
         </select>
       </form>
+      <label class="page-size-label" for="snapshotPageSizeInput">Задач на странице</label>
+      <input class="page-size-input" id="snapshotPageSizeInput" type="number" min="10" max="10000" step="10" value="{initialPageSize}">
+      <button type="button" class="secondary-button" id="applySnapshotPageSizeButton">Показать</button>
+      <button type="button" class="secondary-button" id="exportSnapshotCsvButton">Выгрузить CSV</button>
       <button type="button" id="recaptureSnapshotButton">Обновить последний срез</button>
       <button type="button" id="deleteSnapshotButton">Удалить выбранный срез</button>
       </div>
       <div class="action-status" id="snapshotActionStatus"></div>
-      <p class="meta">Проект: {projectName}. Дата среза: {capturedForDate}. Задач: <span id="visibleIssuesCount">{len(issues)}</span> из {len(issues)}.</p>
+      <p class="meta">Проект: {projectName}. Дата среза: {capturedForDate}. По фильтру: <span id="filteredIssuesCount">{initialFilteredIssues}</span> из {initialTotalIssues}. На странице: <span id="pageIssuesCount">{len(issues)}</span>.</p>
       <div class="summary-block">
         <table class="summary-table">
           <thead>
@@ -2976,11 +3029,11 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-metric" id="summaryBaselineEstimate" rowspan="2">{formatPageHours(totalBaselineEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentEstimated">{formatPageHours(developmentEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentSpentYear">{formatPageHours(developmentSpentHoursYear)}</td>
-              <td class="summary-metric" id="summaryDevelopmentCombinedSpentYear" rowspan="2">{formatPageHours(developmentSpentHoursYear + developmentProcessSpentHoursYear)}</td>
+              <td class="summary-metric" id="summaryDevelopmentCombinedSpentYear" rowspan="2">{formatPageHours(summaryView["development_combined_spent_hours_year"])}</td>
               <td class="summary-empty" rowspan="2"></td>
               <td class="summary-metric" id="summaryDevelopmentSpent">{formatPageHours(developmentSpentHours)}</td>
-              <td class="summary-metric" id="summaryDevelopmentCombinedSpent" rowspan="2">{formatPageHours(developmentSpentHours + developmentProcessSpentHours)}</td>
-              <td class="summary-metric summary-percent" id="summaryDevelopmentCoverageAll" rowspan="2">{formatPageHours(((developmentSpentHours + developmentProcessSpentHours) / totalBaselineEstimateHours * 100) if totalBaselineEstimateHours else 0)}%</td>
+              <td class="summary-metric" id="summaryDevelopmentCombinedSpent" rowspan="2">{formatPageHours(summaryView["development_combined_spent_hours"])}</td>
+              <td class="summary-metric summary-percent" id="summaryDevelopmentCoverageAll" rowspan="2">{formatPageHours(summaryView["development_coverage_all_percent"])}%</td>
             </tr>
             <tr>
               <th>Процессы разработки, ч</th>
@@ -2993,25 +3046,34 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryBugEstimated">{formatPageHours(bugEstimateHours)}</td>
               <td class="summary-metric" id="summaryBugSpentYear" colspan="2">{formatPageHours(bugSpentHoursYear)}</td>
-              <td class="summary-metric summary-percent" id="summaryBugShareYear">{formatPageHours((bugSpentHoursYear / (developmentSpentHoursYear + developmentProcessSpentHoursYear) * 100) if (developmentSpentHoursYear + developmentProcessSpentHoursYear) else 0)}%</td>
+              <td class="summary-metric summary-percent" id="summaryBugShareYear">{formatPageHours(summaryView["bug_share_year_percent"])}%</td>
               <td class="summary-metric" id="summaryBugSpent" colspan="2">{formatPageHours(bugSpentHours)}</td>
-              <td class="summary-metric summary-percent" id="summaryBugShareAll">{formatPageHours((bugSpentHours / (developmentSpentHours + developmentProcessSpentHours) * 100) if (developmentSpentHours + developmentProcessSpentHours) else 0)}%</td>
+              <td class="summary-metric summary-percent" id="summaryBugShareAll">{formatPageHours(summaryView["bug_share_all_percent"])}%</td>
             </tr>
             <tr>
               <th>Итого по разработке</th>
               <td class="summary-empty"></td>
-              <td class="summary-metric" id="summaryDevelopmentTotalEstimated">{formatPageHours(developmentEstimateHours + developmentProcessEstimateHours + bugEstimateHours)}</td>
-              <td class="summary-metric" id="summaryDevelopmentGrandSpentYear" colspan="2">{formatPageHours(developmentSpentHoursYear + developmentProcessSpentHoursYear + bugSpentHoursYear)}</td>
+              <td class="summary-metric" id="summaryDevelopmentTotalEstimated">{formatPageHours(summaryView["development_total_estimated_hours"])}</td>
+              <td class="summary-metric" id="summaryDevelopmentGrandSpentYear" colspan="2">{formatPageHours(summaryView["development_grand_spent_hours_year"])}</td>
               <td class="summary-empty"></td>
-              <td class="summary-metric" id="summaryDevelopmentGrandSpent" colspan="2">{formatPageHours(developmentSpentHours + developmentProcessSpentHours + bugSpentHours)}</td>
+              <td class="summary-metric" id="summaryDevelopmentGrandSpent" colspan="2">{formatPageHours(summaryView["development_grand_spent_hours"])}</td>
               <td class="summary-empty"></td>
             </tr>
           </tbody>
         </table>
       </div>
       <div class="filter-reset-wrap">
-        <span class="filter-tip">Фильтры применяются к таблице и суммам выше.</span>
-        <button type="button" class="filter-reset-button" id="resetSnapshotFiltersButton">Сбросить фильтр</button>
+        <span class="filter-tip">Фильтры применяются к таблице и суммам выше. Суммы считаются по всем задачам, удовлетворяющим фильтру, а не только по текущей странице.</span>
+        <div class="table-actions">
+          <button type="button" class="filter-reset-button" id="resetSnapshotFiltersButton">Сбросить фильтр</button>
+        </div>
+      </div>
+      <div class="pagination-wrap">
+        <div class="pagination-buttons">
+          <button type="button" class="secondary-button" id="snapshotPrevPageButton">← Назад</button>
+          <button type="button" class="secondary-button" id="snapshotNextPageButton">Вперед →</button>
+        </div>
+        <div class="pagination-info" id="snapshotPaginationInfo">Страница {initialPage} из {initialTotalPages}</div>
       </div>
       <div class="table-wrap">
         <table id="snapshotIssuesTable">
@@ -3052,15 +3114,31 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     </div>
     <script>
       const snapshotActionStatus = document.getElementById("snapshotActionStatus");
-      const visibleIssuesCount = document.getElementById("visibleIssuesCount");
+      const filteredIssuesCount = document.getElementById("filteredIssuesCount");
+      const pageIssuesCount = document.getElementById("pageIssuesCount");
       const snapshotIssuesTableBody = document.getElementById("snapshotIssuesTableBody");
       const snapshotIssuesTable = document.getElementById("snapshotIssuesTable");
-      const snapshotIssueRows = Array.from(snapshotIssuesTableBody?.querySelectorAll("tr") || []);
+      const snapshotPageSizeInput = document.getElementById("snapshotPageSizeInput");
+      const applySnapshotPageSizeButton = document.getElementById("applySnapshotPageSizeButton");
+      const exportSnapshotCsvButton = document.getElementById("exportSnapshotCsvButton");
+      const snapshotPrevPageButton = document.getElementById("snapshotPrevPageButton");
+      const snapshotNextPageButton = document.getElementById("snapshotNextPageButton");
+      const snapshotPaginationInfo = document.getElementById("snapshotPaginationInfo");
       const textFilterInputs = Array.from(document.querySelectorAll("[data-filter-role='text']"));
       const multiSelectFilters = Array.from(document.querySelectorAll("[data-filter-role='multi']"));
       const numericFilterControls = Array.from(document.querySelectorAll("[data-filter-role='op'], [data-filter-role='value']"));
-      const snapshotFilterInputs = [...textFilterInputs, ...multiSelectFilters, ...numericFilterControls];
       const resetSnapshotFiltersButton = document.getElementById("resetSnapshotFiltersButton");
+      const initialSnapshotIssues = {initialIssuesJson};
+      const initialSnapshotSummary = {initialSummaryJson};
+      const initialFilterOptions = {initialFilterOptionsJson};
+      const selectedSnapshotDate = {json.dumps(selectedDate, ensure_ascii=False)};
+      const snapshotPageSizeStorageKey = "latestSnapshotPageSize";
+      let currentSnapshotPage = {initialPage};
+      let currentSnapshotTotalPages = {initialTotalPages};
+      let currentSnapshotFilteredIssues = {initialFilteredIssues};
+      let currentSnapshotTotalIssues = {initialTotalIssues};
+      let currentSnapshotPageSize = {initialPageSize};
+      let snapshotReloadTimer = null;
       const summaryBaselineEstimate = document.getElementById("summaryBaselineEstimate");
       const summaryEstimated = document.getElementById("summaryEstimated");
       const summarySpent = document.getElementById("summarySpent");
@@ -3089,6 +3167,18 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         }}
       }}
 
+      function escapeHtml(value) {{
+        return String(value ?? "").replace(/[&<>"']/g, (char) => {{
+          return {{
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+          }}[char] || char;
+        }});
+      }}
+
       function formatFilterHours(value) {{
         const parsed = Number(value ?? 0);
         if (!Number.isFinite(parsed)) {{
@@ -3101,6 +3191,54 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         return `${{formatFilterHours(value)}}%`;
       }}
 
+      function formatSnapshotDateTime(value) {{
+        if (!value) {{
+          return "—";
+        }}
+        return String(value).replace("T", " ").replace("+00:00", " UTC");
+      }}
+
+      function buildSummaryView(summary) {{
+        const baselineEstimateHours = Number(summary?.baseline_estimate_hours || 0);
+        const estimatedHours = Number(summary?.estimated_hours || 0);
+        const spentHours = Number(summary?.spent_hours || 0);
+        const spentHoursYear = Number(summary?.spent_hours_year || 0);
+        const developmentEstimatedHours = Number(summary?.development_estimated_hours || 0);
+        const developmentSpentHours = Number(summary?.development_spent_hours || 0);
+        const developmentSpentHoursYear = Number(summary?.development_spent_hours_year || 0);
+        const developmentProcessEstimatedHours = Number(summary?.development_process_estimated_hours || 0);
+        const developmentProcessSpentHours = Number(summary?.development_process_spent_hours || 0);
+        const developmentProcessSpentHoursYear = Number(summary?.development_process_spent_hours_year || 0);
+        const bugEstimatedHours = Number(summary?.bug_estimated_hours || 0);
+        const bugSpentHours = Number(summary?.bug_spent_hours || 0);
+        const bugSpentHoursYear = Number(summary?.bug_spent_hours_year || 0);
+        const developmentCombinedSpentHours = developmentSpentHours + developmentProcessSpentHours;
+        const developmentCombinedSpentHoursYear = developmentSpentHoursYear + developmentProcessSpentHoursYear;
+        return {{
+          baselineEstimateHours,
+          estimatedHours,
+          spentHours,
+          spentHoursYear,
+          developmentEstimatedHours,
+          developmentSpentHours,
+          developmentSpentHoursYear,
+          developmentProcessEstimatedHours,
+          developmentProcessSpentHours,
+          developmentProcessSpentHoursYear,
+          bugEstimatedHours,
+          bugSpentHours,
+          bugSpentHoursYear,
+          developmentCombinedSpentHours,
+          developmentCombinedSpentHoursYear,
+          developmentCoverageAllPercent: baselineEstimateHours > 0 ? (developmentCombinedSpentHours / baselineEstimateHours) * 100 : 0,
+          developmentTotalEstimatedHours: developmentEstimatedHours + developmentProcessEstimatedHours + bugEstimatedHours,
+          developmentGrandSpentHoursYear: developmentCombinedSpentHoursYear + bugSpentHoursYear,
+          developmentGrandSpentHours: developmentCombinedSpentHours + bugSpentHours,
+          bugShareYearPercent: developmentCombinedSpentHoursYear > 0 ? (bugSpentHoursYear / developmentCombinedSpentHoursYear) * 100 : 0,
+          bugShareAllPercent: developmentCombinedSpentHours > 0 ? (bugSpentHours / developmentCombinedSpentHours) * 100 : 0,
+        }};
+      }}
+
       function updateSnapshotFilterHeaderOffset() {{
         const headRow = snapshotIssuesTable?.querySelector("thead tr:first-child");
         const tableElement = snapshotIssuesTable;
@@ -3111,182 +3249,186 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         tableElement.style.setProperty("--snapshot-filter-top", `${{height}}px`);
       }}
 
+      function fillMultiSelect(select, values) {{
+        if (!select) {{
+          return;
+        }}
+        const selectedValues = new Set(Array.from(select.selectedOptions).map((option) => option.value));
+        select.innerHTML = "";
+        for (const value of values || []) {{
+          const option = document.createElement("option");
+          option.value = String(value);
+          option.textContent = String(value);
+          option.selected = selectedValues.has(String(value));
+          select.appendChild(option);
+        }}
+      }}
+
       function populateSnapshotMultiSelects() {{
-        for (const select of multiSelectFilters) {{
-          const filterKey = select.dataset.filterKey;
-          if (!filterKey) {{
-            continue;
-          }}
-
-          const selectedValues = new Set(Array.from(select.selectedOptions).map((option) => option.value));
-          const values = Array.from(new Set(
-            snapshotIssueRows
-              .map((row) => String(row.dataset[filterKey] || "").trim())
-              .filter(Boolean)
-          )).sort((left, right) => left.localeCompare(right, "ru"));
-
-          select.innerHTML = "";
-          for (const value of values) {{
-            const option = document.createElement("option");
-            option.value = value;
-            option.textContent = value;
-            option.selected = selectedValues.has(value);
-            select.appendChild(option);
-          }}
-
-        }}
+        fillMultiSelect(document.querySelector('[data-filter-key="tracker"][data-filter-role="multi"]'), initialFilterOptions.tracker_names || []);
+        fillMultiSelect(document.querySelector('[data-filter-key="status"][data-filter-role="multi"]'), initialFilterOptions.status_names || []);
       }}
 
-      function matchesNumericFilter(rawValue, operator, filterValue) {{
-        if (filterValue === "" || operator === "") {{
-          return true;
-        }}
-
-        const left = Number(rawValue ?? 0);
-        const right = Number(String(filterValue).replace(",", "."));
-        if (!Number.isFinite(left) || !Number.isFinite(right)) {{
-          return false;
-        }}
-
-        if (operator === ">") {{
-          return left > right;
-        }}
-        if (operator === "<") {{
-          return left < right;
-        }}
-        return left === right;
+      function renderSnapshotSummary(summary) {{
+        const view = buildSummaryView(summary);
+        if (summaryBaselineEstimate) summaryBaselineEstimate.textContent = formatFilterHours(view.baselineEstimateHours);
+        if (summaryEstimated) summaryEstimated.textContent = formatFilterHours(view.estimatedHours);
+        if (summarySpent) summarySpent.textContent = formatFilterHours(view.spentHours);
+        if (summarySpentYear) summarySpentYear.textContent = formatFilterHours(view.spentHoursYear);
+        if (summaryDevelopmentEstimated) summaryDevelopmentEstimated.textContent = formatFilterHours(view.developmentEstimatedHours);
+        if (summaryDevelopmentSpent) summaryDevelopmentSpent.textContent = formatFilterHours(view.developmentSpentHours);
+        if (summaryDevelopmentSpentYear) summaryDevelopmentSpentYear.textContent = formatFilterHours(view.developmentSpentHoursYear);
+        if (summaryDevelopmentProcessEstimated) summaryDevelopmentProcessEstimated.textContent = formatFilterHours(view.developmentProcessEstimatedHours);
+        if (summaryDevelopmentProcessSpent) summaryDevelopmentProcessSpent.textContent = formatFilterHours(view.developmentProcessSpentHours);
+        if (summaryDevelopmentProcessSpentYear) summaryDevelopmentProcessSpentYear.textContent = formatFilterHours(view.developmentProcessSpentHoursYear);
+        if (summaryBugEstimated) summaryBugEstimated.textContent = formatFilterHours(view.bugEstimatedHours);
+        if (summaryBugSpent) summaryBugSpent.textContent = formatFilterHours(view.bugSpentHours);
+        if (summaryBugSpentYear) summaryBugSpentYear.textContent = formatFilterHours(view.bugSpentHoursYear);
+        if (summaryDevelopmentCombinedSpentYear) summaryDevelopmentCombinedSpentYear.textContent = formatFilterHours(view.developmentCombinedSpentHoursYear);
+        if (summaryDevelopmentCombinedSpent) summaryDevelopmentCombinedSpent.textContent = formatFilterHours(view.developmentCombinedSpentHours);
+        if (summaryDevelopmentCoverageAll) summaryDevelopmentCoverageAll.textContent = formatFilterPercent(view.developmentCoverageAllPercent);
+        if (summaryDevelopmentTotalEstimated) summaryDevelopmentTotalEstimated.textContent = formatFilterHours(view.developmentTotalEstimatedHours);
+        if (summaryDevelopmentGrandSpentYear) summaryDevelopmentGrandSpentYear.textContent = formatFilterHours(view.developmentGrandSpentHoursYear);
+        if (summaryDevelopmentGrandSpent) summaryDevelopmentGrandSpent.textContent = formatFilterHours(view.developmentGrandSpentHours);
+        if (summaryBugShareYear) summaryBugShareYear.textContent = formatFilterPercent(view.bugShareYearPercent);
+        if (summaryBugShareAll) summaryBugShareAll.textContent = formatFilterPercent(view.bugShareAllPercent);
       }}
 
-      function updateSnapshotSummaries(rows) {{
-        let baselineEstimate = 0;
-        let estimated = 0;
-        let spent = 0;
-        let spentYear = 0;
-        let developmentEstimated = 0;
-        let developmentSpent = 0;
-        let developmentSpentYear = 0;
-        let developmentProcessEstimated = 0;
-        let developmentProcessSpent = 0;
-        let developmentProcessSpentYear = 0;
-        let bugEstimated = 0;
-        let bugSpent = 0;
-        let bugSpentYear = 0;
-
-        for (const row of rows) {{
-          const tracker = String(row.dataset.tracker || "").trim().toLowerCase();
-          const rowBaselineEstimate = Number(row.dataset.baselineEstimateHours || 0);
-          const rowEstimated = Number(row.dataset.estimatedHours || 0);
-          const rowSpent = Number(row.dataset.spentHours || 0);
-          const rowSpentYear = Number(row.dataset.spentHoursYear || 0);
-
-          baselineEstimate += rowBaselineEstimate;
-          estimated += rowEstimated;
-          spent += rowSpent;
-          spentYear += rowSpentYear;
-
-          if (tracker === "разработка") {{
-            developmentEstimated += rowEstimated;
-            developmentSpent += rowSpent;
-            developmentSpentYear += rowSpentYear;
-          }} else if (tracker === "процессы разработки") {{
-            developmentProcessEstimated += rowEstimated;
-            developmentProcessSpent += rowSpent;
-            developmentProcessSpentYear += rowSpentYear;
-          }} else if (tracker === "ошибка") {{
-            bugEstimated += rowEstimated;
-            bugSpent += rowSpent;
-            bugSpentYear += rowSpentYear;
-          }}
+      function renderSnapshotRows(issues) {{
+        if (!snapshotIssuesTableBody) {{
+          return;
         }}
-
-        if (visibleIssuesCount) visibleIssuesCount.textContent = String(rows.length);
-        if (summaryBaselineEstimate) summaryBaselineEstimate.textContent = formatFilterHours(baselineEstimate);
-        if (summaryEstimated) summaryEstimated.textContent = formatFilterHours(estimated);
-        if (summarySpent) summarySpent.textContent = formatFilterHours(spent);
-        if (summarySpentYear) summarySpentYear.textContent = formatFilterHours(spentYear);
-        if (summaryDevelopmentEstimated) summaryDevelopmentEstimated.textContent = formatFilterHours(developmentEstimated);
-        if (summaryDevelopmentSpent) summaryDevelopmentSpent.textContent = formatFilterHours(developmentSpent);
-        if (summaryDevelopmentSpentYear) summaryDevelopmentSpentYear.textContent = formatFilterHours(developmentSpentYear);
-        if (summaryDevelopmentProcessEstimated) summaryDevelopmentProcessEstimated.textContent = formatFilterHours(developmentProcessEstimated);
-        if (summaryDevelopmentProcessSpent) summaryDevelopmentProcessSpent.textContent = formatFilterHours(developmentProcessSpent);
-        if (summaryDevelopmentProcessSpentYear) summaryDevelopmentProcessSpentYear.textContent = formatFilterHours(developmentProcessSpentYear);
-        if (summaryBugEstimated) summaryBugEstimated.textContent = formatFilterHours(bugEstimated);
-        if (summaryBugSpent) summaryBugSpent.textContent = formatFilterHours(bugSpent);
-        if (summaryBugSpentYear) summaryBugSpentYear.textContent = formatFilterHours(bugSpentYear);
-        const developmentCombinedSpentYear = developmentSpentYear + developmentProcessSpentYear;
-        const developmentCombinedSpent = developmentSpent + developmentProcessSpent;
-        const developmentTotalEstimated = developmentEstimated + developmentProcessEstimated + bugEstimated;
-        const developmentGrandSpentYear = developmentCombinedSpentYear + bugSpentYear;
-        const developmentGrandSpent = developmentCombinedSpent + bugSpent;
-        if (summaryDevelopmentCombinedSpentYear) summaryDevelopmentCombinedSpentYear.textContent = formatFilterHours(developmentCombinedSpentYear);
-        if (summaryDevelopmentCombinedSpent) summaryDevelopmentCombinedSpent.textContent = formatFilterHours(developmentCombinedSpent);
-        if (summaryDevelopmentCoverageAll) summaryDevelopmentCoverageAll.textContent = formatFilterPercent(baselineEstimate > 0 ? (developmentCombinedSpent / baselineEstimate) * 100 : 0);
-        if (summaryDevelopmentTotalEstimated) summaryDevelopmentTotalEstimated.textContent = formatFilterHours(developmentTotalEstimated);
-        if (summaryDevelopmentGrandSpentYear) summaryDevelopmentGrandSpentYear.textContent = formatFilterHours(developmentGrandSpentYear);
-        if (summaryDevelopmentGrandSpent) summaryDevelopmentGrandSpent.textContent = formatFilterHours(developmentGrandSpent);
-        if (summaryBugShareYear) summaryBugShareYear.textContent = formatFilterPercent(developmentCombinedSpentYear > 0 ? (bugSpentYear / developmentCombinedSpentYear) * 100 : 0);
-        if (summaryBugShareAll) summaryBugShareAll.textContent = formatFilterPercent(developmentCombinedSpent > 0 ? (bugSpent / developmentCombinedSpent) * 100 : 0);
+        if (!Array.isArray(issues) || !issues.length) {{
+          snapshotIssuesTableBody.innerHTML = '<tr><td colspan="12">По текущему фильтру задач нет.</td></tr>';
+          return;
+        }}
+        snapshotIssuesTableBody.innerHTML = issues.map((issue) => {{
+          const issueId = issue?.issue_redmine_id ?? "—";
+          const issueLink = `https://redmine.sms-it.ru/issues/${{encodeURIComponent(issueId)}}`;
+          return `
+            <tr>
+              <td class="mono"><a class="issue-link" href="${{issueLink}}" target="_blank" rel="noreferrer">${{escapeHtml(issueId)}}</a></td>
+              <td class="subject-col">${{escapeHtml(issue?.subject || "—")}}</td>
+              <td class="tracker-col">${{escapeHtml(issue?.tracker_name || "—")}}</td>
+              <td class="status-col">${{escapeHtml(issue?.status_name || "—")}}</td>
+              <td>${{escapeHtml(issue?.done_ratio ?? 0)}}</td>
+              <td>${{formatFilterHours(issue?.baseline_estimate_hours)}}</td>
+              <td>${{formatFilterHours(issue?.estimated_hours)}}</td>
+              <td>${{formatFilterHours(issue?.spent_hours)}}</td>
+              <td>${{formatFilterHours(issue?.spent_hours_year)}}</td>
+              <td class="closed-col">${{escapeHtml(formatSnapshotDateTime(issue?.closed_on))}}</td>
+              <td>${{escapeHtml(issue?.assigned_to_name || "—")}}</td>
+              <td class="version-col">${{escapeHtml(issue?.fixed_version_name || "—")}}</td>
+            </tr>
+          `;
+        }}).join("");
       }}
 
-      function applySnapshotTableFilters() {{
-        const textFilters = Object.fromEntries(textFilterInputs.map((input) => [
-          input.dataset.filterKey,
-          String(input.value || "").trim().toLocaleLowerCase("ru")
-        ]));
+      function normalizeNumericFilterValue(value) {{
+        return String(value || "").trim().replace(",", ".");
+      }}
 
-        const multiFilters = Object.fromEntries(multiSelectFilters.map((select) => [
-          select.dataset.filterKey,
-          new Set(Array.from(select.selectedOptions).map((option) => option.value.toLocaleLowerCase("ru")))
-        ]));
+      function readSnapshotPageSize() {{
+        const rawValue = Number(snapshotPageSizeInput?.value || currentSnapshotPageSize || 1000);
+        if (!Number.isFinite(rawValue)) {{
+          return 1000;
+        }}
+        return Math.min(10000, Math.max(10, Math.floor(rawValue)));
+      }}
 
-        const numericFilters = {{
-          doneRatio: {{
-            operator: String(document.querySelector('[data-filter-key="doneRatio"][data-filter-role="op"]')?.value || ""),
-            value: String(document.querySelector('[data-filter-key="doneRatio"][data-filter-role="value"]')?.value || "").trim(),
-          }},
-          baseline: {{
-            operator: String(document.querySelector('[data-filter-key="baseline"][data-filter-role="op"]')?.value || ""),
-            value: String(document.querySelector('[data-filter-key="baseline"][data-filter-role="value"]')?.value || "").trim(),
-          }},
-          estimated: {{
-            operator: String(document.querySelector('[data-filter-key="estimated"][data-filter-role="op"]')?.value || ""),
-            value: String(document.querySelector('[data-filter-key="estimated"][data-filter-role="value"]')?.value || "").trim(),
-          }},
-          spent: {{
-            operator: String(document.querySelector('[data-filter-key="spent"][data-filter-role="op"]')?.value || ""),
-            value: String(document.querySelector('[data-filter-key="spent"][data-filter-role="value"]')?.value || "").trim(),
-          }},
-          spentYear: {{
-            operator: String(document.querySelector('[data-filter-key="spentYear"][data-filter-role="op"]')?.value || ""),
-            value: String(document.querySelector('[data-filter-key="spentYear"][data-filter-role="value"]')?.value || "").trim(),
-          }},
+      function updateSnapshotCounts(pageCount) {{
+        if (filteredIssuesCount) filteredIssuesCount.textContent = String(currentSnapshotFilteredIssues);
+        if (pageIssuesCount) pageIssuesCount.textContent = String(pageCount);
+      }}
+
+      function updateSnapshotPaginationInfo() {{
+        if (snapshotPaginationInfo) {{
+          snapshotPaginationInfo.textContent = `Страница ${{currentSnapshotPage}} из ${{currentSnapshotTotalPages}}`;
+        }}
+        if (snapshotPrevPageButton) snapshotPrevPageButton.disabled = currentSnapshotPage <= 1;
+        if (snapshotNextPageButton) snapshotNextPageButton.disabled = currentSnapshotPage >= currentSnapshotTotalPages;
+      }}
+
+      function collectSnapshotFilters() {{
+        return {{
+          issue_id: String(document.querySelector('[data-filter-key="issueId"][data-filter-role="text"]')?.value || "").trim(),
+          subject: String(document.querySelector('[data-filter-key="subject"][data-filter-role="text"]')?.value || "").trim(),
+          tracker: Array.from(document.querySelector('[data-filter-key="tracker"][data-filter-role="multi"]')?.selectedOptions || []).map((option) => option.value),
+          status: Array.from(document.querySelector('[data-filter-key="status"][data-filter-role="multi"]')?.selectedOptions || []).map((option) => option.value),
+          done_ratio_op: String(document.querySelector('[data-filter-key="doneRatio"][data-filter-role="op"]')?.value || ""),
+          done_ratio_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="doneRatio"][data-filter-role="value"]')?.value || ""),
+          baseline_op: String(document.querySelector('[data-filter-key="baseline"][data-filter-role="op"]')?.value || ""),
+          baseline_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="baseline"][data-filter-role="value"]')?.value || ""),
+          estimated_op: String(document.querySelector('[data-filter-key="estimated"][data-filter-role="op"]')?.value || ""),
+          estimated_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="estimated"][data-filter-role="value"]')?.value || ""),
+          spent_op: String(document.querySelector('[data-filter-key="spent"][data-filter-role="op"]')?.value || ""),
+          spent_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="spent"][data-filter-role="value"]')?.value || ""),
+          spent_year_op: String(document.querySelector('[data-filter-key="spentYear"][data-filter-role="op"]')?.value || ""),
+          spent_year_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="spentYear"][data-filter-role="value"]')?.value || ""),
+          closed_on: String(document.querySelector('[data-filter-key="closedOn"][data-filter-role="text"]')?.value || "").trim(),
+          assigned_to: String(document.querySelector('[data-filter-key="assignedTo"][data-filter-role="text"]')?.value || "").trim(),
+          fixed_version: String(document.querySelector('[data-filter-key="fixedVersion"][data-filter-role="text"]')?.value || "").trim(),
         }};
+      }}
 
-        const visibleRows = [];
-        for (const row of snapshotIssueRows) {{
-          const trackerValue = String(row.dataset.tracker || "").toLocaleLowerCase("ru");
-          const statusValue = String(row.dataset.status || "").toLocaleLowerCase("ru");
-          const matches =
-            String(row.dataset.issueId || "").toLocaleLowerCase("ru").includes(textFilters.issueId || "") &&
-            String(row.dataset.subject || "").toLocaleLowerCase("ru").includes(textFilters.subject || "") &&
-            (!multiFilters.tracker?.size || multiFilters.tracker.has(trackerValue)) &&
-            (!multiFilters.status?.size || multiFilters.status.has(statusValue)) &&
-            matchesNumericFilter(row.dataset.doneRatio, numericFilters.doneRatio.operator, numericFilters.doneRatio.value) &&
-            matchesNumericFilter(row.dataset.baselineEstimateHours, numericFilters.baseline.operator, numericFilters.baseline.value) &&
-            matchesNumericFilter(row.dataset.estimatedHours, numericFilters.estimated.operator, numericFilters.estimated.value) &&
-            matchesNumericFilter(row.dataset.spentHours, numericFilters.spent.operator, numericFilters.spent.value) &&
-            matchesNumericFilter(row.dataset.spentHoursYear, numericFilters.spentYear.operator, numericFilters.spentYear.value) &&
-            String(row.dataset.closedOn || "").toLocaleLowerCase("ru").includes(textFilters.closedOn || "") &&
-            String(row.dataset.assignedTo || "").toLocaleLowerCase("ru").includes(textFilters.assignedTo || "") &&
-            String(row.dataset.fixedVersion || "").toLocaleLowerCase("ru").includes(textFilters.fixedVersion || "");
-
-          row.style.display = matches ? "" : "none";
-          if (matches) {{
-            visibleRows.push(row);
-          }}
+      function buildSnapshotQueryParams(page, includePagination = true) {{
+        const filters = collectSnapshotFilters();
+        const params = new URLSearchParams();
+        if (selectedSnapshotDate) params.set("captured_for_date", selectedSnapshotDate);
+        if (includePagination) {{
+          const pageSize = readSnapshotPageSize();
+          params.set("page", String(page));
+          params.set("page_size", String(pageSize));
         }}
+        if (filters.issue_id) params.set("issue_id", filters.issue_id);
+        if (filters.subject) params.set("subject", filters.subject);
+        for (const value of filters.tracker) params.append("tracker", value);
+        for (const value of filters.status) params.append("status", value);
+        if (filters.done_ratio_op) params.set("done_ratio_op", filters.done_ratio_op);
+        if (filters.done_ratio_value) params.set("done_ratio_value", filters.done_ratio_value);
+        if (filters.baseline_op) params.set("baseline_op", filters.baseline_op);
+        if (filters.baseline_value) params.set("baseline_value", filters.baseline_value);
+        if (filters.estimated_op) params.set("estimated_op", filters.estimated_op);
+        if (filters.estimated_value) params.set("estimated_value", filters.estimated_value);
+        if (filters.spent_op) params.set("spent_op", filters.spent_op);
+        if (filters.spent_value) params.set("spent_value", filters.spent_value);
+        if (filters.spent_year_op) params.set("spent_year_op", filters.spent_year_op);
+        if (filters.spent_year_value) params.set("spent_year_value", filters.spent_year_value);
+        if (filters.closed_on) params.set("closed_on", filters.closed_on);
+        if (filters.assigned_to) params.set("assigned_to", filters.assigned_to);
+        if (filters.fixed_version) params.set("fixed_version", filters.fixed_version);
+        return params;
+      }}
 
-        updateSnapshotSummaries(visibleRows);
+      async function loadSnapshotIssues(page = 1) {{
+        try {{
+          const pageSize = readSnapshotPageSize();
+          currentSnapshotPageSize = pageSize;
+          if (snapshotPageSizeInput) snapshotPageSizeInput.value = String(pageSize);
+          window.localStorage.setItem(snapshotPageSizeStorageKey, String(pageSize));
+          if (snapshotPaginationInfo) snapshotPaginationInfo.textContent = "Обновляем таблицу...";
+          const params = buildSnapshotQueryParams(page, true);
+          const response = await fetch(`/api/projects/{projectRedmineId}/latest-snapshot-issues?${{params.toString()}}`);
+          const payload = await response.json();
+          if (!response.ok) {{
+            window.alert(payload.detail || "Не удалось загрузить задачи среза.");
+            updateSnapshotPaginationInfo();
+            return;
+          }}
+
+          currentSnapshotPage = Number(payload.page || 1);
+          currentSnapshotTotalPages = Number(payload.total_pages || 1);
+          currentSnapshotFilteredIssues = Number(payload.total_filtered_issues || 0);
+          currentSnapshotTotalIssues = Number(payload.total_all_issues || 0);
+          renderSnapshotRows(payload.issues || []);
+          renderSnapshotSummary(payload.summary || {{}});
+          updateSnapshotCounts(Array.isArray(payload.issues) ? payload.issues.length : 0);
+          updateSnapshotPaginationInfo();
+          updateSnapshotFilterHeaderOffset();
+        }} catch (error) {{
+          window.alert("Не удалось загрузить задачи среза.");
+          updateSnapshotPaginationInfo();
+        }}
       }}
 
       function resetSnapshotTableFilters() {{
@@ -3301,7 +3443,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         numericFilterControls.forEach((input) => {{
           input.value = "";
         }});
-        applySnapshotTableFilters();
+        loadSnapshotIssues(1);
+      }}
+
+      function scheduleSnapshotReload() {{
+        if (snapshotReloadTimer) {{
+          window.clearTimeout(snapshotReloadTimer);
+        }}
+        snapshotReloadTimer = window.setTimeout(() => loadSnapshotIssues(1), 250);
       }}
 
       async function pollRecaptureStatus(targetDate) {{
@@ -3391,22 +3540,54 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         window.location.href = `/projects/{projectRedmineId}/latest-snapshot-issues`;
       }});
 
+      applySnapshotPageSizeButton?.addEventListener("click", () => {{
+        loadSnapshotIssues(1);
+      }});
+
+      exportSnapshotCsvButton?.addEventListener("click", () => {{
+        const params = buildSnapshotQueryParams(currentSnapshotPage, false);
+        window.location.href = `/projects/{projectRedmineId}/latest-snapshot-issues/export.csv?${{params.toString()}}`;
+      }});
+
+      snapshotPrevPageButton?.addEventListener("click", () => {{
+        if (currentSnapshotPage > 1) {{
+          loadSnapshotIssues(currentSnapshotPage - 1);
+        }}
+      }});
+
+      snapshotNextPageButton?.addEventListener("click", () => {{
+        if (currentSnapshotPage < currentSnapshotTotalPages) {{
+          loadSnapshotIssues(currentSnapshotPage + 1);
+        }}
+      }});
+
       textFilterInputs.forEach((input) => {{
-        input.addEventListener("input", applySnapshotTableFilters);
+        input.addEventListener("input", scheduleSnapshotReload);
       }});
       multiSelectFilters.forEach((select) => {{
-        select.addEventListener("change", applySnapshotTableFilters);
+        select.addEventListener("change", () => loadSnapshotIssues(1));
       }});
       numericFilterControls.forEach((control) => {{
-        control.addEventListener("input", applySnapshotTableFilters);
-        control.addEventListener("change", applySnapshotTableFilters);
+        control.addEventListener("input", scheduleSnapshotReload);
+        control.addEventListener("change", scheduleSnapshotReload);
       }});
 
       resetSnapshotFiltersButton?.addEventListener("click", resetSnapshotTableFilters);
       populateSnapshotMultiSelects();
+      renderSnapshotRows(initialSnapshotIssues);
+      renderSnapshotSummary(initialSnapshotSummary);
+      updateSnapshotCounts(initialSnapshotIssues.length);
       updateSnapshotFilterHeaderOffset();
+      updateSnapshotPaginationInfo();
       window.addEventListener("resize", updateSnapshotFilterHeaderOffset);
-      applySnapshotTableFilters();
+
+      const storedSnapshotPageSize = Number(window.localStorage.getItem(snapshotPageSizeStorageKey) || 0);
+      if (Number.isFinite(storedSnapshotPageSize) && storedSnapshotPageSize >= 10 && storedSnapshotPageSize <= 10000) {{
+        snapshotPageSizeInput.value = String(Math.floor(storedSnapshotPageSize));
+        if (storedSnapshotPageSize !== currentSnapshotPageSize) {{
+          loadSnapshotIssues(1);
+        }}
+      }}
     </script>
   </main>
 </body>
@@ -3451,6 +3632,164 @@ def getProjectLatestSnapshotIssuesPage(
 
     ensureIssueSnapshotTables()
     return HTMLResponse(buildLatestSnapshotIssuesPageClean(project_redmine_id, captured_for_date))
+
+
+@app.get("/api/projects/{project_redmine_id}/latest-snapshot-issues")
+def getProjectLatestSnapshotIssuesData(
+    project_redmine_id: int,
+    captured_for_date: str | None = Query(None, description="Дата среза в формате YYYY-MM-DD"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(1000, ge=10, le=10000),
+    issue_id: str | None = Query(None),
+    subject: str | None = Query(None),
+    tracker: list[str] = Query([]),
+    status: list[str] = Query([]),
+    done_ratio_op: str | None = Query(None),
+    done_ratio_value: str | None = Query(None),
+    baseline_op: str | None = Query(None),
+    baseline_value: str | None = Query(None),
+    estimated_op: str | None = Query(None),
+    estimated_value: str | None = Query(None),
+    spent_op: str | None = Query(None),
+    spent_value: str | None = Query(None),
+    spent_year_op: str | None = Query(None),
+    spent_year_value: str | None = Query(None),
+    closed_on: str | None = Query(None),
+    assigned_to: str | None = Query(None),
+    fixed_version: str | None = Query(None),
+) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+    filters = buildSnapshotIssueFiltersPayload(
+        issueId=issue_id,
+        subject=subject,
+        trackerNames=tracker,
+        statusNames=status,
+        doneRatioOp=done_ratio_op,
+        doneRatioValue=done_ratio_value,
+        baselineOp=baseline_op,
+        baselineValue=baseline_value,
+        estimatedOp=estimated_op,
+        estimatedValue=estimated_value,
+        spentOp=spent_op,
+        spentValue=spent_value,
+        spentYearOp=spent_year_op,
+        spentYearValue=spent_year_value,
+        closedOn=closed_on,
+        assignedTo=assigned_to,
+        fixedVersion=fixed_version,
+    )
+    return getFilteredSnapshotIssuesForProjectByDate(
+        project_redmine_id,
+        captured_for_date,
+        filters=filters,
+        page=page,
+        pageSize=page_size,
+    )
+
+
+@app.get("/projects/{project_redmine_id}/latest-snapshot-issues/export.csv")
+def exportProjectLatestSnapshotIssuesCsv(
+    project_redmine_id: int,
+    captured_for_date: str | None = Query(None, description="Дата среза в формате YYYY-MM-DD"),
+    issue_id: str | None = Query(None),
+    subject: str | None = Query(None),
+    tracker: list[str] = Query([]),
+    status: list[str] = Query([]),
+    done_ratio_op: str | None = Query(None),
+    done_ratio_value: str | None = Query(None),
+    baseline_op: str | None = Query(None),
+    baseline_value: str | None = Query(None),
+    estimated_op: str | None = Query(None),
+    estimated_value: str | None = Query(None),
+    spent_op: str | None = Query(None),
+    spent_value: str | None = Query(None),
+    spent_year_op: str | None = Query(None),
+    spent_year_value: str | None = Query(None),
+    closed_on: str | None = Query(None),
+    assigned_to: str | None = Query(None),
+    fixed_version: str | None = Query(None),
+) -> Response:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+    filters = buildSnapshotIssueFiltersPayload(
+        issueId=issue_id,
+        subject=subject,
+        trackerNames=tracker,
+        statusNames=status,
+        doneRatioOp=done_ratio_op,
+        doneRatioValue=done_ratio_value,
+        baselineOp=baseline_op,
+        baselineValue=baseline_value,
+        estimatedOp=estimated_op,
+        estimatedValue=estimated_value,
+        spentOp=spent_op,
+        spentValue=spent_value,
+        spentYearOp=spent_year_op,
+        spentYearValue=spent_year_value,
+        closedOn=closed_on,
+        assignedTo=assigned_to,
+        fixedVersion=fixed_version,
+    )
+    exportPayload = listFilteredSnapshotIssuesForProjectByDate(
+        project_redmine_id,
+        captured_for_date,
+        filters=filters,
+    )
+    snapshotRun = exportPayload.get("snapshot_run")
+    if snapshotRun is None:
+        raise HTTPException(status_code=404, detail="Срез проекта не найден")
+
+    output = io.StringIO(newline="")
+    output.write("sep=;\n")
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow(
+        [
+            "ID",
+            "Тема",
+            "Трекер",
+            "Статус",
+            "Готово, %",
+            "Базовая оценка, ч",
+            "План, ч",
+            "Факт всего, ч",
+            "Факт за год, ч",
+            "Закрыта",
+            "Исполнитель",
+            "Версия",
+        ]
+    )
+    for issue in exportPayload.get("issues") or []:
+        writer.writerow(
+            [
+                issue.get("issue_redmine_id") or "",
+                str(issue.get("subject") or "—"),
+                str(issue.get("tracker_name") or "—"),
+                str(issue.get("status_name") or "—"),
+                issue.get("done_ratio") if issue.get("done_ratio") is not None else 0,
+                formatPageHours(issue.get("baseline_estimate_hours")),
+                formatPageHours(issue.get("estimated_hours")),
+                formatPageHours(issue.get("spent_hours")),
+                formatPageHours(issue.get("spent_hours_year")),
+                formatSnapshotPageDateTime(issue.get("closed_on")),
+                str(issue.get("assigned_to_name") or "—"),
+                str(issue.get("fixed_version_name") or "—"),
+            ]
+        )
+
+    fileIdentifier = str(snapshotRun.get("project_identifier") or f"project_{project_redmine_id}")
+    safeIdentifier = "".join(character if character.isalnum() or character in {"-", "_"} else "_" for character in fileIdentifier)
+    fileDate = str(snapshotRun.get("captured_for_date") or "latest")
+    fileName = f"snapshot_{safeIdentifier}_{fileDate}.csv"
+    return Response(
+        content="\ufeff" + output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{fileName}"'},
+    )
 
 
 @app.get("/projects/{project_redmine_id}/burndown", response_class=HTMLResponse)

@@ -656,6 +656,385 @@ def getSnapshotIssuesForProjectByDate(projectRedmineId: int, capturedForDate: st
         }
 
 
+def _listSnapshotDatesForProjectWithConnection(connection, projectRedmineId: int) -> list[str]:
+    rows = connection.execute(
+        text(
+            """
+            SELECT DISTINCT captured_for_date
+            FROM issue_snapshot_runs
+            WHERE project_redmine_id = :project_redmine_id
+            ORDER BY captured_for_date DESC
+            """
+        ),
+        {"project_redmine_id": projectRedmineId},
+    )
+    return [str(row[0]) for row in rows]
+
+
+def _getSnapshotRunWithConnection(connection, projectRedmineId: int, capturedForDate: str | None) -> dict[str, object] | None:
+    params: dict[str, object] = {"project_redmine_id": projectRedmineId}
+    if capturedForDate:
+        params["captured_for_date"] = capturedForDate
+        query = text(
+            """
+            SELECT
+                r.id,
+                r.project_redmine_id,
+                COALESCE(p.name, r.project_name) AS project_name,
+                COALESCE(p.identifier, r.project_identifier) AS project_identifier,
+                r.captured_for_date,
+                r.captured_at,
+                r.total_issues,
+                r.total_baseline_estimate_hours,
+                r.total_estimated_hours,
+                r.total_spent_hours,
+                r.total_spent_hours_year
+            FROM issue_snapshot_runs r
+            LEFT JOIN projects p
+                ON p.redmine_id = r.project_redmine_id
+            WHERE r.project_redmine_id = :project_redmine_id
+              AND r.captured_for_date = :captured_for_date
+            ORDER BY r.captured_at DESC, r.id DESC
+            LIMIT 1
+            """
+        )
+    else:
+        query = text(
+            """
+            SELECT
+                r.id,
+                r.project_redmine_id,
+                COALESCE(p.name, r.project_name) AS project_name,
+                COALESCE(p.identifier, r.project_identifier) AS project_identifier,
+                r.captured_for_date,
+                r.captured_at,
+                r.total_issues,
+                r.total_baseline_estimate_hours,
+                r.total_estimated_hours,
+                r.total_spent_hours,
+                r.total_spent_hours_year
+            FROM issue_snapshot_runs r
+            LEFT JOIN projects p
+                ON p.redmine_id = r.project_redmine_id
+            WHERE r.project_redmine_id = :project_redmine_id
+            ORDER BY r.captured_for_date DESC, r.captured_at DESC, r.id DESC
+            LIMIT 1
+            """
+        )
+
+    row = connection.execute(query, params).mappings().first()
+    return dict(row) if row is not None else None
+
+
+def _normalizeSnapshotIssueFilters(filters: dict[str, object] | None) -> dict[str, object]:
+    payload = dict(filters or {})
+
+    def normalizeText(value: object) -> str:
+        return str(value or "").strip()
+
+    def normalizeMulti(values: object) -> list[str]:
+        if not isinstance(values, (list, tuple, set)):
+            values = [values] if values not in (None, "") else []
+        normalized: list[str] = []
+        for value in values:
+            textValue = normalizeText(value)
+            if textValue and textValue not in normalized:
+                normalized.append(textValue)
+        return normalized
+
+    def normalizeNumeric(value: object) -> float | None:
+        rawValue = normalizeText(value).replace(",", ".")
+        if not rawValue:
+            return None
+        try:
+            return float(rawValue)
+        except ValueError:
+            return None
+
+    normalized: dict[str, object] = {
+        "issue_id": normalizeText(payload.get("issue_id")),
+        "subject": normalizeText(payload.get("subject")),
+        "tracker_names": normalizeMulti(payload.get("tracker_names")),
+        "status_names": normalizeMulti(payload.get("status_names")),
+        "closed_on": normalizeText(payload.get("closed_on")),
+        "assigned_to": normalizeText(payload.get("assigned_to")),
+        "fixed_version": normalizeText(payload.get("fixed_version")),
+    }
+
+    numericConfig = {
+        "done_ratio": "done_ratio",
+        "baseline": "baseline",
+        "estimated": "estimated",
+        "spent": "spent",
+        "spent_year": "spent_year",
+    }
+    for filterKey, paramPrefix in numericConfig.items():
+        operator = normalizeText(payload.get(f"{paramPrefix}_op"))
+        normalized[f"{paramPrefix}_op"] = operator if operator in {">", "<", "="} else ""
+        normalized[f"{paramPrefix}_value"] = normalizeNumeric(payload.get(f"{paramPrefix}_value"))
+
+    return normalized
+
+
+def _buildSnapshotIssueFilterParts(filters: dict[str, object] | None) -> tuple[list[str], dict[str, object], list[object]]:
+    normalizedFilters = _normalizeSnapshotIssueFilters(filters)
+    whereClauses: list[str] = []
+    params: dict[str, object] = {}
+    bindParams: list[object] = []
+
+    textMappings = {
+        "issue_id": "CAST(issue_redmine_id AS TEXT)",
+        "subject": "COALESCE(subject, '')",
+        "closed_on": "COALESCE(CAST(closed_on AS TEXT), '')",
+        "assigned_to": "COALESCE(assigned_to_name, '')",
+        "fixed_version": "COALESCE(fixed_version_name, '')",
+    }
+    for filterKey, column in textMappings.items():
+        value = str(normalizedFilters.get(filterKey) or "")
+        if value:
+            paramName = f"{filterKey}_like"
+            whereClauses.append(f"{column} ILIKE :{paramName}")
+            params[paramName] = f"%{value}%"
+
+    trackerNames = list(normalizedFilters.get("tracker_names") or [])
+    if trackerNames:
+        whereClauses.append("COALESCE(tracker_name, '—') IN :tracker_names")
+        params["tracker_names"] = trackerNames
+        bindParams.append(bindparam("tracker_names", expanding=True))
+
+    statusNames = list(normalizedFilters.get("status_names") or [])
+    if statusNames:
+        whereClauses.append("COALESCE(status_name, '—') IN :status_names")
+        params["status_names"] = statusNames
+        bindParams.append(bindparam("status_names", expanding=True))
+
+    numericMappings = {
+        "done_ratio": "COALESCE(done_ratio, 0)",
+        "baseline": "COALESCE(baseline_estimate_hours, 0)",
+        "estimated": "COALESCE(estimated_hours, 0)",
+        "spent": "COALESCE(spent_hours, 0)",
+        "spent_year": "COALESCE(spent_hours_year, 0)",
+    }
+    for filterKey, column in numericMappings.items():
+        operator = str(normalizedFilters.get(f"{filterKey}_op") or "")
+        value = normalizedFilters.get(f"{filterKey}_value")
+        if operator and value is not None:
+            paramName = f"{filterKey}_value"
+            whereClauses.append(f"{column} {operator} :{paramName}")
+            params[paramName] = value
+
+    return whereClauses, params, bindParams
+
+
+def _getSnapshotIssueFilterOptions(connection, snapshotRunId: int) -> dict[str, list[str]]:
+    trackerRows = connection.execute(
+        text(
+            """
+            SELECT DISTINCT COALESCE(tracker_name, '—') AS value
+            FROM issue_snapshot_items
+            WHERE snapshot_run_id = :snapshot_run_id
+            ORDER BY value
+            """
+        ),
+        {"snapshot_run_id": snapshotRunId},
+    )
+    statusRows = connection.execute(
+        text(
+            """
+            SELECT DISTINCT COALESCE(status_name, '—') AS value
+            FROM issue_snapshot_items
+            WHERE snapshot_run_id = :snapshot_run_id
+            ORDER BY value
+            """
+        ),
+        {"snapshot_run_id": snapshotRunId},
+    )
+    return {
+        "tracker_names": [str(row[0]) for row in trackerRows if row[0] is not None],
+        "status_names": [str(row[0]) for row in statusRows if row[0] is not None],
+    }
+
+
+def getFilteredSnapshotIssuesForProjectByDate(
+    projectRedmineId: int,
+    capturedForDate: str | None,
+    filters: dict[str, object] | None = None,
+    page: int = 1,
+    pageSize: int = 1000,
+) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    safePageSize = max(1, int(pageSize or 1))
+    requestedPage = max(1, int(page or 1))
+
+    with engine.connect() as connection:
+        latestRun = _getSnapshotRunWithConnection(connection, projectRedmineId, capturedForDate)
+        availableDates = _listSnapshotDatesForProjectWithConnection(connection, projectRedmineId)
+        if latestRun is None:
+            return {
+                "snapshot_run": None,
+                "issues": [],
+                "available_dates": availableDates,
+                "filter_options": {"tracker_names": [], "status_names": []},
+                "summary": {
+                    "baseline_estimate_hours": 0.0,
+                    "estimated_hours": 0.0,
+                    "spent_hours": 0.0,
+                    "spent_hours_year": 0.0,
+                    "development_estimated_hours": 0.0,
+                    "development_spent_hours": 0.0,
+                    "development_spent_hours_year": 0.0,
+                    "development_process_estimated_hours": 0.0,
+                    "development_process_spent_hours": 0.0,
+                    "development_process_spent_hours_year": 0.0,
+                    "bug_estimated_hours": 0.0,
+                    "bug_spent_hours": 0.0,
+                    "bug_spent_hours_year": 0.0,
+                },
+                "page": 1,
+                "page_size": safePageSize,
+                "total_pages": 1,
+                "total_filtered_issues": 0,
+                "total_all_issues": 0,
+            }
+
+        whereClauses, filterParams, bindParams = _buildSnapshotIssueFilterParts(filters)
+        baseWhereClauses = ["snapshot_run_id = :snapshot_run_id", *whereClauses]
+        baseWhereSql = " AND ".join(baseWhereClauses)
+        baseParams = {"snapshot_run_id": latestRun["id"], **filterParams}
+
+        countStatement = text(
+            f"""
+            SELECT COUNT(*)
+            FROM issue_snapshot_items
+            WHERE {baseWhereSql}
+            """
+        ).bindparams(*bindParams)
+        totalFilteredIssues = int(connection.execute(countStatement, baseParams).scalar_one() or 0)
+        totalAllIssues = int(latestRun.get("total_issues") or 0)
+
+        summaryStatement = text(
+            f"""
+            SELECT
+                COALESCE(SUM(COALESCE(baseline_estimate_hours, 0)), 0) AS baseline_estimate_hours,
+                COALESCE(SUM(COALESCE(estimated_hours, 0)), 0) AS estimated_hours,
+                COALESCE(SUM(COALESCE(spent_hours, 0)), 0) AS spent_hours,
+                COALESCE(SUM(COALESCE(spent_hours_year, 0)), 0) AS spent_hours_year,
+                COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'разработка' THEN COALESCE(estimated_hours, 0) ELSE 0 END), 0) AS development_estimated_hours,
+                COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'разработка' THEN COALESCE(spent_hours, 0) ELSE 0 END), 0) AS development_spent_hours,
+                COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'разработка' THEN COALESCE(spent_hours_year, 0) ELSE 0 END), 0) AS development_spent_hours_year,
+                COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'процессы разработки' THEN COALESCE(estimated_hours, 0) ELSE 0 END), 0) AS development_process_estimated_hours,
+                COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'процессы разработки' THEN COALESCE(spent_hours, 0) ELSE 0 END), 0) AS development_process_spent_hours,
+                COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'процессы разработки' THEN COALESCE(spent_hours_year, 0) ELSE 0 END), 0) AS development_process_spent_hours_year,
+                COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'ошибка' THEN COALESCE(estimated_hours, 0) ELSE 0 END), 0) AS bug_estimated_hours,
+                COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'ошибка' THEN COALESCE(spent_hours, 0) ELSE 0 END), 0) AS bug_spent_hours,
+                COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'ошибка' THEN COALESCE(spent_hours_year, 0) ELSE 0 END), 0) AS bug_spent_hours_year
+            FROM issue_snapshot_items
+            WHERE {baseWhereSql}
+            """
+        ).bindparams(*bindParams)
+        summaryRow = connection.execute(summaryStatement, baseParams).mappings().one()
+
+        totalPages = max(1, (totalFilteredIssues + safePageSize - 1) // safePageSize) if totalFilteredIssues else 1
+        currentPage = min(requestedPage, totalPages)
+        pageParams = {
+            **baseParams,
+            "limit": safePageSize,
+            "offset": (currentPage - 1) * safePageSize,
+        }
+        issuesStatement = text(
+            f"""
+            SELECT
+                issue_redmine_id,
+                subject,
+                tracker_name,
+                status_name,
+                priority_name,
+                assigned_to_name,
+                fixed_version_name,
+                done_ratio,
+                baseline_estimate_hours,
+                estimated_hours,
+                spent_hours,
+                spent_hours_year,
+                start_date,
+                due_date,
+                created_on,
+                updated_on,
+                closed_on
+            FROM issue_snapshot_items
+            WHERE {baseWhereSql}
+            ORDER BY issue_redmine_id
+            LIMIT :limit OFFSET :offset
+            """
+        ).bindparams(*bindParams)
+        issueRows = connection.execute(issuesStatement, pageParams).mappings().all()
+
+        return {
+            "snapshot_run": latestRun,
+            "issues": [dict(row) for row in issueRows],
+            "available_dates": availableDates,
+            "filter_options": _getSnapshotIssueFilterOptions(connection, int(latestRun["id"])),
+            "summary": dict(summaryRow),
+            "page": currentPage,
+            "page_size": safePageSize,
+            "total_pages": totalPages,
+            "total_filtered_issues": totalFilteredIssues,
+            "total_all_issues": totalAllIssues,
+        }
+
+
+def listFilteredSnapshotIssuesForProjectByDate(
+    projectRedmineId: int,
+    capturedForDate: str | None,
+    filters: dict[str, object] | None = None,
+) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        latestRun = _getSnapshotRunWithConnection(connection, projectRedmineId, capturedForDate)
+        availableDates = _listSnapshotDatesForProjectWithConnection(connection, projectRedmineId)
+        if latestRun is None:
+            return {"snapshot_run": None, "issues": [], "available_dates": availableDates}
+
+        whereClauses, filterParams, bindParams = _buildSnapshotIssueFilterParts(filters)
+        baseWhereSql = " AND ".join(["snapshot_run_id = :snapshot_run_id", *whereClauses])
+        params = {"snapshot_run_id": latestRun["id"], **filterParams}
+        issuesStatement = text(
+            f"""
+            SELECT
+                issue_redmine_id,
+                subject,
+                tracker_name,
+                status_name,
+                priority_name,
+                assigned_to_name,
+                fixed_version_name,
+                done_ratio,
+                baseline_estimate_hours,
+                estimated_hours,
+                spent_hours,
+                spent_hours_year,
+                start_date,
+                due_date,
+                created_on,
+                updated_on,
+                closed_on
+            FROM issue_snapshot_items
+            WHERE {baseWhereSql}
+            ORDER BY issue_redmine_id
+            """
+        ).bindparams(*bindParams)
+        issueRows = connection.execute(issuesStatement, params).mappings().all()
+        return {
+            "snapshot_run": latestRun,
+            "issues": [dict(row) for row in issueRows],
+            "available_dates": availableDates,
+        }
+
+
 def getSnapshotRunsWithIssuesForProjectYear(projectRedmineId: int, year: int) -> dict[str, object]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
