@@ -3967,6 +3967,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const summaryBugEstimated = document.getElementById("summaryBugEstimated");
       const summaryBugSpent = document.getElementById("summaryBugSpent");
       const summaryBugSpentYear = document.getElementById("summaryBugSpentYear");
+      let currentSnapshotFilterSignature = "";
 
       function setActionStatus(message) {{
         if (snapshotActionStatus) {{
@@ -4189,8 +4190,41 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         return String(value || "").trim().replace(",", ".");
       }}
 
+      function normalizeSnapshotFilters(filters) {{
+        const normalizedFilters = {{
+          ...filters,
+          done_ratio_op: "",
+          done_ratio_value: "",
+          baseline_op: "",
+          baseline_value: "",
+          estimated_op: "",
+          estimated_value: "",
+          spent_op: "",
+          spent_value: "",
+          spent_year_op: "",
+          spent_year_value: "",
+        }};
+
+        const numericMappings = [
+          ["done_ratio_op", "done_ratio_value"],
+          ["baseline_op", "baseline_value"],
+          ["estimated_op", "estimated_value"],
+          ["spent_op", "spent_value"],
+          ["spent_year_op", "spent_year_value"],
+        ];
+
+        for (const [opKey, valueKey] of numericMappings) {{
+          if (filters[opKey] && filters[valueKey]) {{
+            normalizedFilters[opKey] = filters[opKey];
+            normalizedFilters[valueKey] = filters[valueKey];
+          }}
+        }}
+
+        return normalizedFilters;
+      }}
+
       function hasActiveSnapshotFilters() {{
-        const filters = collectSnapshotFilters();
+        const filters = normalizeSnapshotFilters(collectSnapshotFilters());
         return Boolean(
           filters.issue_id ||
           filters.subject ||
@@ -4263,7 +4297,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }}
 
       function buildSnapshotQueryParams(page, includePagination = true) {{
-        const filters = collectSnapshotFilters();
+        const filters = normalizeSnapshotFilters(collectSnapshotFilters());
         const params = new URLSearchParams();
         if (selectedSnapshotDate) params.set("captured_for_date", selectedSnapshotDate);
         if (includePagination) {{
@@ -4289,6 +4323,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if (filters.assigned_to) params.set("assigned_to", filters.assigned_to);
         if (filters.fixed_version) params.set("fixed_version", filters.fixed_version);
         return params;
+      }}
+
+      function buildSnapshotFilterSignature() {{
+        return buildSnapshotQueryParams(1, false).toString();
       }}
 
       async function loadSnapshotIssues(page = 1) {{
@@ -4317,6 +4355,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           updateSnapshotCounts(Array.isArray(payload.issues) ? payload.issues.length : 0);
           updateSnapshotPaginationInfo();
           updateSnapshotFilterHeaderOffset();
+          currentSnapshotFilterSignature = buildSnapshotFilterSignature();
           updateResetSnapshotFiltersButtonState();
         }} catch (error) {{
           window.alert("Не удалось загрузить задачи среза.");
@@ -4343,6 +4382,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }}
 
       function scheduleSnapshotReload() {{
+        const nextFilterSignature = buildSnapshotFilterSignature();
+        if (nextFilterSignature === currentSnapshotFilterSignature) {{
+          return;
+        }}
         if (snapshotReloadTimer) {{
           window.clearTimeout(snapshotReloadTimer);
         }}
@@ -4487,6 +4530,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       updateSnapshotCounts(initialSnapshotIssues.length);
       updateSnapshotFilterHeaderOffset();
       updateSnapshotPaginationInfo();
+      currentSnapshotFilterSignature = buildSnapshotFilterSignature();
       updateResetSnapshotFiltersButtonState();
       window.addEventListener("resize", updateSnapshotFilterHeaderOffset);
 
