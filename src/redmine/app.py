@@ -3654,7 +3654,15 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .filter-head th {{ top: var(--snapshot-filter-top, 44px); background: #f7fbfc; padding-top: 8px; padding-bottom: 8px; z-index: 3; text-transform: none; box-shadow: inset 0 1px 0 #d9e5eb; }}
       .filter-reset-wrap {{ display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 0 0 10px; flex-wrap: wrap; }}
       .table-actions {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
-      .filter-reset-button {{ background: #375d77; color: #ffffff; }}
+      .filter-reset-button {{ background: #375d77; color: #ffffff; transition: background 120ms ease, color 120ms ease, border-color 120ms ease; }}
+      .filter-reset-button.is-inactive {{
+        background: #eef2f5;
+        color: #8a98a8;
+        border: 1px solid #d9e5eb;
+      }}
+      .filter-reset-button.is-inactive:hover {{
+        background: #eef2f5;
+      }}
       .csv-export-button {{ background: #375d77; color: #ffffff; }}
       .filter-tip {{ color: var(--muted); font-size: 0.92rem; }}
       .page-size-label {{ color: var(--muted); }}
@@ -3663,6 +3671,39 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .pagination-buttons {{ display: flex; gap: 8px; align-items: center; }}
       .pagination-info {{ color: var(--muted); font-size: 0.94rem; }}
       .table-wrap {{ max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
+      .snapshot-loading-overlay {{
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        background: rgba(255, 255, 255, 0.76);
+        backdrop-filter: blur(1px);
+        z-index: 6;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 140ms ease;
+      }}
+      .snapshot-loading-overlay.is-visible {{
+        opacity: 1;
+        pointer-events: auto;
+      }}
+      .snapshot-loading-spinner {{
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        border: 3px solid rgba(82, 206, 230, 0.25);
+        border-top-color: #52cee6;
+        animation: snapshot-spin 0.8s linear infinite;
+      }}
+      .snapshot-loading-text {{
+        font-weight: 700;
+        color: #375d77;
+      }}
+      @keyframes snapshot-spin {{
+        to {{ transform: rotate(360deg); }}
+      }}
       table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); }}
       #snapshotIssuesTable {{ min-width: 1800px; table-layout: auto; }}
       th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
@@ -3871,6 +3912,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           {''.join(issueRowsHtml)}
         </tbody>
       </table>
+      <div class="snapshot-loading-overlay" id="snapshotLoadingOverlay" aria-hidden="true">
+        <span class="snapshot-loading-spinner" aria-hidden="true"></span>
+        <span class="snapshot-loading-text">Обновляем таблицу...</span>
+      </div>
     </div>
     <script>
       const snapshotActionStatus = document.getElementById("snapshotActionStatus");
@@ -3878,6 +3923,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const pageIssuesCount = document.getElementById("pageIssuesCount");
       const snapshotIssuesTableBody = document.getElementById("snapshotIssuesTableBody");
       const snapshotIssuesTable = document.getElementById("snapshotIssuesTable");
+      const snapshotLoadingOverlay = document.getElementById("snapshotLoadingOverlay");
       const snapshotPageSizeInput = document.getElementById("snapshotPageSizeInput");
       const applySnapshotPageSizeButton = document.getElementById("applySnapshotPageSizeButton");
       const exportSnapshotCsvButton = document.getElementById("exportSnapshotCsvButton");
@@ -3924,6 +3970,13 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       function setActionStatus(message) {{
         if (snapshotActionStatus) {{
           snapshotActionStatus.textContent = message;
+        }}
+      }}
+
+      function setSnapshotLoading(isLoading) {{
+        if (snapshotLoadingOverlay) {{
+          snapshotLoadingOverlay.classList.toggle("is-visible", Boolean(isLoading));
+          snapshotLoadingOverlay.setAttribute("aria-hidden", isLoading ? "false" : "true");
         }}
       }}
 
@@ -4135,6 +4188,36 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         return String(value || "").trim().replace(",", ".");
       }}
 
+      function hasActiveSnapshotFilters() {{
+        const filters = collectSnapshotFilters();
+        return Boolean(
+          filters.issue_id ||
+          filters.subject ||
+          (Array.isArray(filters.tracker) && filters.tracker.length) ||
+          (Array.isArray(filters.status) && filters.status.length) ||
+          filters.done_ratio_op ||
+          filters.done_ratio_value ||
+          filters.baseline_op ||
+          filters.baseline_value ||
+          filters.estimated_op ||
+          filters.estimated_value ||
+          filters.spent_op ||
+          filters.spent_value ||
+          filters.spent_year_op ||
+          filters.spent_year_value ||
+          filters.closed_on ||
+          filters.assigned_to ||
+          filters.fixed_version
+        );
+      }}
+
+      function updateResetSnapshotFiltersButtonState() {{
+        if (!resetSnapshotFiltersButton) {{
+          return;
+        }}
+        resetSnapshotFiltersButton.classList.toggle("is-inactive", !hasActiveSnapshotFilters());
+      }}
+
       function readSnapshotPageSize() {{
         const rawValue = Number(snapshotPageSizeInput?.value || currentSnapshotPageSize || 1000);
         if (!Number.isFinite(rawValue)) {{
@@ -4208,6 +4291,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }}
 
       async function loadSnapshotIssues(page = 1) {{
+        setSnapshotLoading(true);
         try {{
           const pageSize = readSnapshotPageSize();
           currentSnapshotPageSize = pageSize;
@@ -4232,9 +4316,12 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           updateSnapshotCounts(Array.isArray(payload.issues) ? payload.issues.length : 0);
           updateSnapshotPaginationInfo();
           updateSnapshotFilterHeaderOffset();
+          updateResetSnapshotFiltersButtonState();
         }} catch (error) {{
           window.alert("Не удалось загрузить задачи среза.");
           updateSnapshotPaginationInfo();
+        }} finally {{
+          setSnapshotLoading(false);
         }}
       }}
 
@@ -4250,6 +4337,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         numericFilterControls.forEach((input) => {{
           input.value = "";
         }});
+        updateResetSnapshotFiltersButtonState();
         loadSnapshotIssues(1);
       }}
 
@@ -4369,14 +4457,26 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }});
 
       textFilterInputs.forEach((input) => {{
-        input.addEventListener("input", scheduleSnapshotReload);
+        input.addEventListener("input", () => {{
+          updateResetSnapshotFiltersButtonState();
+          scheduleSnapshotReload();
+        }});
       }});
       multiSelectFilters.forEach((select) => {{
-        select.addEventListener("change", () => loadSnapshotIssues(1));
+        select.addEventListener("change", () => {{
+          updateResetSnapshotFiltersButtonState();
+          loadSnapshotIssues(1);
+        }});
       }});
       numericFilterControls.forEach((control) => {{
-        control.addEventListener("input", scheduleSnapshotReload);
-        control.addEventListener("change", scheduleSnapshotReload);
+        control.addEventListener("input", () => {{
+          updateResetSnapshotFiltersButtonState();
+          scheduleSnapshotReload();
+        }});
+        control.addEventListener("change", () => {{
+          updateResetSnapshotFiltersButtonState();
+          scheduleSnapshotReload();
+        }});
       }});
 
       resetSnapshotFiltersButton?.addEventListener("click", resetSnapshotTableFilters);
@@ -4386,6 +4486,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       updateSnapshotCounts(initialSnapshotIssues.length);
       updateSnapshotFilterHeaderOffset();
       updateSnapshotPaginationInfo();
+      updateResetSnapshotFiltersButtonState();
       window.addEventListener("resize", updateSnapshotFilterHeaderOffset);
 
       const storedSnapshotPageSize = Number(window.localStorage.getItem(snapshotPageSizeStorageKey) || 0);
