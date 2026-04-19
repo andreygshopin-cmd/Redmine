@@ -700,6 +700,16 @@ PAGE_HTML = """<!doctype html>
           type="text"
           placeholder="Введите часть названия проекта"
         >
+        <label for="snapshotRunsPerProjectInput">Срезов на проект</label>
+        <input
+          id="snapshotRunsPerProjectInput"
+          class="filter-input"
+          type="number"
+          min="1"
+          max="50"
+          step="1"
+          value="3"
+        >
       </div>
       <div class="filter-reset-wrap">
         <button type="button" class="filter-reset-button" id="resetSnapshotFiltersButton">Сбросить фильтр</button>
@@ -740,6 +750,7 @@ PAGE_HTML = """<!doctype html>
     const projectsNameFilterInput = document.getElementById("projectsNameFilterInput");
     const projectsFactFilterInput = document.getElementById("projectsFactFilterInput");
     const snapshotRunsProjectFilterInput = document.getElementById("snapshotRunsProjectFilterInput");
+    const snapshotRunsPerProjectInput = document.getElementById("snapshotRunsPerProjectInput");
     const applyProjectsSettingsButton = document.getElementById("applyProjectsSettingsButton");
     const refreshProjectsButton = document.getElementById("refreshProjectsButton");
     const captureSnapshotsButton = document.getElementById("captureSnapshotsButton");
@@ -752,6 +763,7 @@ PAGE_HTML = """<!doctype html>
     const projectsNameFilterStorageKey = "redmine.projects.nameFilter";
     const projectsFactFilterStorageKey = "redmine.projects.factFilter.min";
     const showDisabledProjectsStorageKey = "redmine.projects.showDisabled";
+    const snapshotRunsPerProjectStorageKey = "redmine.snapshotRuns.perProject";
 
     function setStatus(element, message, kind = "") {
       element.textContent = message;
@@ -793,6 +805,14 @@ PAGE_HTML = """<!doctype html>
       return Boolean(showDisabledProjectsCheckbox.checked);
     }
 
+    function getSnapshotRunsPerProjectValue() {
+      const rawValue = Number(snapshotRunsPerProjectInput?.value || 3);
+      if (!Number.isFinite(rawValue)) {
+        return 3;
+      }
+      return Math.min(50, Math.max(1, Math.floor(rawValue)));
+    }
+
     function saveProjectsNameFilterValue() {
       window.localStorage.setItem(projectsNameFilterStorageKey, String(projectsNameFilterInput.value || ""));
     }
@@ -803,6 +823,10 @@ PAGE_HTML = """<!doctype html>
 
     function saveShowDisabledProjectsValue() {
       window.localStorage.setItem(showDisabledProjectsStorageKey, showDisabledProjectsCheckbox.checked ? "1" : "0");
+    }
+
+    function saveSnapshotRunsPerProjectValue() {
+      window.localStorage.setItem(snapshotRunsPerProjectStorageKey, String(getSnapshotRunsPerProjectValue()));
     }
 
     function restoreProjectsFactFilterValue() {
@@ -823,6 +847,13 @@ PAGE_HTML = """<!doctype html>
       const savedValue = window.localStorage.getItem(showDisabledProjectsStorageKey);
       if (savedValue !== null) {
         showDisabledProjectsCheckbox.checked = savedValue === "1";
+      }
+    }
+
+    function restoreSnapshotRunsPerProjectValue() {
+      const savedValue = window.localStorage.getItem(snapshotRunsPerProjectStorageKey);
+      if (savedValue !== null && snapshotRunsPerProjectInput) {
+        snapshotRunsPerProjectInput.value = savedValue;
       }
     }
 
@@ -855,6 +886,7 @@ PAGE_HTML = """<!doctype html>
         ["#snapshot-runs-table h2", "textContent", "Последние срезы задач"],
         ["label[for='snapshotRunsProjectFilterInput']", "textContent", "Фильтр по проекту"],
         ["#snapshotRunsProjectFilterInput", "placeholder", "Введите часть названия проекта"],
+        ["label[for='snapshotRunsPerProjectInput']", "textContent", "Срезов на проект"],
         ["#projectsCount", "textContent", "Загрузка списка проектов..."],
         ["#snapshotRunsCount", "textContent", "Загрузка списка срезов..."],
       ];
@@ -1175,6 +1207,10 @@ PAGE_HTML = """<!doctype html>
     function renderSnapshotRuns(snapshotRuns, totalCount = snapshotRuns.length) {
       allSnapshotRuns = Array.isArray(snapshotRuns) ? [...snapshotRuns] : [];
       const filterValue = getSnapshotRunsProjectFilterValue();
+      const perProjectLimit = getSnapshotRunsPerProjectValue();
+      if (snapshotRunsPerProjectInput) {
+        snapshotRunsPerProjectInput.value = String(perProjectLimit);
+      }
       const groupedRuns = new Map();
       for (const run of allSnapshotRuns) {
         const projectId = Number(run.project_redmine_id ?? 0);
@@ -1197,7 +1233,7 @@ PAGE_HTML = """<!doctype html>
           }
           return Number(right.id ?? 0) - Number(left.id ?? 0);
         });
-        visibleRuns.push(...runs.slice(0, 3));
+        visibleRuns.push(...runs.slice(0, perProjectLimit));
       }
 
       visibleRuns.sort((left, right) => {
@@ -1231,7 +1267,9 @@ PAGE_HTML = """<!doctype html>
 
       for (const run of filteredRuns) {
         const row = document.createElement("tr");
-        const compareUrl = `/projects/${encodeURIComponent(run.project_redmine_id ?? "")}/compare-snapshots?right_date=${encodeURIComponent(run.captured_for_date ?? "")}`;
+        const projectRuns = groupedRuns.get(Number(run.project_redmine_id ?? 0)) || [];
+        const latestRunForProject = projectRuns[0] || run;
+        const compareUrl = `/projects/${encodeURIComponent(run.project_redmine_id ?? "")}/compare-snapshots?left_date=${encodeURIComponent(run.captured_for_date ?? "")}&right_date=${encodeURIComponent(latestRunForProject.captured_for_date ?? run.captured_for_date ?? "")}`;
         const identifierValue = run.project_identifier ?? "—";
         const identifierHtml = run.project_identifier
           ? `<a class="project-link mono" href="${compareUrl}" target="_blank" rel="noreferrer">${identifierValue}</a>`
@@ -1501,6 +1539,14 @@ PAGE_HTML = """<!doctype html>
       rerenderProjects();
     });
     snapshotRunsProjectFilterInput.addEventListener("input", rerenderSnapshotRuns);
+    snapshotRunsPerProjectInput.addEventListener("input", () => {
+      saveSnapshotRunsPerProjectValue();
+      rerenderSnapshotRuns();
+    });
+    snapshotRunsPerProjectInput.addEventListener("change", () => {
+      saveSnapshotRunsPerProjectValue();
+      rerenderSnapshotRuns();
+    });
     showDisabledProjectsCheckbox.addEventListener("change", () => {
       saveShowDisabledProjectsValue();
       rerenderProjects();
@@ -1578,6 +1624,7 @@ PAGE_HTML = """<!doctype html>
     restoreProjectsNameFilterValue();
     restoreProjectsFactFilterValue();
     restoreShowDisabledProjectsValue();
+    restoreSnapshotRunsPerProjectValue();
     loadProjects();
     loadSnapshotRuns();
   </script>
