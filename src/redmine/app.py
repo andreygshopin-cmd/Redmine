@@ -3885,7 +3885,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .pagination-wrap {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 12px; flex-wrap: wrap; }}
       .pagination-buttons {{ display: flex; gap: 8px; align-items: center; }}
       .pagination-info {{ color: var(--muted); font-size: 0.94rem; }}
-      .table-wrap {{ position: relative; height: calc(100vh - 120px); min-height: 560px; max-height: calc(100vh - 88px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
+      .table-wrap {{ position: relative; min-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
       .snapshot-loading-overlay {{
         position: absolute;
         inset: 0;
@@ -3931,6 +3931,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .subject-col {{ width: 546px; min-width: 546px; max-width: 546px; white-space: normal; word-break: break-word; }}
       .tracker-col {{ width: 170px; min-width: 170px; max-width: 170px; white-space: normal; word-break: break-word; }}
       .status-col {{ width: 170px; min-width: 170px; max-width: 170px; white-space: normal; word-break: break-word; }}
+      .baseline-col {{ width: 156px; min-width: 156px; max-width: 156px; white-space: normal; word-break: break-word; }}
+      .spent-col {{ width: 156px; min-width: 156px; max-width: 156px; white-space: normal; word-break: break-word; }}
+      .spent-year-col {{ width: 156px; min-width: 156px; max-width: 156px; white-space: normal; word-break: break-word; }}
       .closed-col {{ width: 190px; min-width: 190px; max-width: 190px; white-space: normal; word-break: break-word; }}
       .version-col {{ width: 360px; min-width: 360px; max-width: 360px; white-space: normal; word-break: break-word; }}
       .snapshot-group-row td {{
@@ -3985,13 +3988,13 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }}
       .snapshot-child-subject {{
         display: inline-block;
-        padding-left: 22px;
+        padding-left: calc(22px + (var(--snapshot-depth, 0) * 18px));
         position: relative;
       }}
       .snapshot-child-subject::before {{
         content: "";
         position: absolute;
-        left: 8px;
+        left: calc(8px + (var(--snapshot-depth, 0) * 18px));
         top: 0.8em;
         width: 8px;
         border-top: 1px solid #aabcca;
@@ -4101,10 +4104,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <th class="tracker-col">Трекер</th>
             <th class="status-col">Статус</th>
             <th>Готово, %</th>
-            <th>Базовая оценка, ч</th>
+            <th class="baseline-col">Базовая оценка, ч</th>
             <th>План, ч</th>
-            <th>Факт всего, ч</th>
-            <th>Факт за год, ч</th>
+            <th class="spent-col">Факт всего, ч</th>
+            <th class="spent-year-col">Факт за год, ч</th>
             <th class="closed-col">Закрыта</th>
             <th>Исполнитель</th>
             <th class="version-col">Версия</th>
@@ -4115,10 +4118,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 <th class="tracker-col"><select class="filter-select-table" multiple size="3" data-filter-key="tracker" data-filter-role="multi"></select></th>
 <th class="status-col"><select class="filter-select-table" multiple size="3" data-filter-key="status" data-filter-role="multi"></select></th>
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="doneRatio" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="1" data-filter-key="doneRatio" data-filter-role="value"></div></th>
-            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="baseline" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="baseline" data-filter-role="value"></div></th>
+            <th class="baseline-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="baseline" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="baseline" data-filter-role="value"></div></th>
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="estimated" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="estimated" data-filter-role="value"></div></th>
-            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spent" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spent" data-filter-role="value"></div></th>
-            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spentYear" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spentYear" data-filter-role="value"></div></th>
+            <th class="spent-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spent" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spent" data-filter-role="value"></div></th>
+            <th class="spent-year-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spentYear" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spentYear" data-filter-role="value"></div></th>
             <th class="closed-col"><input class="filter-input-table" type="text" data-filter-key="closedOn" data-filter-role="text"></th>
             <th><input class="filter-input-table" type="text" data-filter-key="assignedTo" data-filter-role="text"></th>
             <th class="version-col"><input class="filter-input-table" type="text" data-filter-key="fixedVersion" data-filter-role="text"></th>
@@ -4140,6 +4143,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const snapshotIssuesTableBody = document.getElementById("snapshotIssuesTableBody");
       const snapshotIssuesTable = document.getElementById("snapshotIssuesTable");
       const snapshotLoadingOverlay = document.getElementById("snapshotLoadingOverlay");
+      const snapshotTableWrap = document.querySelector(".table-wrap");
       const snapshotPageSizeInput = document.getElementById("snapshotPageSizeInput");
       const applySnapshotPageSizeButton = document.getElementById("applySnapshotPageSizeButton");
       const exportSnapshotCsvButton = document.getElementById("exportSnapshotCsvButton");
@@ -4279,6 +4283,15 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         tableElement.style.setProperty("--snapshot-filter-top", `${{height}}px`);
       }}
 
+      function updateSnapshotTableViewportHeight() {{
+        if (!snapshotTableWrap) {{
+          return;
+        }}
+        const rect = snapshotTableWrap.getBoundingClientRect();
+        const availableHeight = Math.max(420, Math.floor(window.innerHeight - Math.max(rect.top, 0) - 12));
+        snapshotTableWrap.style.height = `${{availableHeight}}px`;
+      }}
+
       function fillMultiSelect(select, values) {{
         if (!select) {{
           return;
@@ -4297,6 +4310,82 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       function populateSnapshotMultiSelects() {{
         fillMultiSelect(document.querySelector('[data-filter-key="tracker"][data-filter-role="multi"]'), initialFilterOptions.tracker_names || []);
         fillMultiSelect(document.querySelector('[data-filter-key="status"][data-filter-role="multi"]'), initialFilterOptions.status_names || []);
+      }}
+
+      function getSnapshotIssueSortBucket(issue) {{
+        const tracker = String(issue?.tracker_name || "").trim().toLowerCase();
+        if (tracker === "разработка") {{
+          return 1;
+        }}
+        if (tracker === "процессы разработки") {{
+          return 2;
+        }}
+        if (tracker === "ошибка") {{
+          return 3;
+        }}
+        return 4;
+      }}
+
+      function compareSnapshotIssuesForTree(left, right) {{
+        const bucketDiff = getSnapshotIssueSortBucket(left) - getSnapshotIssueSortBucket(right);
+        if (bucketDiff !== 0) {{
+          return bucketDiff;
+        }}
+        return Number(left?.issue_redmine_id || 0) - Number(right?.issue_redmine_id || 0);
+      }}
+
+      function buildSnapshotTreeOrder(groupIssues) {{
+        const issues = Array.isArray(groupIssues) ? groupIssues.slice() : [];
+        const issueById = new Map();
+        const childrenByParentId = new Map();
+        const roots = [];
+
+        for (const issue of issues) {{
+          issueById.set(String(issue?.issue_redmine_id ?? ""), issue);
+        }}
+
+        for (const issue of issues) {{
+          const parentId = issue?.parent_issue_redmine_id;
+          const parentKey = parentId == null ? "" : String(parentId);
+          if (parentKey && issueById.has(parentKey)) {{
+            if (!childrenByParentId.has(parentKey)) {{
+              childrenByParentId.set(parentKey, []);
+            }}
+            childrenByParentId.get(parentKey).push(issue);
+          }} else {{
+            roots.push(issue);
+          }}
+        }}
+
+        roots.sort(compareSnapshotIssuesForTree);
+        for (const children of childrenByParentId.values()) {{
+          children.sort(compareSnapshotIssuesForTree);
+        }}
+
+        const ordered = [];
+        const visited = new Set();
+
+        function visit(issue, depth) {{
+          const issueKey = String(issue?.issue_redmine_id ?? "");
+          if (!issueKey || visited.has(issueKey)) {{
+            return;
+          }}
+          visited.add(issueKey);
+          ordered.push({{ ...issue, __treeDepth: depth }});
+          for (const child of childrenByParentId.get(issueKey) || []) {{
+            visit(child, depth + 1);
+          }}
+        }}
+
+        for (const root of roots) {{
+          visit(root, 0);
+        }}
+
+        for (const issue of issues.sort(compareSnapshotIssuesForTree)) {{
+          visit(issue, 0);
+        }}
+
+        return ordered;
       }}
 
       function renderSnapshotSummary(summary) {{
@@ -4332,14 +4421,28 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           snapshotIssuesTableBody.innerHTML = '<tr><td colspan="12">По текущему фильтру задач нет.</td></tr>';
           return;
         }}
-        let lastGroupKey = "";
+        const groupMap = new Map();
         const rows = [];
         for (const issue of issues) {{
           const groupId = issue?.feature_group_issue_redmine_id;
           const groupKey = groupId ? `feature-${{groupId}}` : "virtual-feature";
+          if (!groupMap.has(groupKey)) {{
+            groupMap.set(groupKey, {{
+              groupIssue: issue,
+              childIssues: [],
+            }});
+          }}
+          if (!issue?.is_feature_group_root) {{
+            groupMap.get(groupKey).childIssues.push(issue);
+          }}
+        }}
+
+        for (const [groupKey, groupData] of groupMap.entries()) {{
+          const issue = groupData.groupIssue;
+          const groupId = issue?.feature_group_issue_redmine_id;
           const groupSubject = String(issue?.feature_group_subject || "без Feature");
           const isVirtualGroup = Boolean(issue?.feature_group_is_virtual);
-          if (groupKey !== lastGroupKey) {{
+          if (groupKey) {{
             const groupLink = !isVirtualGroup && groupId
               ? `<a class="issue-link" href="https://redmine.sms-it.ru/issues/${{encodeURIComponent(groupId)}}" target="_blank" rel="noreferrer">${{escapeHtml(groupId)}}</a>`
               : "";
@@ -4372,33 +4475,33 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="snapshot-group-cell version-col">${{groupVersion}}</td>
               </tr>
             `);
-            lastGroupKey = groupKey;
           }}
-
-          if (issue?.is_feature_group_root) {{
-            continue;
+          const orderedIssues = buildSnapshotTreeOrder(groupData.childIssues);
+          for (const orderedIssue of orderedIssues) {{
+            const issueId = orderedIssue?.issue_redmine_id ?? "—";
+            const issueLink = `https://redmine.sms-it.ru/issues/${{encodeURIComponent(issueId)}}`;
+            const treeDepth = Number(orderedIssue?.__treeDepth || 0);
+            rows.push(`
+              <tr>
+                <td class="mono"><a class="issue-link" href="${{issueLink}}" target="_blank" rel="noreferrer">${{escapeHtml(issueId)}}</a></td>
+                <td class="subject-col"><span class="snapshot-child-subject" style="--snapshot-depth: ${{treeDepth}};">${{escapeHtml(orderedIssue?.subject || "—")}}</span></td>
+                <td class="tracker-col">${{escapeHtml(orderedIssue?.tracker_name || "—")}}</td>
+                <td class="status-col">${{escapeHtml(orderedIssue?.status_name || "—")}}</td>
+                <td>${{escapeHtml(orderedIssue?.done_ratio ?? 0)}}</td>
+                <td class="baseline-col">${{formatFilterHours(orderedIssue?.baseline_estimate_hours)}}</td>
+                <td>${{formatFilterHours(orderedIssue?.estimated_hours)}}</td>
+                <td class="spent-col">${{formatFilterHours(orderedIssue?.spent_hours)}}</td>
+                <td class="spent-year-col">${{formatFilterHours(orderedIssue?.spent_hours_year)}}</td>
+                <td class="closed-col">${{escapeHtml(formatSnapshotDateTime(orderedIssue?.closed_on))}}</td>
+                <td>${{escapeHtml(orderedIssue?.assigned_to_name || "—")}}</td>
+                <td class="version-col">${{escapeHtml(orderedIssue?.fixed_version_name || "—")}}</td>
+              </tr>
+            `);
           }}
-
-          const issueId = issue?.issue_redmine_id ?? "—";
-          const issueLink = `https://redmine.sms-it.ru/issues/${{encodeURIComponent(issueId)}}`;
-          rows.push(`
-            <tr>
-              <td class="mono"><a class="issue-link" href="${{issueLink}}" target="_blank" rel="noreferrer">${{escapeHtml(issueId)}}</a></td>
-              <td class="subject-col"><span class="snapshot-child-subject">${{escapeHtml(issue?.subject || "—")}}</span></td>
-              <td class="tracker-col">${{escapeHtml(issue?.tracker_name || "—")}}</td>
-              <td class="status-col">${{escapeHtml(issue?.status_name || "—")}}</td>
-              <td>${{escapeHtml(issue?.done_ratio ?? 0)}}</td>
-              <td>${{formatFilterHours(issue?.baseline_estimate_hours)}}</td>
-              <td>${{formatFilterHours(issue?.estimated_hours)}}</td>
-              <td>${{formatFilterHours(issue?.spent_hours)}}</td>
-              <td>${{formatFilterHours(issue?.spent_hours_year)}}</td>
-              <td class="closed-col">${{escapeHtml(formatSnapshotDateTime(issue?.closed_on))}}</td>
-              <td>${{escapeHtml(issue?.assigned_to_name || "—")}}</td>
-              <td class="version-col">${{escapeHtml(issue?.fixed_version_name || "—")}}</td>
-            </tr>
-          `);
         }}
         snapshotIssuesTableBody.innerHTML = rows.join("");
+        updateSnapshotFilterHeaderOffset();
+        updateSnapshotTableViewportHeight();
       }}
 
       function normalizeNumericFilterValue(value) {{
@@ -4744,10 +4847,13 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       renderSnapshotSummary(initialSnapshotSummary);
       updateSnapshotCounts(initialSnapshotIssues.length);
       updateSnapshotFilterHeaderOffset();
+      updateSnapshotTableViewportHeight();
       updateSnapshotPaginationInfo();
       currentSnapshotFilterSignature = buildSnapshotFilterSignature();
       updateResetSnapshotFiltersButtonState();
       window.addEventListener("resize", updateSnapshotFilterHeaderOffset);
+      window.addEventListener("resize", updateSnapshotTableViewportHeight);
+      window.addEventListener("scroll", updateSnapshotTableViewportHeight, {{ passive: true }});
 
       const storedSnapshotPageSize = Number(window.localStorage.getItem(snapshotPageSizeStorageKey) || 0);
       if (Number.isFinite(storedSnapshotPageSize) && storedSnapshotPageSize >= 10 && storedSnapshotPageSize <= 10000) {{
