@@ -2124,14 +2124,14 @@ def buildSnapshotComparisonPage(
       align-items: center;
       justify-content: center;
       gap: 0;
-      min-width: 20px;
-      min-height: 34px;
-      padding: 4px 2px;
+      min-width: 10px;
+      min-height: 28px;
+      padding: 2px 1px;
       background: #eef2f5;
       color: #375d77;
       border: 1px solid #d9e5eb;
     }}
-    .date-swap-button span {{ line-height: 1; font-size: 0.78rem; }}
+    .date-swap-button span {{ line-height: 1; font-size: 0.68rem; }}
     button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; background: #ff6c0e; color: #ffffff; }}
     .empty-state {{ margin-top: 18px; border: 1px dashed #d9e5eb; border-radius: 8px; padding: 24px; background: #f7fbfc; color: #64798d; }}
     .compare-loading-overlay {{
@@ -2390,14 +2390,14 @@ def buildSnapshotComparisonPage(
       align-items: center;
       justify-content: center;
       gap: 0;
-      min-width: 20px;
-      min-height: 34px;
-      padding: 4px 2px;
+      min-width: 10px;
+      min-height: 28px;
+      padding: 2px 1px;
       background: #eef2f5;
       color: #375d77;
       border: 1px solid var(--line);
     }}
-    .date-swap-button span {{ line-height: 1; font-size: 0.78rem; }}
+    .date-swap-button span {{ line-height: 1; font-size: 0.68rem; }}
     button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; background: var(--orange); color: #ffffff; }}
     .summary-note {{ color: var(--muted); margin: 0 0 14px; }}
     .table-wrap {{ overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
