@@ -2186,10 +2186,6 @@ def buildSnapshotComparisonPage(
                   <label class="date-swap-label" for="swapCompareDatesButton">Поменять даты местами</label>
                   <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="Поменять даты местами"><span>←</span><span>→</span></button>
                 </div>
-                <div class="compare-extra-stack">
-                  <span class="compare-option-caption">Дополнительные опции</span>
-                  {includeMissingHtml}
-                </div>
               </div>
               <div class="field compare-date-field">
                 <label for="rightDate">Дата среза 2</label>
@@ -2198,6 +2194,10 @@ def buildSnapshotComparisonPage(
               <div class="compare-compare-stack">
                 <span class="compare-option-caption">Поля для сравнения</span>
                 <div class="compare-field-group">{compareFieldsHtml}</div>
+                <div class="compare-extra-stack">
+                  <span class="compare-option-caption">Дополнительные опции</span>
+                  {includeMissingHtml}
+                </div>
               </div>
             </div>
           </div>
@@ -2485,10 +2485,6 @@ def buildSnapshotComparisonPage(
                   <label class="date-swap-label" for="swapCompareDatesButton">Поменять даты местами</label>
                   <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="Поменять даты местами"><span>←</span><span>→</span></button>
                 </div>
-                <div class="compare-extra-stack">
-                  <span class="compare-option-caption">Дополнительные опции</span>
-                  {includeMissingHtml}
-                </div>
               </div>
               <div class="field compare-date-field">
                 <label for="rightDate">Дата среза 2</label>
@@ -2497,6 +2493,10 @@ def buildSnapshotComparisonPage(
               <div class="compare-compare-stack">
                 <span class="compare-option-caption">Поля для сравнения</span>
                 <div class="compare-field-group">{fieldOptionsHtml}</div>
+                <div class="compare-extra-stack">
+                  <span class="compare-option-caption">Дополнительные опции</span>
+                  {includeMissingHtml}
+                </div>
               </div>
             </div>
           </div>
