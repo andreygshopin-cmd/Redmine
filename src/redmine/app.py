@@ -712,7 +712,7 @@ PAGE_HTML = """<!doctype html>
         >
       </div>
       <div class="filter-reset-wrap">
-        <button type="button" class="filter-reset-button" id="resetSnapshotFiltersButton">Сбросить фильтр</button>
+        <button type="button" class="filter-reset-button is-inactive" id="resetSnapshotFiltersButton">Сбросить фильтр</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -3867,7 +3867,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       <div class="filter-reset-wrap">
         <span class="filter-tip">Фильтры применяются к таблице и суммам выше. Суммы считаются по всем задачам, удовлетворяющим фильтру, а не только по текущей странице.</span>
         <div class="table-actions">
-          <button type="button" class="filter-reset-button" id="resetSnapshotFiltersButton">Сбросить фильтр</button>
+          <button type="button" class="filter-reset-button is-inactive" id="resetSnapshotFiltersButton">Сбросить фильтр</button>
         </div>
       </div>
       <div class="pagination-wrap">
