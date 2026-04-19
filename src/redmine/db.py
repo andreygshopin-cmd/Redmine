@@ -941,6 +941,16 @@ def _buildSnapshotIssueHierarchyQuery(baseWhereSql: str, paginated: bool) -> str
                 filtered_items.closed_on,
                 filtered_items.parent_issue_redmine_id,
                 feature_groups.feature_group_issue_redmine_id,
+                feature_root.tracker_name AS feature_group_tracker_name,
+                feature_root.status_name AS feature_group_status_name,
+                feature_root.assigned_to_name AS feature_group_assigned_to_name,
+                feature_root.fixed_version_name AS feature_group_fixed_version_name,
+                feature_root.done_ratio AS feature_group_done_ratio,
+                feature_root.baseline_estimate_hours AS feature_group_baseline_estimate_hours,
+                feature_root.estimated_hours AS feature_group_estimated_hours,
+                feature_root.spent_hours AS feature_group_spent_hours,
+                feature_root.spent_hours_year AS feature_group_spent_hours_year,
+                feature_root.closed_on AS feature_group_closed_on,
                 COALESCE(NULLIF(feature_groups.feature_group_subject, ''), 'без Feature') AS feature_group_subject,
                 CASE WHEN feature_groups.feature_group_issue_redmine_id IS NULL THEN TRUE ELSE FALSE END AS feature_group_is_virtual,
                 CASE
@@ -953,6 +963,9 @@ def _buildSnapshotIssueHierarchyQuery(baseWhereSql: str, paginated: bool) -> str
             FROM filtered_items
             LEFT JOIN feature_groups
                 ON feature_groups.origin_issue_redmine_id = filtered_items.issue_redmine_id
+            LEFT JOIN issue_snapshot_items feature_root
+                ON feature_root.snapshot_run_id = :snapshot_run_id
+               AND feature_root.issue_redmine_id = feature_groups.feature_group_issue_redmine_id
             ORDER BY
                 CASE WHEN feature_groups.feature_group_issue_redmine_id IS NULL THEN 1 ELSE 0 END,
                 COALESCE(feature_groups.feature_group_issue_redmine_id, 2147483647),

@@ -712,7 +712,6 @@ PAGE_HTML = """<!doctype html>
               <th>Дата среза</th>
               <th>Проект</th>
               <th>Идентификатор</th>
-              <th>Сравнение</th>
               <th>Задач</th>
               <th>Базовая оценка, ч</th>
               <th>План, ч</th>
@@ -1226,19 +1225,22 @@ PAGE_HTML = """<!doctype html>
       snapshotRunsCount.textContent = `Всего срезов в базе: ${totalCount}. Показано: ${filteredRuns.length}`;
 
       if (!filteredRuns.length) {
-        snapshotRunsTableBody.innerHTML = '<tr><td colspan="11">Срезов пока нет.</td></tr>';
+        snapshotRunsTableBody.innerHTML = '<tr><td colspan="10">Срезов пока нет.</td></tr>';
         return;
       }
 
       for (const run of filteredRuns) {
         const row = document.createElement("tr");
         const compareUrl = `/projects/${encodeURIComponent(run.project_redmine_id ?? "")}/compare-snapshots?right_date=${encodeURIComponent(run.captured_for_date ?? "")}`;
+        const identifierValue = run.project_identifier ?? "—";
+        const identifierHtml = run.project_identifier
+          ? `<a class="project-link mono" href="${compareUrl}" target="_blank" rel="noreferrer">${identifierValue}</a>`
+          : `<span class="mono">${identifierValue}</span>`;
         row.innerHTML = `
           <td class="mono">${run.id ?? "—"}</td>
           <td class="mono">${run.captured_for_date ?? "—"}</td>
           <td>${run.project_name ?? "—"}</td>
-          <td class="mono">${run.project_identifier ?? "—"}</td>
-          <td><a class="project-link" href="${compareUrl}" target="_blank" rel="noreferrer">Сравнить</a></td>
+          <td>${identifierHtml}</td>
           <td>${run.total_issues ?? 0}</td>
           <td>${formatHours(run.total_baseline_estimate_hours)}</td>
           <td>${formatHours(run.total_estimated_hours)}</td>
@@ -3621,7 +3623,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .snapshot-group-row td {{
         background: #f3f7fa;
         color: #16324a;
-        font-weight: 700;
+        font-weight: 400;
         border-bottom: 1px solid var(--line);
       }}
       .snapshot-group-cell {{
@@ -3648,6 +3650,25 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }}
       .snapshot-group-subject {{
         font-weight: 700;
+      }}
+      .snapshot-group-id {{
+        display: inline-flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+      }}
+      .snapshot-group-id-label {{
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: #64798d;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }}
+      .snapshot-group-id-empty {{
+        color: #8ca0b2;
+      }}
+      .snapshot-group-metric {{
+        font-weight: 400;
       }}
       .snapshot-child-subject {{
         display: inline-block;
@@ -3996,16 +4017,33 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             const groupLink = !isVirtualGroup && groupId
               ? `<a class="issue-link" href="https://redmine.sms-it.ru/issues/${{encodeURIComponent(groupId)}}" target="_blank" rel="noreferrer">${{escapeHtml(groupId)}}</a>`
               : "";
-            const groupKind = isVirtualGroup ? "без Feature" : "Feature";
+            const groupTracker = isVirtualGroup ? "—" : escapeHtml(issue?.feature_group_tracker_name || "Feature");
+            const groupStatus = isVirtualGroup ? "—" : escapeHtml(issue?.feature_group_status_name || "—");
+            const groupDoneRatio = isVirtualGroup ? "—" : escapeHtml(issue?.feature_group_done_ratio ?? 0);
+            const groupBaseline = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_baseline_estimate_hours);
+            const groupEstimated = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_estimated_hours);
+            const groupSpent = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_spent_hours);
+            const groupSpentYear = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_spent_hours_year);
+            const groupClosedOn = isVirtualGroup ? "—" : escapeHtml(formatSnapshotDateTime(issue?.feature_group_closed_on));
+            const groupAssignedTo = isVirtualGroup ? "—" : escapeHtml(issue?.feature_group_assigned_to_name || "—");
+            const groupVersion = isVirtualGroup ? "—" : escapeHtml(issue?.feature_group_fixed_version_name || "—");
+            const groupIdCell = isVirtualGroup
+              ? `<span class="snapshot-group-id"><span class="snapshot-group-id-empty">—</span></span>`
+              : `<span class="snapshot-group-id">${{groupLink}}<span class="snapshot-group-id-label">Feature</span></span>`;
             rows.push(`
               <tr class="snapshot-group-row">
-                <td class="snapshot-group-cell" colspan="12">
-                  <span class="snapshot-group-label">
-                    <span class="snapshot-group-kind">${{escapeHtml(groupKind)}}</span>
-                    ${{groupLink}}
-                    <span class="snapshot-group-subject">${{escapeHtml(groupSubject)}}</span>
-                  </span>
-                </td>
+                <td class="snapshot-group-cell mono">${{groupIdCell}}</td>
+                <td class="snapshot-group-cell subject-col"><span class="snapshot-group-subject">${{escapeHtml(groupSubject)}}</span></td>
+                <td class="snapshot-group-cell tracker-col">${{groupTracker}}</td>
+                <td class="snapshot-group-cell status-col">${{groupStatus}}</td>
+                <td class="snapshot-group-cell snapshot-group-metric">${{groupDoneRatio}}</td>
+                <td class="snapshot-group-cell snapshot-group-metric">${{groupBaseline}}</td>
+                <td class="snapshot-group-cell snapshot-group-metric">${{groupEstimated}}</td>
+                <td class="snapshot-group-cell snapshot-group-metric">${{groupSpent}}</td>
+                <td class="snapshot-group-cell snapshot-group-metric">${{groupSpentYear}}</td>
+                <td class="snapshot-group-cell closed-col">${{groupClosedOn}}</td>
+                <td class="snapshot-group-cell">${{groupAssignedTo}}</td>
+                <td class="snapshot-group-cell version-col">${{groupVersion}}</td>
               </tr>
             `);
             lastGroupKey = groupKey;
