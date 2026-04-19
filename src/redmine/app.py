@@ -3852,8 +3852,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .filter-input-table,
       .filter-select-table,
       .filter-number-value,
-      .filter-number-op {{ width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font: inherit; background: #ffffff; color: var(--text); }}
-      .filter-select-table {{ min-height: 92px; }}
+      .filter-number-op {{ width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; font-size: 0.82rem; line-height: 1.2; background: #ffffff; color: var(--text); }}
+      .filter-select-table {{ min-height: 72px; }}
       .filter-number-op,
       .filter-number-value {{ width: 45px; }}
       .filter-number-value {{
@@ -3866,7 +3866,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         margin: 0;
       }}
       .filter-number-wrap {{ display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }}
-      .filter-head th {{ top: var(--snapshot-filter-top, 44px); background: #f7fbfc; padding-top: 8px; padding-bottom: 8px; z-index: 3; text-transform: none; box-shadow: inset 0 1px 0 #d9e5eb; }}
+      .filter-head th {{ top: var(--snapshot-filter-top, 36px); background: #f7fbfc; padding-top: 5px; padding-bottom: 5px; z-index: 3; text-transform: none; box-shadow: inset 0 1px 0 #d9e5eb; }}
       .filter-reset-wrap {{ display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 0 0 10px; flex-wrap: wrap; }}
       .table-actions {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
       .filter-reset-button {{ background: #375d77; color: #ffffff; transition: background 120ms ease, color 120ms ease, border-color 120ms ease; }}
@@ -3885,7 +3885,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .pagination-wrap {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 12px; flex-wrap: wrap; }}
       .pagination-buttons {{ display: flex; gap: 8px; align-items: center; }}
       .pagination-info {{ color: var(--muted); font-size: 0.94rem; }}
-      .table-wrap {{ position: relative; max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
+      .table-wrap {{ position: relative; height: calc(100vh - 120px); min-height: 560px; max-height: calc(100vh - 88px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
       .snapshot-loading-overlay {{
         position: absolute;
         inset: 0;
@@ -3922,8 +3922,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }}
       table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); }}
       #snapshotIssuesTable {{ min-width: 1800px; table-layout: auto; }}
-      th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
-      th {{ position: sticky; top: 0; z-index: 2; background: #eef6f7; color: #426179; text-transform: uppercase; font-size: 0.88rem; }}
+      th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }}
+      th {{ position: sticky; top: 0; z-index: 2; background: #eef6f7; color: #426179; text-transform: uppercase; font-size: 0.74rem; line-height: 1.15; }}
       tr:last-child td {{ border-bottom: 0; }}
       .mono {{ font-family: Consolas, "Courier New", monospace; font-size: 0.95rem; white-space: nowrap; }}
       .issue-link {{ color: var(--blue); text-decoration: none; border-bottom: 1px dashed currentColor; font-weight: 700; }}
@@ -4112,8 +4112,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           <tr class="filter-head">
             <th><input class="filter-input-table" type="text" data-filter-key="issueId" data-filter-role="text"></th>
             <th><input class="filter-input-table" type="text" data-filter-key="subject" data-filter-role="text"></th>
-            <th class="tracker-col"><select class="filter-select-table" multiple data-filter-key="tracker" data-filter-role="multi"></select></th>
-            <th class="status-col"><select class="filter-select-table" multiple data-filter-key="status" data-filter-role="multi"></select></th>
+<th class="tracker-col"><select class="filter-select-table" multiple size="3" data-filter-key="tracker" data-filter-role="multi"></select></th>
+<th class="status-col"><select class="filter-select-table" multiple size="3" data-filter-key="status" data-filter-role="multi"></select></th>
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="doneRatio" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="1" data-filter-key="doneRatio" data-filter-role="value"></div></th>
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="baseline" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="baseline" data-filter-role="value"></div></th>
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="estimated" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="estimated" data-filter-role="value"></div></th>
