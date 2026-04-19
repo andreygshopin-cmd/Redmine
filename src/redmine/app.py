@@ -3931,9 +3931,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .subject-col {{ width: 546px; min-width: 546px; max-width: 546px; white-space: normal; word-break: break-word; }}
       .tracker-col {{ width: 170px; min-width: 170px; max-width: 170px; white-space: normal; word-break: break-word; }}
       .status-col {{ width: 170px; min-width: 170px; max-width: 170px; white-space: normal; word-break: break-word; }}
-      .baseline-col {{ width: 156px; min-width: 156px; max-width: 156px; white-space: normal; word-break: break-word; }}
-      .spent-col {{ width: 156px; min-width: 156px; max-width: 156px; white-space: normal; word-break: break-word; }}
-      .spent-year-col {{ width: 156px; min-width: 156px; max-width: 156px; white-space: normal; word-break: break-word; }}
+      .baseline-col {{ width: 94px; min-width: 94px; max-width: 94px; white-space: normal; word-break: break-word; }}
+      .spent-col {{ width: 94px; min-width: 94px; max-width: 94px; white-space: normal; word-break: break-word; }}
+      .spent-year-col {{ width: 94px; min-width: 94px; max-width: 94px; white-space: normal; word-break: break-word; }}
       .closed-col {{ width: 190px; min-width: 190px; max-width: 190px; white-space: normal; word-break: break-word; }}
       .version-col {{ width: 360px; min-width: 360px; max-width: 360px; white-space: normal; word-break: break-word; }}
       .snapshot-group-row td {{
