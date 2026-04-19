@@ -855,6 +855,121 @@ def _getSnapshotIssueFilterOptions(connection, snapshotRunId: int) -> dict[str, 
     }
 
 
+def _buildSnapshotIssueHierarchyQuery(baseWhereSql: str, paginated: bool) -> str:
+    paginationSql = "\n            LIMIT :limit OFFSET :offset" if paginated else ""
+    return f"""
+            WITH RECURSIVE snapshot_items AS (
+                SELECT
+                    issue_redmine_id,
+                    subject,
+                    tracker_name,
+                    parent_issue_redmine_id
+                FROM issue_snapshot_items
+                WHERE snapshot_run_id = :snapshot_run_id
+            ),
+            filtered_items AS (
+                SELECT
+                    issue_redmine_id,
+                    subject,
+                    tracker_name,
+                    status_name,
+                    priority_name,
+                    assigned_to_name,
+                    fixed_version_name,
+                    done_ratio,
+                    baseline_estimate_hours,
+                    estimated_hours,
+                    spent_hours,
+                    spent_hours_year,
+                    start_date,
+                    due_date,
+                    created_on,
+                    updated_on,
+                    closed_on,
+                    parent_issue_redmine_id
+                FROM issue_snapshot_items
+                WHERE {baseWhereSql}
+            ),
+            item_chain AS (
+                SELECT
+                    issue_redmine_id AS origin_issue_redmine_id,
+                    issue_redmine_id AS current_issue_redmine_id,
+                    parent_issue_redmine_id AS next_parent_issue_redmine_id,
+                    LOWER(TRIM(COALESCE(tracker_name, ''))) AS current_tracker_name,
+                    COALESCE(subject, '') AS current_subject,
+                    0 AS depth
+                FROM snapshot_items
+                UNION ALL
+                SELECT
+                    item_chain.origin_issue_redmine_id,
+                    parent.issue_redmine_id AS current_issue_redmine_id,
+                    parent.parent_issue_redmine_id AS next_parent_issue_redmine_id,
+                    LOWER(TRIM(COALESCE(parent.tracker_name, ''))) AS current_tracker_name,
+                    COALESCE(parent.subject, '') AS current_subject,
+                    item_chain.depth + 1 AS depth
+                FROM item_chain
+                JOIN snapshot_items parent
+                    ON parent.issue_redmine_id = item_chain.next_parent_issue_redmine_id
+                WHERE item_chain.depth < 50
+            ),
+            feature_groups AS (
+                SELECT DISTINCT ON (origin_issue_redmine_id)
+                    origin_issue_redmine_id,
+                    current_issue_redmine_id AS feature_group_issue_redmine_id,
+                    current_subject AS feature_group_subject
+                FROM item_chain
+                WHERE current_tracker_name = 'feature'
+                ORDER BY origin_issue_redmine_id, depth ASC
+            )
+            SELECT
+                filtered_items.issue_redmine_id,
+                filtered_items.subject,
+                filtered_items.tracker_name,
+                filtered_items.status_name,
+                filtered_items.priority_name,
+                filtered_items.assigned_to_name,
+                filtered_items.fixed_version_name,
+                filtered_items.done_ratio,
+                filtered_items.baseline_estimate_hours,
+                filtered_items.estimated_hours,
+                filtered_items.spent_hours,
+                filtered_items.spent_hours_year,
+                filtered_items.start_date,
+                filtered_items.due_date,
+                filtered_items.created_on,
+                filtered_items.updated_on,
+                filtered_items.closed_on,
+                filtered_items.parent_issue_redmine_id,
+                feature_groups.feature_group_issue_redmine_id,
+                COALESCE(NULLIF(feature_groups.feature_group_subject, ''), 'без Feature') AS feature_group_subject,
+                CASE WHEN feature_groups.feature_group_issue_redmine_id IS NULL THEN TRUE ELSE FALSE END AS feature_group_is_virtual,
+                CASE
+                    WHEN feature_groups.feature_group_issue_redmine_id IS NOT NULL
+                     AND filtered_items.issue_redmine_id = feature_groups.feature_group_issue_redmine_id
+                     AND LOWER(TRIM(COALESCE(filtered_items.tracker_name, ''))) = 'feature'
+                    THEN TRUE
+                    ELSE FALSE
+                END AS is_feature_group_root
+            FROM filtered_items
+            LEFT JOIN feature_groups
+                ON feature_groups.origin_issue_redmine_id = filtered_items.issue_redmine_id
+            ORDER BY
+                CASE WHEN feature_groups.feature_group_issue_redmine_id IS NULL THEN 1 ELSE 0 END,
+                COALESCE(feature_groups.feature_group_issue_redmine_id, 2147483647),
+                CASE
+                    WHEN feature_groups.feature_group_issue_redmine_id IS NOT NULL
+                     AND filtered_items.issue_redmine_id = feature_groups.feature_group_issue_redmine_id
+                     AND LOWER(TRIM(COALESCE(filtered_items.tracker_name, ''))) = 'feature'
+                    THEN 0
+                    WHEN LOWER(TRIM(COALESCE(filtered_items.tracker_name, ''))) = 'разработка' THEN 1
+                    WHEN LOWER(TRIM(COALESCE(filtered_items.tracker_name, ''))) = 'процессы разработки' THEN 2
+                    WHEN LOWER(TRIM(COALESCE(filtered_items.tracker_name, ''))) = 'ошибка' THEN 3
+                    ELSE 4
+                END,
+                filtered_items.issue_redmine_id{paginationSql}
+            """
+
+
 def getFilteredSnapshotIssuesForProjectByDate(
     projectRedmineId: int,
     capturedForDate: str | None,
@@ -943,32 +1058,7 @@ def getFilteredSnapshotIssuesForProjectByDate(
             "limit": safePageSize,
             "offset": (currentPage - 1) * safePageSize,
         }
-        issuesStatement = text(
-            f"""
-            SELECT
-                issue_redmine_id,
-                subject,
-                tracker_name,
-                status_name,
-                priority_name,
-                assigned_to_name,
-                fixed_version_name,
-                done_ratio,
-                baseline_estimate_hours,
-                estimated_hours,
-                spent_hours,
-                spent_hours_year,
-                start_date,
-                due_date,
-                created_on,
-                updated_on,
-                closed_on
-            FROM issue_snapshot_items
-            WHERE {baseWhereSql}
-            ORDER BY issue_redmine_id
-            LIMIT :limit OFFSET :offset
-            """
-        ).bindparams(*bindParams)
+        issuesStatement = text(_buildSnapshotIssueHierarchyQuery(baseWhereSql, paginated=True)).bindparams(*bindParams)
         issueRows = connection.execute(issuesStatement, pageParams).mappings().all()
 
         return {
@@ -1002,31 +1092,7 @@ def listFilteredSnapshotIssuesForProjectByDate(
         whereClauses, filterParams, bindParams = _buildSnapshotIssueFilterParts(filters)
         baseWhereSql = " AND ".join(["snapshot_run_id = :snapshot_run_id", *whereClauses])
         params = {"snapshot_run_id": latestRun["id"], **filterParams}
-        issuesStatement = text(
-            f"""
-            SELECT
-                issue_redmine_id,
-                subject,
-                tracker_name,
-                status_name,
-                priority_name,
-                assigned_to_name,
-                fixed_version_name,
-                done_ratio,
-                baseline_estimate_hours,
-                estimated_hours,
-                spent_hours,
-                spent_hours_year,
-                start_date,
-                due_date,
-                created_on,
-                updated_on,
-                closed_on
-            FROM issue_snapshot_items
-            WHERE {baseWhereSql}
-            ORDER BY issue_redmine_id
-            """
-        ).bindparams(*bindParams)
+        issuesStatement = text(_buildSnapshotIssueHierarchyQuery(baseWhereSql, paginated=False)).bindparams(*bindParams)
         issueRows = connection.execute(issuesStatement, params).mappings().all()
         return {
             "snapshot_run": latestRun,

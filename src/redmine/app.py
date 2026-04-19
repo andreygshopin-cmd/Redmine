@@ -711,8 +711,8 @@ PAGE_HTML = """<!doctype html>
               <th>ID</th>
               <th>Дата среза</th>
               <th>Проект</th>
-              <th>Сравнение</th>
               <th>Идентификатор</th>
+              <th>Сравнение</th>
               <th>Задач</th>
               <th>Базовая оценка, ч</th>
               <th>План, ч</th>
@@ -1237,8 +1237,8 @@ PAGE_HTML = """<!doctype html>
           <td class="mono">${run.id ?? "—"}</td>
           <td class="mono">${run.captured_for_date ?? "—"}</td>
           <td>${run.project_name ?? "—"}</td>
-          <td><a class="project-link" href="${compareUrl}" target="_blank" rel="noreferrer">Сравнить</a></td>
           <td class="mono">${run.project_identifier ?? "—"}</td>
+          <td><a class="project-link" href="${compareUrl}" target="_blank" rel="noreferrer">Сравнить</a></td>
           <td>${run.total_issues ?? 0}</td>
           <td>${formatHours(run.total_baseline_estimate_hours)}</td>
           <td>${formatHours(run.total_estimated_hours)}</td>
@@ -3559,13 +3559,13 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       {buildProjectContextNavCss()}
       .toolbar {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 0 0 16px; }}
       .toolbar button {{
-        background: #ffffff;
+        background: #eef2f5;
         color: var(--text);
         border: 1px solid var(--line);
         box-shadow: none;
       }}
       .toolbar button:hover {{
-        background: #f7fbfc;
+        background: #e4eaef;
       }}
       h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
       form {{ display: flex; gap: 10px; align-items: center; margin: 0; flex-wrap: wrap; }}
@@ -3618,6 +3618,50 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .status-col {{ width: 170px; min-width: 170px; max-width: 170px; white-space: normal; word-break: break-word; }}
       .closed-col {{ width: 190px; min-width: 190px; max-width: 190px; white-space: normal; word-break: break-word; }}
       .version-col {{ width: 360px; min-width: 360px; max-width: 360px; white-space: normal; word-break: break-word; }}
+      .snapshot-group-row td {{
+        background: #f3f7fa;
+        color: #16324a;
+        font-weight: 700;
+        border-bottom: 1px solid var(--line);
+      }}
+      .snapshot-group-cell {{
+        padding-top: 14px;
+        padding-bottom: 14px;
+      }}
+      .snapshot-group-label {{
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }}
+      .snapshot-group-kind {{
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 22px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #dfe9ef;
+        color: #375d77;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }}
+      .snapshot-group-subject {{
+        font-weight: 700;
+      }}
+      .snapshot-child-subject {{
+        display: inline-block;
+        padding-left: 22px;
+        position: relative;
+      }}
+      .snapshot-child-subject::before {{
+        content: "";
+        position: absolute;
+        left: 8px;
+        top: 0.8em;
+        width: 8px;
+        border-top: 1px solid #aabcca;
+      }}
   </style>
     </head>
   <body>
@@ -3941,13 +3985,42 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           snapshotIssuesTableBody.innerHTML = '<tr><td colspan="12">По текущему фильтру задач нет.</td></tr>';
           return;
         }}
-        snapshotIssuesTableBody.innerHTML = issues.map((issue) => {{
+        let lastGroupKey = "";
+        const rows = [];
+        for (const issue of issues) {{
+          const groupId = issue?.feature_group_issue_redmine_id;
+          const groupKey = groupId ? `feature-${{groupId}}` : "virtual-feature";
+          const groupSubject = String(issue?.feature_group_subject || "без Feature");
+          const isVirtualGroup = Boolean(issue?.feature_group_is_virtual);
+          if (groupKey !== lastGroupKey) {{
+            const groupLink = !isVirtualGroup && groupId
+              ? `<a class="issue-link" href="https://redmine.sms-it.ru/issues/${{encodeURIComponent(groupId)}}" target="_blank" rel="noreferrer">${{escapeHtml(groupId)}}</a>`
+              : "";
+            const groupKind = isVirtualGroup ? "без Feature" : "Feature";
+            rows.push(`
+              <tr class="snapshot-group-row">
+                <td class="snapshot-group-cell" colspan="12">
+                  <span class="snapshot-group-label">
+                    <span class="snapshot-group-kind">${{escapeHtml(groupKind)}}</span>
+                    ${groupLink}
+                    <span class="snapshot-group-subject">${{escapeHtml(groupSubject)}}</span>
+                  </span>
+                </td>
+              </tr>
+            `);
+            lastGroupKey = groupKey;
+          }}
+
+          if (issue?.is_feature_group_root) {{
+            continue;
+          }}
+
           const issueId = issue?.issue_redmine_id ?? "—";
           const issueLink = `https://redmine.sms-it.ru/issues/${{encodeURIComponent(issueId)}}`;
-          return `
+          rows.push(`
             <tr>
               <td class="mono"><a class="issue-link" href="${{issueLink}}" target="_blank" rel="noreferrer">${{escapeHtml(issueId)}}</a></td>
-              <td class="subject-col">${{escapeHtml(issue?.subject || "—")}}</td>
+              <td class="subject-col"><span class="snapshot-child-subject">${{escapeHtml(issue?.subject || "—")}}</span></td>
               <td class="tracker-col">${{escapeHtml(issue?.tracker_name || "—")}}</td>
               <td class="status-col">${{escapeHtml(issue?.status_name || "—")}}</td>
               <td>${{escapeHtml(issue?.done_ratio ?? 0)}}</td>
@@ -3959,8 +4032,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td>${{escapeHtml(issue?.assigned_to_name || "—")}}</td>
               <td class="version-col">${{escapeHtml(issue?.fixed_version_name || "—")}}</td>
             </tr>
-          `;
-        }}).join("");
+          `);
+        }}
+        snapshotIssuesTableBody.innerHTML = rows.join("");
       }}
 
       function normalizeNumericFilterValue(value) {{
