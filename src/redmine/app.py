@@ -3670,7 +3670,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .pagination-wrap {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 12px; flex-wrap: wrap; }}
       .pagination-buttons {{ display: flex; gap: 8px; align-items: center; }}
       .pagination-info {{ color: var(--muted); font-size: 0.94rem; }}
-      .table-wrap {{ max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
+      .table-wrap {{ position: relative; max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
       .snapshot-loading-overlay {{
         position: absolute;
         inset: 0;
@@ -3684,6 +3684,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         opacity: 0;
         pointer-events: none;
         transition: opacity 140ms ease;
+        border-radius: inherit;
       }}
       .snapshot-loading-overlay.is-visible {{
         opacity: 1;
