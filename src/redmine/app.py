@@ -3640,7 +3640,16 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .filter-number-op {{ width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font: inherit; background: #ffffff; color: var(--text); }}
       .filter-select-table {{ min-height: 92px; }}
       .filter-number-op,
-      .filter-number-value {{ width: 64px; }}
+      .filter-number-value {{ width: 45px; }}
+      .filter-number-value {{
+        appearance: textfield;
+        -moz-appearance: textfield;
+      }}
+      .filter-number-value::-webkit-outer-spin-button,
+      .filter-number-value::-webkit-inner-spin-button {{
+        -webkit-appearance: none;
+        margin: 0;
+      }}
       .filter-number-wrap {{ display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }}
       .filter-head th {{ top: var(--snapshot-filter-top, 44px); background: #f7fbfc; padding-top: 8px; padding-bottom: 8px; z-index: 3; text-transform: none; box-shadow: inset 0 1px 0 #d9e5eb; }}
       .filter-reset-wrap {{ display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 0 0 10px; flex-wrap: wrap; }}
@@ -3662,7 +3671,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .mono {{ font-family: Consolas, "Courier New", monospace; font-size: 0.95rem; white-space: nowrap; }}
       .issue-link {{ color: var(--blue); text-decoration: none; border-bottom: 1px dashed currentColor; font-weight: 700; }}
       .issue-link:hover {{ color: var(--orange); border-bottom-style: solid; }}
-      .subject-col {{ width: 420px; min-width: 420px; max-width: 420px; white-space: normal; word-break: break-word; }}
+      .subject-col {{ width: 546px; min-width: 546px; max-width: 546px; white-space: normal; word-break: break-word; }}
       .tracker-col {{ width: 170px; min-width: 170px; max-width: 170px; white-space: normal; word-break: break-word; }}
       .status-col {{ width: 170px; min-width: 170px; max-width: 170px; white-space: normal; word-break: break-word; }}
       .closed-col {{ width: 190px; min-width: 190px; max-width: 190px; white-space: normal; word-break: break-word; }}
