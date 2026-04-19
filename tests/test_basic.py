@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from src.redmine import app as app_module
-from src.redmine.app import app, getTime, readRoot
+from src.redmine.app import app, getTime, readBitrixPage, readRoot
 from src.redmine.config import loadConfig
 from src.redmine.db import chunkSequence, normalizeDatabaseUrl
 from src.redmine.redmine_client import (
@@ -27,6 +27,15 @@ def testReadRootReturnsHtmlPage() -> None:
     assert response.media_type == "text/html"
     assert "Получение срезов задач" in response.body.decode("utf-8")
     assert "Удаление среза по дате" in response.body.decode("utf-8")
+
+
+def testReadBitrixPageReturnsHtmlPage() -> None:
+    response = readBitrixPage()
+    body = response.body.decode("utf-8")
+
+    assert response.media_type == "text/html"
+    assert "Bitrix test page" in body
+    assert "Маршрут /Bitrix уже доступен на сайте" in body
 
 
 def testGetTimeReturnsServerTimePayload() -> None:

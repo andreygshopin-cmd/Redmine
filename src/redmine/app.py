@@ -2109,26 +2109,29 @@ def buildSnapshotComparisonPage(
     .date-swap-field {{ justify-content: flex-end; }}
     .date-swap-label {{ opacity: 0; pointer-events: none; user-select: none; }}
     select {{ border: 1px solid #d9e5eb; border-radius: 6px; padding: 10px 12px; font: inherit; }}
-    .compare-field-group {{ display: flex; flex-wrap: wrap; gap: 6px 14px; }}
+    .compare-field-group {{ display: flex; flex-wrap: wrap; gap: 4px 12px; }}
     .compare-field-option {{ display: inline-flex; align-items: center; gap: 6px; color: #16324a; white-space: nowrap; }}
-    .compare-option-caption {{ width: 100%; color: #64798d; font-size: 0.9rem; font-weight: 700; margin-top: 2px; }}
-    .compare-date-row {{ display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }}
-    .compare-date-row .field {{ flex: 0 0 auto; min-width: 0; }}
-    .compare-date-select {{ min-width: 158px; width: auto; }}
+    .compare-option-caption {{ color: #64798d; font-size: 0.9rem; font-weight: 700; }}
+    .compare-date-row {{ display: flex; align-items: flex-start; gap: 10px 14px; flex-wrap: wrap; }}
+    .compare-date-field {{ flex: 0 0 auto; min-width: 0; }}
+    .compare-date-select {{ min-width: 146px; width: auto; }}
+    .compare-swap-stack, .compare-extra-stack, .compare-compare-stack {{ display: flex; flex-direction: column; gap: 6px; }}
+    .compare-swap-stack {{ flex: 0 0 auto; align-items: flex-start; }}
+    .compare-compare-stack {{ flex: 1 1 320px; min-width: 260px; }}
     .date-swap-button {{
       display: inline-flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 0;
-      min-width: 34px;
+      min-width: 20px;
       min-height: 34px;
-      padding: 4px 6px;
+      padding: 4px 2px;
       background: #eef2f5;
       color: #375d77;
       border: 1px solid #d9e5eb;
     }}
-    .date-swap-button span {{ line-height: 1; font-size: 0.9rem; }}
+    .date-swap-button span {{ line-height: 1; font-size: 0.78rem; }}
     button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; background: #ff6c0e; color: #ffffff; }}
     .empty-state {{ margin-top: 18px; border: 1px dashed #d9e5eb; border-radius: 8px; padding: 24px; background: #f7fbfc; color: #64798d; }}
     .compare-loading-overlay {{
@@ -2169,23 +2172,29 @@ def buildSnapshotComparisonPage(
         <div class="controls-grid">
           <div class="field" style="grid-column: 1 / -1;">
             <div class="compare-date-row">
-              <div class="field">
+              <div class="field compare-date-field">
                 <label for="leftDate">Дата среза 1</label>
                 <select id="leftDate" name="left_date" class="compare-date-select"><option value="">Нет срезов</option></select>
               </div>
-              <div class="field date-swap-field">
-                <label class="date-swap-label" for="swapCompareDatesButton">Поменять даты местами</label>
-                <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="Поменять даты местами"><span>←</span><span>→</span></button>
+              <div class="compare-swap-stack">
+                <div class="field date-swap-field">
+                  <label class="date-swap-label" for="swapCompareDatesButton">Поменять даты местами</label>
+                  <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="Поменять даты местами"><span>←</span><span>→</span></button>
+                </div>
+                <div class="compare-extra-stack">
+                  <span class="compare-option-caption">Дополнительные опции</span>
+                  {includeMissingHtml}
+                </div>
               </div>
-              <div class="field">
+              <div class="field compare-date-field">
                 <label for="rightDate">Дата среза 2</label>
                 <select id="rightDate" name="right_date" class="compare-date-select"><option value="">Нет срезов</option></select>
               </div>
+              <div class="compare-compare-stack">
+                <span class="compare-option-caption">Поля для сравнения</span>
+                <div class="compare-field-group">{compareFieldsHtml}</div>
+              </div>
             </div>
-          </div>
-          <div class="field">
-            <label>Поля для сравнения</label>
-            <div class="compare-field-group">{compareFieldsHtml}<span class="compare-option-caption">Дополнительные опции</span>{includeMissingHtml}</div>
           </div>
         </div>
         <p><button type="submit">Сравнить</button></p>
@@ -2366,26 +2375,29 @@ def buildSnapshotComparisonPage(
     .date-swap-field {{ justify-content: flex-end; }}
     .date-swap-label {{ opacity: 0; pointer-events: none; user-select: none; }}
     select {{ border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }}
-    .compare-field-group {{ display: flex; flex-wrap: wrap; gap: 6px 14px; padding-top: 2px; }}
+    .compare-field-group {{ display: flex; flex-wrap: wrap; gap: 4px 12px; padding-top: 0; }}
     .compare-field-option {{ display: inline-flex; align-items: center; gap: 6px; color: var(--text); white-space: nowrap; }}
-    .compare-option-caption {{ width: 100%; color: var(--muted); font-size: 0.9rem; font-weight: 700; margin-top: 2px; }}
-    .compare-date-row {{ display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }}
-    .compare-date-row .field {{ flex: 0 0 auto; min-width: 0; }}
-    .compare-date-select {{ min-width: 158px; width: auto; }}
+    .compare-option-caption {{ color: var(--muted); font-size: 0.9rem; font-weight: 700; }}
+    .compare-date-row {{ display: flex; align-items: flex-start; gap: 10px 14px; flex-wrap: wrap; }}
+    .compare-date-field {{ flex: 0 0 auto; min-width: 0; }}
+    .compare-date-select {{ min-width: 146px; width: auto; }}
+    .compare-swap-stack, .compare-extra-stack, .compare-compare-stack {{ display: flex; flex-direction: column; gap: 6px; }}
+    .compare-swap-stack {{ flex: 0 0 auto; align-items: flex-start; }}
+    .compare-compare-stack {{ flex: 1 1 320px; min-width: 260px; }}
     .date-swap-button {{
       display: inline-flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 0;
-      min-width: 34px;
+      min-width: 20px;
       min-height: 34px;
-      padding: 4px 6px;
+      padding: 4px 2px;
       background: #eef2f5;
       color: #375d77;
       border: 1px solid var(--line);
     }}
-    .date-swap-button span {{ line-height: 1; font-size: 0.9rem; }}
+    .date-swap-button span {{ line-height: 1; font-size: 0.78rem; }}
     button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; background: var(--orange); color: #ffffff; }}
     .summary-note {{ color: var(--muted); margin: 0 0 14px; }}
     .table-wrap {{ overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
@@ -2454,23 +2466,29 @@ def buildSnapshotComparisonPage(
         <div class="controls-grid">
           <div class="field" style="grid-column: 1 / -1;">
             <div class="compare-date-row">
-              <div class="field">
+              <div class="field compare-date-field">
                 <label for="leftDate">Дата среза 1</label>
                 <select id="leftDate" name="left_date" class="compare-date-select">{leftDateOptionsHtml}</select>
               </div>
-              <div class="field date-swap-field">
-                <label class="date-swap-label" for="swapCompareDatesButton">Поменять даты местами</label>
-                <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="Поменять даты местами"><span>←</span><span>→</span></button>
+              <div class="compare-swap-stack">
+                <div class="field date-swap-field">
+                  <label class="date-swap-label" for="swapCompareDatesButton">Поменять даты местами</label>
+                  <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="Поменять даты местами"><span>←</span><span>→</span></button>
+                </div>
+                <div class="compare-extra-stack">
+                  <span class="compare-option-caption">Дополнительные опции</span>
+                  {includeMissingHtml}
+                </div>
               </div>
-              <div class="field">
+              <div class="field compare-date-field">
                 <label for="rightDate">Дата среза 2</label>
                 <select id="rightDate" name="right_date" class="compare-date-select">{rightDateOptionsHtml}</select>
               </div>
+              <div class="compare-compare-stack">
+                <span class="compare-option-caption">Поля для сравнения</span>
+                <div class="compare-field-group">{fieldOptionsHtml}</div>
+              </div>
             </div>
-          </div>
-          <div class="field">
-            <label>Поля для сравнения</label>
-            <div class="compare-field-group">{fieldOptionsHtml}<span class="compare-option-caption">Дополнительные опции</span>{includeMissingHtml}</div>
           </div>
         </div>
         <p><button type="submit">Сравнить</button></p>
@@ -4732,9 +4750,363 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 </html>"""
 
 
+BITRIX_PAGE_HTML = """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bitrix Test Page</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #10293d;
+      --muted: #5d7487;
+      --paper: #f4f8fb;
+      --card: rgba(255, 255, 255, 0.92);
+      --line: rgba(16, 41, 61, 0.12);
+      --blue-302: #375d77;
+      --yellow-109: #ffc600;
+      --cyan-310: #52cee6;
+      --orange-1585: #ff6c0e;
+      --shadow: 0 22px 50px rgba(16, 41, 61, 0.14);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(82, 206, 230, 0.35), transparent 34%),
+        radial-gradient(circle at top right, rgba(255, 198, 0, 0.35), transparent 26%),
+        linear-gradient(180deg, #ffffff 0%, var(--paper) 100%);
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 28px;
+      border-radius: 28px;
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      background:
+        linear-gradient(135deg, rgba(55, 93, 119, 0.96), rgba(16, 41, 61, 0.94)),
+        linear-gradient(135deg, rgba(255, 198, 0, 0.18), rgba(82, 206, 230, 0.2));
+      color: #ffffff;
+      box-shadow: var(--shadow);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -90px -120px auto;
+      width: 280px;
+      height: 280px;
+      border-radius: 50%;
+      background: rgba(82, 206, 230, 0.16);
+      filter: blur(2px);
+    }
+
+    .topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 32px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 16px;
+      text-decoration: none;
+    }
+
+    .brand img {
+      width: 172px;
+      height: auto;
+      display: block;
+    }
+
+    .brand-copy {
+      display: grid;
+      gap: 2px;
+    }
+
+    .brand-copy strong {
+      font-size: 1rem;
+      letter-spacing: 0.02em;
+    }
+
+    .brand-copy span {
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 0.95rem;
+    }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 18px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.1);
+      text-decoration: none;
+      font-weight: 600;
+      backdrop-filter: blur(8px);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 14px;
+      color: rgba(255, 255, 255, 0.74);
+      font-size: 0.96rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 42px;
+      height: 3px;
+      border-radius: 999px;
+      background: var(--yellow-109);
+    }
+
+    h1 {
+      max-width: 10ch;
+      margin: 0;
+      font-size: clamp(2.5rem, 6vw, 5rem);
+      line-height: 0.96;
+      letter-spacing: -0.05em;
+    }
+
+    .lead {
+      max-width: 720px;
+      margin: 18px 0 0;
+      font-size: clamp(1rem, 2.3vw, 1.24rem);
+      line-height: 1.65;
+      color: rgba(255, 255, 255, 0.82);
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 28px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 20px;
+      border-radius: 14px;
+      text-decoration: none;
+      font-weight: 700;
+      transition: transform 120ms ease, filter 120ms ease;
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.03);
+    }
+
+    .button-primary {
+      background: var(--yellow-109);
+      color: var(--ink);
+    }
+
+    .button-secondary {
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      margin-top: 22px;
+    }
+
+    .card {
+      padding: 24px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: var(--card);
+      box-shadow: 0 14px 32px rgba(16, 41, 61, 0.08);
+      backdrop-filter: blur(16px);
+    }
+
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 1.08rem;
+    }
+
+    .card p,
+    .card li {
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .card ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .metrics {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      margin-top: 22px;
+    }
+
+    .metric {
+      padding: 18px 20px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.16);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      backdrop-filter: blur(10px);
+    }
+
+    .metric strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 2rem;
+      letter-spacing: -0.04em;
+    }
+
+    .metric span {
+      color: rgba(255, 255, 255, 0.78);
+      line-height: 1.45;
+    }
+
+    .accent-card {
+      background:
+        linear-gradient(180deg, rgba(82, 206, 230, 0.16), rgba(255, 255, 255, 0.96)),
+        #ffffff;
+    }
+
+    @media (max-width: 760px) {
+      .shell {
+        padding: 18px 14px 40px;
+      }
+
+      .hero {
+        padding: 22px 18px;
+        border-radius: 24px;
+      }
+
+      .brand img {
+        width: 148px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="topline">
+        <a class="brand" href="/">
+          <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+          <span class="brand-copy">
+            <strong>Redmine + Bitrix</strong>
+            <span>Маршрут /Bitrix уже доступен на сайте</span>
+          </span>
+        </a>
+        <a class="back-link" href="/">Вернуться на главную</a>
+      </div>
+
+      <p class="eyebrow">Bitrix / Test Route</p>
+      <h1>Bitrix test page</h1>
+      <p class="lead">
+        Это тестовая страница для проверки отдельного маршрута в текущем приложении.
+        Она живет рядом с основным Redmine-интерфейсом и готова для дальнейшей
+        интеграции с Bitrix-формами, iframe или виджетами.
+      </p>
+
+      <div class="hero-actions">
+        <a class="button button-primary" href="/">Открыть главную страницу</a>
+        <a class="button button-secondary" href="/health">Проверить health endpoint</a>
+      </div>
+
+      <div class="metrics">
+        <div class="metric">
+          <strong>/Bitrix</strong>
+          <span>Маршрут вынесен в FastAPI и доступен как отдельная страница.</span>
+        </div>
+        <div class="metric">
+          <strong>HTML</strong>
+          <span>Страница статическая и безопасно добавлена без влияния на базу данных.</span>
+        </div>
+        <div class="metric">
+          <strong>Ready</strong>
+          <span>Можно использовать как основу для дальнейшего тестирования Bitrix.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card accent-card">
+        <h2>Что уже сделано</h2>
+        <ul>
+          <li>Поднят отдельный маршрут для страницы Bitrix внутри текущего приложения.</li>
+          <li>Страница оформлена в цветах существующего интерфейса, чтобы она выглядела частью продукта.</li>
+          <li>Добавлена базовая навигация обратно на главную и на health-проверку.</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>Для чего подходит</h2>
+        <p>
+          Эту страницу удобно использовать как тестовую площадку перед подключением
+          Bitrix24-виджетов, HTML-вставок, API-диагностики или внутренних сценариев
+          интеграции.
+        </p>
+      </article>
+
+      <article class="card">
+        <h2>Следующий шаг</h2>
+        <p>
+          Если понадобится, сюда можно быстро добавить форму авторизации, webhooks,
+          iframe c Bitrix или диагностические блоки для обмена данными между системами.
+        </p>
+      </article>
+    </section>
+  </div>
+</body>
+</html>"""
+
+
 @app.get("/", response_class=HTMLResponse)
 def readRoot() -> HTMLResponse:
     return HTMLResponse(PAGE_HTML)
+
+
+@app.get("/Bitrix", response_class=HTMLResponse)
+@app.get("/bitrix", response_class=HTMLResponse, include_in_schema=False)
+def readBitrixPage() -> HTMLResponse:
+    return HTMLResponse(BITRIX_PAGE_HTML)
 
 
 @app.get("/snapshot-rules", response_class=HTMLResponse)
