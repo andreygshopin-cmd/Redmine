@@ -4002,7 +4002,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="snapshot-group-cell" colspan="12">
                   <span class="snapshot-group-label">
                     <span class="snapshot-group-kind">${{escapeHtml(groupKind)}}</span>
-                    ${groupLink}
+                    ${{groupLink}}
                     <span class="snapshot-group-subject">${{escapeHtml(groupSubject)}}</span>
                   </span>
                 </td>
