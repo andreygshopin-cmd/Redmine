@@ -2103,7 +2103,7 @@ def buildSnapshotComparisonPage(
     h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; }}
     .meta {{ color: #64798d; margin: 0 0 18px; line-height: 1.6; }}
     .controls-panel {{ border: 1px solid #d9e5eb; border-radius: 8px; padding: 18px 20px; background: #ffffff; }}
-    .controls-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }}
+    .controls-grid {{ display: grid; grid-template-columns: 1fr; gap: 14px; }}
     .field {{ display: flex; flex-direction: column; gap: 6px; }}
     .field label {{ font-weight: 700; }}
     .date-swap-field {{ justify-content: flex-end; }}
@@ -2112,19 +2112,20 @@ def buildSnapshotComparisonPage(
     .compare-field-group {{ display: flex; flex-wrap: wrap; gap: 4px 12px; }}
     .compare-field-option {{ display: inline-flex; align-items: center; gap: 6px; color: #16324a; white-space: nowrap; }}
     .compare-option-caption {{ color: #64798d; font-size: 0.9rem; font-weight: 700; }}
-    .compare-date-row {{ display: flex; align-items: flex-start; gap: 10px 14px; flex-wrap: wrap; }}
-    .compare-date-field {{ flex: 0 0 auto; min-width: 0; }}
+    .compare-date-row {{ display: grid; grid-template-columns: auto auto auto minmax(320px, 1fr); gap: 10px 18px; align-items: start; }}
+    .compare-date-field {{ min-width: 0; }}
     .compare-date-select {{ min-width: 146px; width: auto; }}
     .compare-swap-stack, .compare-extra-stack, .compare-compare-stack {{ display: flex; flex-direction: column; gap: 6px; }}
-    .compare-swap-stack {{ flex: 0 0 auto; align-items: flex-start; }}
-    .compare-compare-stack {{ flex: 1 1 320px; min-width: 260px; }}
+    .compare-swap-stack {{ align-items: flex-start; }}
+    .compare-extra-stack {{ margin-top: 2px; }}
+    .compare-compare-stack {{ min-width: 320px; }}
     .date-swap-button {{
       display: inline-flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 0;
-      min-width: 10px;
+      min-width: 14px;
       min-height: 28px;
       padding: 2px 1px;
       background: #eef2f5;
@@ -2132,6 +2133,10 @@ def buildSnapshotComparisonPage(
       border: 1px solid #d9e5eb;
     }}
     .date-swap-button span {{ line-height: 1; font-size: 0.68rem; }}
+    @media (max-width: 1100px) {{
+      .compare-date-row {{ grid-template-columns: 1fr; }}
+      .compare-compare-stack {{ min-width: 0; }}
+    }}
     button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; background: #ff6c0e; color: #ffffff; }}
     .empty-state {{ margin-top: 18px; border: 1px dashed #d9e5eb; border-radius: 8px; padding: 24px; background: #f7fbfc; color: #64798d; }}
     .compare-loading-overlay {{
@@ -2170,7 +2175,7 @@ def buildSnapshotComparisonPage(
     <section class="controls-panel">
       <form method="get" id="compareSnapshotsForm">
         <div class="controls-grid">
-          <div class="field" style="grid-column: 1 / -1;">
+          <div class="field">
             <div class="compare-date-row">
               <div class="field compare-date-field">
                 <label for="leftDate">Дата среза 1</label>
@@ -2369,7 +2374,7 @@ def buildSnapshotComparisonPage(
     h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; }}
     .meta {{ color: var(--muted); margin: 0 0 14px; line-height: 1.6; }}
     .controls-panel {{ border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; background: var(--panel); margin: 0 0 18px; }}
-    .controls-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; align-items: start; }}
+    .controls-grid {{ display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }}
     .field {{ display: flex; flex-direction: column; gap: 6px; }}
     .field label {{ font-weight: 700; }}
     .date-swap-field {{ justify-content: flex-end; }}
@@ -2378,19 +2383,20 @@ def buildSnapshotComparisonPage(
     .compare-field-group {{ display: flex; flex-wrap: wrap; gap: 4px 12px; padding-top: 0; }}
     .compare-field-option {{ display: inline-flex; align-items: center; gap: 6px; color: var(--text); white-space: nowrap; }}
     .compare-option-caption {{ color: var(--muted); font-size: 0.9rem; font-weight: 700; }}
-    .compare-date-row {{ display: flex; align-items: flex-start; gap: 10px 14px; flex-wrap: wrap; }}
-    .compare-date-field {{ flex: 0 0 auto; min-width: 0; }}
+    .compare-date-row {{ display: grid; grid-template-columns: auto auto auto minmax(320px, 1fr); gap: 10px 18px; align-items: start; }}
+    .compare-date-field {{ min-width: 0; }}
     .compare-date-select {{ min-width: 146px; width: auto; }}
     .compare-swap-stack, .compare-extra-stack, .compare-compare-stack {{ display: flex; flex-direction: column; gap: 6px; }}
-    .compare-swap-stack {{ flex: 0 0 auto; align-items: flex-start; }}
-    .compare-compare-stack {{ flex: 1 1 320px; min-width: 260px; }}
+    .compare-swap-stack {{ align-items: flex-start; }}
+    .compare-extra-stack {{ margin-top: 2px; }}
+    .compare-compare-stack {{ min-width: 320px; }}
     .date-swap-button {{
       display: inline-flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 0;
-      min-width: 10px;
+      min-width: 14px;
       min-height: 28px;
       padding: 2px 1px;
       background: #eef2f5;
@@ -2398,6 +2404,10 @@ def buildSnapshotComparisonPage(
       border: 1px solid var(--line);
     }}
     .date-swap-button span {{ line-height: 1; font-size: 0.68rem; }}
+    @media (max-width: 1100px) {{
+      .compare-date-row {{ grid-template-columns: 1fr; }}
+      .compare-compare-stack {{ min-width: 0; }}
+    }}
     button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; background: var(--orange); color: #ffffff; }}
     .summary-note {{ color: var(--muted); margin: 0 0 14px; }}
     .table-wrap {{ overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
@@ -2464,7 +2474,7 @@ def buildSnapshotComparisonPage(
     <section class="controls-panel">
       <form method="get" id="compareSnapshotsForm">
         <div class="controls-grid">
-          <div class="field" style="grid-column: 1 / -1;">
+          <div class="field">
             <div class="compare-date-row">
               <div class="field compare-date-field">
                 <label for="leftDate">Дата среза 1</label>
