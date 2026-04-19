@@ -2103,30 +2103,32 @@ def buildSnapshotComparisonPage(
     h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; }}
     .meta {{ color: #64798d; margin: 0 0 18px; line-height: 1.6; }}
     .controls-panel {{ border: 1px solid #d9e5eb; border-radius: 8px; padding: 18px 20px; background: #ffffff; }}
-    .controls-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }}
+    .controls-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }}
     .field {{ display: flex; flex-direction: column; gap: 6px; }}
     .field label {{ font-weight: 700; }}
     .date-swap-field {{ justify-content: flex-end; }}
     .date-swap-label {{ opacity: 0; pointer-events: none; user-select: none; }}
     select {{ border: 1px solid #d9e5eb; border-radius: 6px; padding: 10px 12px; font: inherit; }}
-    .compare-field-group {{ display: flex; flex-direction: column; gap: 8px; }}
-    .compare-field-option {{ display: flex; align-items: center; gap: 8px; color: #16324a; }}
-    .compare-date-row {{ display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }}
-    .compare-date-row .field {{ flex: 1 1 220px; }}
+    .compare-field-group {{ display: flex; flex-wrap: wrap; gap: 6px 14px; }}
+    .compare-field-option {{ display: inline-flex; align-items: center; gap: 6px; color: #16324a; white-space: nowrap; }}
+    .compare-option-caption {{ width: 100%; color: #64798d; font-size: 0.9rem; font-weight: 700; margin-top: 2px; }}
+    .compare-date-row {{ display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }}
+    .compare-date-row .field {{ flex: 0 0 auto; min-width: 0; }}
+    .compare-date-select {{ min-width: 158px; width: auto; }}
     .date-swap-button {{
       display: inline-flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 0;
-      min-width: 48px;
-      min-height: 48px;
-      padding: 8px 10px;
+      min-width: 34px;
+      min-height: 34px;
+      padding: 4px 6px;
       background: #eef2f5;
       color: #375d77;
       border: 1px solid #d9e5eb;
     }}
-    .date-swap-button span {{ line-height: 1; font-size: 1rem; }}
+    .date-swap-button span {{ line-height: 1; font-size: 0.9rem; }}
     button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; background: #ff6c0e; color: #ffffff; }}
     .empty-state {{ margin-top: 18px; border: 1px dashed #d9e5eb; border-radius: 8px; padding: 24px; background: #f7fbfc; color: #64798d; }}
     .compare-loading-overlay {{
@@ -2169,21 +2171,21 @@ def buildSnapshotComparisonPage(
             <div class="compare-date-row">
               <div class="field">
                 <label for="leftDate">Дата среза 1</label>
-                <select id="leftDate" name="left_date"><option value="">Нет срезов</option></select>
+                <select id="leftDate" name="left_date" class="compare-date-select"><option value="">Нет срезов</option></select>
               </div>
               <div class="field date-swap-field">
                 <label class="date-swap-label" for="swapCompareDatesButton">Поменять даты местами</label>
-                <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="Поменять даты местами"><span>↰</span><span>↳</span></button>
+                <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="Поменять даты местами"><span>←</span><span>→</span></button>
               </div>
               <div class="field">
                 <label for="rightDate">Дата среза 2</label>
-                <select id="rightDate" name="right_date"><option value="">Нет срезов</option></select>
+                <select id="rightDate" name="right_date" class="compare-date-select"><option value="">Нет срезов</option></select>
               </div>
             </div>
           </div>
           <div class="field">
             <label>Поля для сравнения</label>
-            <div class="compare-field-group">{compareFieldsHtml}{includeMissingHtml}</div>
+            <div class="compare-field-group">{compareFieldsHtml}<span class="compare-option-caption">Дополнительные опции</span>{includeMissingHtml}</div>
           </div>
         </div>
         <p><button type="submit">Сравнить</button></p>
@@ -2358,30 +2360,32 @@ def buildSnapshotComparisonPage(
     h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; }}
     .meta {{ color: var(--muted); margin: 0 0 14px; line-height: 1.6; }}
     .controls-panel {{ border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; background: var(--panel); margin: 0 0 18px; }}
-    .controls-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; align-items: start; }}
+    .controls-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; align-items: start; }}
     .field {{ display: flex; flex-direction: column; gap: 6px; }}
     .field label {{ font-weight: 700; }}
     .date-swap-field {{ justify-content: flex-end; }}
     .date-swap-label {{ opacity: 0; pointer-events: none; user-select: none; }}
     select {{ border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }}
-    .compare-field-group {{ display: flex; flex-direction: column; gap: 8px; padding-top: 2px; }}
-    .compare-field-option {{ display: flex; align-items: center; gap: 8px; color: var(--text); }}
-    .compare-date-row {{ display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }}
-    .compare-date-row .field {{ flex: 1 1 220px; }}
+    .compare-field-group {{ display: flex; flex-wrap: wrap; gap: 6px 14px; padding-top: 2px; }}
+    .compare-field-option {{ display: inline-flex; align-items: center; gap: 6px; color: var(--text); white-space: nowrap; }}
+    .compare-option-caption {{ width: 100%; color: var(--muted); font-size: 0.9rem; font-weight: 700; margin-top: 2px; }}
+    .compare-date-row {{ display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }}
+    .compare-date-row .field {{ flex: 0 0 auto; min-width: 0; }}
+    .compare-date-select {{ min-width: 158px; width: auto; }}
     .date-swap-button {{
       display: inline-flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 0;
-      min-width: 48px;
-      min-height: 48px;
-      padding: 8px 10px;
+      min-width: 34px;
+      min-height: 34px;
+      padding: 4px 6px;
       background: #eef2f5;
       color: #375d77;
       border: 1px solid var(--line);
     }}
-    .date-swap-button span {{ line-height: 1; font-size: 1rem; }}
+    .date-swap-button span {{ line-height: 1; font-size: 0.9rem; }}
     button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; background: var(--orange); color: #ffffff; }}
     .summary-note {{ color: var(--muted); margin: 0 0 14px; }}
     .table-wrap {{ overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
@@ -2452,21 +2456,21 @@ def buildSnapshotComparisonPage(
             <div class="compare-date-row">
               <div class="field">
                 <label for="leftDate">Дата среза 1</label>
-                <select id="leftDate" name="left_date">{leftDateOptionsHtml}</select>
+                <select id="leftDate" name="left_date" class="compare-date-select">{leftDateOptionsHtml}</select>
               </div>
               <div class="field date-swap-field">
                 <label class="date-swap-label" for="swapCompareDatesButton">Поменять даты местами</label>
-                <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="Поменять даты местами"><span>↰</span><span>↳</span></button>
+                <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="Поменять даты местами"><span>←</span><span>→</span></button>
               </div>
               <div class="field">
                 <label for="rightDate">Дата среза 2</label>
-                <select id="rightDate" name="right_date">{rightDateOptionsHtml}</select>
+                <select id="rightDate" name="right_date" class="compare-date-select">{rightDateOptionsHtml}</select>
               </div>
             </div>
           </div>
           <div class="field">
             <label>Поля для сравнения</label>
-            <div class="compare-field-group">{fieldOptionsHtml}{includeMissingHtml}</div>
+            <div class="compare-field-group">{fieldOptionsHtml}<span class="compare-option-caption">Дополнительные опции</span>{includeMissingHtml}</div>
           </div>
         </div>
         <p><button type="submit">Сравнить</button></p>
