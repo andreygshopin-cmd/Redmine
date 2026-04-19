@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from threading import Lock
 
 from sqlalchemy import bindparam, create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -26,6 +27,10 @@ def chunkSequence(items: Sequence[dict[str, object]], chunkSize: int) -> list[li
 normalizedDatabaseUrl = normalizeDatabaseUrl(config.databaseUrl)
 engine = create_engine(normalizedDatabaseUrl, pool_pre_ping=True) if normalizedDatabaseUrl else None
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if engine else None
+_projectsTableEnsureLock = Lock()
+_issueSnapshotTablesEnsureLock = Lock()
+_projectsTableEnsured = False
+_issueSnapshotTablesEnsured = False
 
 
 def checkDatabaseConnection() -> bool:
@@ -39,239 +44,261 @@ def checkDatabaseConnection() -> bool:
 
 
 def ensureProjectsTable() -> None:
+    global _projectsTableEnsured
+
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
 
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS projects (
-                    id SERIAL PRIMARY KEY,
-                    redmine_id INTEGER NOT NULL UNIQUE,
-                    name TEXT NOT NULL,
-                    identifier TEXT,
-                    status INTEGER,
-                    homepage TEXT,
-                    parent_redmine_id INTEGER,
-                    created_on TIMESTAMPTZ NULL,
-                    updated_on TIMESTAMPTZ NULL,
-                    is_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-                    partial_load BOOLEAN NOT NULL DEFAULT FALSE,
-                    is_disabled BOOLEAN NOT NULL DEFAULT FALSE,
-                    synced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    if _projectsTableEnsured:
+        return
+
+    with _projectsTableEnsureLock:
+        if _projectsTableEnsured:
+            return
+
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS projects (
+                        id SERIAL PRIMARY KEY,
+                        redmine_id INTEGER NOT NULL UNIQUE,
+                        name TEXT NOT NULL,
+                        identifier TEXT,
+                        status INTEGER,
+                        homepage TEXT,
+                        parent_redmine_id INTEGER,
+                        created_on TIMESTAMPTZ NULL,
+                        updated_on TIMESTAMPTZ NULL,
+                        is_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                        partial_load BOOLEAN NOT NULL DEFAULT FALSE,
+                        is_disabled BOOLEAN NOT NULL DEFAULT FALSE,
+                        synced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
                 )
-                """
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                ALTER TABLE projects
-                ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT FALSE
-                """
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE projects
+                    ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT FALSE
+                    """
+                )
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                ALTER TABLE projects
-                ADD COLUMN IF NOT EXISTS partial_load BOOLEAN NOT NULL DEFAULT FALSE
-                """
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE projects
+                    ADD COLUMN IF NOT EXISTS partial_load BOOLEAN NOT NULL DEFAULT FALSE
+                    """
+                )
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                ALTER TABLE projects
-                ADD COLUMN IF NOT EXISTS is_disabled BOOLEAN NOT NULL DEFAULT FALSE
-                """
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE projects
+                    ADD COLUMN IF NOT EXISTS is_disabled BOOLEAN NOT NULL DEFAULT FALSE
+                    """
+                )
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                UPDATE projects
-                SET is_enabled = NOT COALESCE(is_disabled, FALSE)
-                WHERE is_enabled IS DISTINCT FROM NOT COALESCE(is_disabled, FALSE)
-                """
+            connection.execute(
+                text(
+                    """
+                    UPDATE projects
+                    SET is_enabled = NOT COALESCE(is_disabled, FALSE)
+                    WHERE is_enabled IS DISTINCT FROM NOT COALESCE(is_disabled, FALSE)
+                    """
+                )
             )
-        )
+
+        _projectsTableEnsured = True
 
 
 def ensureIssueSnapshotTables() -> None:
+    global _issueSnapshotTablesEnsured
+
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
 
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS issue_snapshot_runs (
-                    id BIGSERIAL PRIMARY KEY,
-                    project_redmine_id INTEGER NOT NULL,
-                    project_name TEXT NOT NULL,
-                    project_identifier TEXT NOT NULL,
-                    captured_for_date DATE NOT NULL DEFAULT CURRENT_DATE,
-                    captured_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    total_issues INTEGER NOT NULL DEFAULT 0,
-                    total_baseline_estimate_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
-                    total_estimated_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
-                    total_spent_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
-                    total_spent_hours_year DOUBLE PRECISION NOT NULL DEFAULT 0
+    if _issueSnapshotTablesEnsured:
+        return
+
+    with _issueSnapshotTablesEnsureLock:
+        if _issueSnapshotTablesEnsured:
+            return
+
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS issue_snapshot_runs (
+                        id BIGSERIAL PRIMARY KEY,
+                        project_redmine_id INTEGER NOT NULL,
+                        project_name TEXT NOT NULL,
+                        project_identifier TEXT NOT NULL,
+                        captured_for_date DATE NOT NULL DEFAULT CURRENT_DATE,
+                        captured_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        total_issues INTEGER NOT NULL DEFAULT 0,
+                        total_baseline_estimate_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
+                        total_estimated_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
+                        total_spent_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
+                        total_spent_hours_year DOUBLE PRECISION NOT NULL DEFAULT 0
+                    )
+                    """
                 )
-                """
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS issue_snapshot_items (
-                    id BIGSERIAL PRIMARY KEY,
-                    snapshot_run_id BIGINT NOT NULL REFERENCES issue_snapshot_runs(id) ON DELETE CASCADE,
-                    project_redmine_id INTEGER NOT NULL,
-                    issue_redmine_id INTEGER NOT NULL,
-                    subject TEXT,
-                    tracker_id INTEGER,
-                    tracker_name TEXT,
-                    status_id INTEGER,
-                    status_name TEXT,
-                    priority_id INTEGER,
-                    priority_name TEXT,
-                    author_id INTEGER,
-                    author_name TEXT,
-                    assigned_to_id INTEGER,
-                    assigned_to_name TEXT,
-                    parent_issue_redmine_id INTEGER,
-                    fixed_version_id INTEGER,
-                    fixed_version_name TEXT,
-                    done_ratio INTEGER,
-                    is_private BOOLEAN NOT NULL DEFAULT FALSE,
-                    baseline_estimate_hours DOUBLE PRECISION,
-                    estimated_hours DOUBLE PRECISION,
-                    spent_hours DOUBLE PRECISION,
-                    spent_hours_year DOUBLE PRECISION,
-                    start_date DATE NULL,
-                    due_date DATE NULL,
-                    created_on TIMESTAMPTZ NULL,
-                    updated_on TIMESTAMPTZ NULL,
-                    closed_on TIMESTAMPTZ NULL
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS issue_snapshot_items (
+                        id BIGSERIAL PRIMARY KEY,
+                        snapshot_run_id BIGINT NOT NULL REFERENCES issue_snapshot_runs(id) ON DELETE CASCADE,
+                        project_redmine_id INTEGER NOT NULL,
+                        issue_redmine_id INTEGER NOT NULL,
+                        subject TEXT,
+                        tracker_id INTEGER,
+                        tracker_name TEXT,
+                        status_id INTEGER,
+                        status_name TEXT,
+                        priority_id INTEGER,
+                        priority_name TEXT,
+                        author_id INTEGER,
+                        author_name TEXT,
+                        assigned_to_id INTEGER,
+                        assigned_to_name TEXT,
+                        parent_issue_redmine_id INTEGER,
+                        fixed_version_id INTEGER,
+                        fixed_version_name TEXT,
+                        done_ratio INTEGER,
+                        is_private BOOLEAN NOT NULL DEFAULT FALSE,
+                        baseline_estimate_hours DOUBLE PRECISION,
+                        estimated_hours DOUBLE PRECISION,
+                        spent_hours DOUBLE PRECISION,
+                        spent_hours_year DOUBLE PRECISION,
+                        start_date DATE NULL,
+                        due_date DATE NULL,
+                        created_on TIMESTAMPTZ NULL,
+                        updated_on TIMESTAMPTZ NULL,
+                        closed_on TIMESTAMPTZ NULL
+                    )
+                    """
                 )
-                """
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                ALTER TABLE issue_snapshot_runs
-                ADD COLUMN IF NOT EXISTS captured_for_date DATE NOT NULL DEFAULT CURRENT_DATE
-                """
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE issue_snapshot_runs
+                    ADD COLUMN IF NOT EXISTS captured_for_date DATE NOT NULL DEFAULT CURRENT_DATE
+                    """
+                )
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                ALTER TABLE issue_snapshot_runs
-                ADD COLUMN IF NOT EXISTS total_baseline_estimate_hours DOUBLE PRECISION NOT NULL DEFAULT 0
-                """
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE issue_snapshot_runs
+                    ADD COLUMN IF NOT EXISTS total_baseline_estimate_hours DOUBLE PRECISION NOT NULL DEFAULT 0
+                    """
+                )
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                ALTER TABLE issue_snapshot_items
-                ADD COLUMN IF NOT EXISTS baseline_estimate_hours DOUBLE PRECISION
-                """
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE issue_snapshot_items
+                    ADD COLUMN IF NOT EXISTS baseline_estimate_hours DOUBLE PRECISION
+                    """
+                )
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                ALTER TABLE issue_snapshot_runs
-                ADD COLUMN IF NOT EXISTS total_spent_hours_year DOUBLE PRECISION NOT NULL DEFAULT 0
-                """
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE issue_snapshot_runs
+                    ADD COLUMN IF NOT EXISTS total_spent_hours_year DOUBLE PRECISION NOT NULL DEFAULT 0
+                    """
+                )
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                ALTER TABLE issue_snapshot_items
-                ADD COLUMN IF NOT EXISTS spent_hours_year DOUBLE PRECISION
-                """
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE issue_snapshot_items
+                    ADD COLUMN IF NOT EXISTS spent_hours_year DOUBLE PRECISION
+                    """
+                )
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                ALTER TABLE issue_snapshot_runs
-                DROP CONSTRAINT IF EXISTS issue_snapshot_runs_snapshot_batch_id_fkey
-                """
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE issue_snapshot_runs
+                    DROP CONSTRAINT IF EXISTS issue_snapshot_runs_snapshot_batch_id_fkey
+                    """
+                )
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                ALTER TABLE issue_snapshot_runs
-                DROP COLUMN IF EXISTS snapshot_batch_id
-                """
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE issue_snapshot_runs
+                    DROP COLUMN IF EXISTS snapshot_batch_id
+                    """
+                )
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                DROP TABLE IF EXISTS issue_snapshot_batches
-                """
+            connection.execute(
+                text(
+                    """
+                    DROP TABLE IF EXISTS issue_snapshot_batches
+                    """
+                )
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                CREATE INDEX IF NOT EXISTS idx_issue_snapshot_runs_project_captured
-                ON issue_snapshot_runs(project_redmine_id, captured_at DESC)
-                """
+            connection.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_issue_snapshot_runs_project_captured
+                    ON issue_snapshot_runs(project_redmine_id, captured_at DESC)
+                    """
+                )
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_issue_snapshot_runs_project_date_unique
-                ON issue_snapshot_runs(project_redmine_id, captured_for_date)
-                """
+            connection.execute(
+                text(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_issue_snapshot_runs_project_date_unique
+                    ON issue_snapshot_runs(project_redmine_id, captured_for_date)
+                    """
+                )
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                CREATE INDEX IF NOT EXISTS idx_issue_snapshot_items_run
-                ON issue_snapshot_items(snapshot_run_id)
-                """
+            connection.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_issue_snapshot_items_run
+                    ON issue_snapshot_items(snapshot_run_id)
+                    """
+                )
             )
-        )
 
-        connection.execute(
-            text(
-                """
-                CREATE INDEX IF NOT EXISTS idx_issue_snapshot_items_issue
-                ON issue_snapshot_items(project_redmine_id, issue_redmine_id)
-                """
+            connection.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_issue_snapshot_items_issue
+                    ON issue_snapshot_items(project_redmine_id, issue_redmine_id)
+                    """
+                )
             )
-        )
+
+        _issueSnapshotTablesEnsured = True
 
 
 def listStoredProjects() -> list[dict[str, object]]:
