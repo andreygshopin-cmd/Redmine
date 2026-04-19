@@ -1967,6 +1967,7 @@ def buildSnapshotComparisonRows(
     leftIssues: list[dict[str, object]],
     rightIssues: list[dict[str, object]],
     selectedFields: list[str],
+    includeMissingIssues: bool = True,
 ) -> tuple[list[dict[str, object]], dict[str, int]]:
     leftIssuesById: dict[int, dict[str, object]] = {}
     rightIssuesById: dict[int, dict[str, object]] = {}
@@ -2020,6 +2021,9 @@ def buildSnapshotComparisonRows(
         if not rowHasChanges:
             continue
 
+        if changeKind in {"new", "deleted"} and not includeMissingIssues:
+            continue
+
         changedRows.append(
             {
                 "issue_redmine_id": issueId,
@@ -2040,6 +2044,7 @@ def buildSnapshotComparisonPage(
     leftDate: str | None = None,
     rightDate: str | None = None,
     selectedFields: list[str] | None = None,
+    includeMissingIssues: bool = True,
 ) -> str:
     availableDates = listSnapshotDatesForProject(projectRedmineId)
     normalizedFields = normalizeSnapshotCompareFields(selectedFields)
@@ -2057,6 +2062,8 @@ def buildSnapshotComparisonPage(
         compareQueryParts.append(f"right_date={quote(str(rightDate))}")
     for fieldKey in normalizedFields:
         compareQueryParts.append(f"field={quote(str(fieldKey))}")
+    if includeMissingIssues:
+        compareQueryParts.append("include_missing=1")
     currentCompareUrl = f"/projects/{projectRedmineId}/compare-snapshots"
     if compareQueryParts:
         currentCompareUrl += f"?{'&'.join(compareQueryParts)}"
@@ -2077,6 +2084,11 @@ def buildSnapshotComparisonPage(
             )
             for field in SNAPSHOT_COMPARE_FIELD_CONFIG
         )
+        includeMissingHtml = (
+            '<label class="compare-field-option">'
+            f'<input type="checkbox" name="include_missing" value="1"{" checked" if includeMissingIssues else ""}>'
+            "<span>Показывать новые/отсутствующие задачи</span></label>"
+        )
         return f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -2094,11 +2106,55 @@ def buildSnapshotComparisonPage(
     .controls-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }}
     .field {{ display: flex; flex-direction: column; gap: 6px; }}
     .field label {{ font-weight: 700; }}
+    .date-swap-field {{ justify-content: flex-end; }}
+    .date-swap-label {{ opacity: 0; pointer-events: none; user-select: none; }}
     select {{ border: 1px solid #d9e5eb; border-radius: 6px; padding: 10px 12px; font: inherit; }}
     .compare-field-group {{ display: flex; flex-direction: column; gap: 8px; }}
     .compare-field-option {{ display: flex; align-items: center; gap: 8px; color: #16324a; }}
+    .compare-date-row {{ display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }}
+    .compare-date-row .field {{ flex: 1 1 220px; }}
+    .date-swap-button {{
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      min-width: 48px;
+      min-height: 48px;
+      padding: 8px 10px;
+      background: #eef2f5;
+      color: #375d77;
+      border: 1px solid #d9e5eb;
+    }}
+    .date-swap-button span {{ line-height: 1; font-size: 1rem; }}
     button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; background: #ff6c0e; color: #ffffff; }}
     .empty-state {{ margin-top: 18px; border: 1px dashed #d9e5eb; border-radius: 8px; padding: 24px; background: #f7fbfc; color: #64798d; }}
+    .compare-loading-overlay {{
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+      background: rgba(255, 255, 255, 0.78);
+      backdrop-filter: blur(1px);
+      z-index: 9999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 140ms ease;
+    }}
+    .compare-loading-overlay.is-visible {{ opacity: 1; pointer-events: auto; }}
+    .compare-loading-spinner {{
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 3px solid rgba(82, 206, 230, 0.24);
+      border-top-color: #52cee6;
+      animation: snapshot-compare-spin 0.8s linear infinite;
+    }}
+    .compare-loading-text {{ font-weight: 700; color: #375d77; }}
+    @keyframes snapshot-compare-spin {{ to {{ transform: rotate(360deg); }} }}
   </style>
 </head>
 <body>
@@ -2107,19 +2163,27 @@ def buildSnapshotComparisonPage(
     <h1>Сравнение срезов проекта</h1>
     <p class="meta">Проект: {projectName}. Для сравнения нужен хотя бы один сохраненный срез.</p>
     <section class="controls-panel">
-      <form method="get">
+      <form method="get" id="compareSnapshotsForm">
         <div class="controls-grid">
-          <div class="field">
-            <label for="leftDate">Дата среза 1</label>
-            <select id="leftDate" name="left_date"><option value="">Нет срезов</option></select>
-          </div>
-          <div class="field">
-            <label for="rightDate">Дата среза 2</label>
-            <select id="rightDate" name="right_date"><option value="">Нет срезов</option></select>
+          <div class="field" style="grid-column: 1 / -1;">
+            <div class="compare-date-row">
+              <div class="field">
+                <label for="leftDate">Дата среза 1</label>
+                <select id="leftDate" name="left_date"><option value="">Нет срезов</option></select>
+              </div>
+              <div class="field date-swap-field">
+                <label class="date-swap-label" for="swapCompareDatesButton">Поменять даты местами</label>
+                <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="Поменять даты местами"><span>↰</span><span>↳</span></button>
+              </div>
+              <div class="field">
+                <label for="rightDate">Дата среза 2</label>
+                <select id="rightDate" name="right_date"><option value="">Нет срезов</option></select>
+              </div>
+            </div>
           </div>
           <div class="field">
             <label>Поля для сравнения</label>
-            <div class="compare-field-group">{compareFieldsHtml}</div>
+            <div class="compare-field-group">{compareFieldsHtml}{includeMissingHtml}</div>
           </div>
         </div>
         <p><button type="submit">Сравнить</button></p>
@@ -2127,6 +2191,31 @@ def buildSnapshotComparisonPage(
     </section>
     <div class="empty-state">Для этого проекта пока нет срезов, поэтому сравнивать еще нечего.</div>
   </main>
+  <div class="compare-loading-overlay" id="compareLoadingOverlay" aria-hidden="true">
+    <span class="compare-loading-spinner" aria-hidden="true"></span>
+    <span class="compare-loading-text">Сравнение срезов проекта...</span>
+  </div>
+  <script>
+    const compareSnapshotsForm = document.getElementById("compareSnapshotsForm");
+    const compareLoadingOverlay = document.getElementById("compareLoadingOverlay");
+    const swapCompareDatesButton = document.getElementById("swapCompareDatesButton");
+    const leftDateSelect = document.getElementById("leftDate");
+    const rightDateSelect = document.getElementById("rightDate");
+    compareSnapshotsForm?.addEventListener("submit", () => {{
+      if (compareLoadingOverlay) {{
+        compareLoadingOverlay.classList.add("is-visible");
+        compareLoadingOverlay.setAttribute("aria-hidden", "false");
+      }}
+    }});
+    swapCompareDatesButton?.addEventListener("click", () => {{
+      if (!leftDateSelect || !rightDateSelect) {{
+        return;
+      }}
+      const currentLeft = leftDateSelect.value;
+      leftDateSelect.value = rightDateSelect.value;
+      rightDateSelect.value = currentLeft;
+    }});
+  </script>
 </body>
 </html>"""
 
@@ -2151,6 +2240,7 @@ def buildSnapshotComparisonPage(
         list(leftPayload.get("issues") or []),
         list(rightPayload.get("issues") or []),
         normalizedFields,
+        includeMissingIssues=includeMissingIssues,
     )
 
     fieldOptionsHtml = "".join(
@@ -2168,6 +2258,11 @@ def buildSnapshotComparisonPage(
     rightDateOptionsHtml = "".join(
         f'<option value="{escape(dateValue)}"{" selected" if dateValue == resolvedRightDate else ""}>{escape(dateValue)}</option>'
         for dateValue in availableDates
+    )
+    includeMissingHtml = (
+        '<label class="compare-field-option">'
+        f'<input type="checkbox" name="include_missing" value="1"{" checked" if includeMissingIssues else ""}>'
+        "<span>Показывать новые/отсутствующие задачи</span></label>"
     )
 
     selectedFieldLabels = [
@@ -2205,11 +2300,16 @@ def buildSnapshotComparisonPage(
         if row["change_kind"] == "new":
             rowBadgeHtml = '<span class="compare-badge compare-badge-new">Новая</span>'
         elif row["change_kind"] == "deleted":
-            rowBadgeHtml = '<span class="compare-badge compare-badge-deleted">Удалена</span>'
+            rowBadgeHtml = '<span class="compare-badge compare-badge-deleted">Отсутствует</span>'
+
+        issueIdValue = int(row["issue_redmine_id"])
+        issueLinkHtml = (
+            f'<a class="compare-issue-link" href="https://redmine.sms-it.ru/issues/{issueIdValue}" target="_blank" rel="noreferrer">{issueIdValue}</a>'
+        )
 
         bodyRows.append(
             "<tr>"
-            f'<td class="mono"><span class="compare-id-cell">{row["issue_redmine_id"]}{rowBadgeHtml}</span></td>'
+            f'<td class="mono"><span class="compare-id-cell">{issueLinkHtml}{rowBadgeHtml}</span></td>'
             f'<td class="subject-col">{escape(str(row["subject"]))}</td>'
             f'<td>{escape(str(row["tracker_name"]))}</td>'
             f'<td>{escape(str(row["left_status_name"]))}</td>'
@@ -2222,6 +2322,8 @@ def buildSnapshotComparisonPage(
     compareUrlCurrent = f"/projects/{projectRedmineId}/compare-snapshots?left_date={quote(str(resolvedLeftDate))}&right_date={quote(str(resolvedRightDate))}"
     for fieldKey in normalizedFields:
         compareUrlCurrent += f"&field={quote(str(fieldKey))}"
+    if includeMissingIssues:
+        compareUrlCurrent += "&include_missing=1"
     navPanelHtml = buildProjectContextNavPanel(
         projectRedmineId,
         projectIdentifierRaw,
@@ -2259,9 +2361,27 @@ def buildSnapshotComparisonPage(
     .controls-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; align-items: start; }}
     .field {{ display: flex; flex-direction: column; gap: 6px; }}
     .field label {{ font-weight: 700; }}
+    .date-swap-field {{ justify-content: flex-end; }}
+    .date-swap-label {{ opacity: 0; pointer-events: none; user-select: none; }}
     select {{ border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }}
     .compare-field-group {{ display: flex; flex-direction: column; gap: 8px; padding-top: 2px; }}
     .compare-field-option {{ display: flex; align-items: center; gap: 8px; color: var(--text); }}
+    .compare-date-row {{ display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }}
+    .compare-date-row .field {{ flex: 1 1 220px; }}
+    .date-swap-button {{
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      min-width: 48px;
+      min-height: 48px;
+      padding: 8px 10px;
+      background: #eef2f5;
+      color: #375d77;
+      border: 1px solid var(--line);
+    }}
+    .date-swap-button span {{ line-height: 1; font-size: 1rem; }}
     button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; background: var(--orange); color: #ffffff; }}
     .summary-note {{ color: var(--muted); margin: 0 0 14px; }}
     .table-wrap {{ overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
@@ -2275,6 +2395,8 @@ def buildSnapshotComparisonPage(
     .compare-value {{ text-align: right; }}
     .changed-value {{ background: var(--highlight); }}
     .compare-id-cell {{ display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }}
+    .compare-issue-link {{ color: var(--blue); text-decoration: none; border-bottom: 1px dotted rgba(55, 93, 119, 0.45); }}
+    .compare-issue-link:hover {{ border-bottom-color: rgba(55, 93, 119, 0.9); }}
     .compare-badge {{
       display: inline-flex;
       align-items: center;
@@ -2290,27 +2412,61 @@ def buildSnapshotComparisonPage(
     .compare-badge-new {{ background: rgba(56, 161, 105, 0.16); color: #2f855a; }}
     .compare-badge-deleted {{ background: rgba(229, 62, 62, 0.16); color: #c53030; }}
     .empty-state {{ border: 1px dashed var(--line); border-radius: 8px; padding: 24px; background: #f7fbfc; color: var(--muted); line-height: 1.6; }}
+    .compare-loading-overlay {{
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+      background: rgba(255, 255, 255, 0.78);
+      backdrop-filter: blur(1px);
+      z-index: 9999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 140ms ease;
+    }}
+    .compare-loading-overlay.is-visible {{ opacity: 1; pointer-events: auto; }}
+    .compare-loading-spinner {{
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 3px solid rgba(82, 206, 230, 0.24);
+      border-top-color: #52cee6;
+      animation: snapshot-compare-spin 0.8s linear infinite;
+    }}
+    .compare-loading-text {{ font-weight: 700; color: #375d77; }}
+    @keyframes snapshot-compare-spin {{ to {{ transform: rotate(360deg); }} }}
   </style>
 </head>
 <body>
   <main>
     {navPanelHtml}
     <h1>Сравнение срезов проекта</h1>
-    <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}. По умолчанию сравниваются последний и предпоследний срезы.</p>
+    <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}.</p>
     <section class="controls-panel">
-      <form method="get">
+      <form method="get" id="compareSnapshotsForm">
         <div class="controls-grid">
-          <div class="field">
-            <label for="leftDate">Дата среза 1</label>
-            <select id="leftDate" name="left_date">{leftDateOptionsHtml}</select>
-          </div>
-          <div class="field">
-            <label for="rightDate">Дата среза 2</label>
-            <select id="rightDate" name="right_date">{rightDateOptionsHtml}</select>
+          <div class="field" style="grid-column: 1 / -1;">
+            <div class="compare-date-row">
+              <div class="field">
+                <label for="leftDate">Дата среза 1</label>
+                <select id="leftDate" name="left_date">{leftDateOptionsHtml}</select>
+              </div>
+              <div class="field date-swap-field">
+                <label class="date-swap-label" for="swapCompareDatesButton">Поменять даты местами</label>
+                <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="Поменять даты местами"><span>↰</span><span>↳</span></button>
+              </div>
+              <div class="field">
+                <label for="rightDate">Дата среза 2</label>
+                <select id="rightDate" name="right_date">{rightDateOptionsHtml}</select>
+              </div>
+            </div>
           </div>
           <div class="field">
             <label>Поля для сравнения</label>
-            <div class="compare-field-group">{fieldOptionsHtml}</div>
+            <div class="compare-field-group">{fieldOptionsHtml}{includeMissingHtml}</div>
           </div>
         </div>
         <p><button type="submit">Сравнить</button></p>
@@ -2339,6 +2495,31 @@ def buildSnapshotComparisonPage(
         ''' if comparisonRows else '<div class="empty-state">По выбранным полям между этими двумя срезами изменений не найдено.</div>'
     }
   </main>
+  <div class="compare-loading-overlay" id="compareLoadingOverlay" aria-hidden="true">
+    <span class="compare-loading-spinner" aria-hidden="true"></span>
+    <span class="compare-loading-text">Сравнение срезов проекта...</span>
+  </div>
+  <script>
+    const compareSnapshotsForm = document.getElementById("compareSnapshotsForm");
+    const compareLoadingOverlay = document.getElementById("compareLoadingOverlay");
+    const swapCompareDatesButton = document.getElementById("swapCompareDatesButton");
+    const leftDateSelect = document.getElementById("leftDate");
+    const rightDateSelect = document.getElementById("rightDate");
+    compareSnapshotsForm?.addEventListener("submit", () => {{
+      if (compareLoadingOverlay) {{
+        compareLoadingOverlay.classList.add("is-visible");
+        compareLoadingOverlay.setAttribute("aria-hidden", "false");
+      }}
+    }});
+    swapCompareDatesButton?.addEventListener("click", () => {{
+      if (!leftDateSelect || !rightDateSelect) {{
+        return;
+      }}
+      const currentLeft = leftDateSelect.value;
+      leftDateSelect.value = rightDateSelect.value;
+      rightDateSelect.value = currentLeft;
+    }});
+  </script>
 </body>
 </html>"""
 
@@ -4753,13 +4934,22 @@ def getProjectSnapshotComparePage(
     left_date: str | None = Query(None, description="Дата первого среза в формате YYYY-MM-DD"),
     right_date: str | None = Query(None, description="Дата второго среза в формате YYYY-MM-DD"),
     field: list[str] = Query([]),
+    include_missing: int = Query(1),
 ) -> HTMLResponse:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureProjectsTable()
     ensureIssueSnapshotTables()
-    return HTMLResponse(buildSnapshotComparisonPage(project_redmine_id, left_date, right_date, field))
+    return HTMLResponse(
+        buildSnapshotComparisonPage(
+            project_redmine_id,
+            left_date,
+            right_date,
+            field,
+            includeMissingIssues=bool(include_missing),
+        )
+    )
 
 
 @app.get("/projects/{project_redmine_id}/burndown", response_class=HTMLResponse)
