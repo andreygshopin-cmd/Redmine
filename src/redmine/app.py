@@ -2044,7 +2044,7 @@ def buildSnapshotComparisonPage(
     leftDate: str | None = None,
     rightDate: str | None = None,
     selectedFields: list[str] | None = None,
-    includeMissingIssues: bool = True,
+    includeMissingIssues: bool = False,
 ) -> str:
     availableDates = listSnapshotDatesForProject(projectRedmineId)
     normalizedFields = normalizeSnapshotCompareFields(selectedFields)
@@ -2125,7 +2125,7 @@ def buildSnapshotComparisonPage(
       align-items: center;
       justify-content: center;
       gap: 0;
-      min-width: 14px;
+      min-width: 6px;
       min-height: 28px;
       padding: 2px 1px;
       background: #eef2f5;
@@ -2230,6 +2230,7 @@ def buildSnapshotComparisonPage(
       const currentLeft = leftDateSelect.value;
       leftDateSelect.value = rightDateSelect.value;
       rightDateSelect.value = currentLeft;
+      compareSnapshotsForm?.requestSubmit();
     }});
   </script>
 </body>
@@ -2396,7 +2397,7 @@ def buildSnapshotComparisonPage(
       align-items: center;
       justify-content: center;
       gap: 0;
-      min-width: 14px;
+      min-width: 6px;
       min-height: 28px;
       padding: 2px 1px;
       background: #eef2f5;
@@ -2550,6 +2551,7 @@ def buildSnapshotComparisonPage(
       const currentLeft = leftDateSelect.value;
       leftDateSelect.value = rightDateSelect.value;
       rightDateSelect.value = currentLeft;
+      compareSnapshotsForm?.requestSubmit();
     }});
   </script>
 </body>
@@ -5320,7 +5322,7 @@ def getProjectSnapshotComparePage(
     left_date: str | None = Query(None, description="Дата первого среза в формате YYYY-MM-DD"),
     right_date: str | None = Query(None, description="Дата второго среза в формате YYYY-MM-DD"),
     field: list[str] = Query([]),
-    include_missing: int = Query(1),
+    include_missing: int = Query(0),
 ) -> HTMLResponse:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
