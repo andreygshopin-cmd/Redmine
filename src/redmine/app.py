@@ -1963,20 +1963,15 @@ def getSnapshotCompareNumericValue(issue: dict[str, object] | None, compareField
         return 0.0
 
 
-def isSnapshotIssueEmptyForMissingCompare(issue: dict[str, object] | None) -> bool:
+def isSnapshotIssueEmptyForMissingCompare(
+    issue: dict[str, object] | None,
+    selectedFields: list[str],
+) -> bool:
     if not issue:
         return True
 
-    metricKeys = (
-        "baseline_estimate_hours",
-        "estimated_hours",
-        "spent_hours_year",
-    )
-    for metricKey in metricKeys:
-        try:
-            metricValue = float(issue.get(metricKey) or 0)
-        except (TypeError, ValueError):
-            metricValue = 0.0
+    for fieldKey in selectedFields:
+        metricValue = getSnapshotCompareNumericValue(issue, fieldKey)
         if abs(metricValue) > 1e-9:
             return False
     return True
@@ -2043,8 +2038,8 @@ def buildSnapshotComparisonRows(
         if (
             changeKind in {"new", "deleted"}
             and not includeMissingIssues
-            and isSnapshotIssueEmptyForMissingCompare(leftIssue)
-            and isSnapshotIssueEmptyForMissingCompare(rightIssue)
+            and isSnapshotIssueEmptyForMissingCompare(leftIssue, selectedFields)
+            and isSnapshotIssueEmptyForMissingCompare(rightIssue, selectedFields)
         ):
             continue
 
