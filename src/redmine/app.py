@@ -1799,6 +1799,10 @@ def buildSnapshotSummaryView(summary: dict[str, object] | None) -> dict[str, flo
     estimatedHours = float(source.get("estimated_hours") or 0)
     spentHours = float(source.get("spent_hours") or 0)
     spentHoursYear = float(source.get("spent_hours_year") or 0)
+    featureBaselineEstimateHours = float(source.get("feature_baseline_estimate_hours") or 0)
+    featureEstimatedHours = float(source.get("feature_estimated_hours") or 0)
+    featureSpentHours = float(source.get("feature_spent_hours") or 0)
+    featureSpentHoursYear = float(source.get("feature_spent_hours_year") or 0)
     developmentEstimatedHours = float(source.get("development_estimated_hours") or 0)
     developmentSpentHours = float(source.get("development_spent_hours") or 0)
     developmentSpentHoursYear = float(source.get("development_spent_hours_year") or 0)
@@ -1817,6 +1821,10 @@ def buildSnapshotSummaryView(summary: dict[str, object] | None) -> dict[str, flo
         "estimated_hours": estimatedHours,
         "spent_hours": spentHours,
         "spent_hours_year": spentHoursYear,
+        "feature_baseline_estimate_hours": featureBaselineEstimateHours,
+        "feature_estimated_hours": featureEstimatedHours,
+        "feature_spent_hours": featureSpentHours,
+        "feature_spent_hours_year": featureSpentHoursYear,
         "development_estimated_hours": developmentEstimatedHours,
         "development_spent_hours": developmentSpentHours,
         "development_spent_hours_year": developmentSpentHoursYear,
@@ -3796,6 +3804,16 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     bugEstimateHours = summaryView["bug_estimated_hours"]
     bugSpentHours = summaryView["bug_spent_hours"]
     bugSpentHoursYear = summaryView["bug_spent_hours_year"]
+    featureBaselineEstimateHours = summaryView["feature_baseline_estimate_hours"]
+    featureEstimatedHours = summaryView["feature_estimated_hours"]
+    featureSpentHours = summaryView["feature_spent_hours"]
+    featureSpentHoursYear = summaryView["feature_spent_hours_year"]
+    featureBaselineEstimateClass = (
+        "summary-feature-control-zero" if featureBaselineEstimateHours == 0 else "summary-feature-control-alert"
+    )
+    featureEstimatedClass = "summary-feature-control-zero" if featureEstimatedHours == 0 else "summary-feature-control-alert"
+    featureSpentYearClass = "summary-feature-control-zero" if featureSpentHoursYear == 0 else "summary-feature-control-alert"
+    featureSpentClass = "summary-feature-control-zero" if featureSpentHours == 0 else "summary-feature-control-alert"
 
     projectName = escape(str(snapshotRun.get("project_name") or "—"))
     capturedForDateRaw = str(snapshotRun.get("captured_for_date") or "")
@@ -3881,6 +3899,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .summary-table .summary-metric {{ text-align: right; font-size: 1.02rem; font-weight: 400; color: #173b5a; white-space: nowrap; }}
       .summary-table .summary-percent {{ font-weight: 700; }}
       .summary-table .summary-empty {{ background: #ffffff; }}
+      .summary-table .summary-feature-control-zero {{ color: #b8c3cf; }}
+      .summary-table .summary-feature-control-alert {{ color: #d54343; }}
       .filter-input-table,
       .filter-select-table,
       .filter-number-value,
@@ -4068,12 +4088,21 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           </thead>
           <tbody>
             <tr>
-              <th>Все задачи</th>
+              <th>Все задачи без фич</th>
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryEstimated">{formatPageHours(totalEstimatedHours)}</td>
               <td class="summary-metric" id="summarySpentYear" colspan="2">{formatPageHours(totalSpentHoursYear)}</td>
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summarySpent" colspan="2">{formatPageHours(totalSpentHours)}</td>
+              <td class="summary-empty"></td>
+            </tr>
+            <tr>
+              <th>Контроль списания по фичам</th>
+              <td class="summary-metric {featureBaselineEstimateClass}" id="summaryFeatureBaselineEstimate">{formatPageHours(featureBaselineEstimateHours)}</td>
+              <td class="summary-metric {featureEstimatedClass}" id="summaryFeatureEstimated">{formatPageHours(featureEstimatedHours)}</td>
+              <td class="summary-metric {featureSpentYearClass}" id="summaryFeatureSpentYear" colspan="2">{formatPageHours(featureSpentHoursYear)}</td>
+              <td class="summary-empty"></td>
+              <td class="summary-metric {featureSpentClass}" id="summaryFeatureSpent" colspan="2">{formatPageHours(featureSpentHours)}</td>
               <td class="summary-empty"></td>
             </tr>
             <tr>
@@ -4198,6 +4227,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       let currentSnapshotPageSize = {initialPageSize};
       let snapshotReloadTimer = null;
       const summaryBaselineEstimate = document.getElementById("summaryBaselineEstimate");
+      const summaryFeatureBaselineEstimate = document.getElementById("summaryFeatureBaselineEstimate");
+      const summaryFeatureEstimated = document.getElementById("summaryFeatureEstimated");
+      const summaryFeatureSpent = document.getElementById("summaryFeatureSpent");
+      const summaryFeatureSpentYear = document.getElementById("summaryFeatureSpentYear");
       const summaryEstimated = document.getElementById("summaryEstimated");
       const summarySpent = document.getElementById("summarySpent");
       const summarySpentYear = document.getElementById("summarySpentYear");
@@ -4269,6 +4302,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         const estimatedHours = Number(summary?.estimated_hours || 0);
         const spentHours = Number(summary?.spent_hours || 0);
         const spentHoursYear = Number(summary?.spent_hours_year || 0);
+        const featureBaselineEstimateHours = Number(summary?.feature_baseline_estimate_hours || 0);
+        const featureEstimatedHours = Number(summary?.feature_estimated_hours || 0);
+        const featureSpentHours = Number(summary?.feature_spent_hours || 0);
+        const featureSpentHoursYear = Number(summary?.feature_spent_hours_year || 0);
         const developmentEstimatedHours = Number(summary?.development_estimated_hours || 0);
         const developmentSpentHours = Number(summary?.development_spent_hours || 0);
         const developmentSpentHoursYear = Number(summary?.development_spent_hours_year || 0);
@@ -4285,6 +4322,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           estimatedHours,
           spentHours,
           spentHoursYear,
+          featureBaselineEstimateHours,
+          featureEstimatedHours,
+          featureSpentHours,
+          featureSpentHoursYear,
           developmentEstimatedHours,
           developmentSpentHours,
           developmentSpentHoursYear,
@@ -4422,7 +4463,19 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 
       function renderSnapshotSummary(summary) {{
         const view = buildSummaryView(summary);
+        const updateFeatureControlMetric = (node, value) => {{
+          if (!node) {{
+            return;
+          }}
+          node.textContent = formatFilterHours(value);
+          node.classList.toggle("summary-feature-control-zero", Number(value || 0) === 0);
+          node.classList.toggle("summary-feature-control-alert", Number(value || 0) !== 0);
+        }};
         if (summaryBaselineEstimate) summaryBaselineEstimate.textContent = formatFilterHours(view.baselineEstimateHours);
+        updateFeatureControlMetric(summaryFeatureBaselineEstimate, view.featureBaselineEstimateHours);
+        updateFeatureControlMetric(summaryFeatureEstimated, view.featureEstimatedHours);
+        updateFeatureControlMetric(summaryFeatureSpent, view.featureSpentHours);
+        updateFeatureControlMetric(summaryFeatureSpentYear, view.featureSpentHoursYear);
         if (summaryEstimated) summaryEstimated.textContent = formatFilterHours(view.estimatedHours);
         if (summarySpent) summarySpent.textContent = formatFilterHours(view.spentHours);
         if (summarySpentYear) summarySpentYear.textContent = formatFilterHours(view.spentHoursYear);
