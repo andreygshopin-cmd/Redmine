@@ -1963,6 +1963,26 @@ def getSnapshotCompareNumericValue(issue: dict[str, object] | None, compareField
         return 0.0
 
 
+def isSnapshotIssueEmptyForMissingCompare(issue: dict[str, object] | None) -> bool:
+    if not issue:
+        return True
+
+    metricKeys = (
+        "baseline_estimate_hours",
+        "estimated_hours",
+        "spent_hours",
+        "spent_hours_year",
+    )
+    for metricKey in metricKeys:
+        try:
+            metricValue = float(issue.get(metricKey) or 0)
+        except (TypeError, ValueError):
+            metricValue = 0.0
+        if abs(metricValue) > 1e-9:
+            return False
+    return True
+
+
 def buildSnapshotComparisonRows(
     leftIssues: list[dict[str, object]],
     rightIssues: list[dict[str, object]],
@@ -2021,7 +2041,12 @@ def buildSnapshotComparisonRows(
         if not rowHasChanges:
             continue
 
-        if changeKind in {"new", "deleted"} and not includeMissingIssues:
+        if (
+            changeKind in {"new", "deleted"}
+            and not includeMissingIssues
+            and isSnapshotIssueEmptyForMissingCompare(leftIssue)
+            and isSnapshotIssueEmptyForMissingCompare(rightIssue)
+        ):
             continue
 
         changedRows.append(
@@ -2087,7 +2112,7 @@ def buildSnapshotComparisonPage(
         includeMissingHtml = (
             '<label class="compare-field-option">'
             f'<input type="checkbox" name="include_missing" value="1"{" checked" if includeMissingIssues else ""}>'
-            "<span>Показывать новые/отсутствующие задачи</span></label>"
+            "<span>Показывать новые/отсутствующие задачи с нулевыми значениями</span></label>"
         )
         return f"""<!doctype html>
 <html lang="ru">
@@ -2279,7 +2304,7 @@ def buildSnapshotComparisonPage(
     includeMissingHtml = (
         '<label class="compare-field-option">'
         f'<input type="checkbox" name="include_missing" value="1"{" checked" if includeMissingIssues else ""}>'
-        "<span>Показывать новые/отсутствующие задачи</span></label>"
+        "<span>Показывать новые/отсутствующие задачи с нулевыми значениями</span></label>"
     )
 
     selectedFieldLabels = [
