@@ -29,8 +29,10 @@ engine = create_engine(normalizedDatabaseUrl, pool_pre_ping=True) if normalizedD
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if engine else None
 _projectsTableEnsureLock = Lock()
 _issueSnapshotTablesEnsureLock = Lock()
+_planningProjectsTableEnsureLock = Lock()
 _projectsTableEnsured = False
 _issueSnapshotTablesEnsured = False
+_planningProjectsTableEnsured = False
 
 
 def checkDatabaseConnection() -> bool:
@@ -299,6 +301,55 @@ def ensureIssueSnapshotTables() -> None:
             )
 
         _issueSnapshotTablesEnsured = True
+
+
+def ensurePlanningProjectsTable() -> None:
+    global _planningProjectsTableEnsured
+
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    if _planningProjectsTableEnsured:
+        return
+
+    with _planningProjectsTableEnsureLock:
+        if _planningProjectsTableEnsured:
+            return
+
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS planning_projects (
+                        id SERIAL PRIMARY KEY,
+                        project_name TEXT NOT NULL,
+                        redmine_identifier TEXT,
+                        pm_name TEXT,
+                        baseline_assessment TEXT,
+                        start_date DATE NULL,
+                        end_date DATE NULL,
+                        baseline_estimate_hours DOUBLE PRECISION NULL,
+                        p1 DOUBLE PRECISION NULL,
+                        p2 DOUBLE PRECISION NULL,
+                        estimate_doc_url TEXT,
+                        bitrix_url TEXT,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_planning_projects_name
+                    ON planning_projects(LOWER(project_name))
+                    """
+                )
+            )
+
+        _planningProjectsTableEnsured = True
 
 
 def listStoredProjects() -> list[dict[str, object]]:
@@ -576,6 +627,37 @@ def listRecentIssueSnapshotRuns(limit: int | None = 20) -> list[dict[str, object
                 {"limit_value": limit},
             )
 
+        return [dict(row._mapping) for row in rows]
+
+
+def listPlanningProjects() -> list[dict[str, object]]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    project_name,
+                    redmine_identifier,
+                    pm_name,
+                    baseline_assessment,
+                    start_date,
+                    end_date,
+                    baseline_estimate_hours,
+                    p1,
+                    p2,
+                    estimate_doc_url,
+                    bitrix_url,
+                    created_at,
+                    updated_at
+                FROM planning_projects
+                ORDER BY LOWER(project_name), id
+                """
+            )
+        )
         return [dict(row._mapping) for row in rows]
 
 
@@ -1723,6 +1805,128 @@ def updateProjectLoadSettings(enabledProjectIds: Sequence[int], partialProjectId
         "enabled_count": len(enabledIds),
         "partial_count": len(partialIds),
     }
+
+
+def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.begin() as connection:
+        row = connection.execute(
+            text(
+                """
+                INSERT INTO planning_projects (
+                    project_name,
+                    redmine_identifier,
+                    pm_name,
+                    baseline_assessment,
+                    start_date,
+                    end_date,
+                    baseline_estimate_hours,
+                    p1,
+                    p2,
+                    estimate_doc_url,
+                    bitrix_url,
+                    updated_at
+                ) VALUES (
+                    :project_name,
+                    :redmine_identifier,
+                    :pm_name,
+                    :baseline_assessment,
+                    :start_date,
+                    :end_date,
+                    :baseline_estimate_hours,
+                    :p1,
+                    :p2,
+                    :estimate_doc_url,
+                    :bitrix_url,
+                    CURRENT_TIMESTAMP
+                )
+                RETURNING
+                    id,
+                    project_name,
+                    redmine_identifier,
+                    pm_name,
+                    baseline_assessment,
+                    start_date,
+                    end_date,
+                    baseline_estimate_hours,
+                    p1,
+                    p2,
+                    estimate_doc_url,
+                    bitrix_url,
+                    created_at,
+                    updated_at
+                """
+            ),
+            project,
+        ).mappings().one()
+        return dict(row)
+
+
+def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[str, object] | None:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.begin() as connection:
+        row = connection.execute(
+            text(
+                """
+                UPDATE planning_projects
+                SET
+                    project_name = :project_name,
+                    redmine_identifier = :redmine_identifier,
+                    pm_name = :pm_name,
+                    baseline_assessment = :baseline_assessment,
+                    start_date = :start_date,
+                    end_date = :end_date,
+                    baseline_estimate_hours = :baseline_estimate_hours,
+                    p1 = :p1,
+                    p2 = :p2,
+                    estimate_doc_url = :estimate_doc_url,
+                    bitrix_url = :bitrix_url,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :project_id
+                RETURNING
+                    id,
+                    project_name,
+                    redmine_identifier,
+                    pm_name,
+                    baseline_assessment,
+                    start_date,
+                    end_date,
+                    baseline_estimate_hours,
+                    p1,
+                    p2,
+                    estimate_doc_url,
+                    bitrix_url,
+                    created_at,
+                    updated_at
+                """
+            ),
+            {
+                **project,
+                "project_id": projectId,
+            },
+        ).mappings().first()
+        return dict(row) if row else None
+
+
+def deletePlanningProject(projectId: int) -> bool:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.begin() as connection:
+        result = connection.execute(
+            text(
+                """
+                DELETE FROM planning_projects
+                WHERE id = :project_id
+                """
+            ),
+            {"project_id": projectId},
+        )
+        return bool(result.rowcount)
 
 
 def createIssueSnapshotRun(
