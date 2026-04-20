@@ -321,7 +321,16 @@ def listStoredProjects() -> list[dict[str, object]]:
                     SELECT
                         lr.project_redmine_id,
                         lr.captured_for_date AS latest_snapshot_date,
-                        COALESCE(SUM(COALESCE(i.baseline_estimate_hours, 0)), 0) AS baseline_estimate_hours,
+                        COALESCE(
+                            SUM(
+                                CASE
+                                    WHEN LOWER(TRIM(COALESCE(i.tracker_name, ''))) <> 'feature'
+                                    THEN COALESCE(i.baseline_estimate_hours, 0)
+                                    ELSE 0
+                                END
+                            ),
+                            0
+                        ) AS baseline_estimate_hours,
                         COALESCE(
                             SUM(
                                 CASE
@@ -428,48 +437,142 @@ def listRecentIssueSnapshotRuns(limit: int | None = 20) -> list[dict[str, object
             rows = connection.execute(
                 text(
                     """
+                SELECT
+                    r.id,
+                    r.project_redmine_id,
+                    COALESCE(p.name, r.project_name) AS project_name,
+                    COALESCE(p.identifier, r.project_identifier) AS project_identifier,
+                    r.captured_for_date,
+                    r.captured_at,
+                    r.total_issues,
+                    COALESCE(m.total_baseline_estimate_hours, 0) AS total_baseline_estimate_hours,
+                    COALESCE(m.total_estimated_hours, 0) AS total_estimated_hours,
+                    COALESCE(m.total_spent_hours, 0) AS total_spent_hours,
+                    COALESCE(m.total_spent_hours_year, 0) AS total_spent_hours_year
+                FROM issue_snapshot_runs r
+                LEFT JOIN projects p
+                    ON p.redmine_id = r.project_redmine_id
+                LEFT JOIN (
                     SELECT
-                        r.id,
-                        r.project_redmine_id,
-                        COALESCE(p.name, r.project_name) AS project_name,
-                        COALESCE(p.identifier, r.project_identifier) AS project_identifier,
-                        r.captured_for_date,
-                        r.captured_at,
-                        r.total_issues,
-                        r.total_baseline_estimate_hours,
-                        r.total_estimated_hours,
-                        r.total_spent_hours,
-                        r.total_spent_hours_year
-                    FROM issue_snapshot_runs r
-                    LEFT JOIN projects p
-                        ON p.redmine_id = r.project_redmine_id
-                    ORDER BY LOWER(COALESCE(p.name, r.project_name)), r.captured_for_date DESC, r.captured_at DESC, r.id DESC
-                    """
-                )
+                        snapshot_run_id,
+                        COALESCE(
+                            SUM(
+                                CASE
+                                    WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature'
+                                    THEN COALESCE(baseline_estimate_hours, 0)
+                                    ELSE 0
+                                END
+                            ),
+                            0
+                        ) AS total_baseline_estimate_hours,
+                        COALESCE(
+                            SUM(
+                                CASE
+                                    WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature'
+                                    THEN COALESCE(estimated_hours, 0)
+                                    ELSE 0
+                                END
+                            ),
+                            0
+                        ) AS total_estimated_hours,
+                        COALESCE(
+                            SUM(
+                                CASE
+                                    WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature'
+                                    THEN COALESCE(spent_hours, 0)
+                                    ELSE 0
+                                END
+                            ),
+                            0
+                        ) AS total_spent_hours,
+                        COALESCE(
+                            SUM(
+                                CASE
+                                    WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature'
+                                    THEN COALESCE(spent_hours_year, 0)
+                                    ELSE 0
+                                END
+                            ),
+                            0
+                        ) AS total_spent_hours_year
+                    FROM issue_snapshot_items
+                    GROUP BY snapshot_run_id
+                ) m
+                    ON m.snapshot_run_id = r.id
+                ORDER BY LOWER(COALESCE(p.name, r.project_name)), r.captured_for_date DESC, r.captured_at DESC, r.id DESC
+                """
             )
+        )
         else:
             rows = connection.execute(
                 text(
                     """
+                SELECT
+                    r.id,
+                    r.project_redmine_id,
+                    COALESCE(p.name, r.project_name) AS project_name,
+                    COALESCE(p.identifier, r.project_identifier) AS project_identifier,
+                    r.captured_for_date,
+                    r.captured_at,
+                    r.total_issues,
+                    COALESCE(m.total_baseline_estimate_hours, 0) AS total_baseline_estimate_hours,
+                    COALESCE(m.total_estimated_hours, 0) AS total_estimated_hours,
+                    COALESCE(m.total_spent_hours, 0) AS total_spent_hours,
+                    COALESCE(m.total_spent_hours_year, 0) AS total_spent_hours_year
+                FROM issue_snapshot_runs r
+                LEFT JOIN projects p
+                    ON p.redmine_id = r.project_redmine_id
+                LEFT JOIN (
                     SELECT
-                        r.id,
-                        r.project_redmine_id,
-                        COALESCE(p.name, r.project_name) AS project_name,
-                        COALESCE(p.identifier, r.project_identifier) AS project_identifier,
-                        r.captured_for_date,
-                        r.captured_at,
-                        r.total_issues,
-                        r.total_baseline_estimate_hours,
-                        r.total_estimated_hours,
-                        r.total_spent_hours,
-                        r.total_spent_hours_year
-                    FROM issue_snapshot_runs r
-                    LEFT JOIN projects p
-                        ON p.redmine_id = r.project_redmine_id
-                    ORDER BY r.captured_at DESC, r.id DESC
-                    LIMIT :limit_value
-                    """
-                ),
+                        snapshot_run_id,
+                        COALESCE(
+                            SUM(
+                                CASE
+                                    WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature'
+                                    THEN COALESCE(baseline_estimate_hours, 0)
+                                    ELSE 0
+                                END
+                            ),
+                            0
+                        ) AS total_baseline_estimate_hours,
+                        COALESCE(
+                            SUM(
+                                CASE
+                                    WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature'
+                                    THEN COALESCE(estimated_hours, 0)
+                                    ELSE 0
+                                END
+                            ),
+                            0
+                        ) AS total_estimated_hours,
+                        COALESCE(
+                            SUM(
+                                CASE
+                                    WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature'
+                                    THEN COALESCE(spent_hours, 0)
+                                    ELSE 0
+                                END
+                            ),
+                            0
+                        ) AS total_spent_hours,
+                        COALESCE(
+                            SUM(
+                                CASE
+                                    WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature'
+                                    THEN COALESCE(spent_hours_year, 0)
+                                    ELSE 0
+                                END
+                            ),
+                            0
+                        ) AS total_spent_hours_year
+                    FROM issue_snapshot_items
+                    GROUP BY snapshot_run_id
+                ) m
+                    ON m.snapshot_run_id = r.id
+                ORDER BY r.captured_at DESC, r.id DESC
+                LIMIT :limit_value
+                """
+            ),
                 {"limit_value": limit},
             )
 
@@ -1072,10 +1175,10 @@ def getFilteredSnapshotIssuesForProjectByDate(
         summaryStatement = text(
             f"""
             SELECT
-                COALESCE(SUM(COALESCE(baseline_estimate_hours, 0)), 0) AS baseline_estimate_hours,
-                COALESCE(SUM(COALESCE(estimated_hours, 0)), 0) AS estimated_hours,
-                COALESCE(SUM(COALESCE(spent_hours, 0)), 0) AS spent_hours,
-                COALESCE(SUM(COALESCE(spent_hours_year, 0)), 0) AS spent_hours_year,
+                COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature' THEN COALESCE(baseline_estimate_hours, 0) ELSE 0 END), 0) AS baseline_estimate_hours,
+                COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature' THEN COALESCE(estimated_hours, 0) ELSE 0 END), 0) AS estimated_hours,
+                COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature' THEN COALESCE(spent_hours, 0) ELSE 0 END), 0) AS spent_hours,
+                COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature' THEN COALESCE(spent_hours_year, 0) ELSE 0 END), 0) AS spent_hours_year,
                 COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'разработка' THEN COALESCE(estimated_hours, 0) ELSE 0 END), 0) AS development_estimated_hours,
                 COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'разработка' THEN COALESCE(spent_hours, 0) ELSE 0 END), 0) AS development_spent_hours,
                 COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'разработка' THEN COALESCE(spent_hours_year, 0) ELSE 0 END), 0) AS development_spent_hours_year,
