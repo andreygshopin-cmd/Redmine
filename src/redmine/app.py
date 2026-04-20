@@ -5630,6 +5630,37 @@ def buildPlanningProjectsPage() -> str:
     <p class="lead">Здесь можно вести ручной план по проектам: сроки, коэффициенты, ссылки на документы и Bitrix, а также ответственного ПМ.</p>
 
     <section class="panel">
+      <div class="table-meta">
+        <h2 style="margin:0;">Таблица планирования</h2>
+        <span id="planningProjectsCount">Загрузка...</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Название проекта</th>
+              <th>Идентификатор в Redmine</th>
+              <th>ПМ</th>
+              <th>Заказчик</th>
+              <th>Дата старта</th>
+              <th>Дата окончания</th>
+              <th>Базовая оценка</th>
+              <th>P1 (факт / база)</th>
+              <th>P2 (факт с багами / факт)</th>
+              <th>Док с оценкой</th>
+              <th>Bitrix</th>
+              <th>Комментарий</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody id="planningProjectsTableBody">
+            <tr><td colspan="13" class="empty-state">Загружаем записи...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
       <h2 id="planningFormTitle">Новая запись</h2>
       <form id="planningProjectForm">
         <input type="hidden" id="planningProjectId">
@@ -5689,37 +5720,6 @@ def buildPlanningProjectsPage() -> str:
         </div>
       </form>
       <div class="status" id="planningProjectsStatus"></div>
-    </section>
-
-    <section class="panel">
-      <div class="table-meta">
-        <h2 style="margin:0;">Таблица планирования</h2>
-        <span id="planningProjectsCount">Загрузка...</span>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Название проекта</th>
-              <th>Идентификатор в Redmine</th>
-              <th>ПМ</th>
-              <th>Заказчик</th>
-              <th>Дата старта</th>
-              <th>Дата окончания</th>
-              <th>Базовая оценка</th>
-              <th>P1 (факт / база)</th>
-              <th>P2 (факт с багами / факт)</th>
-              <th>Док с оценкой</th>
-              <th>Bitrix</th>
-              <th>Комментарий</th>
-              <th>Действия</th>
-            </tr>
-          </thead>
-          <tbody id="planningProjectsTableBody">
-            <tr><td colspan="13" class="empty-state">Загружаем записи...</td></tr>
-          </tbody>
-        </table>
-      </div>
     </section>
   </main>
 
