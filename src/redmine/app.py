@@ -2590,6 +2590,18 @@ def isBurndownReadyFeatureStatus(statusName: object) -> bool:
     return normalized.startswith("готов") or normalized in {"закрыта", "решена"}
 
 
+def calculateBurndownBudgetBaselineTotal(issues: list[dict[str, object]]) -> float:
+    budgetBaselineTotal = 0.0
+
+    for issue in issues:
+        trackerName = normalizeBurndownText(issue.get("tracker_name"))
+        if trackerName == "feature":
+            continue
+        budgetBaselineTotal += float(issue.get("baseline_estimate_hours") or 0)
+
+    return budgetBaselineTotal
+
+
 def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str, object]]:
     issuesById: dict[int, dict[str, object]] = {}
     for issue in issues:
@@ -2660,9 +2672,6 @@ def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str
             },
         )
 
-        baselineEstimateHours = float(issue.get("baseline_estimate_hours") or 0)
-        group["baseline_total"] = float(group["baseline_total"]) + baselineEstimateHours
-
         trackerName = normalizeBurndownText(issue.get("tracker_name"))
         statusName = issue.get("status_name")
         planHours = float(issue.get("estimated_hours") or 0)
@@ -2671,6 +2680,9 @@ def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str
         if featureId is not None and featureId == issueId and trackerName == "feature":
             group["is_ready"] = isBurndownReadyFeatureStatus(statusName)
             continue
+
+        baselineEstimateHours = float(issue.get("baseline_estimate_hours") or 0)
+        group["baseline_total"] = float(group["baseline_total"]) + baselineEstimateHours
 
         if trackerName == "разработка":
             if isBurndownClosedTaskStatus(statusName):
@@ -2701,11 +2713,12 @@ def buildBurndownChartSeeds(snapshotRuns: list[dict[str, object]]) -> list[dict[
     chartSeeds: list[dict[str, object]] = []
 
     for snapshotRun in snapshotRuns:
+        snapshotIssues = list(snapshotRun.get("issues") or [])
         chartSeeds.append(
             {
                 "date": str(snapshotRun.get("captured_for_date") or ""),
-                "budget_baseline_total": float(snapshotRun.get("total_baseline_estimate_hours") or 0),
-                "groups": buildBurndownFeatureGroups(list(snapshotRun.get("issues") or [])),
+                "budget_baseline_total": calculateBurndownBudgetBaselineTotal(snapshotIssues),
+                "groups": buildBurndownFeatureGroups(snapshotIssues),
             }
         )
 
@@ -3059,7 +3072,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
               <span class="legend-swatch budget-line"></span>
               <div>
                 <div class="legend-name">Бюджет</div>
-                <div class="legend-text">Оранжевая линия. Для каждого среза: сумма базовых оценок всех задач среза × P1 × P2.</div>
+                <div class="legend-text">Оранжевая линия. Для каждого среза: сумма базовых оценок всех задач среза без Feature × P1 × P2.</div>
               </div>
             </li>
             <li>
@@ -3136,7 +3149,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
             <li>
               <div>
                 <div class="legend-name">Feature и виртуальная Feature</div>
-                <div class="formula-text">Для каждой Feature отдельно собираются объем/остаток по разработке и по ошибкам. Если Feature в статусе «Готов*», «Закрыта» или «Решена», прогноз = разработка + ошибки. Иначе прогноз = max(текущий объем, сумма базовых оценок задач Feature и самой Feature × P1 × P2). Для задач без Feature считается отдельная виртуальная Feature по тем же правилам.</div>
+                <div class="formula-text">Для каждой Feature отдельно собираются объем/остаток по разработке и по ошибкам. Если Feature в статусе «Готов*», «Закрыта» или «Решена», прогноз = разработка + ошибки. Иначе прогноз = max(текущий объем, сумма базовых оценок задач Feature × P1 × P2). Для задач без Feature считается отдельная виртуальная Feature по тем же правилам.</div>
               </div>
             </li>
           </ul>
