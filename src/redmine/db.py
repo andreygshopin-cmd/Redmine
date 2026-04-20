@@ -325,7 +325,7 @@ def ensurePlanningProjectsTable() -> None:
                         project_name TEXT NOT NULL,
                         redmine_identifier TEXT,
                         pm_name TEXT,
-                        baseline_assessment TEXT,
+                        customer TEXT,
                         start_date DATE NULL,
                         end_date DATE NULL,
                         baseline_estimate_hours DOUBLE PRECISION NULL,
@@ -333,9 +333,44 @@ def ensurePlanningProjectsTable() -> None:
                         p2 DOUBLE PRECISION NULL,
                         estimate_doc_url TEXT,
                         bitrix_url TEXT,
+                        comment_text TEXT,
                         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    DO $$
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1
+                            FROM information_schema.columns
+                            WHERE table_name = 'planning_projects'
+                              AND column_name = 'baseline_assessment'
+                        ) AND NOT EXISTS (
+                            SELECT 1
+                            FROM information_schema.columns
+                            WHERE table_name = 'planning_projects'
+                              AND column_name = 'customer'
+                        ) THEN
+                            ALTER TABLE planning_projects
+                            RENAME COLUMN baseline_assessment TO customer;
+                        END IF;
+                    END
+                    $$;
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE planning_projects
+                    ADD COLUMN IF NOT EXISTS comment_text TEXT
                     """
                 )
             )
@@ -643,7 +678,7 @@ def listPlanningProjects() -> list[dict[str, object]]:
                     project_name,
                     redmine_identifier,
                     pm_name,
-                    baseline_assessment,
+                    customer,
                     start_date,
                     end_date,
                     baseline_estimate_hours,
@@ -651,6 +686,7 @@ def listPlanningProjects() -> list[dict[str, object]]:
                     p2,
                     estimate_doc_url,
                     bitrix_url,
+                    comment_text,
                     created_at,
                     updated_at
                 FROM planning_projects
@@ -1819,7 +1855,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     project_name,
                     redmine_identifier,
                     pm_name,
-                    baseline_assessment,
+                    customer,
                     start_date,
                     end_date,
                     baseline_estimate_hours,
@@ -1827,12 +1863,13 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     p2,
                     estimate_doc_url,
                     bitrix_url,
+                    comment_text,
                     updated_at
                 ) VALUES (
                     :project_name,
                     :redmine_identifier,
                     :pm_name,
-                    :baseline_assessment,
+                    :customer,
                     :start_date,
                     :end_date,
                     :baseline_estimate_hours,
@@ -1840,6 +1877,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     :p2,
                     :estimate_doc_url,
                     :bitrix_url,
+                    :comment_text,
                     CURRENT_TIMESTAMP
                 )
                 RETURNING
@@ -1847,7 +1885,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     project_name,
                     redmine_identifier,
                     pm_name,
-                    baseline_assessment,
+                    customer,
                     start_date,
                     end_date,
                     baseline_estimate_hours,
@@ -1855,6 +1893,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     p2,
                     estimate_doc_url,
                     bitrix_url,
+                    comment_text,
                     created_at,
                     updated_at
                 """
@@ -1877,7 +1916,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     project_name = :project_name,
                     redmine_identifier = :redmine_identifier,
                     pm_name = :pm_name,
-                    baseline_assessment = :baseline_assessment,
+                    customer = :customer,
                     start_date = :start_date,
                     end_date = :end_date,
                     baseline_estimate_hours = :baseline_estimate_hours,
@@ -1885,6 +1924,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     p2 = :p2,
                     estimate_doc_url = :estimate_doc_url,
                     bitrix_url = :bitrix_url,
+                    comment_text = :comment_text,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = :project_id
                 RETURNING
@@ -1892,7 +1932,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     project_name,
                     redmine_identifier,
                     pm_name,
-                    baseline_assessment,
+                    customer,
                     start_date,
                     end_date,
                     baseline_estimate_hours,
@@ -1900,6 +1940,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     p2,
                     estimate_doc_url,
                     bitrix_url,
+                    comment_text,
                     created_at,
                     updated_at
                 """

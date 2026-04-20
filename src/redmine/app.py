@@ -56,7 +56,7 @@ class PlanningProjectPayload(BaseModel):
     project_name: str
     redmine_identifier: str | None = None
     pm_name: str | None = None
-    baseline_assessment: str | None = None
+    customer: str | None = None
     start_date: str | None = None
     end_date: str | None = None
     baseline_estimate_hours: float | None = None
@@ -64,6 +64,7 @@ class PlanningProjectPayload(BaseModel):
     p2: float | None = None
     estimate_doc_url: str | None = None
     bitrix_url: str | None = None
+    comment_text: str | None = None
 
 
 PAGE_HTML = """<!doctype html>
@@ -5350,7 +5351,7 @@ def normalizePlanningProjectPayload(payload: PlanningProjectPayload) -> dict[str
         "project_name": projectName,
         "redmine_identifier": _normalizePlanningProjectText(payload.redmine_identifier),
         "pm_name": _normalizePlanningProjectText(payload.pm_name),
-        "baseline_assessment": _normalizePlanningProjectText(payload.baseline_assessment),
+        "customer": _normalizePlanningProjectText(payload.customer),
         "start_date": _normalizePlanningProjectDate(payload.start_date),
         "end_date": _normalizePlanningProjectDate(payload.end_date),
         "baseline_estimate_hours": payload.baseline_estimate_hours,
@@ -5358,6 +5359,7 @@ def normalizePlanningProjectPayload(payload: PlanningProjectPayload) -> dict[str
         "p2": payload.p2,
         "estimate_doc_url": _normalizePlanningProjectText(payload.estimate_doc_url),
         "bitrix_url": _normalizePlanningProjectText(payload.bitrix_url),
+        "comment_text": _normalizePlanningProjectText(payload.comment_text),
     }
 
 
@@ -5477,7 +5479,8 @@ def buildPlanningProjectsPage() -> str:
       font-weight: 700;
       font-size: 0.95rem;
     }
-    .field input {
+    .field input,
+    .field textarea {
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 6px;
@@ -5485,6 +5488,10 @@ def buildPlanningProjectsPage() -> str:
       font: inherit;
       color: var(--text);
       background: #ffffff;
+    }
+    .field textarea {
+      resize: vertical;
+      min-height: 88px;
     }
     .actions {
       display: flex;
@@ -5640,8 +5647,8 @@ def buildPlanningProjectsPage() -> str:
             <input id="planningProjectPm" type="text">
           </div>
           <div class="field">
-            <label for="planningProjectBaselineAssessment">Базовая оченка</label>
-            <input id="planningProjectBaselineAssessment" type="text">
+            <label for="planningProjectCustomer">Заказчик</label>
+            <input id="planningProjectCustomer" type="text">
           </div>
           <div class="field">
             <label for="planningProjectStartDate">Дата старта</label>
@@ -5671,6 +5678,10 @@ def buildPlanningProjectsPage() -> str:
             <label for="planningProjectBitrix">Bitrix</label>
             <input id="planningProjectBitrix" type="url" placeholder="https://">
           </div>
+          <div class="field field-wide">
+            <label for="planningProjectComment">Комментарий</label>
+            <textarea id="planningProjectComment"></textarea>
+          </div>
         </div>
         <div class="actions">
           <button type="submit" id="savePlanningProjectButton">Сохранить</button>
@@ -5692,7 +5703,7 @@ def buildPlanningProjectsPage() -> str:
               <th>Название проекта</th>
               <th>Идентификатор в Redmine</th>
               <th>ПМ</th>
-              <th>Базовая оченка</th>
+              <th>Заказчик</th>
               <th>Дата старта</th>
               <th>Дата окончания</th>
               <th>Базовая оценка</th>
@@ -5700,11 +5711,12 @@ def buildPlanningProjectsPage() -> str:
               <th>P2 (факт с багами / факт)</th>
               <th>Док с оценкой</th>
               <th>Bitrix</th>
+              <th>Комментарий</th>
               <th>Действия</th>
             </tr>
           </thead>
           <tbody id="planningProjectsTableBody">
-            <tr><td colspan="12" class="empty-state">Загружаем записи...</td></tr>
+            <tr><td colspan="13" class="empty-state">Загружаем записи...</td></tr>
           </tbody>
         </table>
       </div>
@@ -5721,7 +5733,7 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectName = document.getElementById("planningProjectName");
     const planningProjectIdentifier = document.getElementById("planningProjectIdentifier");
     const planningProjectPm = document.getElementById("planningProjectPm");
-    const planningProjectBaselineAssessment = document.getElementById("planningProjectBaselineAssessment");
+    const planningProjectCustomer = document.getElementById("planningProjectCustomer");
     const planningProjectStartDate = document.getElementById("planningProjectStartDate");
     const planningProjectEndDate = document.getElementById("planningProjectEndDate");
     const planningProjectBaselineEstimate = document.getElementById("planningProjectBaselineEstimate");
@@ -5729,6 +5741,7 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectP2 = document.getElementById("planningProjectP2");
     const planningProjectEstimateDoc = document.getElementById("planningProjectEstimateDoc");
     const planningProjectBitrix = document.getElementById("planningProjectBitrix");
+    const planningProjectComment = document.getElementById("planningProjectComment");
     const resetPlanningProjectFormButton = document.getElementById("resetPlanningProjectFormButton");
 
     function escapeHtml(value) {
@@ -5782,7 +5795,7 @@ def buildPlanningProjectsPage() -> str:
       planningProjectName.value = project.project_name ?? "";
       planningProjectIdentifier.value = project.redmine_identifier ?? "";
       planningProjectPm.value = project.pm_name ?? "";
-      planningProjectBaselineAssessment.value = project.baseline_assessment ?? "";
+      planningProjectCustomer.value = project.customer ?? "";
       planningProjectStartDate.value = project.start_date ?? "";
       planningProjectEndDate.value = project.end_date ?? "";
       planningProjectBaselineEstimate.value = project.baseline_estimate_hours ?? "";
@@ -5790,6 +5803,7 @@ def buildPlanningProjectsPage() -> str:
       planningProjectP2.value = project.p2 ?? "";
       planningProjectEstimateDoc.value = project.estimate_doc_url ?? "";
       planningProjectBitrix.value = project.bitrix_url ?? "";
+      planningProjectComment.value = project.comment_text ?? "";
       planningFormTitle.textContent = "Редактирование записи";
       setPlanningProjectsStatus("Запись загружена в форму для редактирования.");
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -5798,7 +5812,7 @@ def buildPlanningProjectsPage() -> str:
     function renderPlanningProjects(projects) {
       planningProjectsCount.textContent = `Всего записей: ${projects.length}`;
       if (!projects.length) {
-        planningProjectsTableBody.innerHTML = '<tr><td colspan="12" class="empty-state">Пока нет ни одной записи.</td></tr>';
+        planningProjectsTableBody.innerHTML = '<tr><td colspan="13" class="empty-state">Пока нет ни одной записи.</td></tr>';
         return;
       }
 
@@ -5807,7 +5821,7 @@ def buildPlanningProjectsPage() -> str:
           <td>${escapeHtml(project.project_name ?? "—")}</td>
           <td class="mono">${escapeHtml(project.redmine_identifier ?? "—")}</td>
           <td>${escapeHtml(project.pm_name ?? "—")}</td>
-          <td>${escapeHtml(project.baseline_assessment ?? "—")}</td>
+          <td>${escapeHtml(project.customer ?? "—")}</td>
           <td>${formatOptionalDate(project.start_date)}</td>
           <td>${formatOptionalDate(project.end_date)}</td>
           <td>${formatOptionalNumber(project.baseline_estimate_hours)}</td>
@@ -5815,6 +5829,7 @@ def buildPlanningProjectsPage() -> str:
           <td>${formatOptionalNumber(project.p2)}</td>
           <td class="link-cell">${buildOptionalLink(project.estimate_doc_url)}</td>
           <td class="link-cell">${buildOptionalLink(project.bitrix_url)}</td>
+          <td>${escapeHtml(project.comment_text ?? "—")}</td>
           <td>
             <div class="row-actions">
               <button type="button" class="edit-button" data-action="edit" data-id="${project.id}">Редактировать</button>
@@ -5826,7 +5841,7 @@ def buildPlanningProjectsPage() -> str:
     }
 
     async function loadPlanningProjects() {
-      planningProjectsTableBody.innerHTML = '<tr><td colspan="12" class="empty-state">Загружаем записи...</td></tr>';
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="13" class="empty-state">Загружаем записи...</td></tr>';
       const response = await fetch("/api/planning-projects");
       const payload = await response.json();
       if (!response.ok) {
@@ -5841,7 +5856,7 @@ def buildPlanningProjectsPage() -> str:
         project_name: planningProjectName.value.trim(),
         redmine_identifier: planningProjectIdentifier.value.trim(),
         pm_name: planningProjectPm.value.trim(),
-        baseline_assessment: planningProjectBaselineAssessment.value.trim(),
+        customer: planningProjectCustomer.value.trim(),
         start_date: planningProjectStartDate.value || null,
         end_date: planningProjectEndDate.value || null,
         baseline_estimate_hours: planningProjectBaselineEstimate.value === "" ? null : Number(planningProjectBaselineEstimate.value),
@@ -5849,6 +5864,7 @@ def buildPlanningProjectsPage() -> str:
         p2: planningProjectP2.value === "" ? null : Number(planningProjectP2.value),
         estimate_doc_url: planningProjectEstimateDoc.value.trim(),
         bitrix_url: planningProjectBitrix.value.trim(),
+        comment_text: planningProjectComment.value.trim(),
       };
     }
 
@@ -5932,7 +5948,7 @@ def buildPlanningProjectsPage() -> str:
 
     loadPlanningProjects().catch((error) => {
       planningProjectsCount.textContent = "Ошибка";
-      planningProjectsTableBody.innerHTML = '<tr><td colspan="12" class="empty-state">Не удалось загрузить записи.</td></tr>';
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="13" class="empty-state">Не удалось загрузить записи.</td></tr>';
       setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
     });
   </script>
