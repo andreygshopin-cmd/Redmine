@@ -1970,7 +1970,6 @@ def isSnapshotIssueEmptyForMissingCompare(issue: dict[str, object] | None) -> bo
     metricKeys = (
         "baseline_estimate_hours",
         "estimated_hours",
-        "spent_hours",
         "spent_hours_year",
     )
     for metricKey in metricKeys:
