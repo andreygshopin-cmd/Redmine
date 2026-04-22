@@ -5773,6 +5773,7 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectBitrix = document.getElementById("planningProjectBitrix");
     const planningProjectComment = document.getElementById("planningProjectComment");
     const resetPlanningProjectFormButton = document.getElementById("resetPlanningProjectFormButton");
+    const planningProjectFormSection = planningProjectForm ? planningProjectForm.closest(".panel") : null;
 
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, (char) => {
@@ -5830,6 +5831,12 @@ def buildPlanningProjectsPage() -> str:
       setPlanningProjectsStatus("");
     }
 
+    function scrollPlanningProjectFormIntoView() {
+      if (planningProjectFormSection instanceof HTMLElement) {
+        planningProjectFormSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+
     function fillPlanningProjectForm(project) {
       planningProjectId.value = project.id ?? "";
       planningProjectName.value = project.project_name ?? "";
@@ -5846,7 +5853,7 @@ def buildPlanningProjectsPage() -> str:
       planningProjectComment.value = project.comment_text ?? "";
       planningFormTitle.textContent = "Редактирование записи";
       setPlanningProjectsStatus("Запись загружена в форму для редактирования.");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollPlanningProjectFormIntoView();
     }
 
     function applyPlanningProjectPrefill(projects) {
@@ -5869,7 +5876,7 @@ def buildPlanningProjectsPage() -> str:
       }
       planningFormTitle.textContent = "Новая запись";
       setPlanningProjectsStatus(`Запись не найдена. Подготовлена новая форма для проекта с идентификатором ${queryState.redmineIdentifier}.`);
-      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+      scrollPlanningProjectFormIntoView();
     }
 
     function renderPlanningProjects(projects) {
