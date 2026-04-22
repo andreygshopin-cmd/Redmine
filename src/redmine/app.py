@@ -2722,7 +2722,7 @@ def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str
                 volume = factHours
                 remaining = 0.0
             else:
-                volume = max(planHours, factHours)
+                volume = max(baselineEstimateHours, planHours, factHours)
                 remaining = max(0.0, planHours - factHours)
             group["development_volume"] = float(group["development_volume"]) + volume
             group["development_remaining"] = float(group["development_remaining"]) + remaining
@@ -3164,7 +3164,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
             <li>
               <div>
                 <div class="legend-name">Разработка</div>
-                <div class="formula-text">Если статус задачи «Закрыта», «Решена» или «Отказ», то объем = факт, остаток = 0. Для остальных статусов: объем = max(план, факт), остаток = max(0, план − факт).</div>
+                <div class="formula-text">Если статус задачи «Закрыта», «Решена» или «Отказ», то объем = факт, остаток = 0. Для остальных статусов: объем = max(база, план, факт), остаток = max(0, план − факт).</div>
               </div>
             </li>
             <li>
@@ -5645,8 +5645,8 @@ def buildPlanningProjectsPage() -> str:
               <th>Дата старта</th>
               <th>Дата окончания</th>
               <th>Базовая оценка</th>
-              <th>P1 (факт / база)</th>
-              <th>P2 (факт с багами / факт)</th>
+              <th>P1 (факт / база), %</th>
+              <th>P2 (факт с багами / факт), %</th>
               <th>Док с оценкой</th>
               <th>Bitrix</th>
               <th>Комментарий</th>
@@ -5694,11 +5694,11 @@ def buildPlanningProjectsPage() -> str:
             <input id="planningProjectBaselineEstimate" type="number" step="0.1" inputmode="decimal">
           </div>
           <div class="field">
-            <label for="planningProjectP1">P1 (факт / база)</label>
+            <label for="planningProjectP1">P1 (факт / база), %</label>
             <input id="planningProjectP1" type="number" step="0.1" inputmode="decimal">
           </div>
           <div class="field">
-            <label for="planningProjectP2">P2 (факт с багами / факт)</label>
+            <label for="planningProjectP2">P2 (факт с багами / факт), %</label>
             <input id="planningProjectP2" type="number" step="0.1" inputmode="decimal">
           </div>
           <div class="field field-wide">
