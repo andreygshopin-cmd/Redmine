@@ -2723,7 +2723,7 @@ def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str
                 remaining = 0.0
             else:
                 volume = max(baselineEstimateHours, planHours, factHours)
-                remaining = max(0.0, planHours - factHours)
+                remaining = max(0.0, max(baselineEstimateHours, planHours) - factHours)
             group["development_volume"] = float(group["development_volume"]) + volume
             group["development_remaining"] = float(group["development_remaining"]) + remaining
         elif trackerName == "процессы разработки":
@@ -3164,7 +3164,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
             <li>
               <div>
                 <div class="legend-name">Разработка</div>
-                <div class="formula-text">Если статус задачи «Закрыта», «Решена» или «Отказ», то объем = факт, остаток = 0. Для остальных статусов: объем = max(база, план, факт), остаток = max(0, план − факт).</div>
+                <div class="formula-text">Если статус задачи «Закрыта», «Решена» или «Отказ», то объем = факт, остаток = 0. Для остальных статусов: объем = max(база, план, факт), остаток = max(0, max(база, план) − факт).</div>
               </div>
             </li>
             <li>
