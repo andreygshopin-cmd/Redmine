@@ -382,6 +382,35 @@ PAGE_HTML = """<!doctype html>
       min-width: 260px;
     }
 
+    .project-name-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .project-planning-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border: 1px solid #c9d7df;
+      border-radius: 999px;
+      background: #ffffff;
+      color: #426179;
+      text-decoration: none;
+      font-size: 0.74rem;
+      font-weight: 700;
+      line-height: 1;
+      box-shadow: none;
+    }
+
+    .project-planning-button:hover {
+      border-color: #375d77;
+      color: #375d77;
+      background: #f5fafb;
+    }
+
     .project-tree {
       display: inline-flex;
       align-items: center;
@@ -1186,6 +1215,7 @@ PAGE_HTML = """<!doctype html>
           const identifierHtml = identifier
             ? `<a class="project-link mono" href="${projectIssuesUrl}" target="_blank" rel="noreferrer">${identifier}</a>`
             : "—";
+          const planningProjectUrl = `/planning-projects?redmine_identifier=${encodeURIComponent(identifier)}&project_name=${encodeURIComponent(project?.name ?? "")}`;
           const level = Math.max(Number(project?.hierarchy_level ?? 0) || 0, 0);
           const projectTreeClass = level > 0 ? "project-tree has-parent" : "project-tree";
           const row = document.createElement("tr");
@@ -1199,7 +1229,7 @@ PAGE_HTML = """<!doctype html>
                 <button class="project-capture-button" type="button" data-project-id="${redmineId}" title="Получить срез по проекту" ${project?.is_enabled ? "" : "disabled"}>↓</button>
               </span>
             </td>
-            <td class="project-name-cell project-sticky-3"><span class="${projectTreeClass}" style="--tree-level:${level};"><a class="project-link" href="/projects/${encodeURIComponent(redmineId)}/burndown" target="_blank" rel="noreferrer">${project?.name ?? "\u2014"}</a></span></td>
+            <td class="project-name-cell project-sticky-3"><span class="${projectTreeClass}" style="--tree-level:${level};"><span class="project-name-wrap"><a class="project-link" href="/projects/${encodeURIComponent(redmineId)}/burndown" target="_blank" rel="noreferrer">${project?.name ?? "\u2014"}</a><a class="project-planning-button" href="${planningProjectUrl}" title="Открыть планирование проекта" aria-label="Открыть планирование проекта">i</a></span></span></td>
             <td>${identifierHtml}</td>
             <td>${formatHours(project?.baseline_estimate_hours)}</td>
             <td>${formatHours(project?.development_estimate_hours)}</td>
@@ -5783,6 +5813,16 @@ def buildPlanningProjectsPage() -> str:
       }
     }
 
+    function getPlanningProjectsQueryState() {
+      const params = new URLSearchParams(window.location.search);
+      const redmineIdentifier = String(params.get("redmine_identifier") || "").trim();
+      const projectName = String(params.get("project_name") || "").trim();
+      return {
+        redmineIdentifier,
+        projectName,
+      };
+    }
+
     function resetPlanningProjectForm() {
       planningProjectId.value = "";
       planningProjectForm.reset();
@@ -5807,6 +5847,29 @@ def buildPlanningProjectsPage() -> str:
       planningFormTitle.textContent = "Редактирование записи";
       setPlanningProjectsStatus("Запись загружена в форму для редактирования.");
       window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function applyPlanningProjectPrefill(projects) {
+      const queryState = getPlanningProjectsQueryState();
+      if (!queryState.redmineIdentifier) {
+        return;
+      }
+
+      const matchedProject = projects.find((project) => String(project?.redmine_identifier ?? "").trim() === queryState.redmineIdentifier);
+      if (matchedProject) {
+        fillPlanningProjectForm(matchedProject);
+        setPlanningProjectsStatus(`Открыто редактирование записи для проекта с идентификатором ${queryState.redmineIdentifier}.`);
+        return;
+      }
+
+      resetPlanningProjectForm();
+      planningProjectIdentifier.value = queryState.redmineIdentifier;
+      if (queryState.projectName) {
+        planningProjectName.value = queryState.projectName;
+      }
+      planningFormTitle.textContent = "Новая запись";
+      setPlanningProjectsStatus(`Запись не найдена. Подготовлена новая форма для проекта с идентификатором ${queryState.redmineIdentifier}.`);
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
     }
 
     function renderPlanningProjects(projects) {
@@ -5848,6 +5911,7 @@ def buildPlanningProjectsPage() -> str:
         throw new Error(payload.detail || "Не удалось загрузить планирование проектов.");
       }
       renderPlanningProjects(payload.projects || []);
+      applyPlanningProjectPrefill(payload.projects || []);
       return payload.projects || [];
     }
 
