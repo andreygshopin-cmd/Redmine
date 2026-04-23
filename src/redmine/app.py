@@ -26,6 +26,7 @@ from src.redmine.db import (
     getSnapshotRunsWithIssuesForProjectYear,
     getSnapshotIssuesForProjectByDate,
     listFilteredSnapshotIssuesForProjectByDate,
+    listLatestSnapshotIssuesWithParents,
     listPlanningProjects,
     listRecentIssueSnapshotRuns,
     listSnapshotDatesForProject,
@@ -108,6 +109,78 @@ def _isIssueIncludedByPartialRules(issuePayload: dict[str, object], cutoffDateIs
         f"Задача закрыта {closedOn.date().isoformat()}, это раньше порога {cutoffDateIso}, "
         "поэтому в частичный срез не попадает."
     )
+
+
+def _fetchRedmineIssueById(session: requests.Session, issueRedmineId: int) -> dict[str, object] | None:
+    response = session.get(
+        f"{config.redmineUrl.rstrip('/')}/issues/{issueRedmineId}.json",
+        params={"include": "children"},
+        timeout=60,
+    )
+    response.raise_for_status()
+    return (response.json() or {}).get("issue") or None
+
+
+def getLatestSnapshotIssuesWithExternalParents() -> dict[str, object]:
+    requireProjectSyncConfig()
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+
+    candidates = listLatestSnapshotIssuesWithParents()
+    if not candidates:
+        return {"issues": [], "checked_count": 0, "error_count": 0}
+
+    session = _buildRedmineApiSession()
+    parentIssueCache: dict[int, dict[str, object] | None] = {}
+    resultIssues: list[dict[str, object]] = []
+    errorCount = 0
+
+    for issue in candidates:
+        parentIssueId = int(issue.get("parent_issue_redmine_id") or 0)
+        if not parentIssueId:
+            continue
+
+        if parentIssueId not in parentIssueCache:
+            try:
+                parentIssueCache[parentIssueId] = _fetchRedmineIssueById(session, parentIssueId)
+            except requests.RequestException:
+                parentIssueCache[parentIssueId] = None
+                errorCount += 1
+
+        parentIssue = parentIssueCache.get(parentIssueId)
+        if not parentIssue:
+            continue
+
+        parentProject = parentIssue.get("project") or {}
+        parentProjectId = int(parentProject.get("id") or 0)
+        childProjectId = int(issue.get("project_redmine_id") or 0)
+        if not parentProjectId or parentProjectId == childProjectId:
+            continue
+
+        resultIssues.append(
+            {
+                **issue,
+                "parent_project_redmine_id": parentProjectId,
+                "parent_project_name": parentProject.get("name"),
+                "parent_project_identifier": parentProject.get("identifier"),
+                "parent_issue_subject": parentIssue.get("subject"),
+                "parent_issue_tracker_name": (parentIssue.get("tracker") or {}).get("name"),
+                "parent_issue_status_name": (parentIssue.get("status") or {}).get("name"),
+            }
+        )
+
+    resultIssues.sort(
+        key=lambda issue: (
+            str(issue.get("project_name") or "").lower(),
+            str(issue.get("captured_for_date") or ""),
+            int(issue.get("issue_redmine_id") or 0),
+        )
+    )
+    return {
+        "issues": resultIssues,
+        "checked_count": len(candidates),
+        "error_count": errorCount,
+    }
 
 
 PAGE_HTML = """<!doctype html>
@@ -691,6 +764,7 @@ PAGE_HTML = """<!doctype html>
         <div class="row">
           <button id="refreshProjectsButton" type="button">Обновить список проектов</button>
           <button id="planningProjectsPageButton" type="button">Планирование проектов</button>
+          <button id="strangeIssuesPageButton" type="button">Странные задачи</button>
         </div>
         <div class="status" id="projectsStatus"></div>
       </article>
@@ -847,6 +921,7 @@ PAGE_HTML = """<!doctype html>
     const applyProjectsSettingsButton = document.getElementById("applyProjectsSettingsButton");
     const refreshProjectsButton = document.getElementById("refreshProjectsButton");
     const planningProjectsPageButton = document.getElementById("planningProjectsPageButton");
+    const strangeIssuesPageButton = document.getElementById("strangeIssuesPageButton");
     const captureSnapshotsButton = document.getElementById("captureSnapshotsButton");
     const recaptureSnapshotsButton = document.getElementById("recaptureSnapshotsButton");
     const deleteSnapshotsButton = document.getElementById("deleteSnapshotsButton");
@@ -967,6 +1042,7 @@ PAGE_HTML = """<!doctype html>
         ["#snapshot-actions p", "textContent", "Запрашивает срезы только для тех проектов, по которым на сегодняшнюю дату еще нет записи в базе данных."],
         ["#captureSnapshotsButton", "textContent", "Получить срезы задач"],
         ["#recaptureSnapshotsButton", "textContent", "Обновить последние срезы"],
+        ["#strangeIssuesPageButton", "textContent", "Странные задачи"],
         ["#delete-snapshot h2", "textContent", "Удаление среза по дате"],
         ["#delete-snapshot p", "textContent", "Удаляет все срезы и все строки задач за выбранную календарную дату."],
         ["#deleteSnapshotsButton", "textContent", "Очистить срез на дату"],
@@ -1622,6 +1698,9 @@ PAGE_HTML = """<!doctype html>
     refreshProjectsButton.addEventListener("click", refreshProjects);
     planningProjectsPageButton.addEventListener("click", () => {
       window.location.href = "/planning-projects";
+    });
+    strangeIssuesPageButton.addEventListener("click", () => {
+      window.location.href = "/strange-snapshot-issues";
     });
     applyProjectsSettingsButton.addEventListener("click", applyProjectsSettings);
     captureSnapshotsButton.addEventListener("click", captureSnapshots);
@@ -5438,6 +5517,226 @@ def normalizePlanningProjectPayload(payload: PlanningProjectPayload) -> dict[str
     }
 
 
+def buildStrangeSnapshotIssuesPage() -> str:
+    diagnostics = getLatestSnapshotIssuesWithExternalParents()
+    issues = diagnostics.get("issues") or []
+    checkedCount = int(diagnostics.get("checked_count") or 0)
+    errorCount = int(diagnostics.get("error_count") or 0)
+
+    rowsHtml = ""
+    if issues:
+        for issue in issues:
+            projectName = escape(str(issue.get("project_name") or "—"))
+            projectIdentifier = str(issue.get("project_identifier") or "")
+            projectIdentifierHtml = (
+                f'<a class="project-link" href="{escape(buildProjectRedmineIssuesUrl(projectIdentifier))}" target="_blank" rel="noreferrer">{escape(projectIdentifier)}</a>'
+                if projectIdentifier
+                else "—"
+            )
+            issueId = int(issue.get("issue_redmine_id") or 0)
+            issueUrl = f"{config.redmineUrl.rstrip('/')}/issues/{issueId}"
+            parentIssueId = int(issue.get("parent_issue_redmine_id") or 0)
+            parentIssueUrl = f"{config.redmineUrl.rstrip('/')}/issues/{parentIssueId}"
+            parentProjectIdentifier = str(issue.get("parent_project_identifier") or "")
+            parentProjectIdentifierHtml = (
+                f'<a class="project-link" href="{escape(buildProjectRedmineIssuesUrl(parentProjectIdentifier))}" target="_blank" rel="noreferrer">{escape(parentProjectIdentifier)}</a>'
+                if parentProjectIdentifier
+                else "—"
+            )
+            rowsHtml += f"""
+            <tr>
+              <td>{escape(str(issue.get("captured_for_date") or "—"))}</td>
+              <td>{projectName}</td>
+              <td>{projectIdentifierHtml}</td>
+              <td class="mono"><a class="issue-link" href="{escape(issueUrl)}" target="_blank" rel="noreferrer">{issueId}</a></td>
+              <td>{escape(str(issue.get("subject") or "—"))}</td>
+              <td>{escape(str(issue.get("tracker_name") or "—"))}</td>
+              <td>{escape(str(issue.get("status_name") or "—"))}</td>
+              <td class="mono"><a class="issue-link" href="{escape(parentIssueUrl)}" target="_blank" rel="noreferrer">{parentIssueId}</a></td>
+              <td>{escape(str(issue.get("parent_issue_subject") or "—"))}</td>
+              <td>{escape(str(issue.get("parent_project_name") or "—"))}</td>
+              <td>{parentProjectIdentifierHtml}</td>
+            </tr>
+            """
+    else:
+        rowsHtml = """
+            <tr>
+              <td colspan="11" class="empty-cell">По последним срезам такие задачи не найдены.</td>
+            </tr>
+        """
+
+    warningHtml = ""
+    if errorCount:
+        warningHtml = f'<p class="warning">Не удалось проверить {errorCount} родительских задач в Redmine, поэтому список может быть неполным.</p>'
+
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Странные задачи</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue: #375d77;
+      --yellow: #ffc600;
+      --cyan: #52cee6;
+      --orange: #ff6c0e;
+      --shadow-soft: 0 12px 24px rgba(22, 50, 74, 0.06);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }}
+    main {{
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 24px 20px 48px;
+    }}
+    .topbar {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 24px;
+      margin-bottom: 18px;
+    }}
+    .brand img {{
+      width: 220px;
+      height: auto;
+      display: block;
+    }}
+    .actions {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }}
+    .button {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 10px 16px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 700;
+      box-shadow: var(--shadow-soft);
+    }}
+    .button-home {{ background: var(--blue); color: #fff; }}
+    .button-projects {{ background: var(--yellow); color: #16324a; }}
+    h1 {{
+      margin: 0 0 12px;
+      font-size: clamp(2rem, 4vw, 3rem);
+      line-height: 1.05;
+    }}
+    .meta {{
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.6;
+    }}
+    .warning {{
+      margin: 0 0 18px;
+      color: #b44d00;
+      font-weight: 600;
+    }}
+    .table-wrap {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: auto;
+      box-shadow: var(--shadow-soft);
+    }}
+    table {{
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      background: var(--panel);
+    }}
+    th, td {{
+      text-align: left;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }}
+    th {{
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #eef6f7;
+      color: #426179;
+      text-transform: uppercase;
+      font-size: 0.78rem;
+      line-height: 1.15;
+    }}
+    tr:last-child td {{ border-bottom: 0; }}
+    .mono {{
+      font-family: Consolas, "Courier New", monospace;
+      white-space: nowrap;
+    }}
+    .issue-link, .project-link {{
+      color: var(--blue);
+      text-decoration: none;
+      border-bottom: 1px dashed currentColor;
+      font-weight: 700;
+    }}
+    .issue-link:hover, .project-link:hover {{
+      color: var(--orange);
+      border-bottom-style: solid;
+    }}
+    .empty-cell {{
+      color: var(--muted);
+      text-align: center;
+      padding: 24px 16px;
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="topbar">
+      <a class="brand" href="/"><img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ"></a>
+      <div class="actions">
+        <a class="button button-home" href="/">На главную</a>
+        <a class="button button-projects" href="/#projects-table">Проекты</a>
+      </div>
+    </div>
+    <h1>Странные задачи по последним срезам</h1>
+    <p class="meta">Показываются задачи из последних срезов проектов, у которых в Redmine родительская задача относится к другому проекту. Проверено кандидатов: {checkedCount}. Найдено странных задач: {len(issues)}.</p>
+    {warningHtml}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Дата среза</th>
+            <th>Проект</th>
+            <th>Идентификатор</th>
+            <th>ID задачи</th>
+            <th>Тема задачи</th>
+            <th>Трекер</th>
+            <th>Статус</th>
+            <th>ID родителя</th>
+            <th>Тема родителя</th>
+            <th>Проект родителя</th>
+            <th>Идентификатор родителя</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rowsHtml}
+        </tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>"""
+
+
 def buildPlanningProjectsPage() -> str:
     return """<!doctype html>
 <html lang="ru">
@@ -6095,6 +6394,14 @@ def getPlanningProjectsPage() -> HTMLResponse:
 
     ensurePlanningProjectsTable()
     return HTMLResponse(buildPlanningProjectsPage())
+
+
+@app.get("/strange-snapshot-issues", response_class=HTMLResponse)
+def getStrangeSnapshotIssuesPage() -> HTMLResponse:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    return HTMLResponse(buildStrangeSnapshotIssuesPage())
 
 
 @app.get("/api/time")

@@ -783,6 +783,51 @@ def getLatestSnapshotIssuesForProject(projectRedmineId: int) -> dict[str, object
         }
 
 
+def listLatestSnapshotIssuesWithParents() -> list[dict[str, object]]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                WITH latest_snapshot_runs AS (
+                    SELECT DISTINCT ON (r.project_redmine_id)
+                        r.id,
+                        r.project_redmine_id,
+                        r.captured_for_date,
+                        r.captured_at,
+                        COALESCE(p.name, r.project_name) AS project_name,
+                        COALESCE(p.identifier, r.project_identifier) AS project_identifier
+                    FROM issue_snapshot_runs r
+                    LEFT JOIN projects p
+                        ON p.redmine_id = r.project_redmine_id
+                    ORDER BY r.project_redmine_id, r.captured_for_date DESC, r.captured_at DESC, r.id DESC
+                )
+                SELECT
+                    lr.id AS snapshot_run_id,
+                    lr.project_redmine_id,
+                    lr.project_name,
+                    lr.project_identifier,
+                    lr.captured_for_date,
+                    lr.captured_at,
+                    i.issue_redmine_id,
+                    i.subject,
+                    i.tracker_name,
+                    i.status_name,
+                    i.parent_issue_redmine_id
+                FROM latest_snapshot_runs lr
+                JOIN issue_snapshot_items i
+                    ON i.snapshot_run_id = lr.id
+                WHERE i.parent_issue_redmine_id IS NOT NULL
+                ORDER BY LOWER(lr.project_name), lr.project_redmine_id, i.issue_redmine_id
+                """
+            )
+        )
+
+        return [dict(row._mapping) for row in rows]
+
+
 def listSnapshotDatesForProject(projectRedmineId: int) -> list[str]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
