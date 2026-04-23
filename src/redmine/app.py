@@ -122,37 +122,30 @@ def _fetchRedmineIssueById(session: requests.Session, issueRedmineId: int) -> di
 
 
 def getLatestSnapshotIssuesWithExternalParents() -> dict[str, object]:
-    requireProjectSyncConfig()
-    ensureProjectsTable()
     ensureIssueSnapshotTables()
 
     candidates = listLatestSnapshotIssuesWithParents()
     if not candidates:
         return {"issues": [], "checked_count": 0, "error_count": 0}
 
-    session = _buildRedmineApiSession()
-    parentIssueCache: dict[int, dict[str, object] | None] = {}
+    latestIssuesById: dict[int, dict[str, object]] = {}
+    for issue in candidates:
+        issueId = int(issue.get("issue_redmine_id") or 0)
+        if issueId:
+            latestIssuesById[issueId] = issue
+
     resultIssues: list[dict[str, object]] = []
-    errorCount = 0
 
     for issue in candidates:
         parentIssueId = int(issue.get("parent_issue_redmine_id") or 0)
         if not parentIssueId:
             continue
 
-        if parentIssueId not in parentIssueCache:
-            try:
-                parentIssueCache[parentIssueId] = _fetchRedmineIssueById(session, parentIssueId)
-            except requests.RequestException:
-                parentIssueCache[parentIssueId] = None
-                errorCount += 1
-
-        parentIssue = parentIssueCache.get(parentIssueId)
+        parentIssue = latestIssuesById.get(parentIssueId)
         if not parentIssue:
             continue
 
-        parentProject = parentIssue.get("project") or {}
-        parentProjectId = int(parentProject.get("id") or 0)
+        parentProjectId = int(parentIssue.get("project_redmine_id") or 0)
         childProjectId = int(issue.get("project_redmine_id") or 0)
         if not parentProjectId or parentProjectId == childProjectId:
             continue
@@ -161,11 +154,11 @@ def getLatestSnapshotIssuesWithExternalParents() -> dict[str, object]:
             {
                 **issue,
                 "parent_project_redmine_id": parentProjectId,
-                "parent_project_name": parentProject.get("name"),
-                "parent_project_identifier": parentProject.get("identifier"),
+                "parent_project_name": parentIssue.get("project_name"),
+                "parent_project_identifier": parentIssue.get("project_identifier"),
                 "parent_issue_subject": parentIssue.get("subject"),
-                "parent_issue_tracker_name": (parentIssue.get("tracker") or {}).get("name"),
-                "parent_issue_status_name": (parentIssue.get("status") or {}).get("name"),
+                "parent_issue_tracker_name": parentIssue.get("tracker_name"),
+                "parent_issue_status_name": parentIssue.get("status_name"),
             }
         )
 
@@ -179,7 +172,7 @@ def getLatestSnapshotIssuesWithExternalParents() -> dict[str, object]:
     return {
         "issues": resultIssues,
         "checked_count": len(candidates),
-        "error_count": errorCount,
+        "error_count": 0,
     }
 
 
@@ -764,7 +757,6 @@ PAGE_HTML = """<!doctype html>
         <div class="row">
           <button id="refreshProjectsButton" type="button">Обновить список проектов</button>
           <button id="planningProjectsPageButton" type="button">Планирование проектов</button>
-          <button id="strangeIssuesPageButton" type="button">Странные задачи</button>
         </div>
         <div class="status" id="projectsStatus"></div>
       </article>
@@ -781,6 +773,7 @@ PAGE_HTML = """<!doctype html>
         <div class="row">
           <button id="captureSnapshotsButton" type="button">Получить срезы задач</button>
           <button id="recaptureSnapshotsButton" type="button">Обновить последние срезы</button>
+          <button id="strangeIssuesPageButton" type="button">Внутренняя</button>
         </div>
         <div class="status" id="captureStatus"></div>
       </article>
@@ -1042,7 +1035,7 @@ PAGE_HTML = """<!doctype html>
         ["#snapshot-actions p", "textContent", "Запрашивает срезы только для тех проектов, по которым на сегодняшнюю дату еще нет записи в базе данных."],
         ["#captureSnapshotsButton", "textContent", "Получить срезы задач"],
         ["#recaptureSnapshotsButton", "textContent", "Обновить последние срезы"],
-        ["#strangeIssuesPageButton", "textContent", "Странные задачи"],
+        ["#strangeIssuesPageButton", "textContent", "Внутренняя"],
         ["#delete-snapshot h2", "textContent", "Удаление среза по дате"],
         ["#delete-snapshot p", "textContent", "Удаляет все срезы и все строки задач за выбранную календарную дату."],
         ["#deleteSnapshotsButton", "textContent", "Очистить срез на дату"],
