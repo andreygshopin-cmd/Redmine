@@ -3,6 +3,7 @@ from html import escape
 import csv
 import io
 import json
+import requests
 from datetime import date, timedelta
 from urllib.parse import quote
 
@@ -65,6 +66,48 @@ class PlanningProjectPayload(BaseModel):
     estimate_doc_url: str | None = None
     bitrix_url: str | None = None
     comment_text: str | None = None
+
+
+def _buildRedmineApiSession() -> requests.Session:
+    session = requests.Session()
+    session.headers.update({"X-Redmine-API-Key": config.apiKey})
+    return session
+
+
+def _parseRedmineIsoDate(value: str | None) -> datetime | None:
+    if not value:
+        return None
+
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+
+def _isIssueIncludedByPartialRules(issuePayload: dict[str, object], cutoffDateIso: str) -> tuple[bool, str]:
+    status = issuePayload.get("status") or {}
+    statusName = str(status.get("name") or "")
+    isClosed = bool(status.get("is_closed"))
+    closedOnRaw = issuePayload.get("closed_on")
+    closedOn = _parseRedmineIsoDate(str(closedOnRaw) if closedOnRaw else None)
+    cutoffDate = date.fromisoformat(cutoffDateIso)
+
+    if not isClosed:
+        return True, f"Задача открыта по статусу «{statusName}», поэтому попадает в частичный срез."
+
+    if closedOn is None:
+        return False, (
+            f"Задача закрыта по статусу «{statusName}», но у нее нет даты closed_on, "
+            "поэтому по текущим правилам в частичный срез не попадает."
+        )
+
+    if closedOn.date() >= cutoffDate:
+        return True, (
+            f"Задача закрыта {closedOn.date().isoformat()}, это не раньше порога {cutoffDateIso}, "
+            "поэтому в частичный срез попадает."
+        )
+
+    return False, (
+        f"Задача закрыта {closedOn.date().isoformat()}, это раньше порога {cutoffDateIso}, "
+        "поэтому в частичный срез не попадает."
+    )
 
 
 PAGE_HTML = """<!doctype html>
@@ -6541,6 +6584,94 @@ def recaptureIssueSnapshots() -> dict[str, object]:
 @app.get("/api/issues/snapshots/capture-status")
 def getIssueSnapshotCaptureProgress() -> dict[str, object]:
     return getIssueSnapshotCaptureStatus()
+
+
+@app.get("/api/redmine/issues/{issue_redmine_id}/snapshot-diagnostics")
+def getRedmineIssueSnapshotDiagnostics(
+    issue_redmine_id: int,
+    project_redmine_id: int = Query(..., description="Redmine ID проекта, для которого проверяем попадание в срез"),
+) -> dict[str, object]:
+    requireProjectSyncConfig()
+    ensureProjectsTable()
+
+    project = next((item for item in listStoredProjects() if int(item.get("redmine_id") or 0) == int(project_redmine_id)), None)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    try:
+        session = _buildRedmineApiSession()
+        response = session.get(
+            f"{config.redmineUrl.rstrip('/')}/issues/{issue_redmine_id}.json",
+            params={"include": "children"},
+            timeout=60,
+        )
+        response.raise_for_status()
+        issuePayload = (response.json() or {}).get("issue") or {}
+    except requests.HTTPError as error:
+        statusCode = error.response.status_code if error.response is not None else 502
+        raise HTTPException(status_code=statusCode, detail=f"Redmine issue request failed: {error}") from error
+    except requests.RequestException as error:
+        raise HTTPException(status_code=502, detail=f"Redmine request failed: {error}") from error
+
+    issueProject = issuePayload.get("project") or {}
+    issueProjectId = issueProject.get("id")
+    issueProjectName = issueProject.get("name")
+    issueProjectIdentifier = issueProject.get("identifier")
+    partialLoad = bool(project.get("partial_load"))
+    projectIdentifier = str(project.get("identifier") or "")
+    cutoffDateIso = f"{datetime.now(UTC).year - 1}-01-01"
+
+    exactProjectMatch = int(issueProjectId or 0) == int(project_redmine_id)
+    if not exactProjectMatch:
+        includedInSnapshot = False
+        inclusionReason = (
+            f"Задача сейчас относится к проекту «{issueProjectName or 'без названия'}» "
+            f"(id={issueProjectId}), а срез собирается для проекта «{project.get('name') or project_redmine_id}» "
+            f"(id={project_redmine_id}) без подпроектов."
+        )
+    elif not partialLoad:
+        includedInSnapshot = True
+        inclusionReason = (
+            "Для проекта выключена частичная загрузка, поэтому в срез попадают все задачи самого проекта "
+            "без дополнительного отбора по статусу или дате закрытия."
+        )
+    else:
+        includedInSnapshot, inclusionReason = _isIssueIncludedByPartialRules(issuePayload, cutoffDateIso)
+
+    return {
+        "project": {
+            "redmine_id": int(project_redmine_id),
+            "name": project.get("name"),
+            "identifier": projectIdentifier,
+            "partial_load": partialLoad,
+            "closed_on_cutoff": cutoffDateIso if partialLoad else None,
+        },
+        "issue": {
+            "id": issue_redmine_id,
+            "subject": issuePayload.get("subject"),
+            "tracker": (issuePayload.get("tracker") or {}).get("name"),
+            "status": (issuePayload.get("status") or {}).get("name"),
+            "status_is_closed": bool((issuePayload.get("status") or {}).get("is_closed")),
+            "project_id": issueProjectId,
+            "project_name": issueProjectName,
+            "project_identifier": issueProjectIdentifier,
+            "parent_issue_id": (issuePayload.get("parent") or {}).get("id"),
+            "baseline_estimate": next(
+                (
+                    field.get("value")
+                    for field in (issuePayload.get("custom_fields") or [])
+                    if str(field.get("name") or "") == "Базовая оценка"
+                ),
+                None,
+            ),
+            "estimated_hours": issuePayload.get("estimated_hours"),
+            "spent_hours": issuePayload.get("spent_hours"),
+            "closed_on": issuePayload.get("closed_on"),
+            "updated_on": issuePayload.get("updated_on"),
+        },
+        "included_in_snapshot": includedInSnapshot,
+        "reason": inclusionReason,
+    }
 
 
 @app.get("/health")
