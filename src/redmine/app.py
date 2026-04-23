@@ -4123,7 +4123,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       <input class="page-size-input" id="snapshotPageSizeInput" type="number" min="10" max="10000" step="10" value="{initialPageSize}">
       <button type="button" class="secondary-button" id="applySnapshotPageSizeButton">Показать</button>
       <button type="button" class="secondary-button" id="exportSnapshotCsvButton">Выгрузить CSV</button>
-      <button type="button" id="recaptureSnapshotButton">Обновить последний срез</button>
+      <button type="button" id="recaptureSnapshotButton">Загрузить/обновить последний срез</button>
       <button type="button" id="deleteSnapshotButton">Удалить выбранный срез</button>
       </div>
       <div class="action-status" id="snapshotActionStatus"></div>
@@ -4254,6 +4254,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     </div>
     <script>
       const snapshotActionStatus = document.getElementById("snapshotActionStatus");
+      const capturedForDateSelect = document.getElementById("capturedForDate");
       const filteredIssuesCount = document.getElementById("filteredIssuesCount");
       const pageIssuesCount = document.getElementById("pageIssuesCount");
       const snapshotIssuesTableBody = document.getElementById("snapshotIssuesTableBody");
@@ -4919,7 +4920,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           return;
         }}
 
-        const response = await fetch("/api/issues/snapshots/project/{projectRedmineId}/by-date?captured_for_date={capturedForDate}", {{
+        const selectedDateForDelete = String(capturedForDateSelect?.value || "{capturedForDate}");
+        const response = await fetch(`/api/issues/snapshots/project/{projectRedmineId}/by-date?captured_for_date=${{encodeURIComponent(selectedDateForDelete)}}`, {{
           method: "DELETE"
         }});
         const payload = await response.json();
