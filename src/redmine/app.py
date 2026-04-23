@@ -1992,6 +1992,7 @@ def buildSnapshotSummaryView(summary: dict[str, object] | None) -> dict[str, flo
     source = dict(summary or {})
     baselineEstimateHours = float(source.get("baseline_estimate_hours") or 0)
     estimatedHours = float(source.get("estimated_hours") or 0)
+    riskEstimateHours = float(source.get("risk_estimate_hours") or 0)
     spentHours = float(source.get("spent_hours") or 0)
     spentHoursYear = float(source.get("spent_hours_year") or 0)
     featureBaselineEstimateHours = float(source.get("feature_baseline_estimate_hours") or 0)
@@ -1999,6 +2000,7 @@ def buildSnapshotSummaryView(summary: dict[str, object] | None) -> dict[str, flo
     featureSpentHours = float(source.get("feature_spent_hours") or 0)
     featureSpentHoursYear = float(source.get("feature_spent_hours_year") or 0)
     developmentEstimatedHours = float(source.get("development_estimated_hours") or 0)
+    developmentRiskEstimateHours = float(source.get("development_risk_estimate_hours") or 0)
     developmentSpentHours = float(source.get("development_spent_hours") or 0)
     developmentSpentHoursYear = float(source.get("development_spent_hours_year") or 0)
     developmentProcessEstimatedHours = float(source.get("development_process_estimated_hours") or 0)
@@ -2014,6 +2016,7 @@ def buildSnapshotSummaryView(summary: dict[str, object] | None) -> dict[str, flo
     return {
         "baseline_estimate_hours": baselineEstimateHours,
         "estimated_hours": estimatedHours,
+        "risk_estimate_hours": riskEstimateHours,
         "spent_hours": spentHours,
         "spent_hours_year": spentHoursYear,
         "feature_baseline_estimate_hours": featureBaselineEstimateHours,
@@ -2021,6 +2024,7 @@ def buildSnapshotSummaryView(summary: dict[str, object] | None) -> dict[str, flo
         "feature_spent_hours": featureSpentHours,
         "feature_spent_hours_year": featureSpentHoursYear,
         "development_estimated_hours": developmentEstimatedHours,
+        "development_risk_estimate_hours": developmentRiskEstimateHours,
         "development_spent_hours": developmentSpentHours,
         "development_spent_hours_year": developmentSpentHoursYear,
         "development_process_estimated_hours": developmentProcessEstimatedHours,
