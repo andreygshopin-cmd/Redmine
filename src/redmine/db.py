@@ -1470,6 +1470,9 @@ def listProjectsWithoutSnapshotForDate(capturedForDate: str) -> list[dict[str, o
                     p.parent_redmine_id,
                     p.created_on,
                     p.updated_on,
+                    p.is_enabled,
+                    p.partial_load,
+                    p.is_disabled,
                     p.synced_at
                 FROM projects p
                 LEFT JOIN issue_snapshot_runs r
