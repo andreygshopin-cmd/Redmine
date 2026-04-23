@@ -121,6 +121,31 @@ def _fetchRedmineIssueById(session: requests.Session, issueRedmineId: int) -> di
     return (response.json() or {}).get("issue") or None
 
 
+def _normalizeSearchText(value: object) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _findMatchingCustomFields(
+    issuePayload: dict[str, object],
+    fieldNameQuery: str,
+) -> list[dict[str, object]]:
+    normalizedQuery = _normalizeSearchText(fieldNameQuery)
+    matches: list[dict[str, object]] = []
+    for field in issuePayload.get("custom_fields") or []:
+        fieldName = str(field.get("name") or "")
+        normalizedName = _normalizeSearchText(fieldName)
+        if normalizedQuery and normalizedQuery in normalizedName:
+            matches.append(
+                {
+                    "id": field.get("id"),
+                    "name": fieldName,
+                    "value": field.get("value"),
+                }
+            )
+
+    return matches
+
+
 def getLatestSnapshotIssuesWithExternalParents() -> dict[str, object]:
     ensureIssueSnapshotTables()
 
@@ -6971,6 +6996,95 @@ def getRedmineIssueSnapshotDiagnostics(
         },
         "included_in_snapshot": includedInSnapshot,
         "reason": inclusionReason,
+    }
+
+
+@app.get("/api/redmine/projects/custom-field-diagnostics")
+def getRedmineProjectCustomFieldDiagnostics(
+    project_name: str = Query(..., description="Полное или частичное имя проекта в Redmine"),
+    field_name: str = Query(..., description="Название или часть названия кастомного поля"),
+    sample_size: int = Query(10, ge=1, le=30, description="Сколько задач проверить в проекте"),
+) -> dict[str, object]:
+    requireProjectSyncConfig()
+
+    normalizedProjectQuery = _normalizeSearchText(project_name)
+    if not normalizedProjectQuery:
+        raise HTTPException(status_code=400, detail="project_name is empty")
+
+    try:
+        redmineProjects = fetchAllProjectsFromRedmine(config.redmineUrl, config.apiKey)
+    except requests.RequestException as error:
+        raise HTTPException(status_code=502, detail=f"Redmine projects request failed: {error}") from error
+
+    matchedProject = next(
+        (
+            project
+            for project in redmineProjects
+            if normalizedProjectQuery in _normalizeSearchText(project.get("name"))
+        ),
+        None,
+    )
+    if matchedProject is None:
+        raise HTTPException(status_code=404, detail="Project not found in Redmine")
+
+    projectIdentifier = str(matchedProject.get("identifier") or "").strip()
+    if not projectIdentifier:
+        raise HTTPException(status_code=400, detail="Matched project has no identifier")
+
+    try:
+        session = _buildRedmineApiSession()
+        response = session.get(
+            f"{config.redmineUrl.rstrip('/')}/issues.json",
+            params={
+                "project_id": projectIdentifier,
+                "subproject_id": "!*",
+                "status_id": "*",
+                "sort": "id:desc",
+                "limit": sample_size,
+            },
+            timeout=90,
+        )
+        response.raise_for_status()
+        issuesPayload = (response.json() or {}).get("issues") or []
+    except requests.HTTPError as error:
+        statusCode = error.response.status_code if error.response is not None else 502
+        raise HTTPException(status_code=statusCode, detail=f"Redmine issues request failed: {error}") from error
+    except requests.RequestException as error:
+        raise HTTPException(status_code=502, detail=f"Redmine issues request failed: {error}") from error
+
+    sampledIssues: list[dict[str, object]] = []
+    issuesWithField: list[dict[str, object]] = []
+    allMatchedFieldNames: dict[str, dict[str, object]] = {}
+
+    for issuePayload in issuesPayload:
+        matchingFields = _findMatchingCustomFields(issuePayload, field_name)
+        issueInfo = {
+            "id": issuePayload.get("id"),
+            "subject": issuePayload.get("subject"),
+            "tracker": (issuePayload.get("tracker") or {}).get("name"),
+            "status": (issuePayload.get("status") or {}).get("name"),
+            "matching_fields": matchingFields,
+        }
+        sampledIssues.append(issueInfo)
+        if matchingFields:
+            issuesWithField.append(issueInfo)
+            for field in matchingFields:
+                allMatchedFieldNames[str(field.get("name") or "")] = field
+
+    return {
+        "project": {
+            "redmine_id": matchedProject.get("redmine_id"),
+            "name": matchedProject.get("name"),
+            "identifier": projectIdentifier,
+        },
+        "field_query": field_name,
+        "sample_size": sample_size,
+        "issues_checked": len(sampledIssues),
+        "issues_with_field": len(issuesWithField),
+        "field_visible": bool(issuesWithField),
+        "matched_field_names": sorted(allMatchedFieldNames.keys()),
+        "sampled_issues": sampledIssues,
+        "issues_with_field_samples": issuesWithField,
     }
 
 
