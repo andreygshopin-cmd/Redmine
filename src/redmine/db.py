@@ -181,6 +181,7 @@ def ensureIssueSnapshotTables() -> None:
                         is_private BOOLEAN NOT NULL DEFAULT FALSE,
                         baseline_estimate_hours DOUBLE PRECISION,
                         estimated_hours DOUBLE PRECISION,
+                        risk_estimate_hours DOUBLE PRECISION,
                         spent_hours DOUBLE PRECISION,
                         spent_hours_year DOUBLE PRECISION,
                         start_date DATE NULL,
@@ -216,6 +217,15 @@ def ensureIssueSnapshotTables() -> None:
                     """
                     ALTER TABLE issue_snapshot_items
                     ADD COLUMN IF NOT EXISTS baseline_estimate_hours DOUBLE PRECISION
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE issue_snapshot_items
+                    ADD COLUMN IF NOT EXISTS risk_estimate_hours DOUBLE PRECISION
                     """
                 )
             )
@@ -762,6 +772,7 @@ def getLatestSnapshotIssuesForProject(projectRedmineId: int) -> dict[str, object
                     done_ratio,
                     baseline_estimate_hours,
                     estimated_hours,
+                    risk_estimate_hours,
                     spent_hours,
                     spent_hours_year,
                     start_date,
@@ -927,6 +938,7 @@ def getSnapshotIssuesForProjectByDate(projectRedmineId: int, capturedForDate: st
                     done_ratio,
                     baseline_estimate_hours,
                     estimated_hours,
+                    risk_estimate_hours,
                     spent_hours,
                     spent_hours_year,
                     start_date,
@@ -1058,6 +1070,7 @@ def _normalizeSnapshotIssueFilters(filters: dict[str, object] | None) -> dict[st
         "done_ratio": "done_ratio",
         "baseline": "baseline",
         "estimated": "estimated",
+        "risk": "risk",
         "spent": "spent",
         "spent_year": "spent_year",
     }
@@ -1105,6 +1118,7 @@ def _buildSnapshotIssueFilterParts(filters: dict[str, object] | None) -> tuple[l
         "done_ratio": "COALESCE(done_ratio, 0)",
         "baseline": "COALESCE(baseline_estimate_hours, 0)",
         "estimated": "COALESCE(estimated_hours, 0)",
+        "risk": "COALESCE(risk_estimate_hours, 0)",
         "spent": "COALESCE(spent_hours, 0)",
         "spent_year": "COALESCE(spent_hours_year, 0)",
     }
@@ -1156,6 +1170,21 @@ def _buildSnapshotIssueHierarchyQuery(baseWhereSql: str, paginated: bool) -> str
                     issue_redmine_id,
                     subject,
                     tracker_name,
+                    status_name,
+                    priority_name,
+                    assigned_to_name,
+                    fixed_version_name,
+                    done_ratio,
+                    baseline_estimate_hours,
+                    estimated_hours,
+                    risk_estimate_hours,
+                    spent_hours,
+                    spent_hours_year,
+                    start_date,
+                    due_date,
+                    created_on,
+                    updated_on,
+                    closed_on,
                     parent_issue_redmine_id
                 FROM issue_snapshot_items
                 WHERE snapshot_run_id = :snapshot_run_id
@@ -1172,6 +1201,7 @@ def _buildSnapshotIssueHierarchyQuery(baseWhereSql: str, paginated: bool) -> str
                     done_ratio,
                     baseline_estimate_hours,
                     estimated_hours,
+                    risk_estimate_hours,
                     spent_hours,
                     spent_hours_year,
                     start_date,
@@ -1225,6 +1255,7 @@ def _buildSnapshotIssueHierarchyQuery(baseWhereSql: str, paginated: bool) -> str
                 filtered_items.done_ratio,
                 filtered_items.baseline_estimate_hours,
                 filtered_items.estimated_hours,
+                filtered_items.risk_estimate_hours,
                 filtered_items.spent_hours,
                 filtered_items.spent_hours_year,
                 filtered_items.start_date,
@@ -1241,6 +1272,7 @@ def _buildSnapshotIssueHierarchyQuery(baseWhereSql: str, paginated: bool) -> str
                 feature_root.done_ratio AS feature_group_done_ratio,
                 feature_root.baseline_estimate_hours AS feature_group_baseline_estimate_hours,
                 feature_root.estimated_hours AS feature_group_estimated_hours,
+                feature_root.risk_estimate_hours AS feature_group_risk_estimate_hours,
                 feature_root.spent_hours AS feature_group_spent_hours,
                 feature_root.spent_hours_year AS feature_group_spent_hours_year,
                 feature_root.closed_on AS feature_group_closed_on,
@@ -1301,9 +1333,11 @@ def getFilteredSnapshotIssuesForProjectByDate(
                 "summary": {
                     "baseline_estimate_hours": 0.0,
                     "estimated_hours": 0.0,
+                    "risk_estimate_hours": 0.0,
                     "spent_hours": 0.0,
                     "spent_hours_year": 0.0,
                     "development_estimated_hours": 0.0,
+                    "development_risk_estimate_hours": 0.0,
                     "development_spent_hours": 0.0,
                     "development_spent_hours_year": 0.0,
                     "development_process_estimated_hours": 0.0,
@@ -1340,6 +1374,7 @@ def getFilteredSnapshotIssuesForProjectByDate(
             SELECT
                 COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature' THEN COALESCE(baseline_estimate_hours, 0) ELSE 0 END), 0) AS baseline_estimate_hours,
                 COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature' THEN COALESCE(estimated_hours, 0) ELSE 0 END), 0) AS estimated_hours,
+                COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature' THEN COALESCE(risk_estimate_hours, 0) ELSE 0 END), 0) AS risk_estimate_hours,
                 COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature' THEN COALESCE(spent_hours, 0) ELSE 0 END), 0) AS spent_hours,
                 COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) <> 'feature' THEN COALESCE(spent_hours_year, 0) ELSE 0 END), 0) AS spent_hours_year,
                 COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'feature' THEN COALESCE(baseline_estimate_hours, 0) ELSE 0 END), 0) AS feature_baseline_estimate_hours,
@@ -1347,6 +1382,7 @@ def getFilteredSnapshotIssuesForProjectByDate(
                 COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'feature' THEN COALESCE(spent_hours, 0) ELSE 0 END), 0) AS feature_spent_hours,
                 COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'feature' THEN COALESCE(spent_hours_year, 0) ELSE 0 END), 0) AS feature_spent_hours_year,
                 COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'разработка' THEN COALESCE(estimated_hours, 0) ELSE 0 END), 0) AS development_estimated_hours,
+                COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'разработка' THEN COALESCE(risk_estimate_hours, 0) ELSE 0 END), 0) AS development_risk_estimate_hours,
                 COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'разработка' THEN COALESCE(spent_hours, 0) ELSE 0 END), 0) AS development_spent_hours,
                 COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'разработка' THEN COALESCE(spent_hours_year, 0) ELSE 0 END), 0) AS development_spent_hours_year,
                 COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(tracker_name, ''))) = 'процессы разработки' THEN COALESCE(estimated_hours, 0) ELSE 0 END), 0) AS development_process_estimated_hours,
@@ -2103,6 +2139,7 @@ def createIssueSnapshotRun(
                     is_private,
                     baseline_estimate_hours,
                     estimated_hours,
+                    risk_estimate_hours,
                     spent_hours,
                     spent_hours_year,
                     start_date,
@@ -2132,6 +2169,7 @@ def createIssueSnapshotRun(
                     :is_private,
                     :baseline_estimate_hours,
                     :estimated_hours,
+                    :risk_estimate_hours,
                     :spent_hours,
                     :spent_hours_year,
                     :start_date,

@@ -59,6 +59,20 @@ def normalizeIssue(issue: dict[str, object], projectRedmineId: int) -> dict[str,
     assignedTo = issue.get("assigned_to") or {}
     fixedVersion = issue.get("fixed_version") or {}
     parent = issue.get("parent") or {}
+    riskEstimateHours = parseOptionalFloat(extractCustomFieldValue(issue, "Оценка с рисками"))
+    if riskEstimateHours is None:
+        riskEstimateHours = parseOptionalFloat(extractCustomFieldValue(issue, "Оценка с рискам"))
+    if riskEstimateHours is None:
+        riskEstimateHours = parseOptionalFloat(
+            next(
+                (
+                    customField.get("value")
+                    for customField in (issue.get("custom_fields") or [])
+                    if int(customField.get("id") or 0) == 72
+                ),
+                None,
+            )
+        )
     baselineEstimateHours = parseOptionalFloat(extractCustomFieldValue(issue, "Базовая оценка"))
 
     return {
@@ -82,6 +96,7 @@ def normalizeIssue(issue: dict[str, object], projectRedmineId: int) -> dict[str,
         "is_private": bool(issue.get("is_private", False)),
         "baseline_estimate_hours": baselineEstimateHours,
         "estimated_hours": issue.get("estimated_hours"),
+        "risk_estimate_hours": riskEstimateHours,
         "spent_hours": issue.get("spent_hours"),
         "spent_hours_year": 0.0,
         "start_date": issue.get("start_date"),

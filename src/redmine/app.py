@@ -2051,6 +2051,8 @@ def buildSnapshotIssueFiltersPayload(
     baselineValue: str | None = None,
     estimatedOp: str | None = None,
     estimatedValue: str | None = None,
+    riskOp: str | None = None,
+    riskValue: str | None = None,
     spentOp: str | None = None,
     spentValue: str | None = None,
     spentYearOp: str | None = None,
@@ -2070,6 +2072,8 @@ def buildSnapshotIssueFiltersPayload(
         "baseline_value": baselineValue or "",
         "estimated_op": estimatedOp or "",
         "estimated_value": estimatedValue or "",
+        "risk_op": riskOp or "",
+        "risk_value": riskValue or "",
         "spent_op": spentOp or "",
         "spent_value": spentValue or "",
         "spent_year_op": spentYearOp or "",
@@ -3983,14 +3987,16 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
   </body>
 </html>"""
 
-    issueRowsHtml = ['<tr><td colspan="12">Загружаем задачи...</td></tr>']
+    issueRowsHtml = ['<tr><td colspan="13">Загружаем задачи...</td></tr>']
 
     summaryView = buildSnapshotSummaryView(snapshotPayload.get("summary"))
     totalBaselineEstimateHours = summaryView["baseline_estimate_hours"]
     totalEstimatedHours = summaryView["estimated_hours"]
+    totalRiskEstimateHours = summaryView["risk_estimate_hours"]
     totalSpentHours = summaryView["spent_hours"]
     totalSpentHoursYear = summaryView["spent_hours_year"]
     developmentEstimateHours = summaryView["development_estimated_hours"]
+    developmentRiskEstimateHours = summaryView["development_risk_estimate_hours"]
     developmentSpentHours = summaryView["development_spent_hours"]
     developmentSpentHoursYear = summaryView["development_spent_hours_year"]
     developmentProcessEstimateHours = summaryView["development_process_estimated_hours"]
@@ -4003,9 +4009,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     featureEstimatedHours = summaryView["feature_estimated_hours"]
     featureSpentHours = summaryView["feature_spent_hours"]
     featureSpentHoursYear = summaryView["feature_spent_hours_year"]
-    featureBaselineEstimateClass = (
-        "summary-feature-control-zero" if featureBaselineEstimateHours == 0 else "summary-feature-control-alert"
-    )
+    featureBaselineEstimateClass = "summary-feature-control-zero"
     featureEstimatedClass = "summary-feature-control-zero" if featureEstimatedHours == 0 else "summary-feature-control-alert"
     featureSpentYearClass = "summary-feature-control-zero" if featureSpentHoursYear == 0 else "summary-feature-control-alert"
     featureSpentClass = "summary-feature-control-zero" if featureSpentHours == 0 else "summary-feature-control-alert"
@@ -4275,6 +4279,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <th style="width: 33%"></th>
               <th>Базовая оценка</th>
               <th>План</th>
+              <th>План с рисками</th>
               <th colspan="2">Факт (год)</th>
               <th>% (год)</th>
               <th colspan="2">Факт (всего)</th>
@@ -4286,6 +4291,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <th>Все задачи без фич</th>
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryEstimated">{formatPageHours(totalEstimatedHours)}</td>
+              <td class="summary-metric" id="summaryRiskEstimate">{formatPageHours(totalRiskEstimateHours)}</td>
               <td class="summary-metric" id="summarySpentYear" colspan="2">{formatPageHours(totalSpentHoursYear)}</td>
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summarySpent" colspan="2">{formatPageHours(totalSpentHours)}</td>
@@ -4295,6 +4301,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <th>Разработка, ч</th>
               <td class="summary-metric" id="summaryBaselineEstimate" rowspan="2">{formatPageHours(totalBaselineEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentEstimated">{formatPageHours(developmentEstimateHours)}</td>
+              <td class="summary-metric" id="summaryDevelopmentRiskEstimate">{formatPageHours(developmentRiskEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentSpentYear">{formatPageHours(developmentSpentHoursYear)}</td>
               <td class="summary-metric" id="summaryDevelopmentCombinedSpentYear" rowspan="2">{formatPageHours(summaryView["development_combined_spent_hours_year"])}</td>
               <td class="summary-empty" rowspan="2"></td>
@@ -4305,6 +4312,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <tr>
               <th>Процессы разработки, ч</th>
               <td class="summary-metric" id="summaryDevelopmentProcessEstimated">{formatPageHours(developmentProcessEstimateHours)}</td>
+              <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentProcessSpentYear">{formatPageHours(developmentProcessSpentHoursYear)}</td>
               <td class="summary-metric" id="summaryDevelopmentProcessSpent">{formatPageHours(developmentProcessSpentHours)}</td>
             </tr>
@@ -4312,6 +4320,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <th>Ошибка, ч</th>
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryBugEstimated">{formatPageHours(bugEstimateHours)}</td>
+              <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryBugSpentYear" colspan="2">{formatPageHours(bugSpentHoursYear)}</td>
               <td class="summary-metric summary-percent" id="summaryBugShareYear">{formatPageHours(summaryView["bug_share_year_percent"])}%</td>
               <td class="summary-metric" id="summaryBugSpent" colspan="2">{formatPageHours(bugSpentHours)}</td>
@@ -4321,6 +4330,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <th>Итого по разработке</th>
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentTotalEstimated">{formatPageHours(summaryView["development_total_estimated_hours"])}</td>
+              <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentGrandSpentYear" colspan="2">{formatPageHours(summaryView["development_grand_spent_hours_year"])}</td>
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentGrandSpent" colspan="2">{formatPageHours(summaryView["development_grand_spent_hours"])}</td>
@@ -4330,6 +4340,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <th>Контроль списания по фичам</th>
               <td class="summary-metric {featureBaselineEstimateClass}" id="summaryFeatureBaselineEstimate">{formatPageHours(featureBaselineEstimateHours)}</td>
               <td class="summary-metric {featureEstimatedClass}" id="summaryFeatureEstimated">{formatPageHours(featureEstimatedHours)}</td>
+              <td class="summary-empty"></td>
               <td class="summary-metric {featureSpentYearClass}" id="summaryFeatureSpentYear" colspan="2">{formatPageHours(featureSpentHoursYear)}</td>
               <td class="summary-empty"></td>
               <td class="summary-metric {featureSpentClass}" id="summaryFeatureSpent" colspan="2">{formatPageHours(featureSpentHours)}</td>
@@ -4362,6 +4373,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <th>Готово, %</th>
             <th class="baseline-col">Базовая оценка, ч</th>
             <th>План, ч</th>
+            <th>План с рисками, ч</th>
             <th class="spent-col">Факт всего, ч</th>
             <th class="spent-year-col">Факт за год, ч</th>
             <th class="closed-col">Закрыта</th>
@@ -4376,6 +4388,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="doneRatio" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="1" data-filter-key="doneRatio" data-filter-role="value"></div></th>
             <th class="baseline-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="baseline" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="baseline" data-filter-role="value"></div></th>
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="estimated" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="estimated" data-filter-role="value"></div></th>
+            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="risk" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="risk" data-filter-role="value"></div></th>
             <th class="spent-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spent" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spent" data-filter-role="value"></div></th>
             <th class="spent-year-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spentYear" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spentYear" data-filter-role="value"></div></th>
             <th class="closed-col"><input class="filter-input-table" type="text" data-filter-key="closedOn" data-filter-role="text"></th>
@@ -4423,6 +4436,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       let currentSnapshotPageSize = {initialPageSize};
       let snapshotReloadTimer = null;
       const summaryBaselineEstimate = document.getElementById("summaryBaselineEstimate");
+      const summaryRiskEstimate = document.getElementById("summaryRiskEstimate");
       const summaryFeatureBaselineEstimate = document.getElementById("summaryFeatureBaselineEstimate");
       const summaryFeatureEstimated = document.getElementById("summaryFeatureEstimated");
       const summaryFeatureSpent = document.getElementById("summaryFeatureSpent");
@@ -4431,6 +4445,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const summarySpent = document.getElementById("summarySpent");
       const summarySpentYear = document.getElementById("summarySpentYear");
       const summaryDevelopmentEstimated = document.getElementById("summaryDevelopmentEstimated");
+      const summaryDevelopmentRiskEstimate = document.getElementById("summaryDevelopmentRiskEstimate");
       const summaryDevelopmentSpent = document.getElementById("summaryDevelopmentSpent");
       const summaryDevelopmentCombinedSpentYear = document.getElementById("summaryDevelopmentCombinedSpentYear");
       const summaryDevelopmentCombinedSpent = document.getElementById("summaryDevelopmentCombinedSpent");
@@ -4496,6 +4511,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       function buildSummaryView(summary) {{
         const baselineEstimateHours = Number(summary?.baseline_estimate_hours || 0);
         const estimatedHours = Number(summary?.estimated_hours || 0);
+        const riskEstimateHours = Number(summary?.risk_estimate_hours || 0);
         const spentHours = Number(summary?.spent_hours || 0);
         const spentHoursYear = Number(summary?.spent_hours_year || 0);
         const featureBaselineEstimateHours = Number(summary?.feature_baseline_estimate_hours || 0);
@@ -4503,6 +4519,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         const featureSpentHours = Number(summary?.feature_spent_hours || 0);
         const featureSpentHoursYear = Number(summary?.feature_spent_hours_year || 0);
         const developmentEstimatedHours = Number(summary?.development_estimated_hours || 0);
+        const developmentRiskEstimateHours = Number(summary?.development_risk_estimate_hours || 0);
         const developmentSpentHours = Number(summary?.development_spent_hours || 0);
         const developmentSpentHoursYear = Number(summary?.development_spent_hours_year || 0);
         const developmentProcessEstimatedHours = Number(summary?.development_process_estimated_hours || 0);
@@ -4516,6 +4533,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         return {{
           baselineEstimateHours,
           estimatedHours,
+          riskEstimateHours,
           spentHours,
           spentHoursYear,
           featureBaselineEstimateHours,
@@ -4523,6 +4541,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           featureSpentHours,
           featureSpentHoursYear,
           developmentEstimatedHours,
+          developmentRiskEstimateHours,
           developmentSpentHours,
           developmentSpentHoursYear,
           developmentProcessEstimatedHours,
@@ -4659,16 +4678,17 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 
       function renderSnapshotSummary(summary) {{
         const view = buildSummaryView(summary);
-        const updateFeatureControlMetric = (node, value) => {{
+        const updateFeatureControlMetric = (node, value, highlightNonZero = true) => {{
           if (!node) {{
             return;
           }}
           node.textContent = formatFilterHours(value);
           node.classList.toggle("summary-feature-control-zero", Number(value || 0) === 0);
-          node.classList.toggle("summary-feature-control-alert", Number(value || 0) !== 0);
+          node.classList.toggle("summary-feature-control-alert", highlightNonZero && Number(value || 0) !== 0);
         }};
         if (summaryBaselineEstimate) summaryBaselineEstimate.textContent = formatFilterHours(view.baselineEstimateHours);
-        updateFeatureControlMetric(summaryFeatureBaselineEstimate, view.featureBaselineEstimateHours);
+        if (summaryRiskEstimate) summaryRiskEstimate.textContent = formatFilterHours(view.riskEstimateHours);
+        updateFeatureControlMetric(summaryFeatureBaselineEstimate, view.featureBaselineEstimateHours, false);
         updateFeatureControlMetric(summaryFeatureEstimated, view.featureEstimatedHours);
         updateFeatureControlMetric(summaryFeatureSpent, view.featureSpentHours);
         updateFeatureControlMetric(summaryFeatureSpentYear, view.featureSpentHoursYear);
@@ -4676,6 +4696,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if (summarySpent) summarySpent.textContent = formatFilterHours(view.spentHours);
         if (summarySpentYear) summarySpentYear.textContent = formatFilterHours(view.spentHoursYear);
         if (summaryDevelopmentEstimated) summaryDevelopmentEstimated.textContent = formatFilterHours(view.developmentEstimatedHours);
+        if (summaryDevelopmentRiskEstimate) summaryDevelopmentRiskEstimate.textContent = formatFilterHours(view.developmentRiskEstimateHours);
         if (summaryDevelopmentSpent) summaryDevelopmentSpent.textContent = formatFilterHours(view.developmentSpentHours);
         if (summaryDevelopmentSpentYear) summaryDevelopmentSpentYear.textContent = formatFilterHours(view.developmentSpentHoursYear);
         if (summaryDevelopmentProcessEstimated) summaryDevelopmentProcessEstimated.textContent = formatFilterHours(view.developmentProcessEstimatedHours);
@@ -4699,7 +4720,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           return;
         }}
         if (!Array.isArray(issues) || !issues.length) {{
-          snapshotIssuesTableBody.innerHTML = '<tr><td colspan="12">По текущему фильтру задач нет.</td></tr>';
+          snapshotIssuesTableBody.innerHTML = '<tr><td colspan="13">По текущему фильтру задач нет.</td></tr>';
           return;
         }}
         const groupMap = new Map();
@@ -4732,6 +4753,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             const groupDoneRatio = isVirtualGroup ? "—" : escapeHtml(issue?.feature_group_done_ratio ?? 0);
             const groupBaseline = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_baseline_estimate_hours);
             const groupEstimated = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_estimated_hours);
+            const groupRisk = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_risk_estimate_hours);
             const groupSpent = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_spent_hours);
             const groupSpentYear = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_spent_hours_year);
             const groupClosedOn = isVirtualGroup ? "—" : escapeHtml(formatSnapshotDateTime(issue?.feature_group_closed_on));
@@ -4749,6 +4771,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupDoneRatio}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupBaseline}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupEstimated}}</td>
+                <td class="snapshot-group-cell snapshot-group-metric">${{groupRisk}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupSpent}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupSpentYear}}</td>
                 <td class="snapshot-group-cell closed-col">${{groupClosedOn}}</td>
@@ -4771,6 +4794,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td>${{escapeHtml(orderedIssue?.done_ratio ?? 0)}}</td>
                 <td class="baseline-col">${{formatFilterHours(orderedIssue?.baseline_estimate_hours)}}</td>
                 <td>${{formatFilterHours(orderedIssue?.estimated_hours)}}</td>
+                <td>${{formatFilterHours(orderedIssue?.risk_estimate_hours)}}</td>
                 <td class="spent-col">${{formatFilterHours(orderedIssue?.spent_hours)}}</td>
                 <td class="spent-year-col">${{formatFilterHours(orderedIssue?.spent_hours_year)}}</td>
                 <td class="closed-col">${{escapeHtml(formatSnapshotDateTime(orderedIssue?.closed_on))}}</td>
@@ -4798,6 +4822,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           baseline_value: "",
           estimated_op: "",
           estimated_value: "",
+          risk_op: "",
+          risk_value: "",
           spent_op: "",
           spent_value: "",
           spent_year_op: "",
@@ -4808,6 +4834,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           ["done_ratio_op", "done_ratio_value"],
           ["baseline_op", "baseline_value"],
           ["estimated_op", "estimated_value"],
+          ["risk_op", "risk_value"],
           ["spent_op", "spent_value"],
           ["spent_year_op", "spent_year_value"],
         ];
@@ -4835,6 +4862,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           filters.baseline_value ||
           filters.estimated_op ||
           filters.estimated_value ||
+          filters.risk_op ||
+          filters.risk_value ||
           filters.spent_op ||
           filters.spent_value ||
           filters.spent_year_op ||
@@ -4885,6 +4914,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           baseline_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="baseline"][data-filter-role="value"]')?.value || ""),
           estimated_op: String(document.querySelector('[data-filter-key="estimated"][data-filter-role="op"]')?.value || ""),
           estimated_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="estimated"][data-filter-role="value"]')?.value || ""),
+          risk_op: String(document.querySelector('[data-filter-key="risk"][data-filter-role="op"]')?.value || ""),
+          risk_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="risk"][data-filter-role="value"]')?.value || ""),
           spent_op: String(document.querySelector('[data-filter-key="spent"][data-filter-role="op"]')?.value || ""),
           spent_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="spent"][data-filter-role="value"]')?.value || ""),
           spent_year_op: String(document.querySelector('[data-filter-key="spentYear"][data-filter-role="op"]')?.value || ""),
@@ -4914,6 +4945,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if (filters.baseline_value) params.set("baseline_value", filters.baseline_value);
         if (filters.estimated_op) params.set("estimated_op", filters.estimated_op);
         if (filters.estimated_value) params.set("estimated_value", filters.estimated_value);
+        if (filters.risk_op) params.set("risk_op", filters.risk_op);
+        if (filters.risk_value) params.set("risk_value", filters.risk_value);
         if (filters.spent_op) params.set("spent_op", filters.spent_op);
         if (filters.spent_value) params.set("spent_value", filters.spent_value);
         if (filters.spent_year_op) params.set("spent_year_op", filters.spent_year_op);
@@ -6511,6 +6544,8 @@ def getProjectLatestSnapshotIssuesData(
     baseline_value: str | None = Query(None),
     estimated_op: str | None = Query(None),
     estimated_value: str | None = Query(None),
+    risk_op: str | None = Query(None),
+    risk_value: str | None = Query(None),
     spent_op: str | None = Query(None),
     spent_value: str | None = Query(None),
     spent_year_op: str | None = Query(None),
@@ -6534,6 +6569,8 @@ def getProjectLatestSnapshotIssuesData(
         baselineValue=baseline_value,
         estimatedOp=estimated_op,
         estimatedValue=estimated_value,
+        riskOp=risk_op,
+        riskValue=risk_value,
         spentOp=spent_op,
         spentValue=spent_value,
         spentYearOp=spent_year_op,
@@ -6565,6 +6602,8 @@ def exportProjectLatestSnapshotIssuesCsv(
     baseline_value: str | None = Query(None),
     estimated_op: str | None = Query(None),
     estimated_value: str | None = Query(None),
+    risk_op: str | None = Query(None),
+    risk_value: str | None = Query(None),
     spent_op: str | None = Query(None),
     spent_value: str | None = Query(None),
     spent_year_op: str | None = Query(None),
@@ -6588,6 +6627,8 @@ def exportProjectLatestSnapshotIssuesCsv(
         baselineValue=baseline_value,
         estimatedOp=estimated_op,
         estimatedValue=estimated_value,
+        riskOp=risk_op,
+        riskValue=risk_value,
         spentOp=spent_op,
         spentValue=spent_value,
         spentYearOp=spent_year_op,
@@ -6617,6 +6658,7 @@ def exportProjectLatestSnapshotIssuesCsv(
             "Готово, %",
             "Базовая оценка, ч",
             "План, ч",
+            "План с рисками, ч",
             "Факт всего, ч",
             "Факт за год, ч",
             "Закрыта",
@@ -6634,6 +6676,7 @@ def exportProjectLatestSnapshotIssuesCsv(
                 issue.get("done_ratio") if issue.get("done_ratio") is not None else 0,
                 formatPageHours(issue.get("baseline_estimate_hours")),
                 formatPageHours(issue.get("estimated_hours")),
+                formatPageHours(issue.get("risk_estimate_hours")),
                 formatPageHours(issue.get("spent_hours")),
                 formatPageHours(issue.get("spent_hours_year")),
                 formatSnapshotPageDateTime(issue.get("closed_on")),
