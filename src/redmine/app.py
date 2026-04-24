@@ -2417,7 +2417,7 @@ def buildSnapshotComparisonPage(
     {buildProjectContextNavCss()}
     h1 {{ margin: 18px 0 12px; font-size: clamp(1.85rem, 4.2vw, 2.75rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }}
     .meta {{ color: #64798d; margin: 0 0 18px; line-height: 1.6; }}
-    .meta-strong {{ color: #52cee6; font-weight: 400; }}
+    .meta-strong {{ color: #33bdd8; font-weight: 400; }}
     .controls-panel {{ border: 1px solid #d9e5eb; border-radius: 8px; padding: 18px 20px; background: #ffffff; }}
     .controls-grid {{ display: grid; grid-template-columns: 1fr; gap: 14px; }}
     .field {{ display: flex; flex-direction: column; gap: 6px; }}
@@ -2693,6 +2693,7 @@ def buildSnapshotComparisonPage(
     {buildProjectContextNavCss()}
     h1 {{ margin: 18px 0 12px; font-size: clamp(1.85rem, 4.2vw, 2.75rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }}
     .meta {{ color: var(--muted); margin: 0 0 14px; line-height: 1.6; }}
+    .meta-strong {{ color: #33bdd8; font-weight: 400; }}
     .controls-panel {{ border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; background: var(--panel); margin: 0 0 18px; }}
     .controls-grid {{ display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }}
     .field {{ display: flex; flex-direction: column; gap: 6px; }}
@@ -3133,7 +3134,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     }}
 
     .meta-strong {{
-      color: #52cee6;
+      color: #33bdd8;
       font-weight: 400;
     }}
 
@@ -4195,7 +4196,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         background: #e4eaef;
       }}
       h1 {{ margin: 18px 0 12px; font-size: clamp(1.85rem, 4vw, 2.65rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }}
-      .meta-strong {{ color: #52cee6; font-weight: 400; }}
+      .meta-strong {{ color: #33bdd8; font-weight: 400; }}
       form {{ display: flex; gap: 10px; align-items: center; margin: 0; flex-wrap: wrap; }}
       label {{ font-weight: 600; }}
       select,
