@@ -64,7 +64,6 @@ app = FastAPI(title="Redmine Snapshot Viewer")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 SESSION_SECRET = config.sessionSecret or secrets.token_hex(32)
-app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax", https_only=False)
 USER_ROLE = "User"
 FINANCE_ROLE = "Finance"
 ADMIN_ROLE = "Admin"
@@ -271,6 +270,9 @@ async def authMiddleware(request: Request, call_next):
         return RedirectResponse(url="/change-password", status_code=303)
 
     return await call_next(request)
+
+
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax", https_only=False)
 
 
 class ProjectSettingsUpdate(BaseModel):
