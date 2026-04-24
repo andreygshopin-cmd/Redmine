@@ -382,8 +382,8 @@ PAGE_HTML = """<!doctype html>
 
     h1 {
       margin: 0 0 10px;
-      font-size: clamp(2.5rem, 5.6vw, 4.25rem);
-      line-height: 1;
+      font-size: clamp(2.15rem, 4.9vw, 3.6rem);
+      line-height: 0.98;
       letter-spacing: -0.04em;
       font-weight: 400;
     }
@@ -2415,7 +2415,7 @@ def buildSnapshotComparisonPage(
     body {{ margin: 0; font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
     main {{ max-width: 1280px; margin: 0 auto; padding: 24px 20px 48px; }}
     {buildProjectContextNavCss()}
-    h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; }}
+    h1 {{ margin: 18px 0 12px; font-size: clamp(1.85rem, 4.2vw, 2.75rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }}
     .meta {{ color: #64798d; margin: 0 0 18px; line-height: 1.6; }}
     .meta-strong {{ color: #52cee6; font-weight: 800; }}
     .controls-panel {{ border: 1px solid #d9e5eb; border-radius: 8px; padding: 18px 20px; background: #ffffff; }}
@@ -2691,7 +2691,7 @@ def buildSnapshotComparisonPage(
     body {{ margin: 0; font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
     main {{ max-width: 1480px; margin: 0 auto; padding: 24px 20px 48px; }}
     {buildProjectContextNavCss()}
-    h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; }}
+    h1 {{ margin: 18px 0 12px; font-size: clamp(1.85rem, 4.2vw, 2.75rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }}
     .meta {{ color: var(--muted); margin: 0 0 14px; line-height: 1.6; }}
     .controls-panel {{ border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; background: var(--panel); margin: 0 0 18px; }}
     .controls-grid {{ display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }}
@@ -3119,9 +3119,10 @@ def buildBurndownPage(projectRedmineId: int) -> str:
 
     h1 {{
       margin: 18px 0 12px;
-      font-size: clamp(2rem, 5vw, 3.2rem);
-      line-height: 1.05;
-      letter-spacing: -0.03em;
+      font-size: clamp(1.85rem, 4.2vw, 2.75rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
     }}
 
     .meta {{
@@ -3912,9 +3913,10 @@ def buildSnapshotRulesPage() -> str:
 
     h1 {{
       margin: 0 0 12px;
-      font-size: clamp(2rem, 5vw, 3rem);
-      line-height: 1.05;
-      letter-spacing: -0.03em;
+      font-size: clamp(1.85rem, 4.2vw, 2.75rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
     }}
 
     .lead {{
@@ -4074,7 +4076,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     body {{ margin: 0; font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
     main {{ max-width: 1200px; margin: 0 auto; padding: 24px 20px 48px; }}
     {buildProjectContextNavCss()}
-    h1 {{ margin: 18px 0 12px; font-size: 2rem; }}
+    h1 {{ margin: 18px 0 12px; font-size: clamp(1.85rem, 4vw, 2.5rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }}
     .meta {{ color: #64798d; margin: 0 0 24px; }}
     .meta-strong {{ color: #52cee6; font-weight: 800; }}
   </style>
@@ -4192,7 +4194,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .toolbar button:hover {{
         background: #e4eaef;
       }}
-      h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
+      h1 {{ margin: 18px 0 12px; font-size: clamp(1.85rem, 4vw, 2.65rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }}
       .meta-strong {{ color: #52cee6; font-weight: 800; }}
       form {{ display: flex; gap: 10px; align-items: center; margin: 0; flex-wrap: wrap; }}
       label {{ font-weight: 600; }}
@@ -5806,8 +5808,10 @@ def buildStrangeSnapshotIssuesPage() -> str:
     .button-projects {{ background: var(--yellow); color: #16324a; }}
     h1 {{
       margin: 0 0 12px;
-      font-size: clamp(2rem, 4vw, 3rem);
-      line-height: 1.05;
+      font-size: clamp(1.85rem, 4vw, 2.65rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
     }}
     .meta {{
       margin: 0 0 18px;
