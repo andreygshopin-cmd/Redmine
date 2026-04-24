@@ -5,8 +5,10 @@ import hashlib
 import hmac
 import io
 import json
+from email.message import EmailMessage
 from pathlib import Path
 import secrets
+import smtplib
 import requests
 from datetime import date, timedelta
 from urllib.parse import quote
@@ -34,6 +36,7 @@ from src.redmine.db import (
     getFilteredSnapshotIssuesForProjectByDate,
     getSnapshotRunsWithIssuesForProjectYear,
     getSnapshotIssuesForProjectByDate,
+    getUserByPasswordResetToken,
     getUserByLogin,
     listFilteredSnapshotIssuesForProjectByDate,
     listLatestSnapshotIssuesWithParents,
@@ -44,7 +47,9 @@ from src.redmine.db import (
     listUsers,
     pruneUnchangedIssueSnapshots,
     seedInitialUsers,
+    storeUserPasswordResetToken,
     syncProjects,
+    clearUserPasswordResetToken,
     updateUser,
     updateUserPassword,
     updatePlanningProject,
@@ -192,11 +197,15 @@ def _hasRole(user: dict[str, object] | None, role: str) -> bool:
 def _publicPath(path: str) -> bool:
     return path in {
         "/login",
+        "/forgot-password",
+        "/reset-password",
         "/logout",
         "/change-password",
         "/health",
         "/db-health",
         "/api/auth/login",
+        "/api/auth/request-password-reset",
+        "/api/auth/reset-password",
         "/api/auth/change-password",
     } or path.startswith("/static")
 
@@ -321,6 +330,15 @@ class ChangePasswordPayload(BaseModel):
     new_password: str
 
 
+class PasswordResetRequestPayload(BaseModel):
+    email: str
+
+
+class PasswordResetCompletePayload(BaseModel):
+    token: str
+    new_password: str
+
+
 class UserPayload(BaseModel):
     login: str
     password: str | None = None
@@ -339,6 +357,71 @@ def _parseRedmineIsoDate(value: str | None) -> datetime | None:
         return None
 
     return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+
+def _hashResetToken(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _getBaseUrl(request: Request | None = None) -> str:
+    configuredBaseUrl = str(config.appBaseUrl or "").strip().rstrip("/")
+    if configuredBaseUrl:
+        return configuredBaseUrl
+
+    if request is not None:
+        return str(request.base_url).rstrip("/")
+
+    return f"http://{config.appHost}:{config.appPort}".rstrip("/")
+
+
+def _buildPasswordResetLink(request: Request, token: str) -> str:
+    return f"{_getBaseUrl(request)}/reset-password?token={quote(token)}"
+
+
+def _sendPasswordResetEmail(loginValue: str, resetUrl: str) -> None:
+    smtpHost = str(config.smtpHost or "").strip()
+    smtpFromEmail = str(config.smtpFromEmail or "").strip()
+    if not smtpHost or not smtpFromEmail:
+        raise RuntimeError("SMTP is not configured")
+
+    message = EmailMessage()
+    message["Subject"] = "Сброс пароля"
+    message["From"] = (
+        f"{config.smtpFromName} <{smtpFromEmail}>"
+        if str(config.smtpFromName or "").strip()
+        else smtpFromEmail
+    )
+    message["To"] = loginValue
+    message.set_content(
+        "\n".join(
+            [
+                "Здравствуйте!",
+                "",
+                "Для сброса пароля перейдите по ссылке:",
+                resetUrl,
+                "",
+                "Если вы не запрашивали сброс пароля, просто проигнорируйте это письмо.",
+                "Ссылка действует 30 минут.",
+            ]
+        )
+    )
+
+    smtpPort = int(config.smtpPort or 0) or (465 if config.smtpUseSsl else 587)
+    if config.smtpUseSsl:
+        with smtplib.SMTP_SSL(smtpHost, smtpPort, timeout=30) as smtp:
+            if config.smtpUsername:
+                smtp.login(config.smtpUsername, config.smtpPassword)
+            smtp.send_message(message)
+        return
+
+    with smtplib.SMTP(smtpHost, smtpPort, timeout=30) as smtp:
+        smtp.ehlo()
+        if config.smtpUseTls:
+            smtp.starttls()
+            smtp.ehlo()
+        if config.smtpUsername:
+            smtp.login(config.smtpUsername, config.smtpPassword)
+        smtp.send_message(message)
 
 
 def _isIssueIncludedByPartialRules(issuePayload: dict[str, object], cutoffDateIso: str) -> tuple[bool, str]:
@@ -6890,6 +6973,15 @@ def buildLoginPage(nextPath: str = "/") -> str:
       font-size: 0.95rem;
     }}
     .status.error {{ color: #d54343; }}
+    .secondary-link {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 8px;
+      color: var(--blue-302);
+      text-decoration: none;
+      font-weight: 600;
+    }}
   </style>
 </head>
 <body>
@@ -6911,6 +7003,7 @@ def buildLoginPage(nextPath: str = "/") -> str:
       </label>
       <button id="loginButton" type="submit">Войти</button>
     </form>
+    <a class="secondary-link" href="/forgot-password">Сбросить пароль</a>
     <div class="status" id="loginStatus"></div>
   </section>
 
@@ -6952,6 +7045,357 @@ def buildLoginPage(nextPath: str = "/") -> str:
       }}
     }});
   </script>
+</body>
+</html>"""
+
+
+def buildForgotPasswordPage() -> str:
+    return """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Сброс пароля</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {
+      --bg: #f6f9fb;
+      --panel: #ffffff;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue-302: #375d77;
+      --orange-1585: #ff6c0e;
+      --shadow: 0 18px 40px rgba(22, 50, 74, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      font-family: "Golos", "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #f6f9fb 0%, #eef6f7 100%);
+      color: var(--text);
+    }
+    .card {
+      width: min(480px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 28px 28px 24px;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(1.8rem, 4vw, 2.4rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
+    }
+    .lead {
+      margin: 0 0 22px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    form {
+      display: grid;
+      gap: 16px;
+    }
+    label {
+      display: grid;
+      gap: 7px;
+      font-size: 0.96rem;
+      font-weight: 600;
+    }
+    input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font: inherit;
+      color: var(--text);
+      background: #ffffff;
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 13px 18px;
+      background: var(--orange-1585);
+      color: #ffffff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.7;
+      cursor: wait;
+    }
+    a {
+      color: var(--blue-302);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .status {
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .status.error { color: #d54343; }
+    .status.success { color: #2f8a57; }
+  </style>
+</head>
+<body>
+  <section class="card">
+    <h1>Сброс пароля</h1>
+    <p class="lead">Введите email-логин пользователя. Мы отправим письмо со ссылкой на страницу, где можно задать новый пароль.</p>
+    <form id="forgotPasswordForm">
+      <label for="resetEmailInput">
+        Email
+        <input id="resetEmailInput" type="email" autocomplete="email" required>
+      </label>
+      <div class="actions">
+        <button id="forgotPasswordButton" type="submit">Отправить ссылку</button>
+        <a href="/login">Вернуться ко входу</a>
+      </div>
+    </form>
+    <div class="status" id="forgotPasswordStatus"></div>
+  </section>
+  <script>
+    const forgotPasswordForm = document.getElementById("forgotPasswordForm");
+    const forgotPasswordButton = document.getElementById("forgotPasswordButton");
+    const forgotPasswordStatus = document.getElementById("forgotPasswordStatus");
+
+    function setForgotStatus(message, kind = "") {
+      forgotPasswordStatus.textContent = message;
+      forgotPasswordStatus.className = "status" + (kind ? " " + kind : "");
+    }
+
+    forgotPasswordForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      forgotPasswordButton.disabled = true;
+      setForgotStatus("Отправляем письмо...");
+
+      try {
+        const response = await fetch("/api/auth/request-password-reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: document.getElementById("resetEmailInput").value,
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось отправить письмо.");
+        }
+        setForgotStatus(payload.detail || "Если пользователь найден, письмо отправлено.", "success");
+      } catch (error) {
+        setForgotStatus(error.message, "error");
+      } finally {
+        forgotPasswordButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>"""
+
+
+def buildResetPasswordPage(token: str, tokenIsValid: bool) -> str:
+    safeToken = escape(token, quote=True)
+    title = "Задать новый пароль" if tokenIsValid else "Ссылка недействительна"
+    lead = (
+        "Введите новый пароль и сохраните его."
+        if tokenIsValid
+        else "Ссылка для сброса пароля недействительна или уже истекла. Запросите новую ссылку."
+    )
+    formHtml = f"""
+    <form id="resetPasswordForm">
+      <input id="resetTokenInput" type="hidden" value="{safeToken}">
+      <label for="newPasswordInput">
+        Новый пароль
+        <input id="newPasswordInput" type="password" autocomplete="new-password" minlength="3" required>
+      </label>
+      <label for="repeatPasswordInput">
+        Повторите новый пароль
+        <input id="repeatPasswordInput" type="password" autocomplete="new-password" minlength="3" required>
+      </label>
+      <div class="actions">
+        <button id="resetPasswordButton" type="submit">Сохранить пароль</button>
+        <a href="/login">Ко входу</a>
+      </div>
+    </form>
+    """ if tokenIsValid else """
+    <div class="actions">
+      <a href="/forgot-password">Запросить новую ссылку</a>
+      <a href="/login">Ко входу</a>
+    </div>
+    """
+    scriptHtml = """
+  <script>
+    const resetPasswordForm = document.getElementById("resetPasswordForm");
+    if (resetPasswordForm) {
+      const resetPasswordButton = document.getElementById("resetPasswordButton");
+      const resetPasswordStatus = document.getElementById("resetPasswordStatus");
+
+      function setResetStatus(message, kind = "") {
+        resetPasswordStatus.textContent = message;
+        resetPasswordStatus.className = "status" + (kind ? " " + kind : "");
+      }
+
+      resetPasswordForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const newPassword = document.getElementById("newPasswordInput").value;
+        const repeatPassword = document.getElementById("repeatPasswordInput").value;
+        if (newPassword !== repeatPassword) {
+          setResetStatus("Новый пароль и повтор должны совпадать.", "error");
+          return;
+        }
+
+        resetPasswordButton.disabled = true;
+        setResetStatus("Сохраняем новый пароль...");
+
+        try {
+          const response = await fetch("/api/auth/reset-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              token: document.getElementById("resetTokenInput").value,
+              new_password: newPassword,
+            }),
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.detail || "Не удалось сохранить пароль.");
+          }
+          window.location.href = payload.next_path || "/login";
+        } catch (error) {
+          setResetStatus(error.message, "error");
+          resetPasswordButton.disabled = false;
+        }
+      });
+    }
+  </script>
+""" if tokenIsValid else ""
+
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title}</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {{
+      --bg: #f6f9fb;
+      --panel: #ffffff;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue-302: #375d77;
+      --orange-1585: #ff6c0e;
+      --shadow: 0 18px 40px rgba(22, 50, 74, 0.08);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      font-family: "Golos", "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #f6f9fb 0%, #eef6f7 100%);
+      color: var(--text);
+    }}
+    .card {{
+      width: min(500px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 28px 28px 24px;
+    }}
+    h1 {{
+      margin: 0 0 10px;
+      font-size: clamp(1.8rem, 4vw, 2.4rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
+    }}
+    .lead {{
+      margin: 0 0 22px;
+      color: var(--muted);
+      line-height: 1.5;
+    }}
+    form {{
+      display: grid;
+      gap: 16px;
+    }}
+    label {{
+      display: grid;
+      gap: 7px;
+      font-size: 0.96rem;
+      font-weight: 600;
+    }}
+    input {{
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font: inherit;
+      color: var(--text);
+      background: #ffffff;
+    }}
+    .actions {{
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }}
+    button {{
+      border: 0;
+      border-radius: 10px;
+      padding: 13px 18px;
+      background: var(--orange-1585);
+      color: #ffffff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+    button:disabled {{
+      opacity: 0.7;
+      cursor: wait;
+    }}
+    a {{
+      color: var(--blue-302);
+      text-decoration: none;
+      font-weight: 600;
+    }}
+    .status {{
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin-top: 14px;
+    }}
+    .status.error {{ color: #d54343; }}
+  </style>
+</head>
+<body>
+  <section class="card">
+    <h1>{title}</h1>
+    <p class="lead">{lead}</p>
+    {formHtml}
+    <div class="status" id="resetPasswordStatus"></div>
+  </section>
+{scriptHtml}
 </body>
 </html>"""
 
@@ -7620,6 +8064,22 @@ def getLoginPage(request: Request, next: str | None = Query(None)) -> HTMLRespon
     return _renderHtmlPage(buildLoginPage(next))
 
 
+@app.get("/forgot-password", response_class=HTMLResponse)
+def getForgotPasswordPage() -> HTMLResponse:
+    return _renderHtmlPage(buildForgotPasswordPage())
+
+
+@app.get("/reset-password", response_class=HTMLResponse)
+def getResetPasswordPage(token: str | None = Query(None)) -> HTMLResponse:
+    _ensureAuthStorage()
+    tokenValue = str(token or "").strip()
+    tokenIsValid = False
+    if tokenValue:
+        tokenHash = _hashResetToken(tokenValue)
+        tokenIsValid = getUserByPasswordResetToken(tokenHash, datetime.now(UTC)) is not None
+    return _renderHtmlPage(buildResetPasswordPage(tokenValue, tokenIsValid))
+
+
 @app.get("/change-password", response_class=HTMLResponse)
 def getChangePasswordPage(request: Request) -> HTMLResponse:
     user = _getCurrentUser(request)
@@ -7672,6 +8132,33 @@ def login(request: Request, payload: LoginPayload, next: str | None = Query(None
     }
 
 
+@app.post("/api/auth/request-password-reset")
+def requestPasswordReset(request: Request, payload: PasswordResetRequestPayload) -> dict[str, object]:
+    _ensureAuthStorage()
+    loginValue = str(payload.email or "").strip().lower()
+    if not loginValue:
+        raise HTTPException(status_code=400, detail="Введите email.")
+    if not str(config.smtpHost or "").strip() or not str(config.smtpFromEmail or "").strip():
+        raise HTTPException(status_code=503, detail="Отправка писем для сброса пароля пока не настроена.")
+
+    user = getUserByLogin(loginValue)
+    if not user:
+        return {"ok": True, "detail": "Если пользователь найден, письмо отправлено."}
+
+    resetToken = secrets.token_urlsafe(32)
+    tokenHash = _hashResetToken(resetToken)
+    expiresAt = datetime.now(UTC) + timedelta(minutes=30)
+    storeUserPasswordResetToken(int(user.get("id") or 0), tokenHash, expiresAt)
+
+    try:
+        _sendPasswordResetEmail(loginValue, _buildPasswordResetLink(request, resetToken))
+    except Exception as error:
+        clearUserPasswordResetToken(int(user.get("id") or 0))
+        raise HTTPException(status_code=503, detail=f"Не удалось отправить письмо: {error}") from error
+
+    return {"ok": True, "detail": "Если пользователь найден, письмо отправлено."}
+
+
 @app.post("/api/auth/change-password")
 def changePassword(request: Request, payload: ChangePasswordPayload) -> dict[str, object]:
     _ensureAuthStorage()
@@ -7686,6 +8173,28 @@ def changePassword(request: Request, payload: ChangePasswordPayload) -> dict[str
 
     request.session["user_login"] = str(updatedUser.get("login") or user.get("login") or "")
     return {"ok": True, "next_path": "/"}
+
+
+@app.post("/api/auth/reset-password")
+def resetPassword(payload: PasswordResetCompletePayload) -> dict[str, object]:
+    _ensureAuthStorage()
+    tokenValue = str(payload.token or "").strip()
+    newPassword = str(payload.new_password or "")
+    if not tokenValue:
+        raise HTTPException(status_code=400, detail="Ссылка для сброса пароля недействительна.")
+    if len(newPassword) < 3:
+        raise HTTPException(status_code=400, detail="Новый пароль должен быть не короче 3 символов.")
+
+    tokenHash = _hashResetToken(tokenValue)
+    user = getUserByPasswordResetToken(tokenHash, datetime.now(UTC))
+    if not user:
+        raise HTTPException(status_code=400, detail="Ссылка для сброса пароля недействительна или истекла.")
+
+    updatedUser = updateUserPassword(int(user.get("id") or 0), _hashPassword(newPassword), False)
+    if not updatedUser:
+        raise HTTPException(status_code=404, detail="Пользователь не найден.")
+
+    return {"ok": True, "next_path": "/login"}
 
 
 @app.get("/api/auth/me")
@@ -8524,6 +9033,3 @@ def databaseHealth() -> dict[str, object]:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
     return {"status": "ok" if connected else "down", "connected": connected}
-
-
-

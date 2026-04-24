@@ -422,6 +422,8 @@ def ensureUsersTable() -> None:
                         password_hash TEXT NOT NULL,
                         roles TEXT NOT NULL DEFAULT 'User',
                         must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+                        reset_password_token_hash TEXT NULL,
+                        reset_password_expires_at TIMESTAMPTZ NULL,
                         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
@@ -461,6 +463,24 @@ def ensureUsersTable() -> None:
                     """
                     ALTER TABLE app_users
                     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE app_users
+                    ADD COLUMN IF NOT EXISTS reset_password_token_hash TEXT NULL
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE app_users
+                    ADD COLUMN IF NOT EXISTS reset_password_expires_at TIMESTAMPTZ NULL
                     """
                 )
             )
@@ -846,6 +866,8 @@ def getUserByLogin(login: str) -> dict[str, object] | None:
                     password_hash,
                     roles,
                     must_change_password,
+                    reset_password_token_hash,
+                    reset_password_expires_at,
                     created_at,
                     updated_at
                 FROM app_users
@@ -2296,6 +2318,8 @@ def updateUserPassword(userId: int, passwordHash: str, mustChangePassword: bool)
                 SET
                     password_hash = :password_hash,
                     must_change_password = :must_change_password,
+                    reset_password_token_hash = NULL,
+                    reset_password_expires_at = NULL,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = :user_id
                 RETURNING
@@ -2312,6 +2336,105 @@ def updateUserPassword(userId: int, passwordHash: str, mustChangePassword: bool)
                 "password_hash": passwordHash,
                 "must_change_password": mustChangePassword,
             },
+        ).mappings().first()
+
+    return dict(row) if row else None
+
+
+def storeUserPasswordResetToken(userId: int, tokenHash: str, expiresAt) -> dict[str, object] | None:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.begin() as connection:
+        row = connection.execute(
+            text(
+                """
+                UPDATE app_users
+                SET
+                    reset_password_token_hash = :token_hash,
+                    reset_password_expires_at = :expires_at,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :user_id
+                RETURNING
+                    id,
+                    login,
+                    roles,
+                    must_change_password,
+                    reset_password_token_hash,
+                    reset_password_expires_at,
+                    created_at,
+                    updated_at
+                """
+            ),
+            {
+                "user_id": userId,
+                "token_hash": tokenHash,
+                "expires_at": expiresAt,
+            },
+        ).mappings().first()
+
+    return dict(row) if row else None
+
+
+def getUserByPasswordResetToken(tokenHash: str, nowAt) -> dict[str, object] | None:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    login,
+                    password_hash,
+                    roles,
+                    must_change_password,
+                    reset_password_token_hash,
+                    reset_password_expires_at,
+                    created_at,
+                    updated_at
+                FROM app_users
+                WHERE reset_password_token_hash = :token_hash
+                  AND reset_password_expires_at IS NOT NULL
+                  AND reset_password_expires_at >= :now_at
+                """
+            ),
+            {
+                "token_hash": tokenHash,
+                "now_at": nowAt,
+            },
+        ).mappings().first()
+
+    return dict(row) if row else None
+
+
+def clearUserPasswordResetToken(userId: int) -> dict[str, object] | None:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.begin() as connection:
+        row = connection.execute(
+            text(
+                """
+                UPDATE app_users
+                SET
+                    reset_password_token_hash = NULL,
+                    reset_password_expires_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :user_id
+                RETURNING
+                    id,
+                    login,
+                    roles,
+                    must_change_password,
+                    reset_password_token_hash,
+                    reset_password_expires_at,
+                    created_at,
+                    updated_at
+                """
+            ),
+            {"user_id": userId},
         ).mappings().first()
 
     return dict(row) if row else None
