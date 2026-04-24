@@ -415,6 +415,26 @@ PAGE_HTML = """<!doctype html>
       transform: translateY(-1px);
     }
 
+    #refreshProjectsButton,
+    #planningProjectsPageButton,
+    #recaptureSnapshotsButton,
+    #strangeIssuesPageButton,
+    #deleteSnapshotsButton,
+    #pruneSnapshotsButton {
+      background: #eef2f6;
+      color: var(--blue-302);
+      box-shadow: 0 8px 16px rgba(22, 50, 74, 0.05);
+    }
+
+    #refreshProjectsButton:hover,
+    #planningProjectsPageButton:hover,
+    #recaptureSnapshotsButton:hover,
+    #strangeIssuesPageButton:hover,
+    #deleteSnapshotsButton:hover,
+    #pruneSnapshotsButton:hover {
+      background: #e4eaef;
+    }
+
     button:disabled {
       opacity: 0.55;
       cursor: not-allowed;
@@ -2332,6 +2352,7 @@ def buildSnapshotComparisonPage(
     {buildProjectContextNavCss()}
     h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; }}
     .meta {{ color: #64798d; margin: 0 0 18px; line-height: 1.6; }}
+    .meta-strong {{ color: #375d77; font-weight: 800; }}
     .controls-panel {{ border: 1px solid #d9e5eb; border-radius: 8px; padding: 18px 20px; background: #ffffff; }}
     .controls-grid {{ display: grid; grid-template-columns: 1fr; gap: 14px; }}
     .field {{ display: flex; flex-direction: column; gap: 6px; }}
@@ -2401,7 +2422,7 @@ def buildSnapshotComparisonPage(
   <main>
     {navPanelHtml}
     <h1>Сравнение срезов проекта</h1>
-    <p class="meta">Проект: {projectName}. Для сравнения нужен хотя бы один сохраненный срез.</p>
+    <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{escape(projectIdentifierRaw or "—")}</span>. Для сравнения нужен хотя бы один сохраненный срез.</p>
     <section class="controls-panel">
       <form method="get" id="compareSnapshotsForm">
         <div class="controls-grid">
@@ -2701,7 +2722,7 @@ def buildSnapshotComparisonPage(
   <main>
     {navPanelHtml}
     <h1>Сравнение срезов проекта</h1>
-    <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}.</p>
+    <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>.</p>
     <section class="controls-panel">
       <form method="get" id="compareSnapshotsForm">
         <div class="controls-grid">
@@ -3039,6 +3060,11 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       line-height: 1.6;
     }}
 
+    .meta-strong {{
+      color: #375d77;
+      font-weight: 800;
+    }}
+
     .controls-panel,
     .chart-panel {{
       background: var(--panel);
@@ -3243,7 +3269,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
   <main>
     {navPanelHtml}
     <h1>Диаграмма сгорания</h1>
-    <p class="meta">Проект: {projectName}. Идентификатор: {projectIdentifier}. Период диаграммы: 01.04.{currentYear} — 30.04.{currentYear}. Срезов за апрель: {len(chartSeeds)}.</p>
+    <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Период диаграммы: 01.04.{currentYear} — 30.04.{currentYear}. Срезов за апрель: {len(chartSeeds)}.</p>
 
     <section class="controls-panel">
       <div class="field">
@@ -3973,6 +3999,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     {buildProjectContextNavCss()}
     h1 {{ margin: 18px 0 12px; font-size: 2rem; }}
     .meta {{ color: #64798d; margin: 0 0 24px; }}
+    .meta-strong {{ color: #375d77; font-weight: 800; }}
   </style>
 </head>
 <body>
@@ -4026,6 +4053,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         snapshotRun.get("project_identifier")
         or (storedProject.get("identifier") if storedProject else "")
     ).strip()
+    projectIdentifier = escape(projectIdentifierRaw or "—")
     snapshotPageUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
     if selectedDate:
         snapshotPageUrl += f"?captured_for_date={quote(selectedDate)}"
@@ -4178,7 +4206,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); }}
       #snapshotIssuesTable {{ min-width: 1800px; table-layout: auto; }}
       th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }}
-      th {{ position: sticky; top: 0; z-index: 2; background: #eef6f7; color: #426179; text-transform: uppercase; font-size: 0.74rem; line-height: 1.15; }}
+      th {{ position: sticky; top: 0; z-index: 4; background: #eef6f7; color: #426179; text-transform: uppercase; font-size: 0.74rem; line-height: 1.15; }}
+      #snapshotIssuesTable thead th {{ top: 0; }}
       tr:last-child td {{ border-bottom: 0; }}
       .mono {{ font-family: Consolas, "Courier New", monospace; font-size: 0.95rem; white-space: nowrap; }}
       .issue-link {{ color: var(--blue); text-decoration: none; border-bottom: 1px dashed currentColor; font-weight: 700; }}
@@ -4275,7 +4304,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       <button type="button" id="deleteSnapshotButton">Удалить выбранный срез</button>
       </div>
       <div class="action-status" id="snapshotActionStatus"></div>
-      <p class="meta">Проект: {projectName}. Дата среза: {capturedForDate}. По фильтру: <span id="filteredIssuesCount">{initialFilteredIssues}</span> из {initialTotalIssues}. На странице: <span id="pageIssuesCount">{len(issues)}</span>.</p>
+      <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Дата среза: {capturedForDate}. По фильтру: <span id="filteredIssuesCount">{initialFilteredIssues}</span> из {initialTotalIssues}. На странице: <span id="pageIssuesCount">{len(issues)}</span>.</p>
       <div class="summary-block">
         <table class="summary-table">
           <thead>
