@@ -54,7 +54,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 LOCAL_GOLOS_FONT_CSS = """
     @font-face {
-      font-family: "Golos Text";
+      font-family: "Golos";
       font-style: normal;
       font-weight: 400;
       font-display: swap;
@@ -62,7 +62,7 @@ LOCAL_GOLOS_FONT_CSS = """
     }
 
     @font-face {
-      font-family: "Golos Text";
+      font-family: "Golos";
       font-style: normal;
       font-weight: 500;
       font-display: swap;
@@ -70,7 +70,7 @@ LOCAL_GOLOS_FONT_CSS = """
     }
 
     @font-face {
-      font-family: "Golos Text";
+      font-family: "Golos";
       font-style: normal;
       font-weight: 600;
       font-display: swap;
@@ -78,7 +78,7 @@ LOCAL_GOLOS_FONT_CSS = """
     }
 
     @font-face {
-      font-family: "Golos Text";
+      font-family: "Golos";
       font-style: normal;
       font-weight: 700;
       font-display: swap;
@@ -86,7 +86,7 @@ LOCAL_GOLOS_FONT_CSS = """
     }
 
     @font-face {
-      font-family: "Golos Text";
+      font-family: "Golos";
       font-style: normal;
       font-weight: 800;
       font-display: swap;
@@ -104,6 +104,8 @@ GOOGLE_FONTS_SNIPPETS = (
 def _renderHtmlPage(html: str) -> HTMLResponse:
     for snippet in GOOGLE_FONTS_SNIPPETS:
         html = html.replace(snippet, "")
+
+    html = html.replace('"Golos Text"', '"Golos"')
 
     if LOCAL_GOLOS_FONT_CSS not in html:
         html = html.replace("<style>", f"<style>\n{LOCAL_GOLOS_FONT_CSS}\n", 1)
