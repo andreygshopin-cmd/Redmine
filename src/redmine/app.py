@@ -1,4 +1,4 @@
-﻿from datetime import UTC, datetime
+from datetime import UTC, datetime
 from html import escape
 import csv
 import io
@@ -208,6 +208,9 @@ PAGE_HTML = """<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Redmine: проекты и срезы</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
       color-scheme: light;
@@ -237,7 +240,7 @@ PAGE_HTML = """<!doctype html>
 
     body {
       margin: 0;
-      font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
       background: var(--bg);
       color: var(--text);
     }
@@ -2346,8 +2349,11 @@ def buildSnapshotComparisonPage(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Сравнение срезов</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
+    body {{ margin: 0; font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
     main {{ max-width: 1280px; margin: 0 auto; padding: 24px 20px 48px; }}
     {buildProjectContextNavCss()}
     h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; }}
@@ -2607,6 +2613,9 @@ def buildSnapshotComparisonPage(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Сравнение срезов</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {{
       color-scheme: light;
@@ -2620,7 +2629,7 @@ def buildSnapshotComparisonPage(
       --highlight: rgba(255, 198, 0, 0.20);
     }}
     * {{ box-sizing: border-box; }}
-    body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
+    body {{ margin: 0; font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
     main {{ max-width: 1480px; margin: 0 auto; padding: 24px 20px 48px; }}
     {buildProjectContextNavCss()}
     h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; }}
@@ -3013,6 +3022,9 @@ def buildBurndownPage(projectRedmineId: int) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Диаграмма сгорания</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <style>
     :root {{
@@ -3034,7 +3046,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
 
     body {{
       margin: 0;
-      font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
       background: var(--bg);
       color: var(--text);
     }}
@@ -3763,6 +3775,9 @@ def buildSnapshotRulesPage() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Правила получения срезов</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {{
       color-scheme: light;
@@ -3785,7 +3800,7 @@ def buildSnapshotRulesPage() -> str:
 
     body {{
       margin: 0;
-      font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
       background: var(--bg);
       color: var(--text);
     }}
@@ -3993,8 +4008,11 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Задачи среза проекта</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
+    body {{ margin: 0; font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
     main {{ max-width: 1200px; margin: 0 auto; padding: 24px 20px 48px; }}
     {buildProjectContextNavCss()}
     h1 {{ margin: 18px 0 12px; font-size: 2rem; }}
@@ -4087,6 +4105,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Задачи среза проекта</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
       :root {{
         color-scheme: light;
@@ -4099,7 +4120,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       --orange: #ff6c0e;
     }}
       * {{ box-sizing: border-box; }}
-      body {{ margin: 0; font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
+      body {{ margin: 0; font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
       main {{ max-width: 1440px; margin: 0 auto; padding: 24px 20px 48px; }}
       {buildProjectContextNavCss()}
       .toolbar {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 0 0 16px; }}
@@ -5224,6 +5245,9 @@ BITRIX_PAGE_HTML = """<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bitrix Test Page</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
       color-scheme: light;
@@ -5246,7 +5270,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
       color: var(--ink);
       background:
         radial-gradient(circle at top left, rgba(82, 206, 230, 0.35), transparent 34%),
@@ -5661,6 +5685,9 @@ def buildStrangeSnapshotIssuesPage() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Странные задачи</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {{
       color-scheme: light;
@@ -5678,7 +5705,7 @@ def buildStrangeSnapshotIssuesPage() -> str:
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
-      font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
       background: var(--bg);
       color: var(--text);
     }}
@@ -5830,6 +5857,9 @@ def buildPlanningProjectsPage() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Планирование проектов</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
       color-scheme: light;
@@ -5848,7 +5878,7 @@ def buildPlanningProjectsPage() -> str:
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
       background: var(--bg);
       color: var(--text);
     }
