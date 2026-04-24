@@ -216,8 +216,17 @@ def _seedDefaultAdminUsers() -> None:
     )
 
 
+def _ensureAuthStorage() -> None:
+    ensureUsersTable()
+    _seedDefaultAdminUsers()
+
+
 def _getCurrentUser(request: Request) -> dict[str, object] | None:
-    userLogin = request.session.get("user_login")
+    try:
+        userLogin = request.session.get("user_login")
+    except (AssertionError, RuntimeError):
+        return None
+
     if not userLogin:
         return None
 
@@ -249,12 +258,13 @@ async def authMiddleware(request: Request, call_next):
     if not config.databaseUrl:
         return await call_next(request)
 
-    ensureUsersTable()
-    _seedDefaultAdminUsers()
-
     path = request.url.path
     if _publicPath(path):
+        if path.startswith("/api/auth/"):
+            _ensureAuthStorage()
         return await call_next(request)
+
+    _ensureAuthStorage()
 
     user = _getCurrentUser(request)
     if not user:
@@ -7619,12 +7629,14 @@ def logout(request: Request) -> RedirectResponse:
 
 @app.get("/admin/users", response_class=HTMLResponse)
 def getAdminUsersPage(request: Request) -> HTMLResponse:
+    _ensureAuthStorage()
     _requireAdminUser(request)
     return _renderHtmlPage(buildAdminUsersPage())
 
 
 @app.post("/api/auth/login")
 def login(request: Request, payload: LoginPayload, next: str | None = Query(None)) -> dict[str, object]:
+    _ensureAuthStorage()
     loginValue = str(payload.login or "").strip().lower()
     passwordValue = str(payload.password or "")
     if not loginValue or not passwordValue:
@@ -7654,6 +7666,7 @@ def login(request: Request, payload: LoginPayload, next: str | None = Query(None
 
 @app.post("/api/auth/change-password")
 def changePassword(request: Request, payload: ChangePasswordPayload) -> dict[str, object]:
+    _ensureAuthStorage()
     user = _requireAuthenticatedUser(request)
     newPassword = str(payload.new_password or "")
     if len(newPassword) < 3:
@@ -7669,6 +7682,7 @@ def changePassword(request: Request, payload: ChangePasswordPayload) -> dict[str
 
 @app.get("/api/auth/me")
 def getCurrentUserInfo(request: Request) -> dict[str, object]:
+    _ensureAuthStorage()
     user = _requireAuthenticatedUser(request)
     return {
         "user": {
