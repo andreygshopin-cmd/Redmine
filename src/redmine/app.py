@@ -1,4 +1,4 @@
-﻿from datetime import UTC, datetime
+from datetime import UTC, datetime
 from html import escape
 import csv
 import hashlib
@@ -350,23 +350,23 @@ def _isIssueIncludedByPartialRules(issuePayload: dict[str, object], cutoffDateIs
     cutoffDate = date.fromisoformat(cutoffDateIso)
 
     if not isClosed:
-        return True, f"Р—Р°РґР°С‡Р° РѕС‚РєСЂС‹С‚Р° РїРѕ СЃС‚Р°С‚СѓСЃСѓ В«{statusName}В», РїРѕСЌС‚РѕРјСѓ РїРѕРїР°РґР°РµС‚ РІ С‡Р°СЃС‚РёС‡РЅС‹Р№ СЃСЂРµР·."
+        return True, f"Задача открыта по статусу «{statusName}», поэтому попадает в частичный срез."
 
     if closedOn is None:
         return False, (
-            f"Р—Р°РґР°С‡Р° Р·Р°РєСЂС‹С‚Р° РїРѕ СЃС‚Р°С‚СѓСЃСѓ В«{statusName}В», РЅРѕ Сѓ РЅРµРµ РЅРµС‚ РґР°С‚С‹ closed_on, "
-            "РїРѕСЌС‚РѕРјСѓ РїРѕ С‚РµРєСѓС‰РёРј РїСЂР°РІРёР»Р°Рј РІ С‡Р°СЃС‚РёС‡РЅС‹Р№ СЃСЂРµР· РЅРµ РїРѕРїР°РґР°РµС‚."
+            f"Задача закрыта по статусу «{statusName}», но у нее нет даты closed_on, "
+            "поэтому по текущим правилам в частичный срез не попадает."
         )
 
     if closedOn.date() >= cutoffDate:
         return True, (
-            f"Р—Р°РґР°С‡Р° Р·Р°РєСЂС‹С‚Р° {closedOn.date().isoformat()}, СЌС‚Рѕ РЅРµ СЂР°РЅСЊС€Рµ РїРѕСЂРѕРіР° {cutoffDateIso}, "
-            "РїРѕСЌС‚РѕРјСѓ РІ С‡Р°СЃС‚РёС‡РЅС‹Р№ СЃСЂРµР· РїРѕРїР°РґР°РµС‚."
+            f"Задача закрыта {closedOn.date().isoformat()}, это не раньше порога {cutoffDateIso}, "
+            "поэтому в частичный срез попадает."
         )
 
     return False, (
-        f"Р—Р°РґР°С‡Р° Р·Р°РєСЂС‹С‚Р° {closedOn.date().isoformat()}, СЌС‚Рѕ СЂР°РЅСЊС€Рµ РїРѕСЂРѕРіР° {cutoffDateIso}, "
-        "РїРѕСЌС‚РѕРјСѓ РІ С‡Р°СЃС‚РёС‡РЅС‹Р№ СЃСЂРµР· РЅРµ РїРѕРїР°РґР°РµС‚."
+        f"Задача закрыта {closedOn.date().isoformat()}, это раньше порога {cutoffDateIso}, "
+        "поэтому в частичный срез не попадает."
     )
 
 
@@ -465,7 +465,7 @@ PAGE_HTML = """<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Redmine: РїСЂРѕРµРєС‚С‹ Рё СЃСЂРµР·С‹</title>
+  <title>Redmine: проекты и срезы</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1054,16 +1054,16 @@ PAGE_HTML = """<!doctype html>
           <img
             class="brand-logo"
             src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg"
-            alt="РЎРњРЎ-РРў"
+            alt="СМС-ИТ"
           >
         </span>
       </a>
-      <nav class="hero-nav" aria-label="Р‘С‹СЃС‚СЂС‹Р№ РїРµСЂРµС…РѕРґ РїРѕ СЂР°Р·РґРµР»Р°Рј">
+      <nav class="hero-nav" aria-label="Быстрый переход по разделам">
         <div class="quick-links">
-          <a id="adminPageButton" href="/admin/users" style="display:none;">РђРґРјРёРЅРёСЃС‚СЂРёСЂРѕРІР°РЅРёРµ</a>
-          <a href="#data-load-section">Р—Р°РіСЂСѓР·РєР° РґР°РЅРЅС‹С…</a>
-          <a href="#projects-table">РўР°Р±Р»РёС†Р° РїСЂРѕРµРєС‚РѕРІ</a>
-          <a href="#snapshot-runs-table">РўР°Р±Р»РёС†Р° СЃСЂРµР·РѕРІ</a>
+          <a id="adminPageButton" href="/admin/users" style="display:none;">Администрирование</a>
+          <a href="#data-load-section">Загрузка данных</a>
+          <a href="#projects-table">Таблица проектов</a>
+          <a href="#snapshot-runs-table">Таблица срезов</a>
         </div>
       </nav>
     </div>
@@ -1072,61 +1072,61 @@ PAGE_HTML = """<!doctype html>
 
   <main>
     <section class="hero">
-      <h1>РђРЅР°Р»РёР· РїСЂРѕРµРєС‚РѕРІ Redmine</h1>
+      <h1>Анализ проектов Redmine</h1>
     </section>
 
     <section class="grid" id="data-load-section">
       <article class="panel" id="project-actions">
-        <h2>РџСЂРѕРµРєС‚С‹ Redmine</h2>
-        <p>РџРѕР»СѓС‡Р°РµС‚ СЃРїРёСЃРѕРє РїСЂРѕРµРєС‚РѕРІ РёР· Redmine, РґРѕР±Р°РІР»СЏРµС‚ РЅРѕРІС‹Рµ Р·Р°РїРёСЃРё Рё РѕР±РЅРѕРІР»СЏРµС‚ РёР·РјРµРЅРµРЅРЅС‹Рµ.</p>
+        <h2>Проекты Redmine</h2>
+        <p>Получает список проектов из Redmine, добавляет новые записи и обновляет измененные.</p>
         <div class="row">
-          <button id="refreshProjectsButton" type="button">РћР±РЅРѕРІРёС‚СЊ СЃРїРёСЃРѕРє РїСЂРѕРµРєС‚РѕРІ</button>
-          <button id="planningProjectsPageButton" type="button">РџР»Р°РЅРёСЂРѕРІР°РЅРёРµ РїСЂРѕРµРєС‚РѕРІ</button>
+          <button id="refreshProjectsButton" type="button">Обновить список проектов</button>
+          <button id="planningProjectsPageButton" type="button">Планирование проектов</button>
         </div>
         <div class="status" id="projectsStatus"></div>
       </article>
 
       <article class="panel" id="snapshot-actions">
-        <h2>РџРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·РѕРІ Р·Р°РґР°С‡</h2>
+        <h2>Получение срезов задач</h2>
         <p>
-          Р—Р°РїСЂР°С€РёРІР°РµС‚ СЃСЂРµР·С‹ С‚РѕР»СЊРєРѕ РґР»СЏ С‚РµС… РїСЂРѕРµРєС‚РѕРІ, РїРѕ РєРѕС‚РѕСЂС‹Рј РЅР° СЃРµРіРѕРґРЅСЏС€РЅСЋСЋ РґР°С‚Сѓ
-          РµС‰Рµ РЅРµС‚ Р·Р°РїРёСЃРё РІ Р±Р°Р·Рµ РґР°РЅРЅС‹С….
+          Запрашивает срезы только для тех проектов, по которым на сегодняшнюю дату
+          еще нет записи в базе данных.
         </p>
         <p>
-          <a class="project-link" href="/snapshot-rules" target="_blank" rel="noreferrer">РџСЂР°РІРёР»Р° РїРѕР»СѓС‡РµРЅРёСЏ СЃСЂРµР·РѕРІ</a>
+          <a class="project-link" href="/snapshot-rules" target="_blank" rel="noreferrer">Правила получения срезов</a>
         </p>
         <div class="row">
-          <button id="captureSnapshotsButton" type="button">РџРѕР»СѓС‡РёС‚СЊ СЃСЂРµР·С‹ Р·Р°РґР°С‡</button>
-          <button id="recaptureSnapshotsButton" type="button">РћР±РЅРѕРІРёС‚СЊ РїРѕСЃР»РµРґРЅРёРµ СЃСЂРµР·С‹</button>
-          <button id="strangeIssuesPageButton" type="button">Р’РѕРїСЂРѕСЃС‹ РїРѕ Р·Р°РґР°С‡Р°Рј</button>
+          <button id="captureSnapshotsButton" type="button">Получить срезы задач</button>
+          <button id="recaptureSnapshotsButton" type="button">Обновить последние срезы</button>
+          <button id="strangeIssuesPageButton" type="button">Вопросы по задачам</button>
         </div>
         <div class="status" id="captureStatus"></div>
       </article>
 
       <article class="panel" id="delete-snapshot">
-        <h2>РЈРґР°Р»РµРЅРёРµ СЃСЂРµР·Р° РїРѕ РґР°С‚Рµ</h2>
-        <p>РЈРґР°Р»СЏРµС‚ РІСЃРµ СЃСЂРµР·С‹ Рё РІСЃРµ СЃС‚СЂРѕРєРё Р·Р°РґР°С‡ Р·Р° РІС‹Р±СЂР°РЅРЅСѓСЋ РєР°Р»РµРЅРґР°СЂРЅСѓСЋ РґР°С‚Сѓ.</p>
+        <h2>Удаление среза по дате</h2>
+        <p>Удаляет все срезы и все строки задач за выбранную календарную дату.</p>
         <div class="row">
           <input id="snapshotDateInput" type="date">
-          <button id="deleteSnapshotsButton" class="danger" type="button">РћС‡РёСЃС‚РёС‚СЊ СЃСЂРµР· РЅР° РґР°С‚Сѓ</button>
-          <button id="pruneSnapshotsButton" type="button">РџСЂРѕСЂРµРґРёС‚СЊ СЃСЂРµР·С‹</button>
+          <button id="deleteSnapshotsButton" class="danger" type="button">Очистить срез на дату</button>
+          <button id="pruneSnapshotsButton" type="button">Проредить срезы</button>
         </div>
         <div class="status" id="deleteStatus"></div>
       </article>
     </section>
 
     <section class="panel table-panel" id="projects-table">
-      <h2>РџСЂРѕРµРєС‚С‹ РІ Р±Р°Р·Рµ РґР°РЅРЅС‹С…</h2>
-      <p class="meta" id="projectsCount">Р—Р°РіСЂСѓР·РєР° СЃРїРёСЃРєР° РїСЂРѕРµРєС‚РѕРІ...</p>
+      <h2>Проекты в базе данных</h2>
+      <p class="meta" id="projectsCount">Загрузка списка проектов...</p>
       <div class="table-toolbar">
-        <label for="projectsNameFilterInput">Р¤РёР»СЊС‚СЂ РїРѕ РЅР°Р·РІР°РЅРёСЋ</label>
+        <label for="projectsNameFilterInput">Фильтр по названию</label>
         <input
           id="projectsNameFilterInput"
           class="filter-input filter-input-name"
           type="text"
-          placeholder="Р’РІРµРґРёС‚Рµ С‡Р°СЃС‚СЊ РЅР°Р·РІР°РЅРёСЏ"
+          placeholder="Введите часть названия"
         >
-        <label for="projectsFactFilterInput">РњРёРЅ. СЃСѓРјРјР° С„Р°РєС‚Р° Р·Р° РіРѕРґ РїРѕ СЂР°Р·СЂР°Р±РѕС‚РєРµ Рё Р±Р°РіС„РёРєСЃСѓ</label>
+        <label for="projectsFactFilterInput">Мин. сумма факта за год по разработке и багфиксу</label>
         <input
           id="projectsFactFilterInput"
           class="filter-input"
@@ -1137,10 +1137,10 @@ PAGE_HTML = """<!doctype html>
         >
         <label id="showDisabledProjectsLabel">
           <input id="showDisabledProjectsCheckbox" type="checkbox">
-          <span>РџРѕРєР°Р·С‹РІР°С‚СЊ РІС‹РєР»СЋС‡РµРЅРЅС‹Рµ</span>
+          <span>Показывать выключенные</span>
         </label>
         <span class="toolbar-spacer"></span>
-        <button id="applyProjectsSettingsButton" type="button">РџСЂРёРјРµРЅРёС‚СЊ РЅР°СЃС‚СЂРѕР№РєРё СЃРѕС…СЂР°РЅРµРЅРёСЏ</button>
+        <button id="applyProjectsSettingsButton" type="button">Применить настройки сохранения</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -1149,24 +1149,24 @@ PAGE_HTML = """<!doctype html>
               <th class="checkbox-cell project-sticky-1">
                 <label>
                   <input id="enableVisibleProjectsCheckbox" type="checkbox">
-                  Р’РєР».
+                  Р'РєР».
                 </label>
               </th>
-              <th class="checkbox-cell">Р§Р°СЃС‚.</th>
+              <th class="checkbox-cell">Част.</th>
               <th class="project-sticky-2">ID</th>
-              <th class="project-sticky-3">РќР°Р·РІР°РЅРёРµ</th>
-              <th class="identifier-col">РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ</th>
-              <th>Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°, С‡</th>
-              <th>Р Р°Р·СЂР°Р±РѕС‚РєР°: РѕС†РµРЅРєР°, С‡</th>
-              <th>Р Р°Р·СЂР°Р±РѕС‚РєР°: С„Р°РєС‚ Р·Р° РіРѕРґ, С‡</th>
-              <th>РџСЂРѕС†РµСЃСЃС‹ СЂР°Р·СЂР°Р±РѕС‚РєРё: РїР»Р°РЅ, С‡</th>
-              <th>РџСЂРѕС†РµСЃСЃС‹ СЂР°Р·СЂР°Р±РѕС‚РєРё: С„Р°РєС‚ Р·Р° РіРѕРґ, С‡</th>
-              <th>РћС€РёР±РєР°: РѕС†РµРЅРєР°, С‡</th>
-              <th>РћС€РёР±РєР°: С„Р°РєС‚ Р·Р° РіРѕРґ, С‡</th>
-              <th>РЎС‚Р°С‚СѓСЃ РїСЂРѕРµРєС‚Р°</th>
-              <th>Р”Р°С‚Р° РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р°</th>
-              <th>РћР±РЅРѕРІР»РµРЅ РІ Redmine</th>
-              <th>РЎРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°РЅ</th>
+              <th class="project-sticky-3">Название</th>
+              <th class="identifier-col">Идентификатор</th>
+              <th>Базовая оценка, ч</th>
+              <th>Разработка: оценка, ч</th>
+              <th>Разработка: факт за год, ч</th>
+              <th>Процессы разработки: план, ч</th>
+              <th>Процессы разработки: факт за год, ч</th>
+              <th>Ошибка: оценка, ч</th>
+              <th>Ошибка: факт за год, ч</th>
+              <th>Статус проекта</th>
+              <th>Дата последнего среза</th>
+              <th>Обновлен в Redmine</th>
+              <th>Синхронизирован</th>
             </tr>
           </thead>
           <tbody id="projectsTableBody"></tbody>
@@ -1175,17 +1175,17 @@ PAGE_HTML = """<!doctype html>
     </section>
 
     <section class="panel table-panel" id="snapshot-runs-table">
-      <h2>РџРѕСЃР»РµРґРЅРёРµ СЃСЂРµР·С‹ Р·Р°РґР°С‡</h2>
-      <p class="meta" id="snapshotRunsCount">Р—Р°РіСЂСѓР·РєР° СЃРїРёСЃРєР° СЃСЂРµР·РѕРІ...</p>
+      <h2>Последние срезы задач</h2>
+      <p class="meta" id="snapshotRunsCount">Загрузка списка срезов...</p>
       <div class="table-toolbar">
-        <label for="snapshotRunsProjectFilterInput">Р¤РёР»СЊС‚СЂ РїРѕ РїСЂРѕРµРєС‚Сѓ</label>
+        <label for="snapshotRunsProjectFilterInput">Фильтр по проекту</label>
         <input
           id="snapshotRunsProjectFilterInput"
           class="filter-input snapshot-filter-input"
           type="text"
-          placeholder="Р’РІРµРґРёС‚Рµ С‡Р°СЃС‚СЊ РЅР°Р·РІР°РЅРёСЏ РїСЂРѕРµРєС‚Р°"
+          placeholder="Введите часть названия проекта"
         >
-        <label for="snapshotRunsPerProjectInput">РЎСЂРµР·РѕРІ РЅР° РїСЂРѕРµРєС‚</label>
+        <label for="snapshotRunsPerProjectInput">Срезов на проект</label>
         <input
           id="snapshotRunsPerProjectInput"
           class="filter-input"
@@ -1197,22 +1197,22 @@ PAGE_HTML = """<!doctype html>
         >
       </div>
       <div class="filter-reset-wrap">
-        <button type="button" class="filter-reset-button is-inactive" id="resetSnapshotFiltersButton">РЎР±СЂРѕСЃРёС‚СЊ С„РёР»СЊС‚СЂ</button>
+        <button type="button" class="filter-reset-button is-inactive" id="resetSnapshotFiltersButton">Сбросить фильтр</button>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
               <th>ID</th>
-              <th>Р”Р°С‚Р° СЃСЂРµР·Р°</th>
-              <th>РџСЂРѕРµРєС‚</th>
-              <th>РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ</th>
-              <th>Р—Р°РґР°С‡</th>
-              <th>Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°, С‡</th>
-              <th>РџР»Р°РЅ, С‡</th>
-              <th>Р¤Р°РєС‚ РІСЃРµРіРѕ, С‡</th>
-              <th>Р¤Р°РєС‚ Р·Р° РіРѕРґ, С‡</th>
-              <th>Р—Р°РїРёСЃР°РЅ</th>
+              <th>Дата среза</th>
+              <th>Проект</th>
+              <th>Идентификатор</th>
+              <th>Задач</th>
+              <th>Базовая оценка, ч</th>
+              <th>План, ч</th>
+              <th>Факт всего, ч</th>
+              <th>Факт за год, ч</th>
+              <th>Записан</th>
             </tr>
           </thead>
           <tbody id="snapshotRunsTableBody"></tbody>
@@ -1260,7 +1260,7 @@ PAGE_HTML = """<!doctype html>
 
     function formatDate(value) {
       if (!value) {
-        return "вЂ”";
+        return "—";
       }
 
       return String(value).replace("T", " ").replace("+00:00", " UTC");
@@ -1363,38 +1363,38 @@ PAGE_HTML = """<!doctype html>
     }
 
     function localizeUi() {
-      document.title = "Redmine: РїСЂРѕРµРєС‚С‹ Рё СЃСЂРµР·С‹";
+      document.title = "Redmine: проекты и срезы";
       const texts = [
-        [".brand-logo", "alt", "РЎРњРЎ-РРў"],
-        [".hero-nav", "aria-label", "Р‘С‹СЃС‚СЂС‹Р№ РїРµСЂРµС…РѕРґ РїРѕ СЂР°Р·РґРµР»Р°Рј"],
-        [".quick-links a:nth-child(1)", "textContent", "Р—Р°РіСЂСѓР·РєР° РґР°РЅРЅС‹С…"],
-        [".quick-links a:nth-child(2)", "textContent", "РўР°Р±Р»РёС†Р° РїСЂРѕРµРєС‚РѕРІ"],
-        [".quick-links a:nth-child(3)", "textContent", "РўР°Р±Р»РёС†Р° СЃСЂРµР·РѕРІ"],
-        [".hero h1", "textContent", "РђРЅР°Р»РёР· РїСЂРѕРµРєС‚РѕРІ Redmine"],
-        ["#project-actions h2", "textContent", "РџСЂРѕРµРєС‚С‹ Redmine"],
-        ["#project-actions p", "textContent", "РџРѕР»СѓС‡Р°РµС‚ СЃРїРёСЃРѕРє РїСЂРѕРµРєС‚РѕРІ РёР· Redmine, РґРѕР±Р°РІР»СЏРµС‚ РЅРѕРІС‹Рµ Р·Р°РїРёСЃРё Рё РѕР±РЅРѕРІР»СЏРµС‚ РёР·РјРµРЅРµРЅРЅС‹Рµ."],
-        ["#refreshProjectsButton", "textContent", "РћР±РЅРѕРІРёС‚СЊ СЃРїРёСЃРѕРє РїСЂРѕРµРєС‚РѕРІ"],
-        ["#snapshot-actions h2", "textContent", "РџРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·РѕРІ Р·Р°РґР°С‡"],
-        ["#snapshot-actions p", "textContent", "Р—Р°РїСЂР°С€РёРІР°РµС‚ СЃСЂРµР·С‹ С‚РѕР»СЊРєРѕ РґР»СЏ С‚РµС… РїСЂРѕРµРєС‚РѕРІ, РїРѕ РєРѕС‚РѕСЂС‹Рј РЅР° СЃРµРіРѕРґРЅСЏС€РЅСЋСЋ РґР°С‚Сѓ РµС‰Рµ РЅРµС‚ Р·Р°РїРёСЃРё РІ Р±Р°Р·Рµ РґР°РЅРЅС‹С…."],
-        ["#captureSnapshotsButton", "textContent", "РџРѕР»СѓС‡РёС‚СЊ СЃСЂРµР·С‹ Р·Р°РґР°С‡"],
-        ["#recaptureSnapshotsButton", "textContent", "РћР±РЅРѕРІРёС‚СЊ РїРѕСЃР»РµРґРЅРёРµ СЃСЂРµР·С‹"],
-        ["#strangeIssuesPageButton", "textContent", "Р’РѕРїСЂРѕСЃС‹ РїРѕ Р·Р°РґР°С‡Р°Рј"],
-        ["#delete-snapshot h2", "textContent", "РЈРґР°Р»РµРЅРёРµ СЃСЂРµР·Р° РїРѕ РґР°С‚Рµ"],
-        ["#delete-snapshot p", "textContent", "РЈРґР°Р»СЏРµС‚ РІСЃРµ СЃСЂРµР·С‹ Рё РІСЃРµ СЃС‚СЂРѕРєРё Р·Р°РґР°С‡ Р·Р° РІС‹Р±СЂР°РЅРЅСѓСЋ РєР°Р»РµРЅРґР°СЂРЅСѓСЋ РґР°С‚Сѓ."],
-        ["#deleteSnapshotsButton", "textContent", "РћС‡РёСЃС‚РёС‚СЊ СЃСЂРµР· РЅР° РґР°С‚Сѓ"],
-        ["#pruneSnapshotsButton", "textContent", "РџСЂРѕСЂРµРґРёС‚СЊ СЃСЂРµР·С‹"],
-        ["#projects-table h2", "textContent", "РџСЂРѕРµРєС‚С‹ РІ Р±Р°Р·Рµ РґР°РЅРЅС‹С…"],
-        ["label[for='projectsNameFilterInput']", "textContent", "Р¤РёР»СЊС‚СЂ РїРѕ РЅР°Р·РІР°РЅРёСЋ"],
-        ["#projectsNameFilterInput", "placeholder", "Р’РІРµРґРёС‚Рµ С‡Р°СЃС‚СЊ РЅР°Р·РІР°РЅРёСЏ"],
-        ["label[for='projectsFactFilterInput']", "textContent", "РњРёРЅ. СЃСѓРјРјР° С„Р°РєС‚Р° Р·Р° РіРѕРґ РїРѕ СЂР°Р·СЂР°Р±РѕС‚РєРµ Рё Р±Р°РіС„РёРєСЃСѓ"],
-        ["#showDisabledProjectsLabel span", "textContent", "РџРѕРєР°Р·С‹РІР°С‚СЊ РІС‹РєР»СЋС‡РµРЅРЅС‹Рµ"],
-        ["#applyProjectsSettingsButton", "textContent", "РџСЂРёРјРµРЅРёС‚СЊ РЅР°СЃС‚СЂРѕР№РєРё СЃРѕС…СЂР°РЅРµРЅРёСЏ"],
-        ["#snapshot-runs-table h2", "textContent", "РџРѕСЃР»РµРґРЅРёРµ СЃСЂРµР·С‹ Р·Р°РґР°С‡"],
-        ["label[for='snapshotRunsProjectFilterInput']", "textContent", "Р¤РёР»СЊС‚СЂ РїРѕ РїСЂРѕРµРєС‚Сѓ"],
-        ["#snapshotRunsProjectFilterInput", "placeholder", "Р’РІРµРґРёС‚Рµ С‡Р°СЃС‚СЊ РЅР°Р·РІР°РЅРёСЏ РїСЂРѕРµРєС‚Р°"],
-        ["label[for='snapshotRunsPerProjectInput']", "textContent", "РЎСЂРµР·РѕРІ РЅР° РїСЂРѕРµРєС‚"],
-        ["#projectsCount", "textContent", "Р—Р°РіСЂСѓР·РєР° СЃРїРёСЃРєР° РїСЂРѕРµРєС‚РѕРІ..."],
-        ["#snapshotRunsCount", "textContent", "Р—Р°РіСЂСѓР·РєР° СЃРїРёСЃРєР° СЃСЂРµР·РѕРІ..."],
+        [".brand-logo", "alt", "СМС-ИТ"],
+        [".hero-nav", "aria-label", "Быстрый переход по разделам"],
+        [".quick-links a:nth-child(1)", "textContent", "Загрузка данных"],
+        [".quick-links a:nth-child(2)", "textContent", "Таблица проектов"],
+        [".quick-links a:nth-child(3)", "textContent", "Таблица срезов"],
+        [".hero h1", "textContent", "Анализ проектов Redmine"],
+        ["#project-actions h2", "textContent", "Проекты Redmine"],
+        ["#project-actions p", "textContent", "Получает список проектов из Redmine, добавляет новые записи и обновляет измененные."],
+        ["#refreshProjectsButton", "textContent", "Обновить список проектов"],
+        ["#snapshot-actions h2", "textContent", "Получение срезов задач"],
+        ["#snapshot-actions p", "textContent", "Запрашивает срезы только для тех проектов, по которым на сегодняшнюю дату еще нет записи в базе данных."],
+        ["#captureSnapshotsButton", "textContent", "Получить срезы задач"],
+        ["#recaptureSnapshotsButton", "textContent", "Обновить последние срезы"],
+        ["#strangeIssuesPageButton", "textContent", "Вопросы по задачам"],
+        ["#delete-snapshot h2", "textContent", "Удаление среза по дате"],
+        ["#delete-snapshot p", "textContent", "Удаляет все срезы и все строки задач за выбранную календарную дату."],
+        ["#deleteSnapshotsButton", "textContent", "Очистить срез на дату"],
+        ["#pruneSnapshotsButton", "textContent", "Проредить срезы"],
+        ["#projects-table h2", "textContent", "Проекты в базе данных"],
+        ["label[for='projectsNameFilterInput']", "textContent", "Фильтр по названию"],
+        ["#projectsNameFilterInput", "placeholder", "Введите часть названия"],
+        ["label[for='projectsFactFilterInput']", "textContent", "Мин. сумма факта за год по разработке и багфиксу"],
+        ["#showDisabledProjectsLabel span", "textContent", "Показывать выключенные"],
+        ["#applyProjectsSettingsButton", "textContent", "Применить настройки сохранения"],
+        ["#snapshot-runs-table h2", "textContent", "Последние срезы задач"],
+        ["label[for='snapshotRunsProjectFilterInput']", "textContent", "Фильтр по проекту"],
+        ["#snapshotRunsProjectFilterInput", "placeholder", "Введите часть названия проекта"],
+        ["label[for='snapshotRunsPerProjectInput']", "textContent", "Срезов на проект"],
+        ["#projectsCount", "textContent", "Загрузка списка проектов..."],
+        ["#snapshotRunsCount", "textContent", "Загрузка списка срезов..."],
       ];
 
       for (const [selector, mode, value] of texts) {
@@ -1408,27 +1408,27 @@ PAGE_HTML = """<!doctype html>
       }
 
       const projectsHeaders = [
-        "Р’РєР».",
-        "Р§Р°СЃС‚.",
+        "Р'РєР».",
+        "Част.",
         "ID",
-        "РќР°Р·РІР°РЅРёРµ",
-        "РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ",
-        "Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°, С‡",
-        "Р Р°Р·СЂР°Р±РѕС‚РєР°: РѕС†РµРЅРєР°, С‡",
-        "Р Р°Р·СЂР°Р±РѕС‚РєР°: С„Р°РєС‚ Р·Р° РіРѕРґ, С‡",
-        "РџСЂРѕС†РµСЃСЃС‹ СЂР°Р·СЂР°Р±РѕС‚РєРё: РїР»Р°РЅ, С‡",
-        "РџСЂРѕС†РµСЃСЃС‹ СЂР°Р·СЂР°Р±РѕС‚РєРё: С„Р°РєС‚ Р·Р° РіРѕРґ, С‡",
-        "РћС€РёР±РєР°: РѕС†РµРЅРєР°, С‡",
-        "РћС€РёР±РєР°: С„Р°РєС‚ Р·Р° РіРѕРґ, С‡",
-        "РЎС‚Р°С‚СѓСЃ РїСЂРѕРµРєС‚Р°",
-        "Р”Р°С‚Р° РїРѕСЃР»РµРґРЅРµРіРѕ СЃСЂРµР·Р°",
-        "РћР±РЅРѕРІР»РµРЅ РІ Redmine",
-        "РЎРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°РЅ",
+        "Название",
+        "Идентификатор",
+        "Базовая оценка, ч",
+        "Разработка: оценка, ч",
+        "Разработка: факт за год, ч",
+        "Процессы разработки: план, ч",
+        "Процессы разработки: факт за год, ч",
+        "Ошибка: оценка, ч",
+        "Ошибка: факт за год, ч",
+        "Статус проекта",
+        "Дата последнего среза",
+        "Обновлен в Redmine",
+        "Синхронизирован",
       ];
       document.querySelectorAll("#projects-table thead th").forEach((element, index) => {
         if (index === 0) {
           const label = element.querySelector("label");
-          if (label) label.lastChild.textContent = " Р’РєР».";
+          if (label) label.lastChild.textContent = " Р'РєР».";
           return;
         }
         if (projectsHeaders[index]) {
@@ -1438,15 +1438,15 @@ PAGE_HTML = """<!doctype html>
 
       const snapshotHeaders = [
         "ID",
-        "Р”Р°С‚Р° СЃСЂРµР·Р°",
-        "РџСЂРѕРµРєС‚",
-        "РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ",
-        "Р—Р°РґР°С‡",
-        "Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°, С‡",
-        "РџР»Р°РЅ, С‡",
-        "Р¤Р°РєС‚ РІСЃРµРіРѕ, С‡",
-        "Р¤Р°РєС‚ Р·Р° РіРѕРґ, С‡",
-        "Р—Р°РїРёСЃР°РЅ",
+        "Дата среза",
+        "Проект",
+        "Идентификатор",
+        "Задач",
+        "Базовая оценка, ч",
+        "План, ч",
+        "Факт всего, ч",
+        "Факт за год, ч",
+        "Записан",
       ];
       document.querySelectorAll("#snapshot-runs-table thead th").forEach((element, index) => {
         if (snapshotHeaders[index]) {
@@ -1653,23 +1653,23 @@ PAGE_HTML = """<!doctype html>
       let renderedCount = 0;
       projectsTableBody.innerHTML = "";
       updateEnableVisibleProjectsCheckbox();
-      projectsCount.textContent = `РџСЂРѕРµРєС‚РѕРІ РІ Р±Р°Р·Рµ: ${allProjects.length}. РџРѕСЃР»Рµ С„РёР»СЊС‚СЂР°: ${filteredProjects.length}`;
+      projectsCount.textContent = `Проектов в базе: ${allProjects.length}. После фильтра: ${filteredProjects.length}`;
 
       if (!filteredProjects.length) {
-        projectsTableBody.innerHTML = '<tr><td colspan="16">РџСЂРѕРµРєС‚РѕРІ РїРѕРєР° РЅРµС‚.</td></tr>';
+        projectsTableBody.innerHTML = '<tr><td colspan="16">Проектов пока нет.</td></tr>';
         return;
       }
 
       for (const project of filteredProjects) {
         try {
-          const redmineId = Number(project?.redmine_id ?? 0) || project?.redmine_id || "вЂ”";
+          const redmineId = Number(project?.redmine_id ?? 0) || project?.redmine_id || "—";
           const identifier = String(project?.identifier ?? "");
           const projectIssuesUrl = identifier
             ? `https://redmine.sms-it.ru/projects/${encodeURIComponent(identifier)}/issues?utf8=%E2%9C%93&set_filter=1&type=IssueQuery&f%5B%5D=status_id&op%5Bstatus_id%5D=*&query%5Bsort_criteria%5D%5B0%5D%5B%5D=id&query%5Bsort_criteria%5D%5B0%5D%5B%5D=desc&t%5B%5D=cf_27&t%5B%5D=spent_hours&t%5B%5D=estimated_hours&c%5B%5D=tracker&c%5B%5D=parent&c%5B%5D=status&c%5B%5D=priority&c%5B%5D=subject&c%5B%5D=assigned_to&c%5B%5D=estimated_hours&saved_query_id=0&current_project_id=${encodeURIComponent(identifier)}`
             : "";
           const identifierHtml = identifier
             ? `<a class="project-link mono" href="${projectIssuesUrl}" target="_blank" rel="noreferrer">${identifier}</a>`
-            : "вЂ”";
+            : "—";
           const planningProjectUrl = `/planning-projects?redmine_identifier=${encodeURIComponent(identifier)}&project_name=${encodeURIComponent(project?.name ?? "")}`;
           const level = Math.max(Number(project?.hierarchy_level ?? 0) || 0, 0);
           const projectTreeClass = level > 0 ? "project-tree has-parent" : "project-tree";
@@ -1681,10 +1681,10 @@ PAGE_HTML = """<!doctype html>
             <td class="mono project-sticky-2">
               <span class="project-id-actions">
                 <a class="project-id-button mono" href="/projects/${encodeURIComponent(redmineId)}/latest-snapshot-issues" target="_blank" rel="noreferrer">${redmineId}</a>
-                <button class="project-capture-button" type="button" data-project-id="${redmineId}" title="РџРѕР»СѓС‡РёС‚СЊ СЃСЂРµР· РїРѕ РїСЂРѕРµРєС‚Сѓ" ${project?.is_enabled ? "" : "disabled"}>в†“</button>
+                <button class="project-capture-button" type="button" data-project-id="${redmineId}" title="Получить срез по проекту" ${project?.is_enabled ? "" : "disabled"}>↓</button>
               </span>
             </td>
-            <td class="project-name-cell project-sticky-3"><span class="${projectTreeClass}" style="--tree-level:${level};"><span class="project-name-wrap"><a class="project-link" href="/projects/${encodeURIComponent(redmineId)}/burndown" target="_blank" rel="noreferrer">${project?.name ?? "\u2014"}</a><a class="project-planning-button" href="${planningProjectUrl}" title="РћС‚РєСЂС‹С‚СЊ РїР»Р°РЅРёСЂРѕРІР°РЅРёРµ РїСЂРѕРµРєС‚Р°" aria-label="РћС‚РєСЂС‹С‚СЊ РїР»Р°РЅРёСЂРѕРІР°РЅРёРµ РїСЂРѕРµРєС‚Р°">i</a></span></span></td>
+            <td class="project-name-cell project-sticky-3"><span class="${projectTreeClass}" style="--tree-level:${level};"><span class="project-name-wrap"><a class="project-link" href="/projects/${encodeURIComponent(redmineId)}/burndown" target="_blank" rel="noreferrer">${project?.name ?? "\u2014"}</a><a class="project-planning-button" href="${planningProjectUrl}" title="Открыть планирование проекта" aria-label="Открыть планирование проекта">i</a></span></span></td>
             <td>${identifierHtml}</td>
             <td>${formatHours(project?.baseline_estimate_hours)}</td>
             <td>${formatHours(project?.development_estimate_hours)}</td>
@@ -1693,21 +1693,21 @@ PAGE_HTML = """<!doctype html>
             <td>${formatHours(project?.development_process_spent_hours_year)}</td>
             <td>${formatHours(project?.bug_estimate_hours)}</td>
             <td>${formatHours(project?.bug_spent_hours_year)}</td>
-            <td>${project?.status ?? "вЂ”"}</td>
-            <td class="mono">${project?.latest_snapshot_date ?? "вЂ”"}</td>
+            <td>${project?.status ?? "—"}</td>
+            <td class="mono">${project?.latest_snapshot_date ?? "—"}</td>
             <td>${formatDate(project?.updated_on)}</td>
             <td>${formatDate(project?.synced_at)}</td>
           `;
           projectsTableBody.appendChild(row);
           renderedCount += 1;
         } catch (error) {
-          console.error("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚СЂРёСЃРѕРІР°С‚СЊ РїСЂРѕРµРєС‚", project, error);
+          console.error("Не удалось отрисовать проект", project, error);
         }
       }
 
       if (!renderedCount) {
-        projectsTableBody.innerHTML = '<tr><td colspan="16">РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚СЂРёСЃРѕРІР°С‚СЊ РїСЂРѕРµРєС‚С‹.</td></tr>';
-        throw new Error("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚СЂРёСЃРѕРІР°С‚СЊ РїСЂРѕРµРєС‚С‹.");
+        projectsTableBody.innerHTML = '<tr><td colspan="16">Не удалось отрисовать проекты.</td></tr>';
+        throw new Error("Не удалось отрисовать проекты.");
       }
     }
 
@@ -1765,10 +1765,10 @@ PAGE_HTML = """<!doctype html>
       });
 
       snapshotRunsTableBody.innerHTML = "";
-      snapshotRunsCount.textContent = `Р’СЃРµРіРѕ СЃСЂРµР·РѕРІ РІ Р±Р°Р·Рµ: ${totalCount}. РџРѕРєР°Р·Р°РЅРѕ: ${filteredRuns.length}`;
+      snapshotRunsCount.textContent = `Всего срезов в базе: ${totalCount}. Показано: ${filteredRuns.length}`;
 
       if (!filteredRuns.length) {
-        snapshotRunsTableBody.innerHTML = '<tr><td colspan="10">РЎСЂРµР·РѕРІ РїРѕРєР° РЅРµС‚.</td></tr>';
+        snapshotRunsTableBody.innerHTML = '<tr><td colspan="10">Срезов пока нет.</td></tr>';
         return;
       }
 
@@ -1777,14 +1777,14 @@ PAGE_HTML = """<!doctype html>
         const projectRuns = groupedRuns.get(Number(run.project_redmine_id ?? 0)) || [];
         const latestRunForProject = projectRuns[0] || run;
         const compareUrl = `/projects/${encodeURIComponent(run.project_redmine_id ?? "")}/compare-snapshots?left_date=${encodeURIComponent(run.captured_for_date ?? "")}&right_date=${encodeURIComponent(latestRunForProject.captured_for_date ?? run.captured_for_date ?? "")}`;
-        const identifierValue = run.project_identifier ?? "вЂ”";
+        const identifierValue = run.project_identifier ?? "—";
         const identifierHtml = run.project_identifier
           ? `<a class="project-link mono" href="${compareUrl}" target="_blank" rel="noreferrer">${identifierValue}</a>`
           : `<span class="mono">${identifierValue}</span>`;
         row.innerHTML = `
-          <td class="mono">${run.id ?? "вЂ”"}</td>
-          <td class="mono">${run.captured_for_date ?? "вЂ”"}</td>
-          <td>${run.project_name ?? "вЂ”"}</td>
+          <td class="mono">${run.id ?? "—"}</td>
+          <td class="mono">${run.captured_for_date ?? "—"}</td>
+          <td>${run.project_name ?? "—"}</td>
           <td>${identifierHtml}</td>
           <td>${run.total_issues ?? 0}</td>
           <td>${formatHours(run.total_baseline_estimate_hours)}</td>
@@ -1799,21 +1799,21 @@ PAGE_HTML = """<!doctype html>
 
     async function captureSnapshotForProject(projectId) {
       captureSnapshotsButton.disabled = true;
-      setStatus(captureStatus, `Р—Р°РїСѓСЃРєР°РµРј РїРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·Р° РїРѕ РїСЂРѕРµРєС‚Сѓ ${projectId}...`);
+      setStatus(captureStatus, `Запускаем получение среза по проекту ${projectId}...`);
 
       try {
         const response = await fetch(`/api/issues/snapshots/capture-project/${encodeURIComponent(projectId)}`, { method: "POST" });
         const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(payload.detail || "РћС€РёР±РєР° РїРѕР»СѓС‡РµРЅРёСЏ СЃСЂРµР·Р° РїРѕ РїСЂРѕРµРєС‚Сѓ.");
+          throw new Error(payload.detail || "Ошибка получения среза по проекту.");
         }
 
         if (payload.captured_for_date) {
           snapshotDateInput.value = payload.captured_for_date;
         }
 
-        setStatus(captureStatus, payload.detail || "Р¤РѕРЅРѕРІР°СЏ Р·Р°РіСЂСѓР·РєР° СЃСЂРµР·Р° РїРѕ РїСЂРѕРµРєС‚Сѓ Р·Р°РїСѓС‰РµРЅР°...");
+        setStatus(captureStatus, payload.detail || "Фоновая загрузка среза по проекту запущена...");
         startCaptureProgressPolling();
       } catch (error) {
         stopCaptureProgressPolling();
@@ -1827,19 +1827,19 @@ PAGE_HTML = """<!doctype html>
         const response = await fetch("/api/projects");
         const payload = await response.json();
         if (!response.ok) {
-          throw new Error(payload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РїСЂРѕРµРєС‚С‹ РёР· Р±Р°Р·С‹.");
+          throw new Error(payload.detail || "Не удалось загрузить проекты из базы.");
         }
 
         renderProjects(payload.projects ?? []);
         setStatus(projectsStatus, "");
       } catch (error) {
-        console.error("РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё РїСЂРѕРµРєС‚РѕРІ", error);
+        console.error("Ошибка загрузки проектов", error);
         try {
           renderProjects([]);
         } catch (renderError) {
-          console.error("РћС€РёР±РєР° РѕС‡РёСЃС‚РєРё С‚Р°Р±Р»РёС†С‹ РїСЂРѕРµРєС‚РѕРІ", renderError);
+          console.error("Ошибка очистки таблицы проектов", renderError);
         }
-        setStatus(projectsStatus, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РїСЂРѕРµРєС‚С‹ РёР· Р±Р°Р·С‹.", "error");
+        setStatus(projectsStatus, error?.message || "Не удалось загрузить проекты из базы.", "error");
       }
     }
 
@@ -1850,13 +1850,13 @@ PAGE_HTML = """<!doctype html>
         renderSnapshotRuns(payload.snapshot_runs ?? [], payload.total_count ?? 0);
       } catch (error) {
         renderSnapshotRuns([], 0);
-        setStatus(captureStatus, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЃРїРёСЃРѕРє СЃСЂРµР·РѕРІ.", "error");
+        setStatus(captureStatus, "Не удалось загрузить список срезов.", "error");
       }
     }
 
     async function applyProjectsSettings() {
       applyProjectsSettingsButton.disabled = true;
-      setStatus(projectsStatus, "РЎРѕС…СЂР°РЅСЏРµРј РЅР°СЃС‚СЂРѕР№РєРё РїСЂРѕРµРєС‚РѕРІ...");
+      setStatus(projectsStatus, "Сохраняем настройки проектов...");
 
       try {
         const enabledProjectIds = allProjects
@@ -1877,13 +1877,13 @@ PAGE_HTML = """<!doctype html>
         const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(payload.detail || "РћС€РёР±РєР° СЃРѕС…СЂР°РЅРµРЅРёСЏ РЅР°СЃС‚СЂРѕРµРє РїСЂРѕРµРєС‚РѕРІ.");
+          throw new Error(payload.detail || "Ошибка сохранения настроек проектов.");
         }
 
         renderProjects(payload.projects ?? []);
         setStatus(
           projectsStatus,
-          `Р“РѕС‚РѕРІРѕ: РІРєР»СЋС‡РµРЅРѕ РїСЂРѕРµРєС‚РѕРІ ${payload.enabled_count ?? 0}, С‡Р°СЃС‚РёС‡РЅР°СЏ Р·Р°РіСЂСѓР·РєР° Сѓ ${payload.partial_count ?? 0}.`,
+          `Готово: включено проектов ${payload.enabled_count ?? 0}, частичная загрузка у ${payload.partial_count ?? 0}.`,
           "success"
         );
       } catch (error) {
@@ -1895,20 +1895,20 @@ PAGE_HTML = """<!doctype html>
 
     async function refreshProjects() {
       refreshProjectsButton.disabled = true;
-      setStatus(projectsStatus, "РћР±РЅРѕРІР»СЏРµРј СЃРїРёСЃРѕРє РїСЂРѕРµРєС‚РѕРІ...");
+      setStatus(projectsStatus, "Обновляем список проектов...");
 
       try {
         const response = await fetch("/api/projects/refresh", { method: "POST" });
         const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(payload.detail || "РћС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ РїСЂРѕРµРєС‚РѕРІ.");
+          throw new Error(payload.detail || "Ошибка обновления проектов.");
         }
 
         renderProjects(payload.projects ?? []);
         setStatus(
           projectsStatus,
-          `Р“РѕС‚РѕРІРѕ: РґРѕР±Р°РІР»РµРЅРѕ РЅРѕРІС‹С… РїСЂРѕРµРєС‚РѕРІ ${payload.added_count ?? 0}, РѕР±РЅРѕРІР»РµРЅРѕ ${payload.updated_count ?? 0}.`,
+          `Готово: добавлено новых проектов ${payload.added_count ?? 0}, обновлено ${payload.updated_count ?? 0}.`,
           "success"
         );
       } catch (error) {
@@ -1921,21 +1921,21 @@ PAGE_HTML = """<!doctype html>
     async function captureSnapshots() {
       captureSnapshotsButton.disabled = true;
       recaptureSnapshotsButton.disabled = true;
-      setStatus(captureStatus, "Р—Р°РїСѓСЃРєР°РµРј РїРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·РѕРІ...");
+      setStatus(captureStatus, "Запускаем получение срезов...");
 
       try {
         const response = await fetch("/api/issues/snapshots/capture", { method: "POST" });
         const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(payload.detail || "РћС€РёР±РєР° РїРѕР»СѓС‡РµРЅРёСЏ СЃСЂРµР·РѕРІ.");
+          throw new Error(payload.detail || "Ошибка получения срезов.");
         }
 
         if (payload.captured_for_date) {
           snapshotDateInput.value = payload.captured_for_date;
         }
 
-        setStatus(captureStatus, payload.detail || "Р¤РѕРЅРѕРІР°СЏ Р·Р°РіСЂСѓР·РєР° СЃСЂРµР·РѕРІ Р·Р°РїСѓС‰РµРЅР°...");
+        setStatus(captureStatus, payload.detail || "Фоновая загрузка срезов запущена...");
         startCaptureProgressPolling();
       } catch (error) {
         stopCaptureProgressPolling();
@@ -1948,21 +1948,21 @@ PAGE_HTML = """<!doctype html>
     async function recaptureSnapshots() {
       captureSnapshotsButton.disabled = true;
       recaptureSnapshotsButton.disabled = true;
-      setStatus(captureStatus, "Р—Р°РїСѓСЃРєР°РµРј РѕР±РЅРѕРІР»РµРЅРёРµ РїРѕСЃР»РµРґРЅРёС… СЃСЂРµР·РѕРІ...");
+      setStatus(captureStatus, "Запускаем обновление последних срезов...");
 
       try {
         const response = await fetch("/api/issues/snapshots/recapture", { method: "POST" });
         const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(payload.detail || "РћС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ РїРѕСЃР»РµРґРЅРёС… СЃСЂРµР·РѕРІ.");
+          throw new Error(payload.detail || "Ошибка обновления последних срезов.");
         }
 
         if (payload.captured_for_date) {
           snapshotDateInput.value = payload.captured_for_date;
         }
 
-        setStatus(captureStatus, payload.detail || "Р¤РѕРЅРѕРІРѕРµ РѕР±РЅРѕРІР»РµРЅРёРµ РїРѕСЃР»РµРґРЅРёС… СЃСЂРµР·РѕРІ Р·Р°РїСѓС‰РµРЅРѕ...");
+        setStatus(captureStatus, payload.detail || "Фоновое обновление последних срезов запущено...");
         startCaptureProgressPolling();
       } catch (error) {
         stopCaptureProgressPolling();
@@ -1975,12 +1975,12 @@ PAGE_HTML = """<!doctype html>
     async function deleteSnapshotsForDate() {
       const capturedForDate = snapshotDateInput.value;
       if (!capturedForDate) {
-        setStatus(deleteStatus, "РЎРЅР°С‡Р°Р»Р° РІС‹Р±РµСЂРёС‚Рµ РґР°С‚Сѓ РІ РєР°Р»РµРЅРґР°СЂРµ.", "error");
+        setStatus(deleteStatus, "Сначала выберите дату в календаре.", "error");
         return;
       }
 
       deleteSnapshotsButton.disabled = true;
-      setStatus(deleteStatus, `РЈРґР°Р»СЏРµРј СЃСЂРµР·С‹ Р·Р° ${capturedForDate}...`);
+      setStatus(deleteStatus, `Удаляем срезы за ${capturedForDate}...`);
 
       try {
         const response = await fetch(
@@ -1990,13 +1990,13 @@ PAGE_HTML = """<!doctype html>
         const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(payload.detail || "РћС€РёР±РєР° СѓРґР°Р»РµРЅРёСЏ СЃСЂРµР·РѕРІ.");
+          throw new Error(payload.detail || "Ошибка удаления срезов.");
         }
 
         renderSnapshotRuns(payload.snapshot_runs ?? [], payload.total_count ?? 0);
         setStatus(
           deleteStatus,
-          `РЈРґР°Р»РµРЅРѕ СЃСЂРµР·РѕРІ: ${payload.deleted_runs ?? 0}, СЃС‚СЂРѕРє Р·Р°РґР°С‡: ${payload.deleted_items ?? 0}.`,
+          `Удалено срезов: ${payload.deleted_runs ?? 0}, строк задач: ${payload.deleted_items ?? 0}.`,
           "success"
         );
       } catch (error) {
@@ -2008,20 +2008,20 @@ PAGE_HTML = """<!doctype html>
 
     async function pruneSnapshots() {
       pruneSnapshotsButton.disabled = true;
-      setStatus(deleteStatus, "РџСЂРѕСЂРµР¶РёРІР°РµРј РЅРµРёР·РјРµРЅРЅС‹Рµ СЃСЂРµР·С‹...");
+      setStatus(deleteStatus, "Прореживаем неизменные срезы...");
 
       try {
         const response = await fetch("/api/issues/snapshots/prune", { method: "POST" });
         const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(payload.detail || "РћС€РёР±РєР° РїСЂРѕСЂРµР¶РёРІР°РЅРёСЏ СЃСЂРµР·РѕРІ.");
+          throw new Error(payload.detail || "Ошибка прореживания срезов.");
         }
 
         renderSnapshotRuns(payload.snapshot_runs ?? [], payload.total_count ?? 0);
         setStatus(
           deleteStatus,
-          `РџСЂРѕСЂРµР¶РёРІР°РЅРёРµ Р·Р°РІРµСЂС€РµРЅРѕ: СѓРґР°Р»РµРЅРѕ СЃСЂРµР·РѕРІ ${payload.deleted_runs ?? 0}, СЃС‚СЂРѕРє Р·Р°РґР°С‡ ${payload.deleted_items ?? 0}.`,
+          `Прореживание завершено: удалено срезов ${payload.deleted_runs ?? 0}, строк задач ${payload.deleted_items ?? 0}.`,
           "success"
         );
       } catch (error) {
@@ -2163,13 +2163,13 @@ def formatPageHours(value: object) -> str:
 
 def formatPageDateTime(value: object) -> str:
     if not value:
-        return "вЂ”"
+        return "—"
     return str(value).replace("T", " ").replace("+00:00", " UTC")
 
 
 def formatSnapshotPageDateTime(value: object) -> str:
     if not value:
-        return "вЂ”"
+        return "—"
     return str(value).replace("T", " ").replace("+00:00", " UTC")
 
 
@@ -2281,19 +2281,19 @@ def buildProjectContextNavPanel(
     redmineUrl = buildProjectRedmineIssuesUrl(projectIdentifier)
 
     buttons = [
-        ("snapshots", resolvedSnapshotUrl, "РЎСЂРµР·С‹ РїСЂРѕРµРєС‚Р°", "context-nav-snapshots", False),
-        ("compare", resolvedCompareUrl, "РЎСЂР°РІРЅРµРЅРёРµ СЃСЂРµР·РѕРІ", "context-nav-compare", False),
-        ("burndown", resolvedBurndownUrl, "Р”РёР°РіСЂР°РјРјР° СЃРіРѕСЂР°РЅРёСЏ", "context-nav-burndown", False),
+        ("snapshots", resolvedSnapshotUrl, "Срезы проекта", "context-nav-snapshots", False),
+        ("compare", resolvedCompareUrl, "Сравнение срезов", "context-nav-compare", False),
+        ("burndown", resolvedBurndownUrl, "Диаграмма сгорания", "context-nav-burndown", False),
     ]
     if redmineUrl:
-        buttons.append(("redmine", redmineUrl, "РћС‚РєСЂС‹С‚СЊ РІ Redmine", "context-nav-redmine", True))
+        buttons.append(("redmine", redmineUrl, "Открыть в Redmine", "context-nav-redmine", True))
 
     visibleButtons = [button for button in buttons if button[0] != currentPage]
 
     htmlParts: list[str] = [
         '<div class="context-nav-shell">',
-        '<a class="context-nav-brand" href="/" aria-label="РќР° РіР»Р°РІРЅСѓСЋ">',
-        '<img class="context-nav-logo" src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="РЎРњРЎ-РРў">',
+        '<a class="context-nav-brand" href="/" aria-label="На главную">',
+        '<img class="context-nav-logo" src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">',
         "</a>",
         '<nav class="context-nav-panel">',
     ]
@@ -2410,21 +2410,21 @@ def buildSnapshotIssueFiltersPayload(
 SNAPSHOT_COMPARE_FIELD_CONFIG: list[dict[str, object]] = [
     {
         "key": "baseline",
-        "label": "Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°",
+        "label": "Базовая оценка",
         "issue_key": "baseline_estimate_hours",
         "tracker_names": None,
     },
     {
         "key": "development_estimate",
-        "label": "Р Р°Р·СЂР°Р±РѕС‚РєР°: РѕС†РµРЅРєР°",
+        "label": "Разработка: оценка",
         "issue_key": "estimated_hours",
-        "tracker_names": {"СЂР°Р·СЂР°Р±РѕС‚РєР°", "РїСЂРѕС†РµСЃСЃС‹ СЂР°Р·СЂР°Р±РѕС‚РєРё"},
+        "tracker_names": {"разработка", "процессы разработки"},
     },
     {
         "key": "development_spent_year",
-        "label": "Р Р°Р·СЂР°Р±РѕС‚РєР°: С„Р°РєС‚ Р·Р° РіРѕРґ",
+        "label": "Разработка: факт за год",
         "issue_key": "spent_hours_year",
-        "tracker_names": {"СЂР°Р·СЂР°Р±РѕС‚РєР°", "РїСЂРѕС†РµСЃСЃС‹ СЂР°Р·СЂР°Р±РѕС‚РєРё"},
+        "tracker_names": {"разработка", "процессы разработки"},
     },
 ]
 
@@ -2576,10 +2576,10 @@ def buildSnapshotComparisonRows(
         changedRows.append(
             {
                 "issue_redmine_id": issueId,
-                "subject": str(baseIssue.get("subject") or "вЂ”"),
-                "tracker_name": str(baseIssue.get("tracker_name") or "вЂ”"),
-                "left_status_name": str(leftIssue.get("status_name") or "вЂ”") if leftIssue else "вЂ”",
-                "right_status_name": str(rightIssue.get("status_name") or "вЂ”") if rightIssue else "вЂ”",
+                "subject": str(baseIssue.get("subject") or "—"),
+                "tracker_name": str(baseIssue.get("tracker_name") or "—"),
+                "left_status_name": str(leftIssue.get("status_name") or "—") if leftIssue else "—",
+                "right_status_name": str(rightIssue.get("status_name") or "—") if rightIssue else "—",
                 "change_kind": changeKind,
                 "values": changedValues,
             }
@@ -2624,7 +2624,7 @@ def buildSnapshotComparisonPage(
     )
 
     if not availableDates or resolvedLeftDate is None or resolvedRightDate is None:
-        projectName = escape(str((storedProject or {}).get("name") or "вЂ”"))
+        projectName = escape(str((storedProject or {}).get("name") or "—"))
         compareFieldsHtml = "".join(
             (
                 f'<label class="compare-field-option"><input type="checkbox" name="field" value="{escape(str(field["key"]))}"'
@@ -2636,14 +2636,14 @@ def buildSnapshotComparisonPage(
         includeMissingHtml = (
             '<label class="compare-field-option">'
             f'<input type="checkbox" name="include_missing" value="1"{" checked" if includeMissingIssues else ""}>'
-            "<span>РџРѕРєР°Р·С‹РІР°С‚СЊ РЅРѕРІС‹Рµ/РѕС‚СЃСѓС‚СЃС‚РІСѓСЋС‰РёРµ Р·Р°РґР°С‡Рё СЃ РЅСѓР»РµРІС‹РјРё Р·РЅР°С‡РµРЅРёСЏРјРё</span></label>"
+            "<span>Показывать новые/отсутствующие задачи с нулевыми значениями</span></label>"
         )
         return f"""<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>РЎСЂР°РІРЅРµРЅРёРµ СЃСЂРµР·РѕРІ</title>
+  <title>Сравнение срезов</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2723,46 +2723,46 @@ def buildSnapshotComparisonPage(
 <body>
   <main>
     {navPanelHtml}
-    <h1>РЎСЂР°РІРЅРµРЅРёРµ СЃСЂРµР·РѕРІ РїСЂРѕРµРєС‚Р°</h1>
-    <p class="meta">РџСЂРѕРµРєС‚: <span class="meta-strong">{projectName}</span>. РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ: <span class="meta-strong">{escape(projectIdentifierRaw or "вЂ”")}</span>. Р”Р»СЏ СЃСЂР°РІРЅРµРЅРёСЏ РЅСѓР¶РµРЅ С…РѕС‚СЏ Р±С‹ РѕРґРёРЅ СЃРѕС…СЂР°РЅРµРЅРЅС‹Р№ СЃСЂРµР·.</p>
+    <h1>Сравнение срезов проекта</h1>
+    <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{escape(projectIdentifierRaw or "—")}</span>. Для сравнения нужен хотя бы один сохраненный срез.</p>
     <section class="controls-panel">
       <form method="get" id="compareSnapshotsForm">
         <div class="controls-grid">
           <div class="field">
             <div class="compare-date-row">
               <div class="field compare-date-field">
-                <label for="leftDate">Р”Р°С‚Р° СЃСЂРµР·Р° 1</label>
-                <select id="leftDate" name="left_date" class="compare-date-select"><option value="">РќРµС‚ СЃСЂРµР·РѕРІ</option></select>
+                <label for="leftDate">Дата среза 1</label>
+                <select id="leftDate" name="left_date" class="compare-date-select"><option value="">Нет срезов</option></select>
               </div>
               <div class="compare-swap-stack">
                 <div class="field date-swap-field">
-                  <label class="date-swap-label" for="swapCompareDatesButton">РџРѕРјРµРЅСЏС‚СЊ РґР°С‚С‹ РјРµСЃС‚Р°РјРё</label>
-                  <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="РџРѕРјРµРЅСЏС‚СЊ РґР°С‚С‹ РјРµСЃС‚Р°РјРё"><span>в†ђ</span><span>в†’</span></button>
+                  <label class="date-swap-label" for="swapCompareDatesButton">Поменять даты местами</label>
+                  <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="Поменять даты местами"><span>←</span><span>→</span></button>
                 </div>
               </div>
               <div class="field compare-date-field">
-                <label for="rightDate">Р”Р°С‚Р° СЃСЂРµР·Р° 2</label>
-                <select id="rightDate" name="right_date" class="compare-date-select"><option value="">РќРµС‚ СЃСЂРµР·РѕРІ</option></select>
+                <label for="rightDate">Дата среза 2</label>
+                <select id="rightDate" name="right_date" class="compare-date-select"><option value="">Нет срезов</option></select>
               </div>
               <div class="compare-compare-stack">
-                <span class="compare-option-caption">РџРѕР»СЏ РґР»СЏ СЃСЂР°РІРЅРµРЅРёСЏ</span>
+                <span class="compare-option-caption">Поля для сравнения</span>
                 <div class="compare-field-group">{compareFieldsHtml}</div>
                 <div class="compare-extra-stack">
-                  <span class="compare-option-caption">Р”РѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹Рµ РѕРїС†РёРё</span>
+                  <span class="compare-option-caption">Дополнительные опции</span>
                   {includeMissingHtml}
                 </div>
               </div>
             </div>
           </div>
         </div>
-        <p><button type="submit">РЎСЂР°РІРЅРёС‚СЊ</button></p>
+        <p><button type="submit">Сравнить</button></p>
       </form>
     </section>
-    <div class="empty-state">Р”Р»СЏ СЌС‚РѕРіРѕ РїСЂРѕРµРєС‚Р° РїРѕРєР° РЅРµС‚ СЃСЂРµР·РѕРІ, РїРѕСЌС‚РѕРјСѓ СЃСЂР°РІРЅРёРІР°С‚СЊ РµС‰Рµ РЅРµС‡РµРіРѕ.</div>
+    <div class="empty-state">Для этого проекта пока нет срезов, поэтому сравнивать еще нечего.</div>
   </main>
   <div class="compare-loading-overlay" id="compareLoadingOverlay" aria-hidden="true">
     <span class="compare-loading-spinner" aria-hidden="true"></span>
-    <span class="compare-loading-text">РЎСЂР°РІРЅРµРЅРёРµ СЃСЂРµР·РѕРІ РїСЂРѕРµРєС‚Р°...</span>
+    <span class="compare-loading-text">Сравнение срезов проекта...</span>
   </div>
   <script>
     const compareSnapshotsForm = document.getElementById("compareSnapshotsForm");
@@ -2797,7 +2797,7 @@ def buildSnapshotComparisonPage(
         str(
             rightRun.get("project_name")
             or leftRun.get("project_name")
-            or (storedProject.get("name") if storedProject else "вЂ”")
+            or (storedProject.get("name") if storedProject else "—")
         )
     )
     projectIdentifierRaw = str(
@@ -2805,7 +2805,7 @@ def buildSnapshotComparisonPage(
         or leftRun.get("project_identifier")
         or (storedProject.get("identifier") if storedProject else "")
     ).strip()
-    projectIdentifier = escape(projectIdentifierRaw or "вЂ”")
+    projectIdentifier = escape(projectIdentifierRaw or "—")
     comparisonRows, fieldChangeCounts = buildSnapshotComparisonRows(
         list(leftPayload.get("issues") or []),
         list(rightPayload.get("issues") or []),
@@ -2832,7 +2832,7 @@ def buildSnapshotComparisonPage(
     includeMissingHtml = (
         '<label class="compare-field-option">'
         f'<input type="checkbox" name="include_missing" value="1"{" checked" if includeMissingIssues else ""}>'
-        "<span>РџРѕРєР°Р·С‹РІР°С‚СЊ РЅРѕРІС‹Рµ/РѕС‚СЃСѓС‚СЃС‚РІСѓСЋС‰РёРµ Р·Р°РґР°С‡Рё СЃ РЅСѓР»РµРІС‹РјРё Р·РЅР°С‡РµРЅРёСЏРјРё</span></label>"
+        "<span>Показывать новые/отсутствующие задачи с нулевыми значениями</span></label>"
     )
 
     selectedFieldLabels = [
@@ -2868,9 +2868,9 @@ def buildSnapshotComparisonPage(
 
         rowBadgeHtml = ""
         if row["change_kind"] == "new":
-            rowBadgeHtml = '<span class="compare-badge compare-badge-new">РќРѕРІР°СЏ</span>'
+            rowBadgeHtml = '<span class="compare-badge compare-badge-new">Новая</span>'
         elif row["change_kind"] == "deleted":
-            rowBadgeHtml = '<span class="compare-badge compare-badge-deleted">РћС‚СЃСѓС‚СЃС‚РІСѓРµС‚</span>'
+            rowBadgeHtml = '<span class="compare-badge compare-badge-deleted">Отсутствует</span>'
 
         issueIdValue = int(row["issue_redmine_id"])
         issueLinkHtml = (
@@ -2907,7 +2907,7 @@ def buildSnapshotComparisonPage(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>РЎСЂР°РІРЅРµРЅРёРµ СЃСЂРµР·РѕРІ</title>
+  <title>Сравнение срезов</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -3027,42 +3027,42 @@ def buildSnapshotComparisonPage(
 <body>
   <main>
     {navPanelHtml}
-    <h1>РЎСЂР°РІРЅРµРЅРёРµ СЃСЂРµР·РѕРІ РїСЂРѕРµРєС‚Р°</h1>
-    <p class="meta">РџСЂРѕРµРєС‚: <span class="meta-strong">{projectName}</span>. РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ: <span class="meta-strong">{projectIdentifier}</span>.</p>
+    <h1>Сравнение срезов проекта</h1>
+    <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>.</p>
     <section class="controls-panel">
       <form method="get" id="compareSnapshotsForm">
         <div class="controls-grid">
           <div class="field">
             <div class="compare-date-row">
               <div class="field compare-date-field">
-                <label for="leftDate">Р”Р°С‚Р° СЃСЂРµР·Р° 1</label>
+                <label for="leftDate">Дата среза 1</label>
                 <select id="leftDate" name="left_date" class="compare-date-select">{leftDateOptionsHtml}</select>
               </div>
               <div class="compare-swap-stack">
                 <div class="field date-swap-field">
-                  <label class="date-swap-label" for="swapCompareDatesButton">РџРѕРјРµРЅСЏС‚СЊ РґР°С‚С‹ РјРµСЃС‚Р°РјРё</label>
-                  <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="РџРѕРјРµРЅСЏС‚СЊ РґР°С‚С‹ РјРµСЃС‚Р°РјРё"><span>в†ђ</span><span>в†’</span></button>
+                  <label class="date-swap-label" for="swapCompareDatesButton">Поменять даты местами</label>
+                  <button type="button" class="date-swap-button" id="swapCompareDatesButton" aria-label="Поменять даты местами"><span>←</span><span>→</span></button>
                 </div>
               </div>
               <div class="field compare-date-field">
-                <label for="rightDate">Р”Р°С‚Р° СЃСЂРµР·Р° 2</label>
+                <label for="rightDate">Дата среза 2</label>
                 <select id="rightDate" name="right_date" class="compare-date-select">{rightDateOptionsHtml}</select>
               </div>
               <div class="compare-compare-stack">
-                <span class="compare-option-caption">РџРѕР»СЏ РґР»СЏ СЃСЂР°РІРЅРµРЅРёСЏ</span>
+                <span class="compare-option-caption">Поля для сравнения</span>
                 <div class="compare-field-group">{fieldOptionsHtml}</div>
                 <div class="compare-extra-stack">
-                  <span class="compare-option-caption">Р”РѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹Рµ РѕРїС†РёРё</span>
+                  <span class="compare-option-caption">Дополнительные опции</span>
                   {includeMissingHtml}
                 </div>
               </div>
             </div>
           </div>
         </div>
-        <p><button type="submit">РЎСЂР°РІРЅРёС‚СЊ</button></p>
+        <p><button type="submit">Сравнить</button></p>
       </form>
     </section>
-    <p class="summary-note">РџРѕР»СЏ СЃСЂР°РІРЅРµРЅРёСЏ: {", ".join(selectedFieldLabels)}. РР·РјРµРЅРёРІС€РёС…СЃСЏ Р·Р°РґР°С‡: {len(comparisonRows)}. {compareSummaryHtml}</p>
+    <p class="summary-note">Поля сравнения: {", ".join(selectedFieldLabels)}. Изменившихся задач: {len(comparisonRows)}. {compareSummaryHtml}</p>
     {
         f'''
     <div class="table-wrap">
@@ -3070,10 +3070,10 @@ def buildSnapshotComparisonPage(
         <thead>
           <tr>
             <th>ID</th>
-            <th>РўРµРјР°</th>
-            <th>РўСЂРµРєРµСЂ</th>
-            <th>РЎС‚Р°С‚СѓСЃ<br><span class="subhead">{escape(str(resolvedLeftDate))}</span></th>
-            <th>РЎС‚Р°С‚СѓСЃ<br><span class="subhead">{escape(str(resolvedRightDate))}</span></th>
+            <th>Тема</th>
+            <th>Трекер</th>
+            <th>Статус<br><span class="subhead">{escape(str(resolvedLeftDate))}</span></th>
+            <th>Статус<br><span class="subhead">{escape(str(resolvedRightDate))}</span></th>
             {"".join(headerCells)}
           </tr>
         </thead>
@@ -3082,12 +3082,12 @@ def buildSnapshotComparisonPage(
         </tbody>
       </table>
     </div>
-        ''' if comparisonRows else '<div class="empty-state">РџРѕ РІС‹Р±СЂР°РЅРЅС‹Рј РїРѕР»СЏРј РјРµР¶РґСѓ СЌС‚РёРјРё РґРІСѓРјСЏ СЃСЂРµР·Р°РјРё РёР·РјРµРЅРµРЅРёР№ РЅРµ РЅР°Р№РґРµРЅРѕ.</div>'
+        ''' if comparisonRows else '<div class="empty-state">По выбранным полям между этими двумя срезами изменений не найдено.</div>'
     }
   </main>
   <div class="compare-loading-overlay" id="compareLoadingOverlay" aria-hidden="true">
     <span class="compare-loading-spinner" aria-hidden="true"></span>
-    <span class="compare-loading-text">РЎСЂР°РІРЅРµРЅРёРµ СЃСЂРµР·РѕРІ РїСЂРѕРµРєС‚Р°...</span>
+    <span class="compare-loading-text">Сравнение срезов проекта...</span>
   </div>
   <script>
     const compareSnapshotsForm = document.getElementById("compareSnapshotsForm");
@@ -3120,12 +3120,12 @@ def normalizeBurndownText(value: object) -> str:
 
 
 def isBurndownClosedTaskStatus(statusName: object) -> bool:
-    return normalizeBurndownText(statusName) in {"Р·Р°РєСЂС‹С‚Р°", "СЂРµС€РµРЅР°", "РѕС‚РєР°Р·"}
+    return normalizeBurndownText(statusName) in {"закрыта", "решена", "отказ"}
 
 
 def isBurndownReadyFeatureStatus(statusName: object) -> bool:
     normalized = normalizeBurndownText(statusName)
-    return normalized.startswith("РіРѕС‚РѕРІ") or normalized in {"Р·Р°РєСЂС‹С‚Р°", "СЂРµС€РµРЅР°"}
+    return normalized.startswith("готов") or normalized in {"закрыта", "решена"}
 
 
 def calculateBurndownBudgetBaselineTotal(issues: list[dict[str, object]]) -> float:
@@ -3222,7 +3222,7 @@ def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str
         baselineEstimateHours = float(issue.get("baseline_estimate_hours") or 0)
         group["baseline_total"] = float(group["baseline_total"]) + baselineEstimateHours
 
-        if trackerName == "СЂР°Р·СЂР°Р±РѕС‚РєР°":
+        if trackerName == "разработка":
             if isBurndownClosedTaskStatus(statusName):
                 volume = factHours
                 remaining = 0.0
@@ -3231,10 +3231,10 @@ def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str
                 remaining = max(0.0, max(baselineEstimateHours, planHours) - factHours)
             group["development_volume"] = float(group["development_volume"]) + volume
             group["development_remaining"] = float(group["development_remaining"]) + remaining
-        elif trackerName == "РїСЂРѕС†РµСЃСЃС‹ СЂР°Р·СЂР°Р±РѕС‚РєРё":
+        elif trackerName == "процессы разработки":
             volume = max(planHours, factHours)
             group["development_volume"] = float(group["development_volume"]) + volume
-        elif trackerName == "РѕС€РёР±РєР°":
+        elif trackerName == "ошибка":
             if isBurndownClosedTaskStatus(statusName):
                 volume = factHours
                 remaining = 0.0
@@ -3290,12 +3290,12 @@ def buildBurndownPage(projectRedmineId: int) -> str:
 
     projectInfo = burndownPayload.get("project") or {}
     projectName = escape(
-        str(projectInfo.get("project_name") or (storedProject.get("name") if storedProject else "вЂ”"))
+        str(projectInfo.get("project_name") or (storedProject.get("name") if storedProject else "—"))
     )
     projectIdentifierRaw = str(
         projectInfo.get("project_identifier") or (storedProject.get("identifier") if storedProject else "")
     ).strip()
-    projectIdentifier = escape(projectIdentifierRaw or "вЂ”")
+    projectIdentifier = escape(projectIdentifierRaw or "—")
     snapshotIssuesUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
     navPanelHtml = buildProjectContextNavPanel(
         projectRedmineId,
@@ -3317,7 +3317,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Р”РёР°РіСЂР°РјРјР° СЃРіРѕСЂР°РЅРёСЏ</title>
+  <title>Диаграмма сгорания</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -3578,27 +3578,27 @@ def buildBurndownPage(projectRedmineId: int) -> str:
 <body>
   <main>
     {navPanelHtml}
-    <h1>Р”РёР°РіСЂР°РјРјР° СЃРіРѕСЂР°РЅРёСЏ</h1>
-    <p class="meta">РџСЂРѕРµРєС‚: <span class="meta-strong">{projectName}</span>. РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ: <span class="meta-strong">{projectIdentifier}</span>. РџРµСЂРёРѕРґ РґРёР°РіСЂР°РјРјС‹: 01.04.{currentYear} вЂ” 30.04.{currentYear}. РЎСЂРµР·РѕРІ Р·Р° Р°РїСЂРµР»СЊ: {len(chartSeeds)}.</p>
+    <h1>Диаграмма сгорания</h1>
+    <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Период диаграммы: 01.04.{currentYear} — 30.04.{currentYear}. Срезов за апрель: {len(chartSeeds)}.</p>
 
     <section class="controls-panel">
       <div class="field">
-        <label for="p1Input">P1 = С„Р°РєС‚ / Р±Р°Р·Р°</label>
+        <label for="p1Input">P1 = факт / база</label>
         <input id="p1Input" type="text" inputmode="decimal" value="1,5">
-        <div class="field-note">РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РІ СЂР°СЃС‡РµС‚Рµ Р±СЋРґР¶РµС‚Р° Рё РїСЂРѕРіРЅРѕР·РЅРѕРіРѕ РѕР±СЉРµРјР°.</div>
+        <div class="field-note">Используется в расчете бюджета и прогнозного объема.</div>
       </div>
       <div class="field">
-        <label for="p2Input">P2 = С„Р°РєС‚ СЃ Р±Р°РіР°РјРё / С„Р°РєС‚</label>
+        <label for="p2Input">P2 = факт с багами / факт</label>
         <input id="p2Input" type="text" inputmode="decimal" value="1,5">
-        <div class="field-note">РР·РјРµРЅРµРЅРёСЏ РїРµСЂРµСЃС‡РёС‚С‹РІР°СЋС‚СЃСЏ СЃСЂР°Р·Сѓ РїРѕСЃР»Рµ РІРІРѕРґР° Р±РµР· РїРµСЂРµР·Р°РіСЂСѓР·РєРё СЃС‚СЂР°РЅРёС†С‹.</div>
+        <div class="field-note">Изменения пересчитываются сразу после ввода без перезагрузки страницы.</div>
       </div>
     </section>
 
     <section class="chart-panel">
       <div class="chart-head">
         <div>
-          <h2 class="chart-title">Р‘СЋРґР¶РµС‚, РїСЂРѕРіРЅРѕР·, С‚РµРєСѓС‰РёР№ РѕР±СЉРµРј Рё РѕСЃС‚Р°С‚РѕРє</h2>
-          <p class="chart-subtitle">Р›РёРЅРёРё РїРѕРєР°Р·С‹РІР°СЋС‚ РѕР±С‰РёРµ Р·РЅР°С‡РµРЅРёСЏ, Р° РїРѕР»СѓРїСЂРѕР·СЂР°С‡РЅС‹Рµ СЃС‚РѕР»Р±РёРєРё вЂ” СЃРѕСЃС‚Р°РІ РїРѕ СЂР°Р·СЂР°Р±РѕС‚РєРµ Рё РѕС€РёР±РєР°Рј.</p>
+          <h2 class="chart-title">Бюджет, прогноз, текущий объем и остаток</h2>
+          <p class="chart-subtitle">Линии показывают общие значения, а полупрозрачные столбики — состав по разработке и ошибкам.</p>
         </div>
         <div class="chart-status" id="burndownStatus"></div>
       </div>
@@ -3606,69 +3606,69 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         <canvas id="burndownChart"></canvas>
       </div>
       <div id="burndownEmptyState" class="empty-state" style="display:none;">
-        Р—Р° Р°РїСЂРµР»СЊ С‚РµРєСѓС‰РµРіРѕ РіРѕРґР° РїРѕ РїСЂРѕРµРєС‚Сѓ РїРѕРєР° РЅРµС‚ СЃСЂРµР·РѕРІ, РїРѕСЌС‚РѕРјСѓ РїРѕСЃС‚СЂРѕРёС‚СЊ РґРёР°РіСЂР°РјРјСѓ РµС‰Рµ РЅРµ РёР· С‡РµРіРѕ.
+        За апрель текущего года по проекту пока нет срезов, поэтому построить диаграмму еще не из чего.
       </div>
     </section>
 
     <section class="legend-panel">
-      <h2 class="legend-title">Р›РµРіРµРЅРґР° Рё РїСЂР°РІРёР»Р° СЂР°СЃС‡РµС‚Р°</h2>
+      <h2 class="legend-title">Легенда и правила расчета</h2>
       <div class="legend-grid">
         <div>
           <ul class="legend-list">
             <li>
               <span class="legend-swatch budget-line"></span>
               <div>
-                <div class="legend-name">Р‘СЋРґР¶РµС‚</div>
-                <div class="legend-text">РћСЂР°РЅР¶РµРІР°СЏ Р»РёРЅРёСЏ. Р”Р»СЏ РєР°Р¶РґРѕРіРѕ СЃСЂРµР·Р°: СЃСѓРјРјР° Р±Р°Р·РѕРІС‹С… РѕС†РµРЅРѕРє РІСЃРµС… Р·Р°РґР°С‡ СЃСЂРµР·Р° Р±РµР· Feature Г— P1 Г— P2.</div>
+                <div class="legend-name">Бюджет</div>
+                <div class="legend-text">Оранжевая линия. Для каждого среза: сумма базовых оценок всех задач среза без Feature × P1 × P2.</div>
               </div>
             </li>
             <li>
               <span class="legend-swatch forecast-line"></span>
               <div>
-                <div class="legend-name">РћР±СЉРµРј.РџСЂРѕРіРЅРѕР·</div>
-                <div class="legend-text">РўРµРјРЅРѕ-СЃРёРЅСЏСЏ Р»РёРЅРёСЏ. РЎРєР»Р°РґС‹РІР°РµС‚СЃСЏ РїРѕ РІСЃРµРј Feature Рё РїРѕ РІРёСЂС‚СѓР°Р»СЊРЅРѕР№ Feature РґР»СЏ Р·Р°РґР°С‡ Р±РµР· Feature.</div>
+                <div class="legend-name">Объем.Прогноз</div>
+                <div class="legend-text">Темно-синяя линия. Складывается по всем Feature и по виртуальной Feature для задач без Feature.</div>
               </div>
             </li>
             <li>
               <span class="legend-swatch current-line"></span>
               <div>
-                <div class="legend-name">РћР±СЉРµРј.РўРµРєСѓС‰РёР№</div>
-                <div class="legend-text">Р“РѕР»СѓР±Р°СЏ Р»РёРЅРёСЏ. Р Р°РІРЅР° СЃСѓРјРјРµ В«РћР±СЉРµРјР° СЂР°Р·СЂР°Р±РѕС‚РєРёВ» Рё В«РћР±СЉРµРјР° РѕС€РёР±РѕРєВ», РїРѕСЌС‚РѕРјСѓ РїСЂРѕС…РѕРґРёС‚ РїРѕ РІРµСЂС…РЅРµР№ С‚РѕС‡РєРµ С‚РµРєСѓС‰РµРіРѕ stacked-СЃС‚РѕР»Р±РёРєР°.</div>
+                <div class="legend-name">Объем.Текущий</div>
+                <div class="legend-text">Голубая линия. Равна сумме «Объема разработки» и «Объема ошибок», поэтому проходит по верхней точке текущего stacked-столбика.</div>
               </div>
             </li>
             <li>
               <span class="legend-swatch remaining-line"></span>
               <div>
-                <div class="legend-name">РћР±СЉРµРј.РћСЃС‚Р°С‚РѕРє</div>
-                <div class="legend-text">РЎРµСЂРѕ-СЃРёРЅСЏСЏ Р»РёРЅРёСЏ. Р Р°РІРЅР° СЃСѓРјРјРµ В«РћСЃС‚Р°С‚РєР° СЂР°Р·СЂР°Р±РѕС‚РєРёВ» Рё В«РћСЃС‚Р°С‚РєР° РѕС€РёР±РѕРєВ».</div>
+                <div class="legend-name">Объем.Остаток</div>
+                <div class="legend-text">Серо-синяя линия. Равна сумме «Остатка разработки» и «Остатка ошибок».</div>
               </div>
             </li>
             <li>
               <span class="legend-swatch dev-bar"></span>
               <div>
-                <div class="legend-name">РћР±СЉРµРј СЂР°Р·СЂР°Р±РѕС‚РєРё</div>
-                <div class="legend-text">РџРѕР»СѓРїСЂРѕР·СЂР°С‡РЅС‹Р№ РіРѕР»СѓР±РѕР№ СЃС‚РѕР»Р±РёРє. Р’ stack СЃ РЅРёРј РІС‹С€Рµ РёРґРµС‚ В«РћР±СЉРµРј РѕС€РёР±РѕРєВ».</div>
+                <div class="legend-name">Объем разработки</div>
+                <div class="legend-text">Полупрозрачный голубой столбик. В stack с ним выше идет «Объем ошибок».</div>
               </div>
             </li>
             <li>
               <span class="legend-swatch bug-bar"></span>
               <div>
-                <div class="legend-name">РћР±СЉРµРј РѕС€РёР±РѕРє</div>
-                <div class="legend-text">РџРѕР»СѓРїСЂРѕР·СЂР°С‡РЅС‹Р№ РѕСЂР°РЅР¶РµРІС‹Р№ СЃС‚РѕР»Р±РёРє РїРѕРІРµСЂС… РѕР±СЉРµРјР° СЂР°Р·СЂР°Р±РѕС‚РєРё.</div>
+                <div class="legend-name">Объем ошибок</div>
+                <div class="legend-text">Полупрозрачный оранжевый столбик поверх объема разработки.</div>
               </div>
             </li>
             <li>
               <span class="legend-swatch dev-rem-bar"></span>
               <div>
-                <div class="legend-name">РћСЃС‚Р°С‚РѕРє СЂР°Р·СЂР°Р±РѕС‚РєРё</div>
-                <div class="legend-text">РќРµРїСЂРѕР·СЂР°С‡РЅС‹Р№ РіРѕР»СѓР±РѕР№ СЃС‚РѕР»Р±РёРє. Р’ stack СЃ РЅРёРј РІС‹С€Рµ РёРґРµС‚ В«РћСЃС‚Р°С‚РѕРє РѕС€РёР±РѕРєВ».</div>
+                <div class="legend-name">Остаток разработки</div>
+                <div class="legend-text">Непрозрачный голубой столбик. В stack с ним выше идет «Остаток ошибок».</div>
               </div>
             </li>
             <li>
               <span class="legend-swatch bug-rem-bar"></span>
               <div>
-                <div class="legend-name">РћСЃС‚Р°С‚РѕРє РѕС€РёР±РѕРє</div>
-                <div class="legend-text">РќРµРїСЂРѕР·СЂР°С‡РЅС‹Р№ Р¶РµР»С‚С‹Р№ СЃС‚РѕР»Р±РёРє РїРѕРІРµСЂС… РѕСЃС‚Р°С‚РєР° СЂР°Р·СЂР°Р±РѕС‚РєРё.</div>
+                <div class="legend-name">Остаток ошибок</div>
+                <div class="legend-text">Непрозрачный желтый столбик поверх остатка разработки.</div>
               </div>
             </li>
           </ul>
@@ -3677,30 +3677,30 @@ def buildBurndownPage(projectRedmineId: int) -> str:
           <ul class="formula-list">
             <li>
               <div>
-                <div class="legend-name">Р Р°Р·СЂР°Р±РѕС‚РєР°</div>
-                <div class="formula-text">Р•СЃР»Рё СЃС‚Р°С‚СѓСЃ Р·Р°РґР°С‡Рё В«Р—Р°РєСЂС‹С‚Р°В», В«Р РµС€РµРЅР°В» РёР»Рё В«РћС‚РєР°Р·В», С‚Рѕ РѕР±СЉРµРј = С„Р°РєС‚, РѕСЃС‚Р°С‚РѕРє = 0. Р”Р»СЏ РѕСЃС‚Р°Р»СЊРЅС‹С… СЃС‚Р°С‚СѓСЃРѕРІ: РѕР±СЉРµРј = max(Р±Р°Р·Р°, РїР»Р°РЅ, С„Р°РєС‚), РѕСЃС‚Р°С‚РѕРє = max(0, max(Р±Р°Р·Р°, РїР»Р°РЅ) в€’ С„Р°РєС‚).</div>
+                <div class="legend-name">Разработка</div>
+                <div class="formula-text">Если статус задачи «Закрыта», «Решена» или «Отказ», то объем = факт, остаток = 0. Для остальных статусов: объем = max(база, план, факт), остаток = max(0, max(база, план) − факт).</div>
               </div>
             </li>
             <li>
               <div>
-                <div class="legend-name">РџСЂРѕС†РµСЃСЃС‹ СЂР°Р·СЂР°Р±РѕС‚РєРё</div>
-                <div class="formula-text">РћР±СЉРµРј = max(РїР»Р°РЅ, С„Р°РєС‚), РѕСЃС‚Р°С‚РѕРє РІСЃРµРіРґР° = 0.</div>
+                <div class="legend-name">Процессы разработки</div>
+                <div class="formula-text">Объем = max(план, факт), остаток всегда = 0.</div>
               </div>
             </li>
             <li>
               <div>
-                <div class="legend-name">РћС€РёР±РєР°</div>
-                <div class="formula-text">Р›РѕРіРёРєР° С‚Р°РєР°СЏ Р¶Рµ, РєР°Рє Сѓ В«Р Р°Р·СЂР°Р±РѕС‚РєРёВ»: Р·Р°РєСЂС‹С‚С‹Рµ/СЂРµС€РµРЅРЅС‹Рµ/РѕС‚РєР°Р·Р°РЅРЅС‹Рµ Р·Р°РґР°С‡Рё РґР°СЋС‚ РѕР±СЉРµРј = С„Р°РєС‚ Рё РѕСЃС‚Р°С‚РѕРє = 0, РѕСЃС‚Р°Р»СЊРЅС‹Рµ вЂ” max(РїР»Р°РЅ, С„Р°РєС‚) Рё max(0, РїР»Р°РЅ в€’ С„Р°РєС‚).</div>
+                <div class="legend-name">Ошибка</div>
+                <div class="formula-text">Логика такая же, как у «Разработки»: закрытые/решенные/отказанные задачи дают объем = факт и остаток = 0, остальные — max(план, факт) и max(0, план − факт).</div>
               </div>
             </li>
             <li>
               <div>
-                <div class="legend-name">Feature Рё РІРёСЂС‚СѓР°Р»СЊРЅР°СЏ Feature</div>
-                <div class="formula-text">Р”Р»СЏ РєР°Р¶РґРѕР№ Feature РѕС‚РґРµР»СЊРЅРѕ СЃРѕР±РёСЂР°СЋС‚СЃСЏ РѕР±СЉРµРј/РѕСЃС‚Р°С‚РѕРє РїРѕ СЂР°Р·СЂР°Р±РѕС‚РєРµ Рё РїРѕ РѕС€РёР±РєР°Рј. Р•СЃР»Рё Feature РІ СЃС‚Р°С‚СѓСЃРµ В«Р“РѕС‚РѕРІ*В», В«Р—Р°РєСЂС‹С‚Р°В» РёР»Рё В«Р РµС€РµРЅР°В», РїСЂРѕРіРЅРѕР· = СЂР°Р·СЂР°Р±РѕС‚РєР° + РѕС€РёР±РєРё. РРЅР°С‡Рµ РїСЂРѕРіРЅРѕР· = max(С‚РµРєСѓС‰РёР№ РѕР±СЉРµРј, СЃСѓРјРјР° Р±Р°Р·РѕРІС‹С… РѕС†РµРЅРѕРє Р·Р°РґР°С‡ Feature Г— P1 Г— P2). Р”Р»СЏ Р·Р°РґР°С‡ Р±РµР· Feature СЃС‡РёС‚Р°РµС‚СЃСЏ РѕС‚РґРµР»СЊРЅР°СЏ РІРёСЂС‚СѓР°Р»СЊРЅР°СЏ Feature РїРѕ С‚РµРј Р¶Рµ РїСЂР°РІРёР»Р°Рј.</div>
+                <div class="legend-name">Feature и виртуальная Feature</div>
+                <div class="formula-text">Для каждой Feature отдельно собираются объем/остаток по разработке и по ошибкам. Если Feature в статусе «Готов*», «Закрыта» или «Решена», прогноз = разработка + ошибки. Иначе прогноз = max(текущий объем, сумма базовых оценок задач Feature × P1 × P2). Для задач без Feature считается отдельная виртуальная Feature по тем же правилам.</div>
               </div>
             </li>
           </ul>
-          <p class="legend-note">РС‚РѕРіРѕРІС‹Рµ Р»РёРЅРёРё В«РћР±СЉРµРј.РўРµРєСѓС‰РёР№В», В«РћР±СЉРµРј.РћСЃС‚Р°С‚РѕРєВ» Рё В«РћР±СЉРµРј.РџСЂРѕРіРЅРѕР·В» вЂ” СЌС‚Рѕ СЃСѓРјРјС‹ РїРѕ РІСЃРµРј Feature Рё РїРѕ РІРёСЂС‚СѓР°Р»СЊРЅРѕР№ Feature РІ РІС‹Р±СЂР°РЅРЅРѕРј Р°РїСЂРµР»СЊСЃРєРѕРј СЃСЂРµР·Рµ.</p>
+          <p class="legend-note">Итоговые линии «Объем.Текущий», «Объем.Остаток» и «Объем.Прогноз» — это суммы по всем Feature и по виртуальной Feature в выбранном апрельском срезе.</p>
         </div>
       </div>
     </section>
@@ -3834,7 +3834,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       if (!burndownSnapshots.length) {{
         emptyState.style.display = "block";
         chartCanvas.style.display = "none";
-        statusNode.textContent = "Р—Р° Р°РїСЂРµР»СЊ С‚РµРєСѓС‰РµРіРѕ РіРѕРґР° РїРѕРєР° РЅРµС‚ СЃСЂРµР·РѕРІ РґР»СЏ СЂР°СЃС‡РµС‚Р° РґРёР°РіСЂР°РјРјС‹.";
+        statusNode.textContent = "За апрель текущего года пока нет срезов для расчета диаграммы.";
         return;
       }}
 
@@ -3842,12 +3842,12 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       chartCanvas.style.display = "block";
 
       if (typeof Chart === "undefined") {{
-        statusNode.textContent = "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ Р±РёР±Р»РёРѕС‚РµРєСѓ РіСЂР°С„РёРєРѕРІ.";
+        statusNode.textContent = "Не удалось загрузить библиотеку графиков.";
         return;
       }}
 
       const datasets = buildBurndownDatasets(p1Value, p2Value);
-      statusNode.textContent = `P1 = ${{formatHours(p1Value)}}, P2 = ${{formatHours(p2Value)}}. РЎСЂРµР·РѕРІ РІ СЂР°СЃС‡РµС‚Рµ: ${{burndownSnapshots.length}}.`;
+      statusNode.textContent = `P1 = ${{formatHours(p1Value)}}, P2 = ${{formatHours(p2Value)}}. Срезов в расчете: ${{burndownSnapshots.length}}.`;
       const allChartValues = [
         ...datasets.budgetData,
         ...datasets.forecastData,
@@ -3869,7 +3869,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
           datasets: [
             {{
               type: "bar",
-              label: "РћР±СЉРµРј СЂР°Р·СЂР°Р±РѕС‚РєРё",
+              label: "Объем разработки",
               data: datasets.currentDevelopmentData,
               stack: "current",
               backgroundColor: "rgba(82, 206, 230, 0.38)",
@@ -3880,7 +3880,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
             }},
             {{
               type: "bar",
-              label: "РћР±СЉРµРј РѕС€РёР±РѕРє",
+              label: "Объем ошибок",
               data: datasets.currentBugData,
               stack: "current",
               backgroundColor: "rgba(255, 108, 14, 0.30)",
@@ -3891,7 +3891,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
             }},
             {{
               type: "bar",
-              label: "РћСЃС‚Р°С‚РѕРє СЂР°Р·СЂР°Р±РѕС‚РєРё",
+              label: "Остаток разработки",
               data: datasets.remainingDevelopmentData,
               stack: "remaining",
               backgroundColor: "#52cee6",
@@ -3902,7 +3902,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
             }},
             {{
               type: "bar",
-              label: "РћСЃС‚Р°С‚РѕРє РѕС€РёР±РѕРє",
+              label: "Остаток ошибок",
               data: datasets.remainingBugData,
               stack: "remaining",
               backgroundColor: "#ffc600",
@@ -3913,7 +3913,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
             }},
             {{
               type: "line",
-              label: "Р‘СЋРґР¶РµС‚",
+              label: "Бюджет",
               data: datasets.budgetData,
               borderColor: "#ff6c0e",
               backgroundColor: "#ff6c0e",
@@ -3927,7 +3927,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
             }},
             {{
               type: "line",
-              label: "РћР±СЉРµРј.РџСЂРѕРіРЅРѕР·",
+              label: "Объем.Прогноз",
               data: datasets.forecastData,
               borderColor: "#375d77",
               backgroundColor: "#375d77",
@@ -3941,7 +3941,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
             }},
             {{
               type: "line",
-              label: "РћР±СЉРµРј.РўРµРєСѓС‰РёР№",
+              label: "Объем.Текущий",
               data: datasets.currentTotalData,
               borderColor: "#0f9bb8",
               backgroundColor: "#0f9bb8",
@@ -3955,7 +3955,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
             }},
             {{
               type: "line",
-              label: "РћР±СЉРµРј.РћСЃС‚Р°С‚РѕРє",
+              label: "Объем.Остаток",
               data: datasets.remainingTotalData,
               borderColor: "#7b8c9d",
               backgroundColor: "#7b8c9d",
@@ -4071,7 +4071,7 @@ def buildSnapshotRulesPage() -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>РџСЂР°РІРёР»Р° РїРѕР»СѓС‡РµРЅРёСЏ СЃСЂРµР·РѕРІ</title>
+  <title>Правила получения срезов</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -4203,71 +4203,71 @@ def buildSnapshotRulesPage() -> str:
 <body>
   <header class="topbar">
     <div class="topbar-inner">
-      <a href="/" aria-label="РќР° РіР»Р°РІРЅСѓСЋ">
+      <a href="/" aria-label="На главную">
         <span class="brand-logo-wrap">
           <img
             class="brand-logo"
             src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg"
-            alt="РЎРњРЎ-РРў"
+            alt="СМС-ИТ"
           >
         </span>
       </a>
-      <a class="back-link" href="/" target="_self" rel="noreferrer">Р’РµСЂРЅСѓС‚СЊСЃСЏ РЅР° РіР»Р°РІРЅСѓСЋ</a>
+      <a class="back-link" href="/" target="_self" rel="noreferrer">Вернуться на главную</a>
     </div>
   </header>
 
   <main>
-    <h1>РџСЂР°РІРёР»Р° РїРѕР»СѓС‡РµРЅРёСЏ СЃСЂРµР·РѕРІ</h1>
+    <h1>Правила получения срезов</h1>
     <p class="lead">
-      РќР° СЌС‚РѕР№ СЃС‚СЂР°РЅРёС†Рµ СЃРѕР±СЂР°РЅС‹ С‚РµРєСѓС‰РёРµ РїСЂР°РІРёР»Р°, РїРѕ РєРѕС‚РѕСЂС‹Рј РїСЂРёР»РѕР¶РµРЅРёРµ РїРѕР»СѓС‡Р°РµС‚ Р·Р°РґР°С‡Рё РёР· Redmine
-      Рё Р·Р°РїРёСЃС‹РІР°РµС‚ РїСЂРѕРµРєС‚РЅС‹Рµ СЃСЂРµР·С‹ РІ Р±Р°Р·Сѓ РґР°РЅРЅС‹С….
+      На этой странице собраны текущие правила, по которым приложение получает задачи из Redmine
+      и записывает проектные срезы в базу данных.
     </p>
 
     <section class="panel">
-      <h2>РљР°РєРёРµ РїСЂРѕРµРєС‚С‹ СѓС‡Р°СЃС‚РІСѓСЋС‚</h2>
+      <h2>Какие проекты участвуют</h2>
       <ul>
-        <li>Р’ Р·Р°РіСЂСѓР·РєСѓ РїРѕРїР°РґР°СЋС‚ С‚РѕР»СЊРєРѕ РїСЂРѕРµРєС‚С‹, Сѓ РєРѕС‚РѕСЂС‹С… РІ С‚Р°Р±Р»РёС†Рµ <code>РџСЂРѕРµРєС‚С‹ РІ Р±Р°Р·Рµ РґР°РЅРЅС‹С…</code> РІРєР»СЋС‡РµРЅ С„Р»Р°Р¶РѕРє <code>Р’РєР».</code>.</li>
-        <li>Р”Р»СЏ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРѕРіРѕ РѕР±С‰РµРіРѕ Р·Р°РїСѓСЃРєР° Р±РµСЂСѓС‚СЃСЏ С‚РѕР»СЊРєРѕ РїСЂРѕРµРєС‚С‹, Сѓ РєРѕС‚РѕСЂС‹С… РЅР° С‚РµРєСѓС‰СѓСЋ РєР°Р»РµРЅРґР°СЂРЅСѓСЋ РґР°С‚Сѓ РµС‰Рµ РЅРµС‚ СЃСЂРµР·Р°.</li>
-        <li>РџСЂРё СЂСѓС‡РЅРѕРј Р·Р°РїСѓСЃРєРµ РїРѕ РѕРґРЅРѕРјСѓ РїСЂРѕРµРєС‚Сѓ РїРµСЂРµСЃРЅРёРјР°РµС‚СЃСЏ С‚РѕР»СЊРєРѕ РІС‹Р±СЂР°РЅРЅС‹Р№ РїСЂРѕРµРєС‚.</li>
-        <li>Р•СЃР»Рё <code>Р’РєР».</code> РІС‹РєР»СЋС‡РµРЅ, СЃСЂРµР·С‹ РїРѕ РїСЂРѕРµРєС‚Сѓ РЅРµ Р·Р°РіСЂСѓР¶Р°СЋС‚СЃСЏ.</li>
-        <li>Р•СЃР»Рё РІРєР»СЋС‡РµРЅС‹ <code>Р’РєР».</code> Рё <code>Р§Р°СЃС‚.</code>, РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ С‡Р°СЃС‚РёС‡РЅР°СЏ Р·Р°РіСЂСѓР·РєР° Р·Р°РґР°С‡.</li>
-        <li>Р•СЃР»Рё РІРєР»СЋС‡РµРЅ С‚РѕР»СЊРєРѕ <code>Р’РєР».</code>, Р·Р°РіСЂСѓР¶Р°СЋС‚СЃСЏ РІСЃРµ Р·Р°РґР°С‡Рё РїСЂРѕРµРєС‚Р°.</li>
+        <li>В загрузку попадают только проекты, у которых в таблице <code>Проекты в базе данных</code> включен флажок <code>Вкл.</code>.</li>
+        <li>Для автоматического общего запуска берутся только проекты, у которых на текущую календарную дату еще нет среза.</li>
+        <li>При ручном запуске по одному проекту переснимается только выбранный проект.</li>
+        <li>Если <code>Вкл.</code> выключен, срезы по проекту не загружаются.</li>
+        <li>Если включены <code>Вкл.</code> и <code>Част.</code>, используется частичная загрузка задач.</li>
+        <li>Если включен только <code>Вкл.</code>, загружаются все задачи проекта.</li>
       </ul>
     </section>
 
     <section class="panel">
-      <h2>РљР°РєРёРµ Р·Р°РґР°С‡Рё РїРѕРїР°РґР°СЋС‚ РІ СЃСЂРµР·</h2>
+      <h2>Какие задачи попадают в срез</h2>
       <ul>
-        <li>Р‘РµСЂСѓС‚СЃСЏ С‚РѕР»СЊРєРѕ Р·Р°РґР°С‡Рё СЃР°РјРѕРіРѕ РїСЂРѕРµРєС‚Р°, Р±РµР· РїРѕРґРїСЂРѕРµРєС‚РѕРІ: РІ Р·Р°РїСЂРѕСЃР°С… РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ <code>subproject_id=!* </code>.</li>
-        <li>РџСЂРё РїРѕР»РЅРѕР№ Р·Р°РіСЂСѓР·РєРµ Р±РµСЂСѓС‚СЃСЏ РІСЃРµ Р·Р°РґР°С‡Рё РїСЂРѕРµРєС‚Р°.</li>
-        <li>РџСЂРё С‡Р°СЃС‚РёС‡РЅРѕР№ Р·Р°РіСЂСѓР·РєРµ РІСЃРµРіРґР° РїРѕРїР°РґР°СЋС‚ РІСЃРµ РѕС‚РєСЂС‹С‚С‹Рµ Р·Р°РґР°С‡Рё РїСЂРѕРµРєС‚Р°.</li>
-        <li>РџСЂРё С‡Р°СЃС‚РёС‡РЅРѕР№ Р·Р°РіСЂСѓР·РєРµ РёР· Р·Р°РєСЂС‹С‚С‹С… Р·Р°РґР°С‡ РїРѕРїР°РґР°СЋС‚ С‚РѕР»СЊРєРѕ Р·Р°РґР°С‡Рё, Р·Р°РєСЂС‹С‚С‹Рµ РЅР°С‡РёРЅР°СЏ СЃ <code>{previousYearStart}</code>.</li>
-        <li>Р•СЃР»Рё РѕРґРЅР° Рё С‚Р° Р¶Рµ Р·Р°РґР°С‡Р° РїРѕРґС…РѕРґРёС‚ СЃСЂР°Р·Сѓ РїРѕРґ РЅРµСЃРєРѕР»СЊРєРѕ РїСЂР°РІРёР», РІ СЃСЂРµР· РѕРЅР° Р·Р°РїРёСЃС‹РІР°РµС‚СЃСЏ РѕРґРёРЅ СЂР°Р·.</li>
+        <li>Берутся только задачи самого проекта, без подпроектов: в запросах используется <code>subproject_id=!* </code>.</li>
+        <li>При полной загрузке берутся все задачи проекта.</li>
+        <li>При частичной загрузке всегда попадают все открытые задачи проекта.</li>
+        <li>При частичной загрузке из закрытых задач попадают только задачи, закрытые начиная с <code>{previousYearStart}</code>.</li>
+        <li>Если одна и та же задача подходит сразу под несколько правил, в срез она записывается один раз.</li>
       </ul>
     </section>
 
     <section class="panel">
-      <h2>РљР°РєРёРµ РґР°РЅРЅС‹Рµ РїРѕ Р·Р°РґР°С‡Р°Рј СЃРѕС…СЂР°РЅСЏСЋС‚СЃСЏ</h2>
+      <h2>Какие данные по задачам сохраняются</h2>
       <ul>
-        <li>РЎРѕС…СЂР°РЅСЏСЋС‚СЃСЏ РѕСЃРЅРѕРІРЅС‹Рµ РїРѕР»СЏ Р·Р°РґР°С‡Рё: С‚СЂРµРєРµСЂ, СЃС‚Р°С‚СѓСЃ, РїСЂРёРѕСЂРёС‚РµС‚, РёСЃРїРѕР»РЅРёС‚РµР»СЊ, РІРµСЂСЃРёСЏ, РґР°С‚С‹ Рё РїСЂРѕС†РµРЅС‚С‹ РІС‹РїРѕР»РЅРµРЅРёСЏ.</li>
-        <li><code>Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°</code> С‡РёС‚Р°РµС‚СЃСЏ РёР· РєР°СЃС‚РѕРјРЅРѕРіРѕ РїРѕР»СЏ Redmine СЃ РЅР°Р·РІР°РЅРёРµРј <code>Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°</code>.</li>
-        <li><code>РџР»Р°РЅ</code> Р±РµСЂРµС‚СЃСЏ РёР· СЃС‚Р°РЅРґР°СЂС‚РЅРѕРіРѕ РїРѕР»СЏ <code>estimated_hours</code>.</li>
-        <li><code>Р¤Р°РєС‚ Р·Р° РіРѕРґ</code> СЃС‡РёС‚Р°РµС‚СЃСЏ РїРѕ С‚СЂСѓРґРѕР·Р°С‚СЂР°С‚Р°Рј С‚РµРєСѓС‰РµРіРѕ РіРѕРґР°, Р° РЅРµ Р·Р° РІСЃСЋ РёСЃС‚РѕСЂРёСЋ Р·Р°РґР°С‡Рё.</li>
+        <li>Сохраняются основные поля задачи: трекер, статус, приоритет, исполнитель, версия, даты и проценты выполнения.</li>
+        <li><code>Базовая оценка</code> читается из кастомного поля Redmine с названием <code>Базовая оценка</code>.</li>
+        <li><code>План</code> берется из стандартного поля <code>estimated_hours</code>.</li>
+        <li><code>Факт за год</code> считается по трудозатратам текущего года, а не за всю историю задачи.</li>
       </ul>
     </section>
 
     <section class="panel">
-      <h2>РљР°Рє СЃСЂРµР· Р·Р°РїРёСЃС‹РІР°РµС‚СЃСЏ РІ Р±Р°Р·Сѓ</h2>
+      <h2>Как срез записывается в базу</h2>
       <ul>
-        <li>РЎРЅР°С‡Р°Р»Р° РїСЂРёР»РѕР¶РµРЅРёРµ РїРѕР»РЅРѕСЃС‚СЊСЋ РїРѕР»СѓС‡Р°РµС‚ Р·Р°РґР°С‡Рё Рё С‚СЂСѓРґРѕР·Р°С‚СЂР°С‚С‹ РёР· Redmine.</li>
-        <li>РўРѕР»СЊРєРѕ РїРѕСЃР»Рµ РїРѕР»РЅРѕРіРѕ РїРѕР»СѓС‡РµРЅРёСЏ РґР°РЅРЅС‹С… РїРѕ РїСЂРѕРµРєС‚Сѓ СЃРѕР·РґР°РµС‚СЃСЏ Р·Р°РїРёСЃСЊ СЃСЂРµР·Р° Рё СЃС‚СЂРѕРєРё Р·Р°РґР°С‡ РІ Р±Р°Р·Рµ.</li>
-        <li>Р—Р° РѕРґРЅРё СЃСѓС‚РєРё Сѓ РїСЂРѕРµРєС‚Р° С…СЂР°РЅРёС‚СЃСЏ С‚РѕР»СЊРєРѕ РѕРґРёРЅ СЃСЂРµР·.</li>
-        <li>Р”Р°С‚Р° СЃСЂРµР·Р° С…СЂР°РЅРёС‚СЃСЏ РѕС‚РґРµР»СЊРЅРѕ РѕС‚ РІСЂРµРјРµРЅРё, РїРѕСЌС‚РѕРјСѓ РїРѕРІС‚РѕСЂРЅРѕ Р°РІС‚РѕРјР°С‚РѕРј С‚РѕС‚ Р¶Рµ РїСЂРѕРµРєС‚ Р·Р° С‚Рµ Р¶Рµ СЃСѓС‚РєРё РЅРµ РїРµСЂРµСЃРЅРёРјР°РµС‚СЃСЏ.</li>
+        <li>Сначала приложение полностью получает задачи и трудозатраты из Redmine.</li>
+        <li>Только после полного получения данных по проекту создается запись среза и строки задач в базе.</li>
+        <li>За одни сутки у проекта хранится только один срез.</li>
+        <li>Дата среза хранится отдельно от времени, поэтому повторно автоматом тот же проект за те же сутки не переснимается.</li>
       </ul>
     </section>
 
     <section class="panel note">
-      Р•СЃР»Рё РїСЂР°РІРёР»Р° РїРѕР»СѓС‡РµРЅРёСЏ Р±СѓРґСѓС‚ РјРµРЅСЏС‚СЊСЃСЏ, СЌС‚Р° СЃС‚СЂР°РЅРёС†Р° РґРѕР»Р¶РЅР° РѕР±РЅРѕРІР»СЏС‚СЊСЃСЏ РІРјРµСЃС‚Рµ СЃ РєРѕРґРѕРј, С‡С‚РѕР±С‹ РѕРїРёСЃР°РЅРёРµ РІСЃРµРіРґР° СЃРѕРІРїР°РґР°Р»Рѕ СЃ С„Р°РєС‚РёС‡РµСЃРєРѕР№ Р»РѕРіРёРєРѕР№.
+      Если правила получения будут меняться, эта страница должна обновляться вместе с кодом, чтобы описание всегда совпадало с фактической логикой.
     </section>
   </main>
 </body>
@@ -4305,7 +4305,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Р—Р°РґР°С‡Рё СЃСЂРµР·Р° РїСЂРѕРµРєС‚Р°</title>
+  <title>Задачи среза проекта</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -4322,20 +4322,20 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 <body>
     <main>
       {navPanelHtml}
-      <h1>Р—Р°РґР°С‡Рё СЃСЂРµР·Р° РїСЂРѕРµРєС‚Р°</h1>
+      <h1>Задачи среза проекта</h1>
       <form method="get">
-        <label for="capturedForDate">Р”Р°С‚Р° СЃСЂРµР·Р°</label>
+        <label for="capturedForDate">Дата среза</label>
         <select id="capturedForDate" name="captured_for_date" onchange="this.form.submit()">
-          <option value="">РџРѕСЃР»РµРґРЅРёР№ СЃСЂРµР·</option>
+          <option value="">Последний срез</option>
           {optionsHtml}
         </select>
       </form>
-      <p class="meta">Р”Р»СЏ РїСЂРѕРµРєС‚Р° СЃ ID {projectRedmineId} СЃСЂРµР·С‹ РїРѕРєР° РЅРµ РЅР°Р№РґРµРЅС‹.</p>
+      <p class="meta">Для проекта с ID {projectRedmineId} срезы пока не найдены.</p>
     </main>
   </body>
 </html>"""
 
-    issueRowsHtml = ['<tr><td colspan="13">Р—Р°РіСЂСѓР¶Р°РµРј Р·Р°РґР°С‡Рё...</td></tr>']
+    issueRowsHtml = ['<tr><td colspan="13">Загружаем задачи...</td></tr>']
 
     summaryView = buildSnapshotSummaryView(snapshotPayload.get("summary"))
     totalBaselineEstimateHours = summaryView["baseline_estimate_hours"]
@@ -4362,15 +4362,15 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     featureSpentYearClass = "summary-feature-control-zero" if featureSpentHoursYear == 0 else "summary-feature-control-alert"
     featureSpentClass = "summary-feature-control-zero" if featureSpentHours == 0 else "summary-feature-control-alert"
 
-    projectName = escape(str(snapshotRun.get("project_name") or "вЂ”"))
+    projectName = escape(str(snapshotRun.get("project_name") or "—"))
     capturedForDateRaw = str(snapshotRun.get("captured_for_date") or "")
-    capturedForDate = escape(capturedForDateRaw or "вЂ”")
+    capturedForDate = escape(capturedForDateRaw or "—")
     selectedDate = capturedForDateRaw
     projectIdentifierRaw = str(
         snapshotRun.get("project_identifier")
         or (storedProject.get("identifier") if storedProject else "")
     ).strip()
-    projectIdentifier = escape(projectIdentifierRaw or "вЂ”")
+    projectIdentifier = escape(projectIdentifierRaw or "—")
     snapshotPageUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
     if selectedDate:
         snapshotPageUrl += f"?captured_for_date={quote(selectedDate)}"
@@ -4392,7 +4392,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     initialPage = int(snapshotPayload.get("page") or 1)
     initialTotalPages = int(snapshotPayload.get("total_pages") or 1)
     initialPageSize = int(snapshotPayload.get("page_size") or 1000)
-    optionsHtml = ["<option value=\"\">РџРѕСЃР»РµРґРЅРёР№ СЃСЂРµР·</option>"]
+    optionsHtml = ["<option value=\"\">Последний срез</option>"]
     for dateValue in availableDates:
         selectedAttr = " selected" if dateValue == selectedDate else ""
         optionsHtml.append(f'<option value="{escape(dateValue)}"{selectedAttr}>{escape(dateValue)}</option>')
@@ -4402,7 +4402,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Р—Р°РґР°С‡Рё СЃСЂРµР·Р° РїСЂРѕРµРєС‚Р°</title>
+  <title>Задачи среза проекта</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -4609,40 +4609,40 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
   <body>
     <main>
       {navPanelHtml}
-      <h1>Р—Р°РґР°С‡Рё СЃСЂРµР·Р° РїСЂРѕРµРєС‚Р°</h1>
+      <h1>Задачи среза проекта</h1>
       <div class="toolbar">
       <form method="get">
-        <label for="capturedForDate">Р”Р°С‚Р° СЃСЂРµР·Р°</label>
+        <label for="capturedForDate">Дата среза</label>
         <select id="capturedForDate" name="captured_for_date" onchange="this.form.submit()">
           {''.join(optionsHtml)}
         </select>
       </form>
-      <label class="page-size-label" for="snapshotPageSizeInput">Р—Р°РґР°С‡ РЅР° СЃС‚СЂР°РЅРёС†Рµ</label>
+      <label class="page-size-label" for="snapshotPageSizeInput">Задач на странице</label>
       <input class="page-size-input" id="snapshotPageSizeInput" type="number" min="10" max="10000" step="10" value="{initialPageSize}">
-      <button type="button" class="secondary-button" id="applySnapshotPageSizeButton">РџРѕРєР°Р·Р°С‚СЊ</button>
-      <button type="button" class="secondary-button" id="exportSnapshotCsvButton">Р’С‹РіСЂСѓР·РёС‚СЊ CSV</button>
-      <button type="button" id="recaptureSnapshotButton">Р—Р°РіСЂСѓР·РёС‚СЊ/РѕР±РЅРѕРІРёС‚СЊ РїРѕСЃР»РµРґРЅРёР№ СЃСЂРµР·</button>
-      <button type="button" id="deleteSnapshotButton">РЈРґР°Р»РёС‚СЊ РІС‹Р±СЂР°РЅРЅС‹Р№ СЃСЂРµР·</button>
+      <button type="button" class="secondary-button" id="applySnapshotPageSizeButton">Показать</button>
+      <button type="button" class="secondary-button" id="exportSnapshotCsvButton">Выгрузить CSV</button>
+      <button type="button" id="recaptureSnapshotButton">Загрузить/обновить последний срез</button>
+      <button type="button" id="deleteSnapshotButton">Удалить выбранный срез</button>
       </div>
       <div class="action-status" id="snapshotActionStatus"></div>
-      <p class="meta">РџСЂРѕРµРєС‚: <span class="meta-strong">{projectName}</span>. РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ: <span class="meta-strong">{projectIdentifier}</span>. Р”Р°С‚Р° СЃСЂРµР·Р°: {capturedForDate}. РџРѕ С„РёР»СЊС‚СЂСѓ: <span id="filteredIssuesCount">{initialFilteredIssues}</span> РёР· {initialTotalIssues}. РќР° СЃС‚СЂР°РЅРёС†Рµ: <span id="pageIssuesCount">{len(issues)}</span>.</p>
+      <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Дата среза: {capturedForDate}. По фильтру: <span id="filteredIssuesCount">{initialFilteredIssues}</span> из {initialTotalIssues}. На странице: <span id="pageIssuesCount">{len(issues)}</span>.</p>
       <div class="summary-block">
         <table class="summary-table">
           <thead>
             <tr>
               <th style="width: 33%"></th>
-              <th>Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°</th>
-              <th>РџР»Р°РЅ</th>
-              <th>РџР»Р°РЅ СЃ СЂРёСЃРєР°РјРё</th>
-              <th colspan="2">Р¤Р°РєС‚ (РіРѕРґ)</th>
+              <th>Базовая оценка</th>
+              <th>План</th>
+              <th>План с рисками</th>
+              <th colspan="2">Факт (год)</th>
               <th>% (РіРѕРґ)</th>
-              <th colspan="2">Р¤Р°РєС‚ (РІСЃРµРіРѕ)</th>
-              <th>% (РІСЃРµРіРѕ)</th>
+              <th colspan="2">Факт (всего)</th>
+              <th>% (всего)</th>
             </tr>
           </thead>
           <tbody>
               <tr>
-                <th>Р’СЃРµ Р·Р°РґР°С‡Рё Р±РµР· С„РёС‡</th>
+                <th>Все задачи без фич</th>
                 <td class="summary-empty"></td>
                 <td class="summary-metric" id="summaryEstimated">{formatPageHours(totalEstimatedHours)}</td>
                 <td class="summary-empty"></td>
@@ -4652,7 +4652,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="summary-empty"></td>
             </tr>
             <tr>
-              <th>Р Р°Р·СЂР°Р±РѕС‚РєР°, С‡</th>
+              <th>Разработка, ч</th>
               <td class="summary-metric" id="summaryBaselineEstimate" rowspan="2">{formatPageHours(totalBaselineEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentEstimated">{formatPageHours(developmentEstimateHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentRiskEstimate">{formatPageHours(developmentRiskEstimateHours)}</td>
@@ -4664,14 +4664,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-metric summary-percent" id="summaryDevelopmentCoverageAll" rowspan="2">{formatPageHours(summaryView["development_coverage_all_percent"])}%</td>
             </tr>
             <tr>
-              <th>РџСЂРѕС†РµСЃСЃС‹ СЂР°Р·СЂР°Р±РѕС‚РєРё, С‡</th>
+              <th>Процессы разработки, ч</th>
               <td class="summary-metric" id="summaryDevelopmentProcessEstimated">{formatPageHours(developmentProcessEstimateHours)}</td>
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentProcessSpentYear">{formatPageHours(developmentProcessSpentHoursYear)}</td>
               <td class="summary-metric" id="summaryDevelopmentProcessSpent">{formatPageHours(developmentProcessSpentHours)}</td>
             </tr>
             <tr>
-              <th>РћС€РёР±РєР°, С‡</th>
+              <th>Ошибка, ч</th>
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryBugEstimated">{formatPageHours(bugEstimateHours)}</td>
               <td class="summary-empty"></td>
@@ -4681,7 +4681,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-metric summary-percent" id="summaryBugShareAll">{formatPageHours(summaryView["bug_share_all_percent"])}%</td>
             </tr>
             <tr>
-              <th>РС‚РѕРіРѕ РїРѕ СЂР°Р·СЂР°Р±РѕС‚РєРµ</th>
+              <th>Итого по разработке</th>
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentTotalEstimated">{formatPageHours(summaryView["development_total_estimated_hours"])}</td>
               <td class="summary-empty"></td>
@@ -4691,7 +4691,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-empty"></td>
             </tr>
             <tr>
-              <th>РљРѕРЅС‚СЂРѕР»СЊ СЃРїРёСЃР°РЅРёСЏ РїРѕ С„РёС‡Р°Рј</th>
+              <th>Контроль списания по фичам</th>
               <td class="summary-metric {featureBaselineEstimateClass}" id="summaryFeatureBaselineEstimate">{formatPageHours(featureBaselineEstimateHours)}</td>
               <td class="summary-metric {featureEstimatedClass}" id="summaryFeatureEstimated">{formatPageHours(featureEstimatedHours)}</td>
               <td class="summary-empty"></td>
@@ -4704,47 +4704,47 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         </table>
       </div>
       <div class="filter-reset-wrap">
-        <span class="filter-tip">Р¤РёР»СЊС‚СЂС‹ РїСЂРёРјРµРЅСЏСЋС‚СЃСЏ Рє С‚Р°Р±Р»РёС†Рµ Рё СЃСѓРјРјР°Рј РІС‹С€Рµ. РЎСѓРјРјС‹ СЃС‡РёС‚Р°СЋС‚СЃСЏ РїРѕ РІСЃРµРј Р·Р°РґР°С‡Р°Рј, СѓРґРѕРІР»РµС‚РІРѕСЂСЏСЋС‰РёРј С„РёР»СЊС‚СЂСѓ, Р° РЅРµ С‚РѕР»СЊРєРѕ РїРѕ С‚РµРєСѓС‰РµР№ СЃС‚СЂР°РЅРёС†Рµ.</span>
+        <span class="filter-tip">Фильтры применяются к таблице и суммам выше. Суммы считаются по всем задачам, удовлетворяющим фильтру, а не только по текущей странице.</span>
         <div class="table-actions">
-          <button type="button" class="filter-reset-button is-inactive" id="resetSnapshotFiltersButton">РЎР±СЂРѕСЃРёС‚СЊ С„РёР»СЊС‚СЂ</button>
+          <button type="button" class="filter-reset-button is-inactive" id="resetSnapshotFiltersButton">Сбросить фильтр</button>
         </div>
       </div>
       <div class="pagination-wrap">
         <div class="pagination-buttons">
-          <button type="button" class="secondary-button" id="snapshotPrevPageButton">в†ђ РќР°Р·Р°Рґ</button>
-          <button type="button" class="secondary-button" id="snapshotNextPageButton">Р’РїРµСЂРµРґ в†’</button>
+          <button type="button" class="secondary-button" id="snapshotPrevPageButton">← Назад</button>
+          <button type="button" class="secondary-button" id="snapshotNextPageButton">Вперед →</button>
         </div>
-        <div class="pagination-info" id="snapshotPaginationInfo">РЎС‚СЂР°РЅРёС†Р° {initialPage} РёР· {initialTotalPages}</div>
+        <div class="pagination-info" id="snapshotPaginationInfo">Страница {initialPage} из {initialTotalPages}</div>
       </div>
       <div class="table-wrap">
         <table id="snapshotIssuesTable">
         <thead>
           <tr>
             <th>ID</th>
-            <th class="subject-col">РўРµРјР°</th>
-            <th class="tracker-col">РўСЂРµРєРµСЂ</th>
-            <th class="status-col">РЎС‚Р°С‚СѓСЃ</th>
-            <th>Р“РѕС‚РѕРІРѕ, %</th>
-            <th class="baseline-col">Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°, С‡</th>
-            <th>РџР»Р°РЅ, С‡</th>
-            <th>РџР»Р°РЅ СЃ СЂРёСЃРєР°РјРё, С‡</th>
-            <th class="spent-col">Р¤Р°РєС‚ РІСЃРµРіРѕ, С‡</th>
-            <th class="spent-year-col">Р¤Р°РєС‚ Р·Р° РіРѕРґ, С‡</th>
-            <th class="closed-col">Р—Р°РєСЂС‹С‚Р°</th>
-            <th>РСЃРїРѕР»РЅРёС‚РµР»СЊ</th>
-            <th class="version-col">Р’РµСЂСЃРёСЏ</th>
+            <th class="subject-col">Тема</th>
+            <th class="tracker-col">Трекер</th>
+            <th class="status-col">Статус</th>
+            <th>Готово, %</th>
+            <th class="baseline-col">Базовая оценка, ч</th>
+            <th>План, ч</th>
+            <th>План с рисками, ч</th>
+            <th class="spent-col">Факт всего, ч</th>
+            <th class="spent-year-col">Факт за год, ч</th>
+            <th class="closed-col">Закрыта</th>
+            <th>Исполнитель</th>
+            <th class="version-col">Версия</th>
           </tr>
           <tr class="filter-head">
             <th><input class="filter-input-table" type="text" data-filter-key="issueId" data-filter-role="text"></th>
             <th><input class="filter-input-table" type="text" data-filter-key="subject" data-filter-role="text"></th>
 <th class="tracker-col"><select class="filter-select-table" multiple size="3" data-filter-key="tracker" data-filter-role="multi"></select></th>
 <th class="status-col"><select class="filter-select-table" multiple size="3" data-filter-key="status" data-filter-role="multi"></select></th>
-            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="doneRatio" data-filter-role="op"><option value="">вЂ”</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="1" data-filter-key="doneRatio" data-filter-role="value"></div></th>
-            <th class="baseline-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="baseline" data-filter-role="op"><option value="">вЂ”</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="baseline" data-filter-role="value"></div></th>
-            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="estimated" data-filter-role="op"><option value="">вЂ”</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="estimated" data-filter-role="value"></div></th>
-            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="risk" data-filter-role="op"><option value="">вЂ”</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="risk" data-filter-role="value"></div></th>
-            <th class="spent-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spent" data-filter-role="op"><option value="">вЂ”</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spent" data-filter-role="value"></div></th>
-            <th class="spent-year-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spentYear" data-filter-role="op"><option value="">вЂ”</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spentYear" data-filter-role="value"></div></th>
+            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="doneRatio" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="1" data-filter-key="doneRatio" data-filter-role="value"></div></th>
+            <th class="baseline-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="baseline" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="baseline" data-filter-role="value"></div></th>
+            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="estimated" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="estimated" data-filter-role="value"></div></th>
+            <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="risk" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="risk" data-filter-role="value"></div></th>
+            <th class="spent-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spent" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spent" data-filter-role="value"></div></th>
+            <th class="spent-year-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spentYear" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spentYear" data-filter-role="value"></div></th>
             <th class="closed-col"><input class="filter-input-table" type="text" data-filter-key="closedOn" data-filter-role="text"></th>
             <th><input class="filter-input-table" type="text" data-filter-key="assignedTo" data-filter-role="text"></th>
             <th class="version-col"><input class="filter-input-table" type="text" data-filter-key="fixedVersion" data-filter-role="text"></th>
@@ -4756,7 +4756,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       </table>
       <div class="snapshot-loading-overlay" id="snapshotLoadingOverlay" aria-hidden="true">
         <span class="snapshot-loading-spinner" aria-hidden="true"></span>
-        <span class="snapshot-loading-text">РћР±РЅРѕРІР»СЏРµРј С‚Р°Р±Р»РёС†Сѓ...</span>
+        <span class="snapshot-loading-text">Обновляем таблицу...</span>
       </div>
     </div>
     <script>
@@ -4857,7 +4857,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 
       function formatSnapshotDateTime(value) {{
         if (!value) {{
-          return "вЂ”";
+          return "—";
         }}
         return String(value).replace("T", " ").replace("+00:00", " UTC");
       }}
@@ -4956,13 +4956,13 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 
       function getSnapshotIssueSortBucket(issue) {{
         const tracker = String(issue?.tracker_name || "").trim().toLowerCase();
-        if (tracker === "СЂР°Р·СЂР°Р±РѕС‚РєР°") {{
+        if (tracker === "разработка") {{
           return 1;
         }}
-        if (tracker === "РїСЂРѕС†РµСЃСЃС‹ СЂР°Р·СЂР°Р±РѕС‚РєРё") {{
+        if (tracker === "процессы разработки") {{
           return 2;
         }}
-        if (tracker === "РѕС€РёР±РєР°") {{
+        if (tracker === "ошибка") {{
           return 3;
         }}
         return 4;
@@ -5074,7 +5074,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           return;
         }}
         if (!Array.isArray(issues) || !issues.length) {{
-          snapshotIssuesTableBody.innerHTML = '<tr><td colspan="13">РџРѕ С‚РµРєСѓС‰РµРјСѓ С„РёР»СЊС‚СЂСѓ Р·Р°РґР°С‡ РЅРµС‚.</td></tr>';
+          snapshotIssuesTableBody.innerHTML = '<tr><td colspan="13">По текущему фильтру задач нет.</td></tr>';
           return;
         }}
         const groupMap = new Map();
@@ -5096,25 +5096,25 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         for (const [groupKey, groupData] of groupMap.entries()) {{
           const issue = groupData.groupIssue;
           const groupId = issue?.feature_group_issue_redmine_id;
-          const groupSubject = String(issue?.feature_group_subject || "Р±РµР· Feature");
+          const groupSubject = String(issue?.feature_group_subject || "без Feature");
           const isVirtualGroup = Boolean(issue?.feature_group_is_virtual);
           if (groupKey) {{
             const groupLink = !isVirtualGroup && groupId
               ? `<a class="issue-link" href="https://redmine.sms-it.ru/issues/${{encodeURIComponent(groupId)}}" target="_blank" rel="noreferrer">${{escapeHtml(groupId)}}</a>`
               : "";
-            const groupTracker = isVirtualGroup ? "вЂ”" : escapeHtml(issue?.feature_group_tracker_name || "Feature");
-            const groupStatus = isVirtualGroup ? "вЂ”" : escapeHtml(issue?.feature_group_status_name || "вЂ”");
-            const groupDoneRatio = isVirtualGroup ? "вЂ”" : escapeHtml(issue?.feature_group_done_ratio ?? 0);
-            const groupBaseline = isVirtualGroup ? "вЂ”" : formatFilterHours(issue?.feature_group_baseline_estimate_hours);
-            const groupEstimated = isVirtualGroup ? "вЂ”" : formatFilterHours(issue?.feature_group_estimated_hours);
-            const groupRisk = isVirtualGroup ? "вЂ”" : formatFilterHours(issue?.feature_group_risk_estimate_hours);
-            const groupSpent = isVirtualGroup ? "вЂ”" : formatFilterHours(issue?.feature_group_spent_hours);
-            const groupSpentYear = isVirtualGroup ? "вЂ”" : formatFilterHours(issue?.feature_group_spent_hours_year);
-            const groupClosedOn = isVirtualGroup ? "вЂ”" : escapeHtml(formatSnapshotDateTime(issue?.feature_group_closed_on));
-            const groupAssignedTo = isVirtualGroup ? "вЂ”" : escapeHtml(issue?.feature_group_assigned_to_name || "вЂ”");
-            const groupVersion = isVirtualGroup ? "вЂ”" : escapeHtml(issue?.feature_group_fixed_version_name || "вЂ”");
+            const groupTracker = isVirtualGroup ? "—" : escapeHtml(issue?.feature_group_tracker_name || "Feature");
+            const groupStatus = isVirtualGroup ? "—" : escapeHtml(issue?.feature_group_status_name || "—");
+            const groupDoneRatio = isVirtualGroup ? "—" : escapeHtml(issue?.feature_group_done_ratio ?? 0);
+            const groupBaseline = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_baseline_estimate_hours);
+            const groupEstimated = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_estimated_hours);
+            const groupRisk = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_risk_estimate_hours);
+            const groupSpent = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_spent_hours);
+            const groupSpentYear = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_spent_hours_year);
+            const groupClosedOn = isVirtualGroup ? "—" : escapeHtml(formatSnapshotDateTime(issue?.feature_group_closed_on));
+            const groupAssignedTo = isVirtualGroup ? "—" : escapeHtml(issue?.feature_group_assigned_to_name || "—");
+            const groupVersion = isVirtualGroup ? "—" : escapeHtml(issue?.feature_group_fixed_version_name || "—");
             const groupIdCell = isVirtualGroup
-              ? `<span class="snapshot-group-id"><span class="snapshot-group-id-empty">вЂ”</span></span>`
+              ? `<span class="snapshot-group-id"><span class="snapshot-group-id-empty">—</span></span>`
               : `<span class="snapshot-group-id">${{groupLink}}<span class="snapshot-group-id-label">Feature</span></span>`;
             rows.push(`
               <tr class="snapshot-group-row">
@@ -5136,15 +5136,15 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           }}
           const orderedIssues = buildSnapshotTreeOrder(groupData.childIssues);
           for (const orderedIssue of orderedIssues) {{
-            const issueId = orderedIssue?.issue_redmine_id ?? "вЂ”";
+            const issueId = orderedIssue?.issue_redmine_id ?? "—";
             const issueLink = `https://redmine.sms-it.ru/issues/${{encodeURIComponent(issueId)}}`;
             const treeDepth = Number(orderedIssue?.__treeDepth || 0);
             rows.push(`
               <tr>
                 <td class="mono"><a class="issue-link" href="${{issueLink}}" target="_blank" rel="noreferrer">${{escapeHtml(issueId)}}</a></td>
-                <td class="subject-col"><span class="snapshot-child-subject" style="--snapshot-depth: ${{treeDepth}};">${{escapeHtml(orderedIssue?.subject || "вЂ”")}}</span></td>
-                <td class="tracker-col">${{escapeHtml(orderedIssue?.tracker_name || "вЂ”")}}</td>
-                <td class="status-col">${{escapeHtml(orderedIssue?.status_name || "вЂ”")}}</td>
+                <td class="subject-col"><span class="snapshot-child-subject" style="--snapshot-depth: ${{treeDepth}};">${{escapeHtml(orderedIssue?.subject || "—")}}</span></td>
+                <td class="tracker-col">${{escapeHtml(orderedIssue?.tracker_name || "—")}}</td>
+                <td class="status-col">${{escapeHtml(orderedIssue?.status_name || "—")}}</td>
                 <td>${{escapeHtml(orderedIssue?.done_ratio ?? 0)}}</td>
                 <td class="baseline-col">${{formatFilterHours(orderedIssue?.baseline_estimate_hours)}}</td>
                 <td>${{formatFilterHours(orderedIssue?.estimated_hours)}}</td>
@@ -5152,8 +5152,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="spent-col">${{formatFilterHours(orderedIssue?.spent_hours)}}</td>
                 <td class="spent-year-col">${{formatFilterHours(orderedIssue?.spent_hours_year)}}</td>
                 <td class="closed-col">${{escapeHtml(formatSnapshotDateTime(orderedIssue?.closed_on))}}</td>
-                <td>${{escapeHtml(orderedIssue?.assigned_to_name || "вЂ”")}}</td>
-                <td class="version-col">${{escapeHtml(orderedIssue?.fixed_version_name || "вЂ”")}}</td>
+                <td>${{escapeHtml(orderedIssue?.assigned_to_name || "—")}}</td>
+                <td class="version-col">${{escapeHtml(orderedIssue?.fixed_version_name || "—")}}</td>
               </tr>
             `);
           }}
@@ -5250,7 +5250,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 
       function updateSnapshotPaginationInfo() {{
         if (snapshotPaginationInfo) {{
-          snapshotPaginationInfo.textContent = `РЎС‚СЂР°РЅРёС†Р° ${{currentSnapshotPage}} РёР· ${{currentSnapshotTotalPages}}`;
+          snapshotPaginationInfo.textContent = `Страница ${{currentSnapshotPage}} из ${{currentSnapshotTotalPages}}`;
         }}
         if (snapshotPrevPageButton) snapshotPrevPageButton.disabled = currentSnapshotPage <= 1;
         if (snapshotNextPageButton) snapshotNextPageButton.disabled = currentSnapshotPage >= currentSnapshotTotalPages;
@@ -5322,12 +5322,12 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           currentSnapshotPageSize = pageSize;
           if (snapshotPageSizeInput) snapshotPageSizeInput.value = String(pageSize);
           window.localStorage.setItem(snapshotPageSizeStorageKey, String(pageSize));
-          if (snapshotPaginationInfo) snapshotPaginationInfo.textContent = "РћР±РЅРѕРІР»СЏРµРј С‚Р°Р±Р»РёС†Сѓ...";
+          if (snapshotPaginationInfo) snapshotPaginationInfo.textContent = "Обновляем таблицу...";
           const params = buildSnapshotQueryParams(page, true);
           const response = await fetch(`/api/projects/{projectRedmineId}/latest-snapshot-issues?${{params.toString()}}`);
           const payload = await response.json();
           if (!response.ok) {{
-            window.alert(payload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ Р·Р°РґР°С‡Рё СЃСЂРµР·Р°.");
+            window.alert(payload.detail || "Не удалось загрузить задачи среза.");
             updateSnapshotPaginationInfo();
             return;
           }}
@@ -5344,7 +5344,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           currentSnapshotFilterSignature = buildSnapshotFilterSignature();
           updateResetSnapshotFiltersButtonState();
         }} catch (error) {{
-          window.alert("РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ Р·Р°РґР°С‡Рё СЃСЂРµР·Р°.");
+          window.alert("Не удалось загрузить задачи среза.");
           updateSnapshotPaginationInfo();
         }} finally {{
           setSnapshotLoading(false);
@@ -5393,7 +5393,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             return;
           }}
 
-          const projectName = payload.current_project_name || payload.last_completed_project_name || "Р±РµР· РЅР°Р·РІР°РЅРёСЏ";
+          const projectName = payload.current_project_name || payload.last_completed_project_name || "без названия";
           const issuesPagesLoaded = Number(payload.current_project_issues_pages_loaded ?? 0);
           const issuesPagesTotal = Number(payload.current_project_issues_pages_total ?? 0);
           const timePagesLoaded = Number(payload.current_project_time_pages_loaded ?? 0);
@@ -5401,49 +5401,49 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           const progressParts = [];
 
           if (issuesPagesTotal > 0) {{
-            progressParts.push(`Р·Р°РґР°С‡Рё ${{
+            progressParts.push(`задачи ${{
               issuesPagesLoaded
-            }}/${{issuesPagesTotal}} СЃС‚СЂ.`);
+            }}/${{issuesPagesTotal}} стр.`);
           }}
 
           if (timePagesTotal > 0) {{
-            progressParts.push(`С‚СЂСѓРґРѕР·Р°С‚СЂР°С‚С‹ ${{
+            progressParts.push(`трудозатраты ${{
               timePagesLoaded
-            }}/${{timePagesTotal}} СЃС‚СЂ.`);
+            }}/${{timePagesTotal}} стр.`);
           }} else if (issuesPagesTotal > 0 && issuesPagesLoaded >= issuesPagesTotal) {{
-            progressParts.push("РіРѕС‚РѕРІРёРј С‚СЂСѓРґРѕР·Р°С‚СЂР°С‚С‹");
+            progressParts.push("готовим трудозатраты");
           }}
 
           const progressSuffix = progressParts.length ? ` (${{
             progressParts.join(", ")
           }})` : "";
-          setActionStatus(`РџРѕР»СѓС‡Р°РµРј СЃСЂРµР· РїРѕ РїСЂРѕРµРєС‚Сѓ ${{projectName}}${{progressSuffix}}`);
+          setActionStatus(`Получаем срез по проекту ${{projectName}}${{progressSuffix}}`);
           window.setTimeout(() => pollRecaptureStatus(targetDate), 1500);
         }} catch (error) {{
-          setActionStatus("РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ СЃС‚Р°С‚СѓСЃ РїРѕРІС‚РѕСЂРЅРѕРіРѕ СЃСЂРµР·Р°.");
+          setActionStatus("Не удалось получить статус повторного среза.");
         }}
       }}
 
       document.getElementById("recaptureSnapshotButton")?.addEventListener("click", async () => {{
-        setActionStatus("Р—Р°РїСѓСЃРєР°РµРј РїРѕРІС‚РѕСЂРЅРѕРµ РїРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·Р°...");
+        setActionStatus("Запускаем повторное получение среза...");
         const response = await fetch("/api/issues/snapshots/recapture-project/{projectRedmineId}", {{
           method: "POST"
         }});
         const payload = await response.json();
 
         if (!response.ok) {{
-          window.alert(payload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ РїРѕРІС‚РѕСЂРЅРѕРµ РїРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·Р°.");
+          window.alert(payload.detail || "Не удалось запустить повторное получение среза.");
           setActionStatus("");
           return;
         }}
 
         const targetDate = payload.captured_for_date || "{selectedDate}";
-        setActionStatus(payload.detail || "РџРѕРІС‚РѕСЂРЅРѕРµ РїРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·Р° Р·Р°РїСѓС‰РµРЅРѕ.");
+        setActionStatus(payload.detail || "Повторное получение среза запущено.");
         pollRecaptureStatus(targetDate);
       }});
 
       document.getElementById("deleteSnapshotButton")?.addEventListener("click", async () => {{
-        if (!window.confirm("РЈРґР°Р»РёС‚СЊ РІС‹Р±СЂР°РЅРЅС‹Р№ СЃСЂРµР·?")) {{
+        if (!window.confirm("Удалить выбранный срез?")) {{
           return;
         }}
 
@@ -5453,7 +5453,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         }});
         const payload = await response.json();
         if (!response.ok) {{
-          window.alert(payload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ СЃСЂРµР·.");
+          window.alert(payload.detail || "Не удалось удалить срез.");
           return;
         }}
 
@@ -5818,68 +5818,68 @@ BITRIX_PAGE_HTML = """<!doctype html>
     <section class="hero">
       <div class="topline">
         <a class="brand" href="/">
-          <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="РЎРњРЎ-РРў">
+          <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
           <span class="brand-copy">
             <strong>Redmine + Bitrix</strong>
-            <span>РњР°СЂС€СЂСѓС‚ /Bitrix СѓР¶Рµ РґРѕСЃС‚СѓРїРµРЅ РЅР° СЃР°Р№С‚Рµ</span>
+            <span>Маршрут /Bitrix уже доступен на сайте</span>
           </span>
         </a>
-        <a class="back-link" href="/">Р’РµСЂРЅСѓС‚СЊСЃСЏ РЅР° РіР»Р°РІРЅСѓСЋ</a>
+        <a class="back-link" href="/">Вернуться на главную</a>
       </div>
 
       <p class="eyebrow">Bitrix / Test Route</p>
       <h1>Bitrix test page</h1>
       <p class="lead">
-        Р­С‚Рѕ С‚РµСЃС‚РѕРІР°СЏ СЃС‚СЂР°РЅРёС†Р° РґР»СЏ РїСЂРѕРІРµСЂРєРё РѕС‚РґРµР»СЊРЅРѕРіРѕ РјР°СЂС€СЂСѓС‚Р° РІ С‚РµРєСѓС‰РµРј РїСЂРёР»РѕР¶РµРЅРёРё.
-        РћРЅР° Р¶РёРІРµС‚ СЂСЏРґРѕРј СЃ РѕСЃРЅРѕРІРЅС‹Рј Redmine-РёРЅС‚РµСЂС„РµР№СЃРѕРј Рё РіРѕС‚РѕРІР° РґР»СЏ РґР°Р»СЊРЅРµР№С€РµР№
-        РёРЅС‚РµРіСЂР°С†РёРё СЃ Bitrix-С„РѕСЂРјР°РјРё, iframe РёР»Рё РІРёРґР¶РµС‚Р°РјРё.
+        Это тестовая страница для проверки отдельного маршрута в текущем приложении.
+        Она живет рядом с основным Redmine-интерфейсом и готова для дальнейшей
+        интеграции с Bitrix-формами, iframe или виджетами.
       </p>
 
       <div class="hero-actions">
-        <a class="button button-primary" href="/">РћС‚РєСЂС‹С‚СЊ РіР»Р°РІРЅСѓСЋ СЃС‚СЂР°РЅРёС†Сѓ</a>
-        <a class="button button-secondary" href="/health">РџСЂРѕРІРµСЂРёС‚СЊ health endpoint</a>
+        <a class="button button-primary" href="/">Открыть главную страницу</a>
+        <a class="button button-secondary" href="/health">Проверить health endpoint</a>
       </div>
 
       <div class="metrics">
         <div class="metric">
           <strong>/Bitrix</strong>
-          <span>РњР°СЂС€СЂСѓС‚ РІС‹РЅРµСЃРµРЅ РІ FastAPI Рё РґРѕСЃС‚СѓРїРµРЅ РєР°Рє РѕС‚РґРµР»СЊРЅР°СЏ СЃС‚СЂР°РЅРёС†Р°.</span>
+          <span>Маршрут вынесен в FastAPI и доступен как отдельная страница.</span>
         </div>
         <div class="metric">
           <strong>HTML</strong>
-          <span>РЎС‚СЂР°РЅРёС†Р° СЃС‚Р°С‚РёС‡РµСЃРєР°СЏ Рё Р±РµР·РѕРїР°СЃРЅРѕ РґРѕР±Р°РІР»РµРЅР° Р±РµР· РІР»РёСЏРЅРёСЏ РЅР° Р±Р°Р·Сѓ РґР°РЅРЅС‹С….</span>
+          <span>Страница статическая и безопасно добавлена без влияния на базу данных.</span>
         </div>
         <div class="metric">
           <strong>Ready</strong>
-          <span>РњРѕР¶РЅРѕ РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊ РєР°Рє РѕСЃРЅРѕРІСѓ РґР»СЏ РґР°Р»СЊРЅРµР№С€РµРіРѕ С‚РµСЃС‚РёСЂРѕРІР°РЅРёСЏ Bitrix.</span>
+          <span>Можно использовать как основу для дальнейшего тестирования Bitrix.</span>
         </div>
       </div>
     </section>
 
     <section class="grid">
       <article class="card accent-card">
-        <h2>Р§С‚Рѕ СѓР¶Рµ СЃРґРµР»Р°РЅРѕ</h2>
+        <h2>Что уже сделано</h2>
         <ul>
-          <li>РџРѕРґРЅСЏС‚ РѕС‚РґРµР»СЊРЅС‹Р№ РјР°СЂС€СЂСѓС‚ РґР»СЏ СЃС‚СЂР°РЅРёС†С‹ Bitrix РІРЅСѓС‚СЂРё С‚РµРєСѓС‰РµРіРѕ РїСЂРёР»РѕР¶РµРЅРёСЏ.</li>
-          <li>РЎС‚СЂР°РЅРёС†Р° РѕС„РѕСЂРјР»РµРЅР° РІ С†РІРµС‚Р°С… СЃСѓС‰РµСЃС‚РІСѓСЋС‰РµРіРѕ РёРЅС‚РµСЂС„РµР№СЃР°, С‡С‚РѕР±С‹ РѕРЅР° РІС‹РіР»СЏРґРµР»Р° С‡Р°СЃС‚СЊСЋ РїСЂРѕРґСѓРєС‚Р°.</li>
-          <li>Р”РѕР±Р°РІР»РµРЅР° Р±Р°Р·РѕРІР°СЏ РЅР°РІРёРіР°С†РёСЏ РѕР±СЂР°С‚РЅРѕ РЅР° РіР»Р°РІРЅСѓСЋ Рё РЅР° health-РїСЂРѕРІРµСЂРєСѓ.</li>
+          <li>Поднят отдельный маршрут для страницы Bitrix внутри текущего приложения.</li>
+          <li>Страница оформлена в цветах существующего интерфейса, чтобы она выглядела частью продукта.</li>
+          <li>Добавлена базовая навигация обратно на главную и на health-проверку.</li>
         </ul>
       </article>
 
       <article class="card">
-        <h2>Р”Р»СЏ С‡РµРіРѕ РїРѕРґС…РѕРґРёС‚</h2>
+        <h2>Для чего подходит</h2>
         <p>
-          Р­С‚Сѓ СЃС‚СЂР°РЅРёС†Сѓ СѓРґРѕР±РЅРѕ РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊ РєР°Рє С‚РµСЃС‚РѕРІСѓСЋ РїР»РѕС‰Р°РґРєСѓ РїРµСЂРµРґ РїРѕРґРєР»СЋС‡РµРЅРёРµРј
-          Bitrix24-РІРёРґР¶РµС‚РѕРІ, HTML-РІСЃС‚Р°РІРѕРє, API-РґРёР°РіРЅРѕСЃС‚РёРєРё РёР»Рё РІРЅСѓС‚СЂРµРЅРЅРёС… СЃС†РµРЅР°СЂРёРµРІ
-          РёРЅС‚РµРіСЂР°С†РёРё.
+          Эту страницу удобно использовать как тестовую площадку перед подключением
+          Bitrix24-виджетов, HTML-вставок, API-диагностики или внутренних сценариев
+          интеграции.
         </p>
       </article>
 
       <article class="card">
-        <h2>РЎР»РµРґСѓСЋС‰РёР№ С€Р°Рі</h2>
+        <h2>Следующий шаг</h2>
         <p>
-          Р•СЃР»Рё РїРѕРЅР°РґРѕР±РёС‚СЃСЏ, СЃСЋРґР° РјРѕР¶РЅРѕ Р±С‹СЃС‚СЂРѕ РґРѕР±Р°РІРёС‚СЊ С„РѕСЂРјСѓ Р°РІС‚РѕСЂРёР·Р°С†РёРё, webhooks,
-          iframe c Bitrix РёР»Рё РґРёР°РіРЅРѕСЃС‚РёС‡РµСЃРєРёРµ Р±Р»РѕРєРё РґР»СЏ РѕР±РјРµРЅР° РґР°РЅРЅС‹РјРё РјРµР¶РґСѓ СЃРёСЃС‚РµРјР°РјРё.
+          Если понадобится, сюда можно быстро добавить форму авторизации, webhooks,
+          iframe c Bitrix или диагностические блоки для обмена данными между системами.
         </p>
       </article>
     </section>
@@ -5900,14 +5900,14 @@ def _normalizePlanningProjectDate(value: str | None) -> str | None:
     try:
         datetime.strptime(normalized, "%Y-%m-%d")
     except ValueError as error:
-        raise HTTPException(status_code=400, detail="Р”Р°С‚Р° РґРѕР»Р¶РЅР° Р±С‹С‚СЊ РІ С„РѕСЂРјР°С‚Рµ YYYY-MM-DD") from error
+        raise HTTPException(status_code=400, detail="Дата должна быть в формате YYYY-MM-DD") from error
     return normalized
 
 
 def normalizePlanningProjectPayload(payload: PlanningProjectPayload) -> dict[str, object]:
     projectName = str(payload.project_name or "").strip()
     if not projectName:
-        raise HTTPException(status_code=400, detail="РќР°Р·РІР°РЅРёРµ РїСЂРѕРµРєС‚Р° РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ")
+        raise HTTPException(status_code=400, detail="Название проекта обязательно")
 
     return {
         "project_name": projectName,
@@ -5934,12 +5934,12 @@ def buildStrangeSnapshotIssuesPage() -> str:
     rowsHtml = ""
     if issues:
         for issue in issues:
-            projectName = escape(str(issue.get("project_name") or "вЂ”"))
+            projectName = escape(str(issue.get("project_name") or "—"))
             projectIdentifier = str(issue.get("project_identifier") or "")
             projectIdentifierHtml = (
                 f'<a class="project-link" href="{escape(buildProjectRedmineIssuesUrl(projectIdentifier))}" target="_blank" rel="noreferrer">{escape(projectIdentifier)}</a>'
                 if projectIdentifier
-                else "вЂ”"
+                else "—"
             )
             issueId = int(issue.get("issue_redmine_id") or 0)
             issueUrl = f"{config.redmineUrl.rstrip('/')}/issues/{issueId}"
@@ -5949,40 +5949,40 @@ def buildStrangeSnapshotIssuesPage() -> str:
             parentProjectIdentifierHtml = (
                 f'<a class="project-link" href="{escape(buildProjectRedmineIssuesUrl(parentProjectIdentifier))}" target="_blank" rel="noreferrer">{escape(parentProjectIdentifier)}</a>'
                 if parentProjectIdentifier
-                else "вЂ”"
+                else "—"
             )
             rowsHtml += f"""
             <tr>
-              <td>{escape(str(issue.get("captured_for_date") or "вЂ”"))}</td>
+              <td>{escape(str(issue.get("captured_for_date") or "—"))}</td>
               <td>{projectName}</td>
               <td>{projectIdentifierHtml}</td>
               <td class="mono"><a class="issue-link" href="{escape(issueUrl)}" target="_blank" rel="noreferrer">{issueId}</a></td>
-              <td>{escape(str(issue.get("subject") or "вЂ”"))}</td>
-              <td>{escape(str(issue.get("tracker_name") or "вЂ”"))}</td>
-              <td>{escape(str(issue.get("status_name") or "вЂ”"))}</td>
+              <td>{escape(str(issue.get("subject") or "—"))}</td>
+              <td>{escape(str(issue.get("tracker_name") or "—"))}</td>
+              <td>{escape(str(issue.get("status_name") or "—"))}</td>
               <td class="mono"><a class="issue-link" href="{escape(parentIssueUrl)}" target="_blank" rel="noreferrer">{parentIssueId}</a></td>
-              <td>{escape(str(issue.get("parent_issue_subject") or "вЂ”"))}</td>
-              <td>{escape(str(issue.get("parent_project_name") or "вЂ”"))}</td>
+              <td>{escape(str(issue.get("parent_issue_subject") or "—"))}</td>
+              <td>{escape(str(issue.get("parent_project_name") or "—"))}</td>
               <td>{parentProjectIdentifierHtml}</td>
             </tr>
             """
     else:
         rowsHtml = """
             <tr>
-              <td colspan="11" class="empty-cell">РџРѕ РїРѕСЃР»РµРґРЅРёРј СЃСЂРµР·Р°Рј С‚Р°РєРёРµ Р·Р°РґР°С‡Рё РЅРµ РЅР°Р№РґРµРЅС‹.</td>
+              <td colspan="11" class="empty-cell">По последним срезам такие задачи не найдены.</td>
             </tr>
         """
 
     warningHtml = ""
     if errorCount:
-        warningHtml = f'<p class="warning">РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕРІРµСЂРёС‚СЊ {errorCount} СЂРѕРґРёС‚РµР»СЊСЃРєРёС… Р·Р°РґР°С‡ РІ Redmine, РїРѕСЌС‚РѕРјСѓ СЃРїРёСЃРѕРє РјРѕР¶РµС‚ Р±С‹С‚СЊ РЅРµРїРѕР»РЅС‹Рј.</p>'
+        warningHtml = f'<p class="warning">Не удалось проверить {errorCount} родительских задач в Redmine, поэтому список может быть неполным.</p>'
 
     return f"""<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>РЎС‚СЂР°РЅРЅС‹Рµ Р·Р°РґР°С‡Рё</title>
+  <title>Странные задачи</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -6114,30 +6114,30 @@ def buildStrangeSnapshotIssuesPage() -> str:
 <body>
   <main>
     <div class="topbar">
-      <a class="brand" href="/"><img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="РЎРњРЎ-РРў"></a>
+      <a class="brand" href="/"><img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ"></a>
       <div class="actions">
-        <a class="button button-home" href="/">РќР° РіР»Р°РІРЅСѓСЋ</a>
-        <a class="button button-projects" href="/#projects-table">РџСЂРѕРµРєС‚С‹</a>
+        <a class="button button-home" href="/">На главную</a>
+        <a class="button button-projects" href="/#projects-table">Проекты</a>
       </div>
     </div>
-    <h1>РЎС‚СЂР°РЅРЅС‹Рµ Р·Р°РґР°С‡Рё РїРѕ РїРѕСЃР»РµРґРЅРёРј СЃСЂРµР·Р°Рј</h1>
-    <p class="meta">РџРѕРєР°Р·С‹РІР°СЋС‚СЃСЏ Р·Р°РґР°С‡Рё РёР· РїРѕСЃР»РµРґРЅРёС… СЃСЂРµР·РѕРІ РїСЂРѕРµРєС‚РѕРІ, Сѓ РєРѕС‚РѕСЂС‹С… РІ Redmine СЂРѕРґРёС‚РµР»СЊСЃРєР°СЏ Р·Р°РґР°С‡Р° РѕС‚РЅРѕСЃРёС‚СЃСЏ Рє РґСЂСѓРіРѕРјСѓ РїСЂРѕРµРєС‚Сѓ. РџСЂРѕРІРµСЂРµРЅРѕ РєР°РЅРґРёРґР°С‚РѕРІ: {checkedCount}. РќР°Р№РґРµРЅРѕ СЃС‚СЂР°РЅРЅС‹С… Р·Р°РґР°С‡: {len(issues)}.</p>
+    <h1>Странные задачи по последним срезам</h1>
+    <p class="meta">Показываются задачи из последних срезов проектов, у которых в Redmine родительская задача относится к другому проекту. Проверено кандидатов: {checkedCount}. Найдено странных задач: {len(issues)}.</p>
     {warningHtml}
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Р”Р°С‚Р° СЃСЂРµР·Р°</th>
-            <th>РџСЂРѕРµРєС‚</th>
-            <th>РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ</th>
-            <th>ID Р·Р°РґР°С‡Рё</th>
-            <th>РўРµРјР° Р·Р°РґР°С‡Рё</th>
-            <th>РўСЂРµРєРµСЂ</th>
-            <th>РЎС‚Р°С‚СѓСЃ</th>
-            <th>ID СЂРѕРґРёС‚РµР»СЏ</th>
-            <th>РўРµРјР° СЂРѕРґРёС‚РµР»СЏ</th>
-            <th>РџСЂРѕРµРєС‚ СЂРѕРґРёС‚РµР»СЏ</th>
-            <th>РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ СЂРѕРґРёС‚РµР»СЏ</th>
+            <th>Дата среза</th>
+            <th>Проект</th>
+            <th>Идентификатор</th>
+            <th>ID задачи</th>
+            <th>Тема задачи</th>
+            <th>Трекер</th>
+            <th>Статус</th>
+            <th>ID родителя</th>
+            <th>Тема родителя</th>
+            <th>Проект родителя</th>
+            <th>Идентификатор родителя</th>
           </tr>
         </thead>
         <tbody>
@@ -6156,7 +6156,7 @@ def buildPlanningProjectsPage() -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>РџР»Р°РЅРёСЂРѕРІР°РЅРёРµ РїСЂРѕРµРєС‚РѕРІ</title>
+  <title>Планирование проектов</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -6408,60 +6408,60 @@ def buildPlanningProjectsPage() -> str:
 <body>
   <main>
     <div class="page-head">
-      <a class="brand" href="/" aria-label="РќР° РіР»Р°РІРЅСѓСЋ">
-        <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="РЎРњРЎ-РРў">
+      <a class="brand" href="/" aria-label="На главную">
+        <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
       </a>
       <div class="head-actions">
-        <a class="home-link" href="/">Р“Р»Р°РІРЅР°СЏ</a>
+        <a class="home-link" href="/">Главная</a>
         <a class="redmine-link" href="https://redmine.sms-it.ru" target="_blank" rel="noreferrer">Redmine</a>
       </div>
     </div>
 
-    <h1>РџР»Р°РЅРёСЂРѕРІР°РЅРёРµ РїСЂРѕРµРєС‚РѕРІ</h1>
-    <p class="lead">Р—РґРµСЃСЊ РјРѕР¶РЅРѕ РІРµСЃС‚Рё СЂСѓС‡РЅРѕР№ РїР»Р°РЅ РїРѕ РїСЂРѕРµРєС‚Р°Рј: СЃСЂРѕРєРё, РєРѕСЌС„С„РёС†РёРµРЅС‚С‹, СЃСЃС‹Р»РєРё РЅР° РґРѕРєСѓРјРµРЅС‚С‹ Рё Bitrix, Р° С‚Р°РєР¶Рµ РѕС‚РІРµС‚СЃС‚РІРµРЅРЅРѕРіРѕ РџРњ.</p>
+    <h1>Планирование проектов</h1>
+    <p class="lead">Здесь можно вести ручной план по проектам: сроки, коэффициенты, ссылки на документы и Bitrix, а также ответственного ПМ.</p>
 
     <section class="panel">
       <div class="table-meta">
-        <h2 style="margin:0;">РўР°Р±Р»РёС†Р° РїР»Р°РЅРёСЂРѕРІР°РЅРёСЏ</h2>
-        <span id="planningProjectsCount">Р—Р°РіСЂСѓР·РєР°...</span>
+        <h2 style="margin:0;">Таблица планирования</h2>
+        <span id="planningProjectsCount">Загрузка...</span>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>РќР°Р·РІР°РЅРёРµ РїСЂРѕРµРєС‚Р°</th>
-              <th>РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ РІ Redmine</th>
+              <th>Название проекта</th>
+              <th>Идентификатор в Redmine</th>
               <th>РџРњ</th>
-              <th>Р—Р°РєР°Р·С‡РёРє</th>
-              <th>Р”Р°С‚Р° СЃС‚Р°СЂС‚Р°</th>
-              <th>Р”Р°С‚Р° РѕРєРѕРЅС‡Р°РЅРёСЏ</th>
-              <th>Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°</th>
-              <th>P1 (С„Р°РєС‚ / Р±Р°Р·Р°), %</th>
-              <th>P2 (С„Р°РєС‚ СЃ Р±Р°РіР°РјРё / С„Р°РєС‚), %</th>
-              <th>Р”РѕРє СЃ РѕС†РµРЅРєРѕР№</th>
+              <th>Заказчик</th>
+              <th>Дата старта</th>
+              <th>Дата окончания</th>
+              <th>Базовая оценка</th>
+              <th>P1 (факт / база), %</th>
+              <th>P2 (факт с багами / факт), %</th>
+              <th>Док с оценкой</th>
               <th>Bitrix</th>
-              <th>РљРѕРјРјРµРЅС‚Р°СЂРёР№</th>
-              <th>Р”РµР№СЃС‚РІРёСЏ</th>
+              <th>Комментарий</th>
+              <th>Действия</th>
             </tr>
           </thead>
           <tbody id="planningProjectsTableBody">
-            <tr><td colspan="13" class="empty-state">Р—Р°РіСЂСѓР¶Р°РµРј Р·Р°РїРёСЃРё...</td></tr>
+            <tr><td colspan="13" class="empty-state">Загружаем записи...</td></tr>
           </tbody>
         </table>
       </div>
     </section>
 
     <section class="panel">
-      <h2 id="planningFormTitle">РќРѕРІР°СЏ Р·Р°РїРёСЃСЊ</h2>
+      <h2 id="planningFormTitle">Новая запись</h2>
       <form id="planningProjectForm">
         <input type="hidden" id="planningProjectId">
         <div class="form-grid">
           <div class="field field-wide">
-            <label for="planningProjectName">РќР°Р·РІР°РЅРёРµ РїСЂРѕРµРєС‚Р°</label>
+            <label for="planningProjectName">Название проекта</label>
             <input id="planningProjectName" type="text" required>
           </div>
           <div class="field">
-            <label for="planningProjectIdentifier">РРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ РІ Redmine</label>
+            <label for="planningProjectIdentifier">Идентификатор в Redmine</label>
             <input id="planningProjectIdentifier" type="text">
           </div>
           <div class="field">
@@ -6469,31 +6469,31 @@ def buildPlanningProjectsPage() -> str:
             <input id="planningProjectPm" type="text">
           </div>
           <div class="field">
-            <label for="planningProjectCustomer">Р—Р°РєР°Р·С‡РёРє</label>
+            <label for="planningProjectCustomer">Заказчик</label>
             <input id="planningProjectCustomer" type="text">
           </div>
           <div class="field">
-            <label for="planningProjectStartDate">Р”Р°С‚Р° СЃС‚Р°СЂС‚Р°</label>
+            <label for="planningProjectStartDate">Дата старта</label>
             <input id="planningProjectStartDate" type="date">
           </div>
           <div class="field">
-            <label for="planningProjectEndDate">Р”Р°С‚Р° РѕРєРѕРЅС‡Р°РЅРёСЏ</label>
+            <label for="planningProjectEndDate">Дата окончания</label>
             <input id="planningProjectEndDate" type="date">
           </div>
           <div class="field">
-            <label for="planningProjectBaselineEstimate">Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°</label>
+            <label for="planningProjectBaselineEstimate">Базовая оценка</label>
             <input id="planningProjectBaselineEstimate" type="number" step="0.1" inputmode="decimal">
           </div>
           <div class="field">
-            <label for="planningProjectP1">P1 (С„Р°РєС‚ / Р±Р°Р·Р°), %</label>
+            <label for="planningProjectP1">P1 (факт / база), %</label>
             <input id="planningProjectP1" type="number" step="0.1" inputmode="decimal">
           </div>
           <div class="field">
-            <label for="planningProjectP2">P2 (С„Р°РєС‚ СЃ Р±Р°РіР°РјРё / С„Р°РєС‚), %</label>
+            <label for="planningProjectP2">P2 (факт с багами / факт), %</label>
             <input id="planningProjectP2" type="number" step="0.1" inputmode="decimal">
           </div>
           <div class="field field-wide">
-            <label for="planningProjectEstimateDoc">Р”РѕРє СЃ РѕС†РµРЅРєРѕР№</label>
+            <label for="planningProjectEstimateDoc">Док с оценкой</label>
             <input id="planningProjectEstimateDoc" type="url" placeholder="https://">
           </div>
           <div class="field field-wide">
@@ -6501,13 +6501,13 @@ def buildPlanningProjectsPage() -> str:
             <input id="planningProjectBitrix" type="url" placeholder="https://">
           </div>
           <div class="field field-wide">
-            <label for="planningProjectComment">РљРѕРјРјРµРЅС‚Р°СЂРёР№</label>
+            <label for="planningProjectComment">Комментарий</label>
             <textarea id="planningProjectComment"></textarea>
           </div>
         </div>
         <div class="actions">
-          <button type="submit" id="savePlanningProjectButton">РЎРѕС…СЂР°РЅРёС‚СЊ</button>
-          <button type="button" id="resetPlanningProjectFormButton">РћС‡РёСЃС‚РёС‚СЊ С„РѕСЂРјСѓ</button>
+          <button type="submit" id="savePlanningProjectButton">Сохранить</button>
+          <button type="button" id="resetPlanningProjectFormButton">Очистить форму</button>
         </div>
       </form>
       <div class="status" id="planningProjectsStatus"></div>
@@ -6547,23 +6547,23 @@ def buildPlanningProjectsPage() -> str:
     }
 
     function formatOptionalDate(value) {
-      return value ? String(value) : "вЂ”";
+      return value ? String(value) : "—";
     }
 
     function formatOptionalNumber(value) {
       if (value === null || value === undefined || value === "") {
-        return "вЂ”";
+        return "—";
       }
       const parsed = Number(value);
       if (!Number.isFinite(parsed)) {
-        return "вЂ”";
+        return "—";
       }
       return parsed.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     }
 
     function buildOptionalLink(url) {
       if (!url) {
-        return "вЂ”";
+        return "—";
       }
       const safeUrl = escapeHtml(url);
       return `<a href="${safeUrl}" target="_blank" rel="noreferrer">${safeUrl}</a>`;
@@ -6588,7 +6588,7 @@ def buildPlanningProjectsPage() -> str:
     function resetPlanningProjectForm() {
       planningProjectId.value = "";
       planningProjectForm.reset();
-      planningFormTitle.textContent = "РќРѕРІР°СЏ Р·Р°РїРёСЃСЊ";
+      planningFormTitle.textContent = "Новая запись";
       setPlanningProjectsStatus("");
     }
 
@@ -6612,8 +6612,8 @@ def buildPlanningProjectsPage() -> str:
       planningProjectEstimateDoc.value = project.estimate_doc_url ?? "";
       planningProjectBitrix.value = project.bitrix_url ?? "";
       planningProjectComment.value = project.comment_text ?? "";
-      planningFormTitle.textContent = "Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ Р·Р°РїРёСЃРё";
-      setPlanningProjectsStatus("Р—Р°РїРёСЃСЊ Р·Р°РіСЂСѓР¶РµРЅР° РІ С„РѕСЂРјСѓ РґР»СЏ СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёСЏ.");
+      planningFormTitle.textContent = "Редактирование записи";
+      setPlanningProjectsStatus("Запись загружена в форму для редактирования.");
       scrollPlanningProjectFormIntoView();
     }
 
@@ -6626,7 +6626,7 @@ def buildPlanningProjectsPage() -> str:
       const matchedProject = projects.find((project) => String(project?.redmine_identifier ?? "").trim() === queryState.redmineIdentifier);
       if (matchedProject) {
         fillPlanningProjectForm(matchedProject);
-        setPlanningProjectsStatus(`РћС‚РєСЂС‹С‚Рѕ СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ Р·Р°РїРёСЃРё РґР»СЏ РїСЂРѕРµРєС‚Р° СЃ РёРґРµРЅС‚РёС„РёРєР°С‚РѕСЂРѕРј ${queryState.redmineIdentifier}.`);
+        setPlanningProjectsStatus(`Открыто редактирование записи для проекта с идентификатором ${queryState.redmineIdentifier}.`);
         return;
       }
 
@@ -6635,24 +6635,24 @@ def buildPlanningProjectsPage() -> str:
       if (queryState.projectName) {
         planningProjectName.value = queryState.projectName;
       }
-      planningFormTitle.textContent = "РќРѕРІР°СЏ Р·Р°РїРёСЃСЊ";
-      setPlanningProjectsStatus(`Р—Р°РїРёСЃСЊ РЅРµ РЅР°Р№РґРµРЅР°. РџРѕРґРіРѕС‚РѕРІР»РµРЅР° РЅРѕРІР°СЏ С„РѕСЂРјР° РґР»СЏ РїСЂРѕРµРєС‚Р° СЃ РёРґРµРЅС‚РёС„РёРєР°С‚РѕСЂРѕРј ${queryState.redmineIdentifier}.`);
+      planningFormTitle.textContent = "Новая запись";
+      setPlanningProjectsStatus(`Запись не найдена. Подготовлена новая форма для проекта с идентификатором ${queryState.redmineIdentifier}.`);
       scrollPlanningProjectFormIntoView();
     }
 
     function renderPlanningProjects(projects) {
-      planningProjectsCount.textContent = `Р’СЃРµРіРѕ Р·Р°РїРёСЃРµР№: ${projects.length}`;
+      planningProjectsCount.textContent = `Всего записей: ${projects.length}`;
       if (!projects.length) {
-        planningProjectsTableBody.innerHTML = '<tr><td colspan="13" class="empty-state">РџРѕРєР° РЅРµС‚ РЅРё РѕРґРЅРѕР№ Р·Р°РїРёСЃРё.</td></tr>';
+        planningProjectsTableBody.innerHTML = '<tr><td colspan="13" class="empty-state">Пока нет ни одной записи.</td></tr>';
         return;
       }
 
       planningProjectsTableBody.innerHTML = projects.map((project) => `
         <tr>
-          <td>${escapeHtml(project.project_name ?? "вЂ”")}</td>
-          <td class="mono">${escapeHtml(project.redmine_identifier ?? "вЂ”")}</td>
-          <td>${escapeHtml(project.pm_name ?? "вЂ”")}</td>
-          <td>${escapeHtml(project.customer ?? "вЂ”")}</td>
+          <td>${escapeHtml(project.project_name ?? "—")}</td>
+          <td class="mono">${escapeHtml(project.redmine_identifier ?? "—")}</td>
+          <td>${escapeHtml(project.pm_name ?? "—")}</td>
+          <td>${escapeHtml(project.customer ?? "—")}</td>
           <td>${formatOptionalDate(project.start_date)}</td>
           <td>${formatOptionalDate(project.end_date)}</td>
           <td>${formatOptionalNumber(project.baseline_estimate_hours)}</td>
@@ -6660,11 +6660,11 @@ def buildPlanningProjectsPage() -> str:
           <td>${formatOptionalNumber(project.p2)}</td>
           <td class="link-cell">${buildOptionalLink(project.estimate_doc_url)}</td>
           <td class="link-cell">${buildOptionalLink(project.bitrix_url)}</td>
-          <td>${escapeHtml(project.comment_text ?? "вЂ”")}</td>
+          <td>${escapeHtml(project.comment_text ?? "—")}</td>
           <td>
             <div class="row-actions">
-              <button type="button" class="edit-button" data-action="edit" data-id="${project.id}">Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ</button>
-              <button type="button" class="delete-button" data-action="delete" data-id="${project.id}">РЈРґР°Р»РёС‚СЊ</button>
+              <button type="button" class="edit-button" data-action="edit" data-id="${project.id}">Редактировать</button>
+              <button type="button" class="delete-button" data-action="delete" data-id="${project.id}">Удалить</button>
             </div>
           </td>
         </tr>
@@ -6672,11 +6672,11 @@ def buildPlanningProjectsPage() -> str:
     }
 
     async function loadPlanningProjects() {
-      planningProjectsTableBody.innerHTML = '<tr><td colspan="13" class="empty-state">Р—Р°РіСЂСѓР¶Р°РµРј Р·Р°РїРёСЃРё...</td></tr>';
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="13" class="empty-state">Загружаем записи...</td></tr>';
       const response = await fetch("/api/planning-projects");
       const payload = await response.json();
       if (!response.ok) {
-        throw new Error(payload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РїР»Р°РЅРёСЂРѕРІР°РЅРёРµ РїСЂРѕРµРєС‚РѕРІ.");
+        throw new Error(payload.detail || "Не удалось загрузить планирование проектов.");
       }
       renderPlanningProjects(payload.projects || []);
       applyPlanningProjectPrefill(payload.projects || []);
@@ -6705,7 +6705,7 @@ def buildPlanningProjectsPage() -> str:
       const projectId = planningProjectId.value.trim();
       const method = projectId ? "PUT" : "POST";
       const url = projectId ? `/api/planning-projects/${encodeURIComponent(projectId)}` : "/api/planning-projects";
-      setPlanningProjectsStatus(projectId ? "РЎРѕС…СЂР°РЅСЏРµРј РёР·РјРµРЅРµРЅРёСЏ..." : "РЎРѕР·РґР°РµРј Р·Р°РїРёСЃСЊ...");
+      setPlanningProjectsStatus(projectId ? "Сохраняем изменения..." : "Создаем запись...");
 
       try {
         const response = await fetch(url, {
@@ -6715,13 +6715,13 @@ def buildPlanningProjectsPage() -> str:
         });
         const payload = await response.json();
         if (!response.ok) {
-          throw new Error(payload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ Р·Р°РїРёСЃСЊ.");
+          throw new Error(payload.detail || "Не удалось сохранить запись.");
         }
         await loadPlanningProjects();
         resetPlanningProjectForm();
-        setPlanningProjectsStatus(projectId ? "РР·РјРµРЅРµРЅРёСЏ СЃРѕС…СЂР°РЅРµРЅС‹." : "Р—Р°РїРёСЃСЊ СЃРѕР·РґР°РЅР°.");
+        setPlanningProjectsStatus(projectId ? "Изменения сохранены." : "Запись создана.");
       } catch (error) {
-        setPlanningProjectsStatus(error instanceof Error ? error.message : "РћС€РёР±РєР° СЃРѕС…СЂР°РЅРµРЅРёСЏ.");
+        setPlanningProjectsStatus(error instanceof Error ? error.message : "Ошибка сохранения.");
       }
     });
 
@@ -6744,12 +6744,12 @@ def buildPlanningProjectsPage() -> str:
         const response = await fetch("/api/planning-projects");
         const payload = await response.json();
         if (!response.ok) {
-          throw new Error(payload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ Р·Р°РїРёСЃРё.");
+          throw new Error(payload.detail || "Не удалось загрузить записи.");
         }
         const projects = payload.projects || [];
         const currentProject = projects.find((item) => String(item.id) === String(projectId));
         if (!currentProject) {
-          throw new Error("Р—Р°РїРёСЃСЊ РЅРµ РЅР°Р№РґРµРЅР°.");
+          throw new Error("Запись не найдена.");
         }
 
         if (action === "edit") {
@@ -6758,30 +6758,30 @@ def buildPlanningProjectsPage() -> str:
         }
 
         if (action === "delete") {
-          if (!window.confirm(`РЈРґР°Р»РёС‚СЊ Р·Р°РїРёСЃСЊ РїРѕ РїСЂРѕРµРєС‚Сѓ "${currentProject.project_name}"?`)) {
+          if (!window.confirm(`Удалить запись по проекту "${currentProject.project_name}"?`)) {
             return;
           }
-          setPlanningProjectsStatus("РЈРґР°Р»СЏРµРј Р·Р°РїРёСЃСЊ...");
+          setPlanningProjectsStatus("Удаляем запись...");
           const deleteResponse = await fetch(`/api/planning-projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
           const deletePayload = await deleteResponse.json();
           if (!deleteResponse.ok) {
-            throw new Error(deletePayload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ Р·Р°РїРёСЃСЊ.");
+            throw new Error(deletePayload.detail || "Не удалось удалить запись.");
           }
           await loadPlanningProjects();
           if (planningProjectId.value === String(projectId)) {
             resetPlanningProjectForm();
           }
-          setPlanningProjectsStatus("Р—Р°РїРёСЃСЊ СѓРґР°Р»РµРЅР°.");
+          setPlanningProjectsStatus("Запись удалена.");
         }
       } catch (error) {
-        setPlanningProjectsStatus(error instanceof Error ? error.message : "РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё Р·Р°РїРёСЃРё.");
+        setPlanningProjectsStatus(error instanceof Error ? error.message : "Ошибка обработки записи.");
       }
     });
 
     loadPlanningProjects().catch((error) => {
-      planningProjectsCount.textContent = "РћС€РёР±РєР°";
-      planningProjectsTableBody.innerHTML = '<tr><td colspan="13" class="empty-state">РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ Р·Р°РїРёСЃРё.</td></tr>';
-      setPlanningProjectsStatus(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РїР»Р°РЅРёСЂРѕРІР°РЅРёРµ РїСЂРѕРµРєС‚РѕРІ.");
+      planningProjectsCount.textContent = "Ошибка";
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="13" class="empty-state">Не удалось загрузить записи.</td></tr>';
+      setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
     });
   </script>
 </body>
@@ -6796,7 +6796,7 @@ def buildLoginPage(nextPath: str = "/") -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Р’С…РѕРґ РІ СЃРёСЃС‚РµРјСѓ</title>
+  <title>Вход в систему</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <style>
     :root {{
@@ -6894,22 +6894,22 @@ def buildLoginPage(nextPath: str = "/") -> str:
 </head>
 <body>
   <section class="card">
-    <a class="brand" href="/" aria-label="РЎРњРЎ-РРў">
-      <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="РЎРњРЎ-РРў">
+    <a class="brand" href="/" aria-label="СМС-ИТ">
+      <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
     </a>
-    <h1>Р’С…РѕРґ РІ СЃРёСЃС‚РµРјСѓ</h1>
-    <p class="lead">Р’РІРµРґРёС‚Рµ Р»РѕРіРёРЅ Рё РїР°СЂРѕР»СЊ, С‡С‚РѕР±С‹ РѕС‚РєСЂС‹С‚СЊ СЃРёСЃС‚РµРјСѓ Р°РЅР°Р»РёР·Р° РїСЂРѕРµРєС‚РѕРІ Redmine.</p>
+    <h1>Вход в систему</h1>
+    <p class="lead">Введите логин и пароль, чтобы открыть систему анализа проектов Redmine.</p>
     <form id="loginForm">
       <input id="nextPathInput" type="hidden" value="{safeNextPath}">
       <label for="loginInput">
-        Р›РѕРіРёРЅ
+        Логин
         <input id="loginInput" type="text" autocomplete="username" required>
       </label>
       <label for="passwordInput">
-        РџР°СЂРѕР»СЊ
+        Пароль
         <input id="passwordInput" type="password" autocomplete="current-password" required>
       </label>
-      <button id="loginButton" type="submit">Р’РѕР№С‚Рё</button>
+      <button id="loginButton" type="submit">Войти</button>
     </form>
     <div class="status" id="loginStatus"></div>
   </section>
@@ -6928,7 +6928,7 @@ def buildLoginPage(nextPath: str = "/") -> str:
     loginForm.addEventListener("submit", async (event) => {{
       event.preventDefault();
       loginButton.disabled = true;
-      setStatus("РџСЂРѕРІРµСЂСЏРµРј Р»РѕРіРёРЅ Рё РїР°СЂРѕР»СЊ...");
+      setStatus("Проверяем логин и пароль...");
 
       try {{
         const response = await fetch(`/api/auth/login?next=${{encodeURIComponent(nextPathInput.value || "/")}}`, {{
@@ -6941,7 +6941,7 @@ def buildLoginPage(nextPath: str = "/") -> str:
         }});
         const payload = await response.json();
         if (!response.ok) {{
-          throw new Error(payload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ РІРѕР№С‚Рё РІ СЃРёСЃС‚РµРјСѓ.");
+          throw new Error(payload.detail || "Не удалось войти в систему.");
         }}
 
         const nextPath = payload.next_path || nextPathInput.value || "/";
@@ -6963,7 +6963,7 @@ def buildChangePasswordPage(user: dict[str, object]) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>РЎРјРµРЅР° РїР°СЂРѕР»СЏ</title>
+  <title>Смена пароля</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <style>
     :root {{
@@ -7055,19 +7055,19 @@ def buildChangePasswordPage(user: dict[str, object]) -> str:
 </head>
 <body>
   <section class="card">
-    <h1>РЎРјРµРЅР° РїР°СЂРѕР»СЏ</h1>
-    <p class="lead">Р”Р»СЏ СЌС‚РѕРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІРєР»СЋС‡РµРЅР° РѕР±СЏР·Р°С‚РµР»СЊРЅР°СЏ СЃРјРµРЅР° РїР°СЂРѕР»СЏ. РЎРѕС…СЂР°РЅРёРј РЅРѕРІС‹Р№ РїР°СЂРѕР»СЊ Рё РїРѕСЃР»Рµ СЌС‚РѕРіРѕ РѕС‚РєСЂРѕРµРј СЃРёСЃС‚РµРјСѓ.</p>
-    <p class="login-note">Р›РѕРіРёРЅ: {login}</p>
+    <h1>Смена пароля</h1>
+    <p class="lead">Для этого пользователя включена обязательная смена пароля. Сохраним новый пароль и после этого откроем систему.</p>
+    <p class="login-note">Логин: {login}</p>
     <form id="changePasswordForm">
       <label for="newPasswordInput">
-        РќРѕРІС‹Р№ РїР°СЂРѕР»СЊ
+        Новый пароль
         <input id="newPasswordInput" type="password" autocomplete="new-password" minlength="3" required>
       </label>
       <label for="repeatPasswordInput">
-        РџРѕРІС‚РѕСЂРёС‚Рµ РЅРѕРІС‹Р№ РїР°СЂРѕР»СЊ
+        Повторите новый пароль
         <input id="repeatPasswordInput" type="password" autocomplete="new-password" minlength="3" required>
       </label>
-      <button id="changePasswordButton" type="submit">РЎРѕС…СЂР°РЅРёС‚СЊ РЅРѕРІС‹Р№ РїР°СЂРѕР»СЊ</button>
+      <button id="changePasswordButton" type="submit">Сохранить новый пароль</button>
     </form>
     <div class="status" id="changePasswordStatus"></div>
   </section>
@@ -7087,12 +7087,12 @@ def buildChangePasswordPage(user: dict[str, object]) -> str:
       const newPassword = document.getElementById("newPasswordInput").value;
       const repeatPassword = document.getElementById("repeatPasswordInput").value;
       if (newPassword !== repeatPassword) {{
-        setStatus("РќРѕРІС‹Р№ РїР°СЂРѕР»СЊ Рё РїРѕРІС‚РѕСЂ РґРѕР»Р¶РЅС‹ СЃРѕРІРїР°РґР°С‚СЊ.", "error");
+        setStatus("Новый пароль и повтор должны совпадать.", "error");
         return;
       }}
 
       changePasswordButton.disabled = true;
-      setStatus("РЎРѕС…СЂР°РЅСЏРµРј РЅРѕРІС‹Р№ РїР°СЂРѕР»СЊ...");
+      setStatus("Сохраняем новый пароль...");
 
       try {{
         const response = await fetch("/api/auth/change-password", {{
@@ -7102,7 +7102,7 @@ def buildChangePasswordPage(user: dict[str, object]) -> str:
         }});
         const payload = await response.json();
         if (!response.ok) {{
-          throw new Error(payload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РїР°СЂРѕР»СЊ.");
+          throw new Error(payload.detail || "Не удалось сохранить пароль.");
         }}
 
         window.location.href = payload.next_path || "/";
@@ -7122,7 +7122,7 @@ def buildAdminUsersPage() -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>РђРґРјРёРЅРёСЃС‚СЂРёСЂРѕРІР°РЅРёРµ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№</title>
+  <title>Администрирование пользователей</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <style>
     :root {
@@ -7346,34 +7346,34 @@ def buildAdminUsersPage() -> str:
 <body>
   <main>
     <div class="page-head">
-      <a class="brand" href="/" aria-label="РЎРњРЎ-РРў">
-        <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="РЎРњРЎ-РРў">
+      <a class="brand" href="/" aria-label="СМС-ИТ">
+        <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
       </a>
       <div class="head-actions">
-        <a href="/">Р“Р»Р°РІРЅР°СЏ</a>
-        <a href="/logout">Р’С‹Р№С‚Рё</a>
+        <a href="/">Главная</a>
+        <a href="/logout">Выйти</a>
       </div>
     </div>
 
-    <h1>РђРґРјРёРЅРёСЃС‚СЂРёСЂРѕРІР°РЅРёРµ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№</h1>
-    <p class="lead">Р—РґРµСЃСЊ РјРѕР¶РЅРѕ Р·Р°РІРѕРґРёС‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№, Р·Р°РґР°РІР°С‚СЊ РёРј РїСЂР°РІР° РґРѕСЃС‚СѓРїР° Рё РІРєР»СЋС‡Р°С‚СЊ РѕР±СЏР·Р°С‚РµР»СЊРЅСѓСЋ СЃРјРµРЅСѓ РїР°СЂРѕР»СЏ РїСЂРё СЃР»РµРґСѓСЋС‰РµРј РІС…РѕРґРµ.</p>
+    <h1>Администрирование пользователей</h1>
+    <p class="lead">Здесь можно заводить пользователей, задавать им права доступа и включать обязательную смену пароля при следующем входе.</p>
 
     <section class="grid">
       <article class="panel">
-        <h2>РџРѕР»СЊР·РѕРІР°С‚РµР»Рё</h2>
+        <h2>Пользователи</h2>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Р›РѕРіРёРЅ</th>
-                <th>РџСЂР°РІР°</th>
-                <th>РЎРјРµРЅР° РїР°СЂРѕР»СЏ</th>
-                <th>РћР±РЅРѕРІР»РµРЅ</th>
-                <th>Р”РµР№СЃС‚РІРёСЏ</th>
+                <th>Логин</th>
+                <th>Права</th>
+                <th>Смена пароля</th>
+                <th>Обновлен</th>
+                <th>Действия</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="5" style="text-align:center; color:#64798d;">Р—Р°РіСЂСѓР¶Р°РµРј РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№...</td></tr>
+              <tr><td colspan="5" style="text-align:center; color:#64798d;">Загружаем пользователей...</td></tr>
             </tbody>
           </table>
         </div>
@@ -7381,19 +7381,19 @@ def buildAdminUsersPage() -> str:
       </article>
 
       <article class="panel">
-        <h2 id="userFormTitle">РќРѕРІС‹Р№ РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ</h2>
+        <h2 id="userFormTitle">Новый пользователь</h2>
         <form id="userForm">
           <input type="hidden" id="userIdInput">
           <div class="field">
-            <label for="userLoginInput">Р›РѕРіРёРЅ</label>
+            <label for="userLoginInput">Логин</label>
             <input id="userLoginInput" type="text" autocomplete="username" required>
           </div>
           <div class="field">
-            <label for="userPasswordInput">РџР°СЂРѕР»СЊ</label>
-            <input id="userPasswordInput" type="password" autocomplete="new-password" placeholder="Р”Р»СЏ РЅРѕРІРѕРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РѕР±СЏР·Р°С‚РµР»РµРЅ">
+            <label for="userPasswordInput">Пароль</label>
+            <input id="userPasswordInput" type="password" autocomplete="new-password" placeholder="Для нового пользователя обязателен">
           </div>
           <div class="field">
-            <label for="userRolesSelect">РџСЂР°РІР°</label>
+            <label for="userRolesSelect">Права</label>
             <select id="userRolesSelect" multiple size="3">
               <option value="User">User</option>
               <option value="Finance">Finance</option>
@@ -7402,11 +7402,11 @@ def buildAdminUsersPage() -> str:
           </div>
           <label class="checkbox-field" for="userMustChangePasswordInput">
             <input id="userMustChangePasswordInput" type="checkbox">
-            <span>РЎРјРµРЅРёС‚СЊ РїР°СЂРѕР»СЊ</span>
+            <span>Сменить пароль</span>
           </label>
           <div class="actions">
-            <button id="saveUserButton" type="submit">РЎРѕС…СЂР°РЅРёС‚СЊ</button>
-            <button id="resetUserFormButton" type="button">РћС‡РёСЃС‚РёС‚СЊ С„РѕСЂРјСѓ</button>
+            <button id="saveUserButton" type="submit">Сохранить</button>
+            <button id="resetUserFormButton" type="button">Очистить форму</button>
           </div>
         </form>
       </article>
@@ -7443,7 +7443,7 @@ def buildAdminUsersPage() -> str:
 
     function formatDateTime(value) {
       if (!value) {
-        return "вЂ”";
+        return "—";
       }
       return String(value).replace("T", " ").replace("+00:00", " UTC");
     }
@@ -7454,7 +7454,7 @@ def buildAdminUsersPage() -> str:
 
     function resetUserForm() {
       userIdInput.value = "";
-      userFormTitle.textContent = "РќРѕРІС‹Р№ РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ";
+      userFormTitle.textContent = "Новый пользователь";
       userLoginInput.value = "";
       userPasswordInput.value = "";
       userMustChangePasswordInput.checked = false;
@@ -7470,7 +7470,7 @@ def buildAdminUsersPage() -> str:
       }
 
       userIdInput.value = String(user.id);
-      userFormTitle.textContent = `Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ: ${user.login}`;
+      userFormTitle.textContent = `Редактирование: ${user.login}`;
       userLoginInput.value = user.login || "";
       userPasswordInput.value = "";
       userMustChangePasswordInput.checked = Boolean(user.must_change_password);
@@ -7484,7 +7484,7 @@ def buildAdminUsersPage() -> str:
     function renderUsers(users) {
       allUsers = Array.isArray(users) ? users : [];
       if (!allUsers.length) {
-        usersTableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#64798d;">РџРѕРєР° РЅРµС‚ РЅРё РѕРґРЅРѕРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.</td></tr>';
+        usersTableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#64798d;">Пока нет ни одного пользователя.</td></tr>';
         return;
       }
 
@@ -7493,14 +7493,14 @@ def buildAdminUsersPage() -> str:
         const roles = Array.isArray(user.roles) ? user.roles : [];
         const row = document.createElement("tr");
         row.innerHTML = `
-          <td>${escapeHtml(user.login || "вЂ”")}</td>
+          <td>${escapeHtml(user.login || "—")}</td>
           <td><div class="tag-list">${roles.map((role) => `<span class="tag">${escapeHtml(role)}</span>`).join("")}</div></td>
-          <td>${user.must_change_password ? '<span class="tag must-change">Р”Р°</span>' : "РќРµС‚"}</td>
+          <td>${user.must_change_password ? '<span class="tag must-change">Да</span>' : "Нет"}</td>
           <td>${escapeHtml(formatDateTime(user.updated_at))}</td>
           <td>
             <div class="row-actions">
-              <button type="button" class="edit-button" data-user-id="${user.id}">Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ</button>
-              <button type="button" class="delete-button" data-user-id="${user.id}">РЈРґР°Р»РёС‚СЊ</button>
+              <button type="button" class="edit-button" data-user-id="${user.id}">Редактировать</button>
+              <button type="button" class="delete-button" data-user-id="${user.id}">Удалить</button>
             </div>
           </td>
         `;
@@ -7513,7 +7513,7 @@ def buildAdminUsersPage() -> str:
         const response = await fetch("/api/admin/users");
         const payload = await response.json();
         if (!response.ok) {
-          throw new Error(payload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№.");
+          throw new Error(payload.detail || "Не удалось загрузить пользователей.");
         }
 
         renderUsers(payload.users || []);
@@ -7527,7 +7527,7 @@ def buildAdminUsersPage() -> str:
     async function saveUser(event) {
       event.preventDefault();
       saveUserButton.disabled = true;
-      setStatus("РЎРѕС…СЂР°РЅСЏРµРј РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ...");
+      setStatus("Сохраняем пользователя...");
 
       try {
         const userId = String(userIdInput.value || "").trim();
@@ -7545,12 +7545,12 @@ def buildAdminUsersPage() -> str:
         });
         const responsePayload = await response.json();
         if (!response.ok) {
-          throw new Error(responsePayload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.");
+          throw new Error(responsePayload.detail || "Не удалось сохранить пользователя.");
         }
 
         renderUsers(responsePayload.users || []);
         resetUserForm();
-        setStatus("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃРѕС…СЂР°РЅРµРЅ.", "success");
+        setStatus("Пользователь сохранен.", "success");
       } catch (error) {
         setStatus(error.message, "error");
       } finally {
@@ -7559,23 +7559,23 @@ def buildAdminUsersPage() -> str:
     }
 
     async function deleteUser(userId) {
-      if (!window.confirm("РЈРґР°Р»РёС‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ?")) {
+      if (!window.confirm("Удалить пользователя?")) {
         return;
       }
 
-      setStatus("РЈРґР°Р»СЏРµРј РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ...");
+      setStatus("Удаляем пользователя...");
       try {
         const response = await fetch(`/api/admin/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
         const payload = await response.json();
         if (!response.ok) {
-          throw new Error(payload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.");
+          throw new Error(payload.detail || "Не удалось удалить пользователя.");
         }
 
         renderUsers(payload.users || []);
         if (String(userIdInput.value || "") === String(userId)) {
           resetUserForm();
         }
-        setStatus("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СѓРґР°Р»РµРЅ.", "success");
+        setStatus("Пользователь удален.", "success");
       } catch (error) {
         setStatus(error.message, "error");
       }
@@ -7648,15 +7648,15 @@ def login(request: Request, payload: LoginPayload, next: str | None = Query(None
     loginValue = str(payload.login or "").strip().lower()
     passwordValue = str(payload.password or "")
     if not loginValue or not passwordValue:
-        raise HTTPException(status_code=400, detail="Р’РІРµРґРёС‚Рµ Р»РѕРіРёРЅ Рё РїР°СЂРѕР»СЊ.")
+        raise HTTPException(status_code=400, detail="Введите логин и пароль.")
 
     user = getUserByLogin(loginValue)
     if not user or not _verifyPassword(passwordValue, str(user.get("password_hash") or "")):
-        raise HTTPException(status_code=401, detail="РќРµРІРµСЂРЅС‹Р№ Р»РѕРіРёРЅ РёР»Рё РїР°СЂРѕР»СЊ.")
+        raise HTTPException(status_code=401, detail="Неверный логин или пароль.")
 
     roles = _parseRoles(user.get("roles"))
     if USER_ROLE not in roles:
-        raise HTTPException(status_code=403, detail="РЈ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РЅРµС‚ РїСЂР°РІР° РІС…РѕРґР° РІ СЃРёСЃС‚РµРјСѓ.")
+        raise HTTPException(status_code=403, detail="У пользователя нет права входа в систему.")
 
     request.session["user_login"] = loginValue
     return {
@@ -7678,11 +7678,11 @@ def changePassword(request: Request, payload: ChangePasswordPayload) -> dict[str
     user = _requireAuthenticatedUser(request)
     newPassword = str(payload.new_password or "")
     if len(newPassword) < 3:
-        raise HTTPException(status_code=400, detail="РќРѕРІС‹Р№ РїР°СЂРѕР»СЊ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РЅРµ РєРѕСЂРѕС‡Рµ 3 СЃРёРјРІРѕР»РѕРІ.")
+        raise HTTPException(status_code=400, detail="Новый пароль должен быть не короче 3 символов.")
 
     updatedUser = updateUserPassword(int(user.get("id") or 0), _hashPassword(newPassword), False)
     if not updatedUser:
-        raise HTTPException(status_code=404, detail="РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+        raise HTTPException(status_code=404, detail="Пользователь не найден.")
 
     request.session["user_login"] = str(updatedUser.get("login") or user.get("login") or "")
     return {"ok": True, "next_path": "/"}
@@ -7716,13 +7716,13 @@ def createAdminUser(request: Request, payload: UserPayload) -> dict[str, object]
     _requireAdminUser(request)
     loginValue = str(payload.login or "").strip().lower()
     if not loginValue:
-        raise HTTPException(status_code=400, detail="Р›РѕРіРёРЅ РѕР±СЏР·Р°С‚РµР»РµРЅ.")
+        raise HTTPException(status_code=400, detail="Логин обязателен.")
     if not payload.password:
-        raise HTTPException(status_code=400, detail="Р”Р»СЏ РЅРѕРІРѕРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РЅСѓР¶РЅРѕ Р·Р°РґР°С‚СЊ РїР°СЂРѕР»СЊ.")
+        raise HTTPException(status_code=400, detail="Для нового пользователя нужно задать пароль.")
 
     roles = _normalizeRoles(payload.roles)
     if USER_ROLE not in roles:
-        raise HTTPException(status_code=400, detail="РќСѓР¶РЅРѕ РІС‹Р±СЂР°С‚СЊ С…РѕС‚СЏ Р±С‹ РїСЂР°РІРѕ User.")
+        raise HTTPException(status_code=400, detail="Нужно выбрать хотя бы право User.")
 
     try:
         createUser(
@@ -7734,7 +7734,7 @@ def createAdminUser(request: Request, payload: UserPayload) -> dict[str, object]
             }
         )
     except Exception as error:
-        raise HTTPException(status_code=400, detail=f"РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ: {error}") from error
+        raise HTTPException(status_code=400, detail=f"Не удалось создать пользователя: {error}") from error
 
     users = listUsers()
     for user in users:
@@ -7747,11 +7747,11 @@ def updateAdminUser(request: Request, user_id: int, payload: UserPayload) -> dic
     currentUser = _requireAdminUser(request)
     loginValue = str(payload.login or "").strip().lower()
     if not loginValue:
-        raise HTTPException(status_code=400, detail="Р›РѕРіРёРЅ РѕР±СЏР·Р°С‚РµР»РµРЅ.")
+        raise HTTPException(status_code=400, detail="Логин обязателен.")
 
     roles = _normalizeRoles(payload.roles)
     if USER_ROLE not in roles:
-        raise HTTPException(status_code=400, detail="РќСѓР¶РЅРѕ РІС‹Р±СЂР°С‚СЊ С…РѕС‚СЏ Р±С‹ РїСЂР°РІРѕ User.")
+        raise HTTPException(status_code=400, detail="Нужно выбрать хотя бы право User.")
 
     try:
         updatedUser = updateUser(
@@ -7764,10 +7764,10 @@ def updateAdminUser(request: Request, user_id: int, payload: UserPayload) -> dic
             },
         )
     except Exception as error:
-        raise HTTPException(status_code=400, detail=f"РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ: {error}") from error
+        raise HTTPException(status_code=400, detail=f"Не удалось обновить пользователя: {error}") from error
 
     if updatedUser is None:
-        raise HTTPException(status_code=404, detail="РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+        raise HTTPException(status_code=404, detail="Пользователь не найден.")
 
     if int(currentUser.get("id") or 0) == user_id:
         request.session["user_login"] = loginValue
@@ -7782,11 +7782,11 @@ def updateAdminUser(request: Request, user_id: int, payload: UserPayload) -> dic
 def deleteAdminUser(request: Request, user_id: int) -> dict[str, object]:
     currentUser = _requireAdminUser(request)
     if int(currentUser.get("id") or 0) == user_id:
-        raise HTTPException(status_code=400, detail="РќРµР»СЊР·СЏ СѓРґР°Р»РёС‚СЊ С‚РµРєСѓС‰РµРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.")
+        raise HTTPException(status_code=400, detail="Нельзя удалить текущего пользователя.")
 
     deleted = deleteUser(user_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail="РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+        raise HTTPException(status_code=404, detail="Пользователь не найден.")
 
     users = listUsers()
     for user in users:
@@ -7872,7 +7872,7 @@ def updatePlanningProjectApi(planning_project_id: int, payload: PlanningProjectP
     ensurePlanningProjectsTable()
     updatedProject = updatePlanningProject(planning_project_id, normalizePlanningProjectPayload(payload))
     if updatedProject is None:
-        raise HTTPException(status_code=404, detail="Р—Р°РїРёСЃСЊ РЅРµ РЅР°Р№РґРµРЅР°")
+        raise HTTPException(status_code=404, detail="Запись не найдена")
     return {"project": updatedProject, "projects": listPlanningProjects()}
 
 
@@ -7884,14 +7884,14 @@ def deletePlanningProjectApi(planning_project_id: int) -> dict[str, object]:
     ensurePlanningProjectsTable()
     deleted = deletePlanningProject(planning_project_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail="Р—Р°РїРёСЃСЊ РЅРµ РЅР°Р№РґРµРЅР°")
+        raise HTTPException(status_code=404, detail="Запись не найдена")
     return {"deleted": True, "projects": listPlanningProjects()}
 
 
 @app.get("/projects/{project_redmine_id}/latest-snapshot-issues", response_class=HTMLResponse)
 def getProjectLatestSnapshotIssuesPage(
     project_redmine_id: int,
-    captured_for_date: str | None = Query(None, description="Р”Р°С‚Р° СЃСЂРµР·Р° РІ С„РѕСЂРјР°С‚Рµ YYYY-MM-DD"),
+    captured_for_date: str | None = Query(None, description="Дата среза в формате YYYY-MM-DD"),
 ) -> HTMLResponse:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
@@ -7903,7 +7903,7 @@ def getProjectLatestSnapshotIssuesPage(
 @app.get("/api/projects/{project_redmine_id}/latest-snapshot-issues")
 def getProjectLatestSnapshotIssuesData(
     project_redmine_id: int,
-    captured_for_date: str | None = Query(None, description="Р”Р°С‚Р° СЃСЂРµР·Р° РІ С„РѕСЂРјР°С‚Рµ YYYY-MM-DD"),
+    captured_for_date: str | None = Query(None, description="Дата среза в формате YYYY-MM-DD"),
     page: int = Query(1, ge=1),
     page_size: int = Query(1000, ge=10, le=10000),
     issue_id: str | None = Query(None),
@@ -7963,7 +7963,7 @@ def getProjectLatestSnapshotIssuesData(
 @app.get("/projects/{project_redmine_id}/latest-snapshot-issues/export.csv")
 def exportProjectLatestSnapshotIssuesCsv(
     project_redmine_id: int,
-    captured_for_date: str | None = Query(None, description="Р”Р°С‚Р° СЃСЂРµР·Р° РІ С„РѕСЂРјР°С‚Рµ YYYY-MM-DD"),
+    captured_for_date: str | None = Query(None, description="Дата среза в формате YYYY-MM-DD"),
     issue_id: str | None = Query(None),
     subject: str | None = Query(None),
     tracker: list[str] = Query([]),
@@ -8016,7 +8016,7 @@ def exportProjectLatestSnapshotIssuesCsv(
     )
     snapshotRun = exportPayload.get("snapshot_run")
     if snapshotRun is None:
-        raise HTTPException(status_code=404, detail="РЎСЂРµР· РїСЂРѕРµРєС‚Р° РЅРµ РЅР°Р№РґРµРЅ")
+        raise HTTPException(status_code=404, detail="Срез проекта не найден")
 
     output = io.StringIO(newline="")
     output.write("sep=;\n")
@@ -8024,27 +8024,27 @@ def exportProjectLatestSnapshotIssuesCsv(
     writer.writerow(
         [
             "ID",
-            "РўРµРјР°",
-            "РўСЂРµРєРµСЂ",
-            "РЎС‚Р°С‚СѓСЃ",
-            "Р“РѕС‚РѕРІРѕ, %",
-            "Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°, С‡",
-            "РџР»Р°РЅ, С‡",
-            "РџР»Р°РЅ СЃ СЂРёСЃРєР°РјРё, С‡",
-            "Р¤Р°РєС‚ РІСЃРµРіРѕ, С‡",
-            "Р¤Р°РєС‚ Р·Р° РіРѕРґ, С‡",
-            "Р—Р°РєСЂС‹С‚Р°",
-            "РСЃРїРѕР»РЅРёС‚РµР»СЊ",
-            "Р’РµСЂСЃРёСЏ",
+            "Тема",
+            "Трекер",
+            "Статус",
+            "Готово, %",
+            "Базовая оценка, ч",
+            "План, ч",
+            "План с рисками, ч",
+            "Факт всего, ч",
+            "Факт за год, ч",
+            "Закрыта",
+            "Исполнитель",
+            "Версия",
         ]
     )
     for issue in exportPayload.get("issues") or []:
         writer.writerow(
             [
                 issue.get("issue_redmine_id") or "",
-                str(issue.get("subject") or "вЂ”"),
-                str(issue.get("tracker_name") or "вЂ”"),
-                str(issue.get("status_name") or "вЂ”"),
+                str(issue.get("subject") or "—"),
+                str(issue.get("tracker_name") or "—"),
+                str(issue.get("status_name") or "—"),
                 issue.get("done_ratio") if issue.get("done_ratio") is not None else 0,
                 formatPageHours(issue.get("baseline_estimate_hours")),
                 formatPageHours(issue.get("estimated_hours")),
@@ -8052,8 +8052,8 @@ def exportProjectLatestSnapshotIssuesCsv(
                 formatPageHours(issue.get("spent_hours")),
                 formatPageHours(issue.get("spent_hours_year")),
                 formatSnapshotPageDateTime(issue.get("closed_on")),
-                str(issue.get("assigned_to_name") or "вЂ”"),
-                str(issue.get("fixed_version_name") or "вЂ”"),
+                str(issue.get("assigned_to_name") or "—"),
+                str(issue.get("fixed_version_name") or "—"),
             ]
         )
 
@@ -8073,8 +8073,8 @@ def exportProjectLatestSnapshotIssuesCsv(
 @app.get("/projects/{project_redmine_id}/compare-snapshots", response_class=HTMLResponse)
 def getProjectSnapshotComparePage(
     project_redmine_id: int,
-    left_date: str | None = Query(None, description="Р”Р°С‚Р° РїРµСЂРІРѕРіРѕ СЃСЂРµР·Р° РІ С„РѕСЂРјР°С‚Рµ YYYY-MM-DD"),
-    right_date: str | None = Query(None, description="Р”Р°С‚Р° РІС‚РѕСЂРѕРіРѕ СЃСЂРµР·Р° РІ С„РѕСЂРјР°С‚Рµ YYYY-MM-DD"),
+    left_date: str | None = Query(None, description="Дата первого среза в формате YYYY-MM-DD"),
+    right_date: str | None = Query(None, description="Дата второго среза в формате YYYY-MM-DD"),
     field: list[str] = Query([]),
     include_missing: int = Query(0),
 ) -> HTMLResponse:
@@ -8150,7 +8150,7 @@ def getIssueSnapshotRuns() -> dict[str, object]:
 
 @app.delete("/api/issues/snapshots/by-date")
 def deleteIssueSnapshotsByDate(
-    captured_for_date: str = Query(..., description="Р”Р°С‚Р° РІ С„РѕСЂРјР°С‚Рµ YYYY-MM-DD"),
+    captured_for_date: str = Query(..., description="Дата в формате YYYY-MM-DD"),
 ) -> dict[str, object]:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
@@ -8171,7 +8171,7 @@ def deleteIssueSnapshotsByDate(
 @app.delete("/api/issues/snapshots/project/{project_redmine_id}/by-date")
 def deleteIssueSnapshotByProjectDate(
     project_redmine_id: int,
-    captured_for_date: str = Query(..., description="Р”Р°С‚Р° РІ С„РѕСЂРјР°С‚Рµ YYYY-MM-DD"),
+    captured_for_date: str = Query(..., description="Дата в формате YYYY-MM-DD"),
 ) -> dict[str, object]:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
@@ -8212,14 +8212,14 @@ def captureIssueSnapshots() -> dict[str, object]:
     if isIssueSnapshotCaptureRunning():
         return {
             "started": False,
-            "detail": "РџРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·РѕРІ СѓР¶Рµ РІС‹РїРѕР»РЅСЏРµС‚СЃСЏ.",
+            "detail": "Получение срезов уже выполняется.",
             **getIssueSnapshotCaptureStatus(),
         }
 
     started = startIssueSnapshotCaptureInBackground()
     return {
         "started": started,
-        "detail": "РџРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·РѕРІ Р·Р°РїСѓС‰РµРЅРѕ РІ С„РѕРЅРѕРІРѕРј СЂРµР¶РёРјРµ.",
+        "detail": "Получение срезов запущено в фоновом режиме.",
         **getIssueSnapshotCaptureStatus(),
     }
 
@@ -8236,7 +8236,7 @@ def captureIssueSnapshotByProject(project_redmine_id: int) -> dict[str, object]:
     if isIssueSnapshotCaptureRunning():
         return {
             "started": False,
-            "detail": "Р”СЂСѓРіРѕРµ РїРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·РѕРІ СѓР¶Рµ РІС‹РїРѕР»РЅСЏРµС‚СЃСЏ.",
+            "detail": "Другое получение срезов уже выполняется.",
             **getIssueSnapshotCaptureStatus(),
         }
 
@@ -8244,12 +8244,12 @@ def captureIssueSnapshotByProject(project_redmine_id: int) -> dict[str, object]:
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
     if not bool(project.get("is_enabled")):
-        raise HTTPException(status_code=400, detail="РџСЂРѕРµРєС‚ РІС‹РєР»СЋС‡РµРЅ РґР»СЏ Р·Р°РіСЂСѓР·РєРё")
+        raise HTTPException(status_code=400, detail="Проект выключен для загрузки")
 
     started = startProjectIssueSnapshotCaptureInBackground(project_redmine_id)
     return {
         "started": started,
-        "detail": f"РџРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·Р° РїРѕ РїСЂРѕРµРєС‚Сѓ В«{project.get('name') or project_redmine_id}В» Р·Р°РїСѓС‰РµРЅРѕ.",
+        "detail": f"Получение среза по проекту «{project.get('name') or project_redmine_id}» запущено.",
         **getIssueSnapshotCaptureStatus(),
     }
 
@@ -8266,7 +8266,7 @@ def recaptureIssueSnapshotByProject(project_redmine_id: int) -> dict[str, object
     if isIssueSnapshotCaptureRunning():
         return {
             "started": False,
-            "detail": "Р”СЂСѓРіРѕРµ РїРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·РѕРІ СѓР¶Рµ РІС‹РїРѕР»РЅСЏРµС‚СЃСЏ.",
+            "detail": "Другое получение срезов уже выполняется.",
             **getIssueSnapshotCaptureStatus(),
         }
 
@@ -8274,7 +8274,7 @@ def recaptureIssueSnapshotByProject(project_redmine_id: int) -> dict[str, object
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
     if not bool(project.get("is_enabled")):
-        raise HTTPException(status_code=400, detail="РџСЂРѕРµРєС‚ РІС‹РєР»СЋС‡РµРЅ РґР»СЏ Р·Р°РіСЂСѓР·РєРё")
+        raise HTTPException(status_code=400, detail="Проект выключен для загрузки")
 
     capturedForDate = datetime.now(UTC).date().isoformat()
     deleteIssueSnapshotForProjectDate(project_redmine_id, capturedForDate)
@@ -8284,7 +8284,7 @@ def recaptureIssueSnapshotByProject(project_redmine_id: int) -> dict[str, object
         **getIssueSnapshotCaptureStatus(),
         "started": started,
         "captured_for_date": capturedForDate,
-        "detail": f"РџРѕРІС‚РѕСЂРЅРѕРµ РїРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·Р° РїРѕ РїСЂРѕРµРєС‚Сѓ В«{project.get('name') or project_redmine_id}В» Р·Р°РїСѓС‰РµРЅРѕ.",
+        "detail": f"Повторное получение среза по проекту «{project.get('name') or project_redmine_id}» запущено.",
     }
 
 
@@ -8300,7 +8300,7 @@ def recaptureIssueSnapshots() -> dict[str, object]:
     if isIssueSnapshotCaptureRunning():
         return {
             "started": False,
-            "detail": "Р”СЂСѓРіРѕРµ РїРѕР»СѓС‡РµРЅРёРµ СЃСЂРµР·РѕРІ СѓР¶Рµ РІС‹РїРѕР»РЅСЏРµС‚СЃСЏ.",
+            "detail": "Другое получение срезов уже выполняется.",
             **getIssueSnapshotCaptureStatus(),
         }
 
@@ -8317,7 +8317,7 @@ def recaptureIssueSnapshots() -> dict[str, object]:
         **getIssueSnapshotCaptureStatus(),
         "started": started,
         "captured_for_date": capturedForDate,
-        "detail": "РћР±РЅРѕРІР»РµРЅРёРµ РїРѕСЃР»РµРґРЅРёС… СЃСЂРµР·РѕРІ Р·Р°РїСѓС‰РµРЅРѕ.",
+        "detail": "Обновление последних срезов запущено.",
     }
 
 
@@ -8329,7 +8329,7 @@ def getIssueSnapshotCaptureProgress() -> dict[str, object]:
 @app.get("/api/redmine/issues/{issue_redmine_id}/snapshot-diagnostics")
 def getRedmineIssueSnapshotDiagnostics(
     issue_redmine_id: int,
-    project_redmine_id: int = Query(..., description="Redmine ID РїСЂРѕРµРєС‚Р°, РґР»СЏ РєРѕС‚РѕСЂРѕРіРѕ РїСЂРѕРІРµСЂСЏРµРј РїРѕРїР°РґР°РЅРёРµ РІ СЃСЂРµР·"),
+    project_redmine_id: int = Query(..., description="Redmine ID проекта, для которого проверяем попадание в срез"),
 ) -> dict[str, object]:
     requireProjectSyncConfig()
     ensureProjectsTable()
@@ -8365,15 +8365,15 @@ def getRedmineIssueSnapshotDiagnostics(
     if not exactProjectMatch:
         includedInSnapshot = False
         inclusionReason = (
-            f"Р—Р°РґР°С‡Р° СЃРµР№С‡Р°СЃ РѕС‚РЅРѕСЃРёС‚СЃСЏ Рє РїСЂРѕРµРєС‚Сѓ В«{issueProjectName or 'Р±РµР· РЅР°Р·РІР°РЅРёСЏ'}В» "
-            f"(id={issueProjectId}), Р° СЃСЂРµР· СЃРѕР±РёСЂР°РµС‚СЃСЏ РґР»СЏ РїСЂРѕРµРєС‚Р° В«{project.get('name') or project_redmine_id}В» "
-            f"(id={project_redmine_id}) Р±РµР· РїРѕРґРїСЂРѕРµРєС‚РѕРІ."
+            f"Задача сейчас относится к проекту «{issueProjectName or 'без названия'}» "
+            f"(id={issueProjectId}), а срез собирается для проекта «{project.get('name') or project_redmine_id}» "
+            f"(id={project_redmine_id}) без подпроектов."
         )
     elif not partialLoad:
         includedInSnapshot = True
         inclusionReason = (
-            "Р”Р»СЏ РїСЂРѕРµРєС‚Р° РІС‹РєР»СЋС‡РµРЅР° С‡Р°СЃС‚РёС‡РЅР°СЏ Р·Р°РіСЂСѓР·РєР°, РїРѕСЌС‚РѕРјСѓ РІ СЃСЂРµР· РїРѕРїР°РґР°СЋС‚ РІСЃРµ Р·Р°РґР°С‡Рё СЃР°РјРѕРіРѕ РїСЂРѕРµРєС‚Р° "
-            "Р±РµР· РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅРѕРіРѕ РѕС‚Р±РѕСЂР° РїРѕ СЃС‚Р°С‚СѓСЃСѓ РёР»Рё РґР°С‚Рµ Р·Р°РєСЂС‹С‚РёСЏ."
+            "Для проекта выключена частичная загрузка, поэтому в срез попадают все задачи самого проекта "
+            "без дополнительного отбора по статусу или дате закрытия."
         )
     else:
         includedInSnapshot, inclusionReason = _isIssueIncludedByPartialRules(issuePayload, cutoffDateIso)
@@ -8400,7 +8400,7 @@ def getRedmineIssueSnapshotDiagnostics(
                 (
                     field.get("value")
                     for field in (issuePayload.get("custom_fields") or [])
-                    if str(field.get("name") or "") == "Р‘Р°Р·РѕРІР°СЏ РѕС†РµРЅРєР°"
+                    if str(field.get("name") or "") == "Базовая оценка"
                 ),
                 None,
             ),
@@ -8416,9 +8416,9 @@ def getRedmineIssueSnapshotDiagnostics(
 
 @app.get("/api/redmine/projects/custom-field-diagnostics")
 def getRedmineProjectCustomFieldDiagnostics(
-    project_name: str = Query(..., description="РџРѕР»РЅРѕРµ РёР»Рё С‡Р°СЃС‚РёС‡РЅРѕРµ РёРјСЏ РїСЂРѕРµРєС‚Р° РІ Redmine"),
-    field_name: str = Query(..., description="РќР°Р·РІР°РЅРёРµ РёР»Рё С‡Р°СЃС‚СЊ РЅР°Р·РІР°РЅРёСЏ РєР°СЃС‚РѕРјРЅРѕРіРѕ РїРѕР»СЏ"),
-    sample_size: int = Query(10, ge=1, le=30, description="РЎРєРѕР»СЊРєРѕ Р·Р°РґР°С‡ РїСЂРѕРІРµСЂРёС‚СЊ РІ РїСЂРѕРµРєС‚Рµ"),
+    project_name: str = Query(..., description="Полное или частичное имя проекта в Redmine"),
+    field_name: str = Query(..., description="Название или часть названия кастомного поля"),
+    sample_size: int = Query(10, ge=1, le=30, description="Сколько задач проверить в проекте"),
 ) -> dict[str, object]:
     requireProjectSyncConfig()
 
