@@ -1,15 +1,19 @@
 from datetime import UTC, datetime
 from html import escape
 import csv
+import hashlib
+import hmac
 import io
 import json
 from pathlib import Path
+import secrets
 import requests
 from datetime import date, timedelta
 from urllib.parse import quote
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, Response
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -18,23 +22,31 @@ from src.redmine.db import (
     checkDatabaseConnection,
     countIssueSnapshotRuns,
     createPlanningProject,
+    createUser,
     deleteIssueSnapshotForProjectDate,
     deleteIssueSnapshotsForDate,
     deletePlanningProject,
+    deleteUser,
     ensureIssueSnapshotTables,
     ensurePlanningProjectsTable,
     ensureProjectsTable,
+    ensureUsersTable,
     getFilteredSnapshotIssuesForProjectByDate,
     getSnapshotRunsWithIssuesForProjectYear,
     getSnapshotIssuesForProjectByDate,
+    getUserByLogin,
     listFilteredSnapshotIssuesForProjectByDate,
     listLatestSnapshotIssuesWithParents,
     listPlanningProjects,
     listRecentIssueSnapshotRuns,
     listSnapshotDatesForProject,
     listStoredProjects,
+    listUsers,
     pruneUnchangedIssueSnapshots,
+    seedInitialUsers,
     syncProjects,
+    updateUser,
+    updateUserPassword,
     updatePlanningProject,
     updateProjectLoadSettings,
 )
@@ -51,6 +63,17 @@ config = loadConfig()
 app = FastAPI(title="Redmine Snapshot Viewer")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+SESSION_SECRET = config.sessionSecret or secrets.token_hex(32)
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax", https_only=False)
+USER_ROLE = "User"
+FINANCE_ROLE = "Finance"
+ADMIN_ROLE = "Admin"
+ALL_ROLES = (USER_ROLE, FINANCE_ROLE, ADMIN_ROLE)
+DEFAULT_ADMIN_LOGINS = (
+    "andrey.shopin@sms-a.ru",
+    "stanislav.shidlovskiy@sms-a.ru",
+    "sergey.laptev@sms-a.ru",
+)
 
 LOCAL_GOLOS_FONT_CSS = """
     @font-face {
@@ -113,6 +136,143 @@ def _renderHtmlPage(html: str) -> HTMLResponse:
     return HTMLResponse(html)
 
 
+def _hashPassword(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 260000)
+    return f"pbkdf2_sha256$260000${salt.hex()}${derived.hex()}"
+
+
+def _verifyPassword(password: str, passwordHash: str) -> bool:
+    try:
+        algorithm, iterationsRaw, saltHex, digestHex = passwordHash.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        iterations = int(iterationsRaw)
+        derived = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            bytes.fromhex(saltHex),
+            iterations,
+        )
+        return hmac.compare_digest(derived.hex(), digestHex)
+    except Exception:
+        return False
+
+
+def _normalizeRoles(roles: list[str] | tuple[str, ...] | set[str] | None) -> list[str]:
+    normalized = [role for role in (roles or []) if role in ALL_ROLES]
+    if ADMIN_ROLE in normalized and USER_ROLE not in normalized:
+        normalized.append(USER_ROLE)
+    if FINANCE_ROLE in normalized and USER_ROLE not in normalized:
+        normalized.append(USER_ROLE)
+    order = {USER_ROLE: 0, FINANCE_ROLE: 1, ADMIN_ROLE: 2}
+    return sorted(set(normalized), key=lambda role: order.get(role, 99))
+
+
+def _serializeRoles(roles: list[str] | tuple[str, ...] | set[str] | None) -> str:
+    return ",".join(_normalizeRoles(roles))
+
+
+def _parseRoles(rawRoles: object) -> list[str]:
+    if not rawRoles:
+        return []
+    if isinstance(rawRoles, str):
+        return _normalizeRoles([role.strip() for role in rawRoles.split(",") if role.strip()])
+    if isinstance(rawRoles, (list, tuple, set)):
+        return _normalizeRoles([str(role) for role in rawRoles])
+    return []
+
+
+def _hasRole(user: dict[str, object] | None, role: str) -> bool:
+    if not user:
+        return False
+    roles = _parseRoles(user.get("roles"))
+    return role in roles
+
+
+def _publicPath(path: str) -> bool:
+    return path in {
+        "/login",
+        "/logout",
+        "/change-password",
+        "/health",
+        "/db-health",
+        "/api/auth/login",
+        "/api/auth/change-password",
+    } or path.startswith("/static")
+
+
+def _seedDefaultAdminUsers() -> None:
+    ensureUsersTable()
+    seedInitialUsers(
+        [
+            {
+                "login": login,
+                "password_hash": _hashPassword("123"),
+                "roles": _serializeRoles([ADMIN_ROLE]),
+                "must_change_password": True,
+            }
+            for login in DEFAULT_ADMIN_LOGINS
+        ]
+    )
+
+
+def _getCurrentUser(request: Request) -> dict[str, object] | None:
+    userLogin = request.session.get("user_login")
+    if not userLogin:
+        return None
+
+    user = getUserByLogin(str(userLogin))
+    if not user:
+        request.session.clear()
+        return None
+
+    user["roles"] = _parseRoles(user.get("roles"))
+    return user
+
+
+def _requireAuthenticatedUser(request: Request) -> dict[str, object]:
+    user = getattr(request.state, "current_user", None) or _getCurrentUser(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return user
+
+
+def _requireAdminUser(request: Request) -> dict[str, object]:
+    user = _requireAuthenticatedUser(request)
+    if not _hasRole(user, ADMIN_ROLE):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+@app.middleware("http")
+async def authMiddleware(request: Request, call_next):
+    if not config.databaseUrl:
+        return await call_next(request)
+
+    ensureUsersTable()
+    _seedDefaultAdminUsers()
+
+    path = request.url.path
+    if _publicPath(path):
+        return await call_next(request)
+
+    user = _getCurrentUser(request)
+    if not user:
+        if path.startswith("/api/"):
+            return JSONResponse({"detail": "Authentication required"}, status_code=401)
+        return RedirectResponse(url=f"/login?next={quote(str(request.url.path))}", status_code=303)
+
+    request.state.current_user = user
+
+    if bool(user.get("must_change_password")) and path != "/change-password":
+        if path.startswith("/api/"):
+            return JSONResponse({"detail": "Password change required", "must_change_password": True}, status_code=403)
+        return RedirectResponse(url="/change-password", status_code=303)
+
+    return await call_next(request)
+
+
 class ProjectSettingsUpdate(BaseModel):
     enabled_project_ids: list[int] = []
     partial_project_ids: list[int] = []
@@ -131,6 +291,22 @@ class PlanningProjectPayload(BaseModel):
     estimate_doc_url: str | None = None
     bitrix_url: str | None = None
     comment_text: str | None = None
+
+
+class LoginPayload(BaseModel):
+    login: str
+    password: str
+
+
+class ChangePasswordPayload(BaseModel):
+    new_password: str
+
+
+class UserPayload(BaseModel):
+    login: str
+    password: str | None = None
+    roles: list[str] = []
+    must_change_password: bool = False
 
 
 def _buildRedmineApiSession() -> requests.Session:
@@ -426,6 +602,28 @@ PAGE_HTML = """<!doctype html>
 
     .quick-links a:nth-child(4n + 4) {
       background: var(--orange-1585);
+    }
+
+    .quick-links a#adminPageButton {
+      background: #eef2f5;
+      color: var(--text);
+      border-color: var(--line);
+      box-shadow: none;
+    }
+
+    .quick-links a:nth-child(2) {
+      background: var(--blue-302);
+      color: #ffffff;
+    }
+
+    .quick-links a:nth-child(3) {
+      background: var(--yellow-109);
+      color: #16324a;
+    }
+
+    .quick-links a:nth-child(4) {
+      background: var(--cyan-310);
+      color: #16324a;
     }
 
     .quick-links a:hover {
@@ -843,6 +1041,7 @@ PAGE_HTML = """<!doctype html>
       </a>
       <nav class="hero-nav" aria-label="Быстрый переход по разделам">
         <div class="quick-links">
+          <a id="adminPageButton" href="/admin/users" style="display:none;">Admin</a>
           <a href="#data-load-section">Загрузка данных</a>
           <a href="#projects-table">Таблица проектов</a>
           <a href="#snapshot-runs-table">Таблица срезов</a>
@@ -1022,6 +1221,7 @@ PAGE_HTML = """<!doctype html>
     const refreshProjectsButton = document.getElementById("refreshProjectsButton");
     const planningProjectsPageButton = document.getElementById("planningProjectsPageButton");
     const strangeIssuesPageButton = document.getElementById("strangeIssuesPageButton");
+    const adminPageButton = document.getElementById("adminPageButton");
     const captureSnapshotsButton = document.getElementById("captureSnapshotsButton");
     const recaptureSnapshotsButton = document.getElementById("recaptureSnapshotsButton");
     const deleteSnapshotsButton = document.getElementById("deleteSnapshotsButton");
@@ -1054,6 +1254,23 @@ PAGE_HTML = """<!doctype html>
       }
 
       return number.toFixed(1).replace(".", ",");
+    }
+
+    async function loadCurrentUser() {
+      try {
+        const response = await fetch("/api/auth/me");
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = await response.json();
+        const roles = Array.isArray(payload?.user?.roles) ? payload.user.roles : [];
+        if (roles.includes("Admin") && adminPageButton) {
+          adminPageButton.style.display = "";
+        }
+      } catch (error) {
+        console.error("Failed to load current user", error);
+      }
     }
 
     function getProjectsFactFilterValue() {
@@ -1170,6 +1387,12 @@ PAGE_HTML = """<!doctype html>
           element.setAttribute(mode, value);
         }
       }
+
+      const quickLinks = document.querySelectorAll(".quick-links a");
+      if (quickLinks[0]) quickLinks[0].textContent = "РђРґРјРёРЅРёСЃС‚СЂРёСЂРѕРІР°РЅРёРµ";
+      if (quickLinks[1]) quickLinks[1].textContent = "Р—Р°РіСЂСѓР·РєР° РґР°РЅРЅС‹С…";
+      if (quickLinks[2]) quickLinks[2].textContent = "РўР°Р±Р»РёС†Р° РїСЂРѕРµРєС‚РѕРІ";
+      if (quickLinks[3]) quickLinks[3].textContent = "РўР°Р±Р»РёС†Р° СЃСЂРµР·РѕРІ";
 
       const projectsHeaders = [
         "Вкл.",
@@ -1902,6 +2125,7 @@ PAGE_HTML = """<!doctype html>
     restoreProjectsFactFilterValue();
     restoreShowDisabledProjectsValue();
     restoreSnapshotRunsPerProjectValue();
+    loadCurrentUser();
     loadProjects();
     loadSnapshotRuns();
   </script>
@@ -6549,6 +6773,1531 @@ def buildPlanningProjectsPage() -> str:
   </script>
 </body>
 </html>"""
+
+
+def buildLoginPage(nextPath: str = "/") -> str:
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Вход в систему</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: #f6fafc;
+      color: #16324a;
+    }}
+    .card {{
+      width: min(460px, 100%);
+      background: #ffffff;
+      border: 1px solid #d9e5eb;
+      border-radius: 10px;
+      padding: 28px;
+      box-shadow: 0 18px 40px rgba(22, 50, 74, 0.08);
+    }}
+    .brand img {{
+      width: 200px;
+      height: auto;
+      display: block;
+      margin-bottom: 18px;
+    }}
+    h1 {{
+      margin: 0 0 10px;
+      font-size: clamp(1.8rem, 4vw, 2.4rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
+    }}
+    .lead {{
+      margin: 0 0 20px;
+      color: #64798d;
+      line-height: 1.5;
+    }}
+    .field {{
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 14px;
+    }}
+    .field label {{
+      font-weight: 600;
+    }}
+    .field input {{
+      border: 1px solid #d9e5eb;
+      border-radius: 6px;
+      padding: 11px 12px;
+      font: inherit;
+      color: inherit;
+    }}
+    button {{
+      border: 0;
+      border-radius: 6px;
+      padding: 11px 16px;
+      font: inherit;
+      font-weight: 700;
+      color: #ffffff;
+      background: #ff6c0e;
+      cursor: pointer;
+      box-shadow: 0 14px 24px rgba(255, 108, 14, 0.22);
+    }}
+    .status {{
+      min-height: 22px;
+      margin-top: 14px;
+      color: #64798d;
+    }}
+    .status.error {{
+      color: #d54343;
+    }}
+  </style>
+</head>
+<body>
+  <section class="card">
+    <a class="brand" href="/" aria-label="СМС-ИТ">
+      <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+    </a>
+    <h1>Вход в систему</h1>
+    <p class="lead">Введите логин и пароль, чтобы открыть систему.</p>
+    <form id="loginForm">
+      <div class="field">
+        <label for="loginInput">Логин</label>
+        <input id="loginInput" type="text" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="passwordInput">Пароль</label>
+        <input id="passwordInput" type="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" id="loginButton">Войти</button>
+    </form>
+    <div class="status" id="loginStatus"></div>
+  </section>
+  <script>
+    const nextPath = {json.dumps(nextPath or "/")};
+    const loginForm = document.getElementById("loginForm");
+    const loginButton = document.getElementById("loginButton");
+    const loginStatus = document.getElementById("loginStatus");
+
+    function setStatus(message, kind = "") {{
+      loginStatus.textContent = message || "";
+      loginStatus.className = kind ? `status ${{kind}}` : "status";
+    }}
+
+    loginForm.addEventListener("submit", async (event) => {{
+      event.preventDefault();
+      loginButton.disabled = true;
+      setStatus("Проверяем данные...");
+      try {{
+        const response = await fetch(`/api/auth/login?next=${{encodeURIComponent(nextPath)}}`, {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{
+            login: document.getElementById("loginInput").value.trim(),
+            password: document.getElementById("passwordInput").value,
+          }}),
+        }});
+        const payload = await response.json();
+        if (!response.ok) {{
+          throw new Error(payload.detail || "Не удалось войти.");
+        }}
+        window.location.href = payload.redirect_to || "/";
+      }} catch (error) {{
+        setStatus(error.message || "Не удалось войти.", "error");
+        loginButton.disabled = false;
+      }}
+    }});
+  </script>
+</body>
+</html>"""
+
+
+def buildChangePasswordPage(userLogin: str) -> str:
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Смена пароля</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: #f6fafc;
+      color: #16324a;
+    }}
+    .card {{
+      width: min(460px, 100%);
+      background: #ffffff;
+      border: 1px solid #d9e5eb;
+      border-radius: 10px;
+      padding: 28px;
+      box-shadow: 0 18px 40px rgba(22, 50, 74, 0.08);
+    }}
+    h1 {{
+      margin: 0 0 10px;
+      font-size: clamp(1.8rem, 4vw, 2.4rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
+    }}
+    .lead {{
+      margin: 0 0 20px;
+      color: #64798d;
+      line-height: 1.5;
+    }}
+    .field {{
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 14px;
+    }}
+    .field label {{
+      font-weight: 600;
+    }}
+    .field input {{
+      border: 1px solid #d9e5eb;
+      border-radius: 6px;
+      padding: 11px 12px;
+      font: inherit;
+      color: inherit;
+    }}
+    button {{
+      border: 0;
+      border-radius: 6px;
+      padding: 11px 16px;
+      font: inherit;
+      font-weight: 700;
+      color: #ffffff;
+      background: #ff6c0e;
+      cursor: pointer;
+      box-shadow: 0 14px 24px rgba(255, 108, 14, 0.22);
+    }}
+    .status {{
+      min-height: 22px;
+      margin-top: 14px;
+      color: #64798d;
+    }}
+    .status.error {{
+      color: #d54343;
+    }}
+  </style>
+</head>
+<body>
+  <section class="card">
+    <h1>Смена пароля</h1>
+    <p class="lead">Для пользователя <strong>{escape(userLogin)}</strong> нужно задать новый пароль.</p>
+    <form id="changePasswordForm">
+      <div class="field">
+        <label for="newPasswordInput">Новый пароль</label>
+        <input id="newPasswordInput" type="password" autocomplete="new-password" required>
+      </div>
+      <button type="submit" id="changePasswordButton">Сохранить пароль</button>
+    </form>
+    <div class="status" id="changePasswordStatus"></div>
+  </section>
+  <script>
+    const changePasswordForm = document.getElementById("changePasswordForm");
+    const changePasswordButton = document.getElementById("changePasswordButton");
+    const changePasswordStatus = document.getElementById("changePasswordStatus");
+
+    function setStatus(message, kind = "") {{
+      changePasswordStatus.textContent = message || "";
+      changePasswordStatus.className = kind ? `status ${{kind}}` : "status";
+    }}
+
+    changePasswordForm.addEventListener("submit", async (event) => {{
+      event.preventDefault();
+      changePasswordButton.disabled = true;
+      setStatus("Сохраняем новый пароль...");
+      try {{
+        const response = await fetch("/api/auth/change-password", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{
+            new_password: document.getElementById("newPasswordInput").value,
+          }}),
+        }});
+        const payload = await response.json();
+        if (!response.ok) {{
+          throw new Error(payload.detail || "Не удалось сменить пароль.");
+        }}
+        window.location.href = payload.redirect_to || "/";
+      }} catch (error) {{
+        setStatus(error.message || "Не удалось сменить пароль.", "error");
+        changePasswordButton.disabled = false;
+      }}
+    }});
+  </script>
+</body>
+</html>"""
+
+
+def buildAdminUsersPage(currentUser: dict[str, object]) -> str:
+    currentLogin = escape(str(currentUser.get("login") or ""))
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Администрирование</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {{
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue: #375d77;
+      --orange: #ff6c0e;
+      --shadow-soft: 0 12px 24px rgba(22, 50, 74, 0.06);
+    }}
+    body {{ margin: 0; background: #ffffff; color: var(--text); }}
+    main {{ max-width: 1280px; margin: 0 auto; padding: 24px 20px 56px; }}
+    .head {{ display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 0 0 18px; }}
+    .head img {{ width: 220px; height: auto; display: block; }}
+    .head-actions {{ display: flex; gap: 10px; flex-wrap: wrap; }}
+    .head-actions a {{ display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 10px 14px; border-radius: 6px; text-decoration: none; font-weight: 700; box-shadow: var(--shadow-soft); }}
+    .head-actions .home-link {{ background: #eef2f6; color: var(--blue); }}
+    .head-actions .logout-link {{ background: var(--orange); color: #ffffff; }}
+    h1 {{ margin: 0 0 10px; font-size: clamp(1.9rem, 4.2vw, 2.8rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }}
+    .lead {{ margin: 0 0 20px; color: var(--muted); line-height: 1.5; }}
+    .panel {{ background: #ffffff; border: 1px solid var(--line); border-radius: 8px; padding: 20px; box-shadow: var(--shadow-soft); margin: 0 0 18px; }}
+    .panel h2 {{ margin: 0 0 12px; font-size: 1.08rem; }}
+    .table-wrap {{ overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
+    table {{ width: 100%; min-width: 860px; border-collapse: collapse; background: #ffffff; }}
+    th, td {{ padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }}
+    th {{ background: #eef6f7; color: #426179; text-transform: uppercase; font-size: 0.78rem; position: sticky; top: 0; z-index: 1; }}
+    .row-actions {{ display: flex; gap: 8px; flex-wrap: wrap; }}
+    .row-actions button {{ padding: 7px 11px; font-size: 0.92rem; border: 0; border-radius: 6px; font-weight: 700; cursor: pointer; }}
+    .edit-button {{ background: #52cee6; color: #16324a; }}
+    .delete-button {{ background: #eef2f6; color: #d54343; }}
+    .form-grid {{ display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 14px 16px; }}
+    .field {{ display: flex; flex-direction: column; gap: 6px; }}
+    .field-wide {{ grid-column: span 2; }}
+    .field label {{ font-weight: 700; }}
+    .field input, .field select {{ width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font: inherit; color: inherit; background: #ffffff; }}
+    .field select[multiple] {{ min-height: 108px; }}
+    .checkbox-row {{ display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }}
+    .actions {{ display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }}
+    .actions button {{ border: 0; border-radius: 6px; padding: 10px 16px; font: inherit; font-weight: 700; cursor: pointer; box-shadow: var(--shadow-soft); }}
+    #saveUserButton {{ background: var(--blue); color: #ffffff; }}
+    #resetUserFormButton {{ background: #eef2f6; color: var(--text); box-shadow: none; }}
+    .status {{ min-height: 22px; margin-top: 14px; color: var(--muted); }}
+    .status.error {{ color: #d54343; }}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="head">
+      <a href="/" aria-label="Главная"><img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ"></a>
+      <div class="head-actions">
+        <a class="home-link" href="/">Главная</a>
+        <a class="logout-link" href="/logout">Выйти</a>
+      </div>
+    </div>
+    <h1>Администрирование</h1>
+    <p class="lead">Текущий администратор: <strong>{currentLogin}</strong>. Здесь можно заводить пользователей и управлять их правами.</p>
+    <section class="panel">
+      <h2>Пользователи</h2>
+      <p id="usersCount" style="color:#64798d;margin:0 0 12px;">Загрузка...</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Логин</th>
+              <th>Права</th>
+              <th>Сменить пароль</th>
+              <th>Создан</th>
+              <th>Обновлен</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody id="usersTableBody"><tr><td colspan="6">Загружаем пользователей...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="panel">
+      <h2 id="userFormTitle">Новый пользователь</h2>
+      <form id="userForm">
+        <input type="hidden" id="userIdInput">
+        <div class="form-grid">
+          <div class="field">
+            <label for="userLoginInput">Логин</label>
+            <input id="userLoginInput" type="text" required>
+          </div>
+          <div class="field">
+            <label for="userPasswordInput">Пароль</label>
+            <input id="userPasswordInput" type="password" placeholder="При редактировании можно оставить пустым">
+          </div>
+          <div class="field field-wide">
+            <label for="userRolesInput">Права</label>
+            <select id="userRolesInput" multiple size="3">
+              <option value="User">User</option>
+              <option value="Finance">Finance</option>
+              <option value="Admin">Admin</option>
+            </select>
+          </div>
+          <div class="field field-wide">
+            <label class="checkbox-row"><input id="userMustChangePasswordInput" type="checkbox"><span>Сменить пароль</span></label>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit" id="saveUserButton">Сохранить</button>
+          <button type="button" id="resetUserFormButton">Очистить форму</button>
+        </div>
+      </form>
+      <div class="status" id="usersStatus"></div>
+    </section>
+  </main>
+  <script>
+    const usersTableBody = document.getElementById("usersTableBody");
+    const usersCount = document.getElementById("usersCount");
+    const usersStatus = document.getElementById("usersStatus");
+    const userForm = document.getElementById("userForm");
+    const userFormTitle = document.getElementById("userFormTitle");
+    const userIdInput = document.getElementById("userIdInput");
+    const userLoginInput = document.getElementById("userLoginInput");
+    const userPasswordInput = document.getElementById("userPasswordInput");
+    const userRolesInput = document.getElementById("userRolesInput");
+    const userMustChangePasswordInput = document.getElementById("userMustChangePasswordInput");
+    const resetUserFormButton = document.getElementById("resetUserFormButton");
+    let allUsers = [];
+    function escapeHtml(value) {{
+      return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    }}
+    function setStatus(message, kind = "") {{
+      usersStatus.textContent = message || "";
+      usersStatus.className = kind ? `status ${{kind}}` : "status";
+    }}
+    function formatDate(value) {{
+      if (!value) return "—";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return date.toLocaleString("ru-RU");
+    }}
+    function resetUserForm() {{
+      userIdInput.value = "";
+      userFormTitle.textContent = "Новый пользователь";
+      userLoginInput.value = "";
+      userPasswordInput.value = "";
+      userMustChangePasswordInput.checked = false;
+      Array.from(userRolesInput.options).forEach((option) => option.selected = false);
+      setStatus("");
+    }}
+    function renderUsers(users) {{
+      allUsers = Array.isArray(users) ? users : [];
+      usersCount.textContent = `Всего пользователей: ${{allUsers.length}}`;
+      usersTableBody.innerHTML = "";
+      if (!allUsers.length) {{
+        usersTableBody.innerHTML = '<tr><td colspan="6">Пока нет ни одного пользователя.</td></tr>';
+        return;
+      }}
+      for (const user of allUsers) {{
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${{escapeHtml(user.login)}}</td>
+          <td>${{escapeHtml((user.roles || []).join(", ")) || "—"}}</td>
+          <td>${{user.must_change_password ? "Да" : "Нет"}}</td>
+          <td>${{formatDate(user.created_at)}}</td>
+          <td>${{formatDate(user.updated_at)}}</td>
+          <td><div class="row-actions"><button type="button" class="edit-button" data-user-id="${{user.id}}">Редактировать</button><button type="button" class="delete-button" data-user-id="${{user.id}}">Удалить</button></div></td>
+        `;
+        usersTableBody.appendChild(row);
+      }}
+    }}
+    async function loadUsers() {{
+      const response = await fetch("/api/admin/users");
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || "Не удалось загрузить пользователей.");
+      renderUsers(payload.users || []);
+    }}
+    function fillUserForm(userId) {{
+      const user = allUsers.find((item) => Number(item.id) === Number(userId));
+      if (!user) return;
+      userIdInput.value = String(user.id);
+      userFormTitle.textContent = `Редактирование: ${{user.login}}`;
+      userLoginInput.value = user.login || "";
+      userPasswordInput.value = "";
+      userMustChangePasswordInput.checked = Boolean(user.must_change_password);
+      const roles = new Set(user.roles || []);
+      Array.from(userRolesInput.options).forEach((option) => option.selected = roles.has(option.value));
+      window.scrollTo({{ top: document.body.scrollHeight, behavior: "smooth" }});
+    }}
+    async function deleteUserById(userId) {{
+      if (!window.confirm("Удалить пользователя?")) return;
+      const response = await fetch(`/api/admin/users/${{encodeURIComponent(userId)}}`, {{ method: "DELETE" }});
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || "Не удалось удалить пользователя.");
+      setStatus(payload.detail || "Пользователь удален.");
+      resetUserForm();
+      await loadUsers();
+    }}
+    userForm.addEventListener("submit", async (event) => {{
+      event.preventDefault();
+      setStatus("Сохраняем пользователя...");
+      const payload = {{
+        login: userLoginInput.value.trim(),
+        password: userPasswordInput.value || null,
+        roles: Array.from(userRolesInput.selectedOptions).map((option) => option.value),
+        must_change_password: userMustChangePasswordInput.checked,
+      }};
+      const userId = userIdInput.value.trim();
+      const response = await fetch(userId ? `/api/admin/users/${{encodeURIComponent(userId)}}` : "/api/admin/users", {{
+        method: userId ? "PUT" : "POST",
+        headers: {{ "Content-Type": "application/json" }},
+        body: JSON.stringify(payload),
+      }});
+      const data = await response.json();
+      if (!response.ok) {{
+        setStatus(data.detail || "Не удалось сохранить пользователя.", "error");
+        return;
+      }}
+      setStatus(data.detail || "Пользователь сохранен.");
+      resetUserForm();
+      await loadUsers();
+    }});
+    usersTableBody.addEventListener("click", async (event) => {{
+      const target = event.target;
+      if (!(target instanceof HTMLButtonElement)) return;
+      const userId = target.dataset.userId;
+      if (!userId) return;
+      if (target.classList.contains("edit-button")) {{
+        fillUserForm(userId);
+        return;
+      }}
+      if (target.classList.contains("delete-button")) {{
+        try {{
+          await deleteUserById(userId);
+        }} catch (error) {{
+          setStatus(error.message || "Не удалось удалить пользователя.", "error");
+        }}
+      }}
+    }});
+    resetUserFormButton.addEventListener("click", resetUserForm);
+    loadUsers().catch((error) => {{
+      usersTableBody.innerHTML = '<tr><td colspan="6">Не удалось загрузить пользователей.</td></tr>';
+      setStatus(error.message || "Не удалось загрузить пользователей.", "error");
+    }});
+  </script>
+</body>
+</html>"""
+
+
+def _getSafeNextPath(nextPath: str | None) -> str:
+    candidate = str(nextPath or "").strip()
+    if not candidate.startswith("/") or candidate.startswith("//"):
+        return "/"
+    return candidate
+
+
+def buildLoginPage(nextPath: str | None = None) -> str:
+    safeNextPath = escape(_getSafeNextPath(nextPath))
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Вход в систему</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {{
+      --bg: #f6f9fb;
+      --panel: #ffffff;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue-302: #375d77;
+      --orange-1585: #ff6c0e;
+      --shadow: 0 18px 40px rgba(22, 50, 74, 0.08);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      font-family: "Golos", "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #f6f9fb 0%, #eef6f7 100%);
+      color: var(--text);
+    }}
+    .card {{
+      width: min(460px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 28px 28px 24px;
+    }}
+    .brand {{
+      display: inline-flex;
+      align-items: center;
+      margin-bottom: 18px;
+    }}
+    .brand img {{
+      width: 180px;
+      height: auto;
+      display: block;
+    }}
+    h1 {{
+      margin: 0 0 10px;
+      font-size: clamp(1.8rem, 4vw, 2.4rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
+    }}
+    .lead {{
+      margin: 0 0 22px;
+      color: var(--muted);
+      line-height: 1.5;
+    }}
+    form {{
+      display: grid;
+      gap: 16px;
+    }}
+    label {{
+      display: grid;
+      gap: 7px;
+      font-size: 0.96rem;
+      font-weight: 600;
+    }}
+    input {{
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font: inherit;
+      color: var(--text);
+      background: #ffffff;
+    }}
+    button {{
+      border: 0;
+      border-radius: 10px;
+      padding: 13px 18px;
+      background: var(--orange-1585);
+      color: #ffffff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+    button:disabled {{
+      opacity: 0.7;
+      cursor: wait;
+    }}
+    .status {{
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }}
+    .status.error {{ color: #d54343; }}
+  </style>
+</head>
+<body>
+  <section class="card">
+    <a class="brand" href="/" aria-label="СМС-ИТ">
+      <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+    </a>
+    <h1>Вход в систему</h1>
+    <p class="lead">Введите логин и пароль, чтобы открыть систему анализа проектов Redmine.</p>
+    <form id="loginForm">
+      <input id="nextPathInput" type="hidden" value="{safeNextPath}">
+      <label for="loginInput">
+        Логин
+        <input id="loginInput" type="text" autocomplete="username" required>
+      </label>
+      <label for="passwordInput">
+        Пароль
+        <input id="passwordInput" type="password" autocomplete="current-password" required>
+      </label>
+      <button id="loginButton" type="submit">Войти</button>
+    </form>
+    <div class="status" id="loginStatus"></div>
+  </section>
+
+  <script>
+    const loginForm = document.getElementById("loginForm");
+    const loginButton = document.getElementById("loginButton");
+    const loginStatus = document.getElementById("loginStatus");
+    const nextPathInput = document.getElementById("nextPathInput");
+
+    function setStatus(message, kind = "") {{
+      loginStatus.textContent = message;
+      loginStatus.className = "status" + (kind ? " " + kind : "");
+    }}
+
+    loginForm.addEventListener("submit", async (event) => {{
+      event.preventDefault();
+      loginButton.disabled = true;
+      setStatus("Проверяем логин и пароль...");
+
+      try {{
+        const response = await fetch(`/api/auth/login?next=${{encodeURIComponent(nextPathInput.value || "/")}}`, {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{
+            login: document.getElementById("loginInput").value,
+            password: document.getElementById("passwordInput").value,
+          }}),
+        }});
+        const payload = await response.json();
+        if (!response.ok) {{
+          throw new Error(payload.detail || "Не удалось войти в систему.");
+        }}
+
+        const nextPath = payload.next_path || nextPathInput.value || "/";
+        window.location.href = payload.must_change_password ? "/change-password" : nextPath;
+      }} catch (error) {{
+        setStatus(error.message, "error");
+        loginButton.disabled = false;
+      }}
+    }});
+  </script>
+</body>
+</html>"""
+
+
+def buildChangePasswordPage(user: dict[str, object]) -> str:
+    login = escape(str(user.get("login") or ""))
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Смена пароля</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {{
+      --bg: #f6f9fb;
+      --panel: #ffffff;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --orange-1585: #ff6c0e;
+      --shadow: 0 18px 40px rgba(22, 50, 74, 0.08);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      font-family: "Golos", "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #f6f9fb 0%, #eef6f7 100%);
+      color: var(--text);
+    }}
+    .card {{
+      width: min(500px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 28px;
+    }}
+    h1 {{
+      margin: 0 0 10px;
+      font-size: clamp(1.8rem, 4vw, 2.3rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
+    }}
+    .lead {{
+      margin: 0 0 22px;
+      color: var(--muted);
+      line-height: 1.5;
+    }}
+    .login-note {{
+      margin: 0 0 16px;
+      color: var(--blue-302, #375d77);
+      font-weight: 600;
+    }}
+    form {{
+      display: grid;
+      gap: 16px;
+    }}
+    label {{
+      display: grid;
+      gap: 7px;
+      font-size: 0.96rem;
+      font-weight: 600;
+    }}
+    input {{
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font: inherit;
+      color: var(--text);
+      background: #ffffff;
+    }}
+    button {{
+      border: 0;
+      border-radius: 10px;
+      padding: 13px 18px;
+      background: var(--orange-1585);
+      color: #ffffff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+    button:disabled {{
+      opacity: 0.7;
+      cursor: wait;
+    }}
+    .status {{
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }}
+    .status.error {{ color: #d54343; }}
+  </style>
+</head>
+<body>
+  <section class="card">
+    <h1>Смена пароля</h1>
+    <p class="lead">Для этого пользователя включена обязательная смена пароля. Сохраним новый пароль и после этого откроем систему.</p>
+    <p class="login-note">Логин: {login}</p>
+    <form id="changePasswordForm">
+      <label for="newPasswordInput">
+        Новый пароль
+        <input id="newPasswordInput" type="password" autocomplete="new-password" minlength="3" required>
+      </label>
+      <label for="repeatPasswordInput">
+        Повторите новый пароль
+        <input id="repeatPasswordInput" type="password" autocomplete="new-password" minlength="3" required>
+      </label>
+      <button id="changePasswordButton" type="submit">Сохранить новый пароль</button>
+    </form>
+    <div class="status" id="changePasswordStatus"></div>
+  </section>
+
+  <script>
+    const changePasswordForm = document.getElementById("changePasswordForm");
+    const changePasswordButton = document.getElementById("changePasswordButton");
+    const changePasswordStatus = document.getElementById("changePasswordStatus");
+
+    function setStatus(message, kind = "") {{
+      changePasswordStatus.textContent = message;
+      changePasswordStatus.className = "status" + (kind ? " " + kind : "");
+    }}
+
+    changePasswordForm.addEventListener("submit", async (event) => {{
+      event.preventDefault();
+      const newPassword = document.getElementById("newPasswordInput").value;
+      const repeatPassword = document.getElementById("repeatPasswordInput").value;
+      if (newPassword !== repeatPassword) {{
+        setStatus("Новый пароль и повтор должны совпадать.", "error");
+        return;
+      }}
+
+      changePasswordButton.disabled = true;
+      setStatus("Сохраняем новый пароль...");
+
+      try {{
+        const response = await fetch("/api/auth/change-password", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{ new_password: newPassword }}),
+        }});
+        const payload = await response.json();
+        if (!response.ok) {{
+          throw new Error(payload.detail || "Не удалось сохранить пароль.");
+        }}
+
+        window.location.href = payload.next_path || "/";
+      }} catch (error) {{
+        setStatus(error.message, "error");
+        changePasswordButton.disabled = false;
+      }}
+    }});
+  </script>
+</body>
+</html>"""
+
+
+def buildAdminUsersPage() -> str:
+    return """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Администрирование пользователей</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue-302: #375d77;
+      --cyan-310: #52cee6;
+      --orange-1585: #ff6c0e;
+      --shadow: 0 18px 40px rgba(22, 50, 74, 0.08);
+      --shadow-soft: 0 12px 24px rgba(22, 50, 74, 0.06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Golos", "Segoe UI", sans-serif;
+      background: #ffffff;
+      color: var(--text);
+    }
+    main {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 24px 20px 56px;
+    }
+    .page-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+    .brand img {
+      width: 200px;
+      height: auto;
+      display: block;
+    }
+    .head-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .head-actions a {
+      padding: 10px 14px;
+      border-radius: 999px;
+      text-decoration: none;
+      font-weight: 600;
+      color: var(--text);
+      background: #eef2f5;
+      border: 1px solid var(--line);
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(1.85rem, 4.2vw, 2.75rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
+    }
+    .lead {
+      margin: 0 0 24px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(340px, 420px);
+      gap: 22px;
+      align-items: start;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow-soft);
+      padding: 20px;
+    }
+    .panel h2 {
+      margin: 0 0 14px;
+      font-size: 1.25rem;
+      line-height: 1.1;
+    }
+    .status {
+      min-height: 22px;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .status.error { color: #d54343; }
+    .status.success { color: #2f8a57; }
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    table {
+      width: 100%;
+      min-width: 720px;
+      border-collapse: collapse;
+      background: #ffffff;
+    }
+    th, td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #eef6f7;
+      color: #426179;
+      text-transform: uppercase;
+      font-size: 0.78rem;
+      line-height: 1.2;
+    }
+    tr:last-child td { border-bottom: 0; }
+    .row-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .row-actions button {
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .edit-button {
+      background: var(--cyan-310);
+      color: #16324a;
+    }
+    .delete-button {
+      background: #eef2f5;
+      color: #d54343;
+      border: 1px solid #f0c8c8;
+    }
+    form {
+      display: grid;
+      gap: 14px;
+    }
+    .field {
+      display: grid;
+      gap: 7px;
+    }
+    .field label {
+      font-weight: 600;
+    }
+    .field input,
+    .field select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 11px 12px;
+      font: inherit;
+      color: var(--text);
+      background: #ffffff;
+    }
+    .field select[multiple] {
+      min-height: 112px;
+    }
+    .checkbox-field {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .actions button {
+      border: 0;
+      border-radius: 10px;
+      padding: 11px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: var(--shadow-soft);
+    }
+    #saveUserButton {
+      background: var(--orange-1585);
+      color: #ffffff;
+    }
+    #resetUserFormButton {
+      background: #eef2f5;
+      color: var(--text);
+      border: 1px solid var(--line);
+      box-shadow: none;
+    }
+    .tag-list {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #eef6f7;
+      color: #375d77;
+      font-size: 0.86rem;
+      font-weight: 600;
+    }
+    .tag.must-change {
+      background: #fff3ea;
+      color: #ff6c0e;
+    }
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="page-head">
+      <a class="brand" href="/" aria-label="СМС-ИТ">
+        <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+      </a>
+      <div class="head-actions">
+        <a href="/">Главная</a>
+        <a href="/logout">Выйти</a>
+      </div>
+    </div>
+
+    <h1>Администрирование пользователей</h1>
+    <p class="lead">Здесь можно заводить пользователей, задавать им права доступа и включать обязательную смену пароля при следующем входе.</p>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>Пользователи</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Логин</th>
+                <th>Права</th>
+                <th>Смена пароля</th>
+                <th>Обновлен</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody id="usersTableBody">
+              <tr><td colspan="5" style="text-align:center; color:#64798d;">Загружаем пользователей...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="status" id="usersStatus"></div>
+      </article>
+
+      <article class="panel">
+        <h2 id="userFormTitle">Новый пользователь</h2>
+        <form id="userForm">
+          <input type="hidden" id="userIdInput">
+          <div class="field">
+            <label for="userLoginInput">Логин</label>
+            <input id="userLoginInput" type="text" autocomplete="username" required>
+          </div>
+          <div class="field">
+            <label for="userPasswordInput">Пароль</label>
+            <input id="userPasswordInput" type="password" autocomplete="new-password" placeholder="Для нового пользователя обязателен">
+          </div>
+          <div class="field">
+            <label for="userRolesSelect">Права</label>
+            <select id="userRolesSelect" multiple size="3">
+              <option value="User">User</option>
+              <option value="Finance">Finance</option>
+              <option value="Admin">Admin</option>
+            </select>
+          </div>
+          <label class="checkbox-field" for="userMustChangePasswordInput">
+            <input id="userMustChangePasswordInput" type="checkbox">
+            <span>Сменить пароль</span>
+          </label>
+          <div class="actions">
+            <button id="saveUserButton" type="submit">Сохранить</button>
+            <button id="resetUserFormButton" type="button">Очистить форму</button>
+          </div>
+        </form>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const usersTableBody = document.getElementById("usersTableBody");
+    const usersStatus = document.getElementById("usersStatus");
+    const userForm = document.getElementById("userForm");
+    const userFormTitle = document.getElementById("userFormTitle");
+    const userIdInput = document.getElementById("userIdInput");
+    const userLoginInput = document.getElementById("userLoginInput");
+    const userPasswordInput = document.getElementById("userPasswordInput");
+    const userRolesSelect = document.getElementById("userRolesSelect");
+    const userMustChangePasswordInput = document.getElementById("userMustChangePasswordInput");
+    const saveUserButton = document.getElementById("saveUserButton");
+    const resetUserFormButton = document.getElementById("resetUserFormButton");
+    let allUsers = [];
+
+    function setStatus(message, kind = "") {
+      usersStatus.textContent = message;
+      usersStatus.className = "status" + (kind ? " " + kind : "");
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function formatDateTime(value) {
+      if (!value) {
+        return "—";
+      }
+      return String(value).replace("T", " ").replace("+00:00", " UTC");
+    }
+
+    function getSelectedRoles() {
+      return Array.from(userRolesSelect.selectedOptions).map((option) => option.value);
+    }
+
+    function resetUserForm() {
+      userIdInput.value = "";
+      userFormTitle.textContent = "Новый пользователь";
+      userLoginInput.value = "";
+      userPasswordInput.value = "";
+      userMustChangePasswordInput.checked = false;
+      Array.from(userRolesSelect.options).forEach((option) => {
+        option.selected = option.value === "User";
+      });
+    }
+
+    function editUser(userId) {
+      const user = allUsers.find((item) => Number(item.id) === Number(userId));
+      if (!user) {
+        return;
+      }
+
+      userIdInput.value = String(user.id);
+      userFormTitle.textContent = `Редактирование: ${user.login}`;
+      userLoginInput.value = user.login || "";
+      userPasswordInput.value = "";
+      userMustChangePasswordInput.checked = Boolean(user.must_change_password);
+      const roles = Array.isArray(user.roles) ? user.roles : [];
+      Array.from(userRolesSelect.options).forEach((option) => {
+        option.selected = roles.includes(option.value);
+      });
+      userForm.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function renderUsers(users) {
+      allUsers = Array.isArray(users) ? users : [];
+      if (!allUsers.length) {
+        usersTableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#64798d;">Пока нет ни одного пользователя.</td></tr>';
+        return;
+      }
+
+      usersTableBody.innerHTML = "";
+      for (const user of allUsers) {
+        const roles = Array.isArray(user.roles) ? user.roles : [];
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${escapeHtml(user.login || "—")}</td>
+          <td><div class="tag-list">${roles.map((role) => `<span class="tag">${escapeHtml(role)}</span>`).join("")}</div></td>
+          <td>${user.must_change_password ? '<span class="tag must-change">Да</span>' : "Нет"}</td>
+          <td>${escapeHtml(formatDateTime(user.updated_at))}</td>
+          <td>
+            <div class="row-actions">
+              <button type="button" class="edit-button" data-user-id="${user.id}">Редактировать</button>
+              <button type="button" class="delete-button" data-user-id="${user.id}">Удалить</button>
+            </div>
+          </td>
+        `;
+        usersTableBody.appendChild(row);
+      }
+    }
+
+    async function loadUsers() {
+      try {
+        const response = await fetch("/api/admin/users");
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось загрузить пользователей.");
+        }
+
+        renderUsers(payload.users || []);
+        setStatus("");
+      } catch (error) {
+        renderUsers([]);
+        setStatus(error.message, "error");
+      }
+    }
+
+    async function saveUser(event) {
+      event.preventDefault();
+      saveUserButton.disabled = true;
+      setStatus("Сохраняем пользователя...");
+
+      try {
+        const userId = String(userIdInput.value || "").trim();
+        const payload = {
+          login: userLoginInput.value,
+          password: userPasswordInput.value || null,
+          roles: getSelectedRoles(),
+          must_change_password: userMustChangePasswordInput.checked,
+        };
+
+        const response = await fetch(userId ? `/api/admin/users/${encodeURIComponent(userId)}` : "/api/admin/users", {
+          method: userId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const responsePayload = await response.json();
+        if (!response.ok) {
+          throw new Error(responsePayload.detail || "Не удалось сохранить пользователя.");
+        }
+
+        renderUsers(responsePayload.users || []);
+        resetUserForm();
+        setStatus("Пользователь сохранен.", "success");
+      } catch (error) {
+        setStatus(error.message, "error");
+      } finally {
+        saveUserButton.disabled = false;
+      }
+    }
+
+    async function deleteUser(userId) {
+      if (!window.confirm("Удалить пользователя?")) {
+        return;
+      }
+
+      setStatus("Удаляем пользователя...");
+      try {
+        const response = await fetch(`/api/admin/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось удалить пользователя.");
+        }
+
+        renderUsers(payload.users || []);
+        if (String(userIdInput.value || "") === String(userId)) {
+          resetUserForm();
+        }
+        setStatus("Пользователь удален.", "success");
+      } catch (error) {
+        setStatus(error.message, "error");
+      }
+    }
+
+    userForm.addEventListener("submit", saveUser);
+    resetUserFormButton.addEventListener("click", resetUserForm);
+    usersTableBody.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const userId = target.dataset.userId;
+      if (!userId) {
+        return;
+      }
+
+      if (target.classList.contains("edit-button")) {
+        editUser(userId);
+      }
+      if (target.classList.contains("delete-button")) {
+        deleteUser(userId);
+      }
+    });
+
+    resetUserForm();
+    loadUsers();
+  </script>
+</body>
+</html>"""
+
+
+@app.get("/login", response_class=HTMLResponse)
+def getLoginPage(request: Request, next: str | None = Query(None)) -> HTMLResponse:
+    user = _getCurrentUser(request)
+    if user:
+        if bool(user.get("must_change_password")):
+            return RedirectResponse(url="/change-password", status_code=303)
+        return RedirectResponse(url=_getSafeNextPath(next), status_code=303)
+
+    return _renderHtmlPage(buildLoginPage(next))
+
+
+@app.get("/change-password", response_class=HTMLResponse)
+def getChangePasswordPage(request: Request) -> HTMLResponse:
+    user = _getCurrentUser(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    return _renderHtmlPage(buildChangePasswordPage(user))
+
+
+@app.get("/logout")
+def logout(request: Request) -> RedirectResponse:
+    request.session.clear()
+    return RedirectResponse(url="/login", status_code=303)
+
+
+@app.get("/admin/users", response_class=HTMLResponse)
+def getAdminUsersPage(request: Request) -> HTMLResponse:
+    _requireAdminUser(request)
+    return _renderHtmlPage(buildAdminUsersPage())
+
+
+@app.post("/api/auth/login")
+def login(request: Request, payload: LoginPayload, next: str | None = Query(None)) -> dict[str, object]:
+    loginValue = str(payload.login or "").strip().lower()
+    passwordValue = str(payload.password or "")
+    if not loginValue or not passwordValue:
+        raise HTTPException(status_code=400, detail="Введите логин и пароль.")
+
+    user = getUserByLogin(loginValue)
+    if not user or not _verifyPassword(passwordValue, str(user.get("password_hash") or "")):
+        raise HTTPException(status_code=401, detail="Неверный логин или пароль.")
+
+    roles = _parseRoles(user.get("roles"))
+    if USER_ROLE not in roles:
+        raise HTTPException(status_code=403, detail="У пользователя нет права входа в систему.")
+
+    request.session["user_login"] = loginValue
+    return {
+        "ok": True,
+        "must_change_password": bool(user.get("must_change_password")),
+        "next_path": _getSafeNextPath(next),
+        "user": {
+            "id": user.get("id"),
+            "login": user.get("login"),
+            "roles": roles,
+            "must_change_password": bool(user.get("must_change_password")),
+        },
+    }
+
+
+@app.post("/api/auth/change-password")
+def changePassword(request: Request, payload: ChangePasswordPayload) -> dict[str, object]:
+    user = _requireAuthenticatedUser(request)
+    newPassword = str(payload.new_password or "")
+    if len(newPassword) < 3:
+        raise HTTPException(status_code=400, detail="Новый пароль должен быть не короче 3 символов.")
+
+    updatedUser = updateUserPassword(int(user.get("id") or 0), _hashPassword(newPassword), False)
+    if not updatedUser:
+        raise HTTPException(status_code=404, detail="Пользователь не найден.")
+
+    request.session["user_login"] = str(updatedUser.get("login") or user.get("login") or "")
+    return {"ok": True, "next_path": "/"}
+
+
+@app.get("/api/auth/me")
+def getCurrentUserInfo(request: Request) -> dict[str, object]:
+    user = _requireAuthenticatedUser(request)
+    return {
+        "user": {
+            "id": user.get("id"),
+            "login": user.get("login"),
+            "roles": _parseRoles(user.get("roles")),
+            "must_change_password": bool(user.get("must_change_password")),
+        }
+    }
+
+
+@app.get("/api/admin/users")
+def getAdminUsers(request: Request) -> dict[str, object]:
+    _requireAdminUser(request)
+    users = listUsers()
+    for user in users:
+        user["roles"] = _parseRoles(user.get("roles"))
+    return {"users": users}
+
+
+@app.post("/api/admin/users")
+def createAdminUser(request: Request, payload: UserPayload) -> dict[str, object]:
+    _requireAdminUser(request)
+    loginValue = str(payload.login or "").strip().lower()
+    if not loginValue:
+        raise HTTPException(status_code=400, detail="Логин обязателен.")
+    if not payload.password:
+        raise HTTPException(status_code=400, detail="Для нового пользователя нужно задать пароль.")
+
+    roles = _normalizeRoles(payload.roles)
+    if USER_ROLE not in roles:
+        raise HTTPException(status_code=400, detail="Нужно выбрать хотя бы право User.")
+
+    try:
+        createUser(
+            {
+                "login": loginValue,
+                "password_hash": _hashPassword(str(payload.password)),
+                "roles": _serializeRoles(roles),
+                "must_change_password": bool(payload.must_change_password),
+            }
+        )
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=f"Не удалось создать пользователя: {error}") from error
+
+    users = listUsers()
+    for user in users:
+        user["roles"] = _parseRoles(user.get("roles"))
+    return {"users": users}
+
+
+@app.put("/api/admin/users/{user_id}")
+def updateAdminUser(request: Request, user_id: int, payload: UserPayload) -> dict[str, object]:
+    currentUser = _requireAdminUser(request)
+    loginValue = str(payload.login or "").strip().lower()
+    if not loginValue:
+        raise HTTPException(status_code=400, detail="Логин обязателен.")
+
+    roles = _normalizeRoles(payload.roles)
+    if USER_ROLE not in roles:
+        raise HTTPException(status_code=400, detail="Нужно выбрать хотя бы право User.")
+
+    try:
+        updatedUser = updateUser(
+            user_id,
+            {
+                "login": loginValue,
+                "password_hash": _hashPassword(str(payload.password)) if payload.password else None,
+                "roles": _serializeRoles(roles),
+                "must_change_password": bool(payload.must_change_password),
+            },
+        )
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=f"Не удалось обновить пользователя: {error}") from error
+
+    if updatedUser is None:
+        raise HTTPException(status_code=404, detail="Пользователь не найден.")
+
+    if int(currentUser.get("id") or 0) == user_id:
+        request.session["user_login"] = loginValue
+
+    users = listUsers()
+    for user in users:
+        user["roles"] = _parseRoles(user.get("roles"))
+    return {"users": users}
+
+
+@app.delete("/api/admin/users/{user_id}")
+def deleteAdminUser(request: Request, user_id: int) -> dict[str, object]:
+    currentUser = _requireAdminUser(request)
+    if int(currentUser.get("id") or 0) == user_id:
+        raise HTTPException(status_code=400, detail="Нельзя удалить текущего пользователя.")
+
+    deleted = deleteUser(user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Пользователь не найден.")
+
+    users = listUsers()
+    for user in users:
+        user["roles"] = _parseRoles(user.get("roles"))
+    return {"users": users}
 
 
 @app.get("/", response_class=HTMLResponse)

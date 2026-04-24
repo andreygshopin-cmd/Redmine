@@ -30,9 +30,11 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if e
 _projectsTableEnsureLock = Lock()
 _issueSnapshotTablesEnsureLock = Lock()
 _planningProjectsTableEnsureLock = Lock()
+_usersTableEnsureLock = Lock()
 _projectsTableEnsured = False
 _issueSnapshotTablesEnsured = False
 _planningProjectsTableEnsured = False
+_usersTableEnsured = False
 
 
 def checkDatabaseConnection() -> bool:
@@ -397,6 +399,105 @@ def ensurePlanningProjectsTable() -> None:
         _planningProjectsTableEnsured = True
 
 
+def ensureUsersTable() -> None:
+    global _usersTableEnsured
+
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    if _usersTableEnsured:
+        return
+
+    with _usersTableEnsureLock:
+        if _usersTableEnsured:
+            return
+
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS app_users (
+                        id SERIAL PRIMARY KEY,
+                        login TEXT NOT NULL UNIQUE,
+                        password_hash TEXT NOT NULL,
+                        roles TEXT NOT NULL DEFAULT 'User',
+                        must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE app_users
+                    ADD COLUMN IF NOT EXISTS roles TEXT NOT NULL DEFAULT 'User'
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE app_users
+                    ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE app_users
+                    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE app_users
+                    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    """
+                )
+            )
+
+        _usersTableEnsured = True
+
+
+def seedInitialUsers(users: Sequence[dict[str, object]]) -> None:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    if not users:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO app_users (
+                    login,
+                    password_hash,
+                    roles,
+                    must_change_password
+                )
+                VALUES (
+                    :login,
+                    :password_hash,
+                    :roles,
+                    :must_change_password
+                )
+                ON CONFLICT (login) DO NOTHING
+                """
+            ),
+            list(users),
+        )
+
+
 def listStoredProjects() -> list[dict[str, object]]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
@@ -704,7 +805,57 @@ def listPlanningProjects() -> list[dict[str, object]]:
                 """
             )
         )
-        return [dict(row._mapping) for row in rows]
+    return [dict(row._mapping) for row in rows]
+
+
+def listUsers() -> list[dict[str, object]]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    login,
+                    roles,
+                    must_change_password,
+                    created_at,
+                    updated_at
+                FROM app_users
+                ORDER BY lower(login)
+                """
+            )
+        ).fetchall()
+
+    return [dict(row._mapping) for row in rows]
+
+
+def getUserByLogin(login: str) -> dict[str, object] | None:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    login,
+                    password_hash,
+                    roles,
+                    must_change_password,
+                    created_at,
+                    updated_at
+                FROM app_users
+                WHERE login = :login
+                """
+            ),
+            {"login": login},
+        ).mappings().first()
+
+    return dict(row) if row else None
 
 
 def countIssueSnapshotRuns() -> int:
@@ -2052,6 +2203,136 @@ def deletePlanningProject(projectId: int) -> bool:
             {"project_id": projectId},
         )
         return bool(result.rowcount)
+
+
+def createUser(user: dict[str, object]) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.begin() as connection:
+        row = connection.execute(
+            text(
+                """
+                INSERT INTO app_users (
+                    login,
+                    password_hash,
+                    roles,
+                    must_change_password
+                )
+                VALUES (
+                    :login,
+                    :password_hash,
+                    :roles,
+                    :must_change_password
+                )
+                RETURNING
+                    id,
+                    login,
+                    roles,
+                    must_change_password,
+                    created_at,
+                    updated_at
+                """
+            ),
+            user,
+        ).mappings().one()
+
+    return dict(row)
+
+
+def updateUser(userId: int, user: dict[str, object]) -> dict[str, object] | None:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    updateFields = [
+        "login = :login",
+        "roles = :roles",
+        "must_change_password = :must_change_password",
+        "updated_at = CURRENT_TIMESTAMP",
+    ]
+    parameters = {
+        "user_id": userId,
+        "login": user.get("login"),
+        "roles": user.get("roles"),
+        "must_change_password": user.get("must_change_password"),
+    }
+
+    if user.get("password_hash"):
+        updateFields.insert(1, "password_hash = :password_hash")
+        parameters["password_hash"] = user.get("password_hash")
+
+    with engine.begin() as connection:
+        row = connection.execute(
+            text(
+                f"""
+                UPDATE app_users
+                SET
+                    {", ".join(updateFields)}
+                WHERE id = :user_id
+                RETURNING
+                    id,
+                    login,
+                    roles,
+                    must_change_password,
+                    created_at,
+                    updated_at
+                """
+            ),
+            parameters,
+        ).mappings().first()
+
+    return dict(row) if row else None
+
+
+def updateUserPassword(userId: int, passwordHash: str, mustChangePassword: bool) -> dict[str, object] | None:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.begin() as connection:
+        row = connection.execute(
+            text(
+                """
+                UPDATE app_users
+                SET
+                    password_hash = :password_hash,
+                    must_change_password = :must_change_password,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :user_id
+                RETURNING
+                    id,
+                    login,
+                    roles,
+                    must_change_password,
+                    created_at,
+                    updated_at
+                """
+            ),
+            {
+                "user_id": userId,
+                "password_hash": passwordHash,
+                "must_change_password": mustChangePassword,
+            },
+        ).mappings().first()
+
+    return dict(row) if row else None
+
+
+def deleteUser(userId: int) -> bool:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.begin() as connection:
+        result = connection.execute(
+            text(
+                """
+                DELETE FROM app_users
+                WHERE id = :user_id
+                """
+            ),
+            {"user_id": userId},
+        )
+
+    return bool(result.rowcount)
 
 
 def createIssueSnapshotRun(
