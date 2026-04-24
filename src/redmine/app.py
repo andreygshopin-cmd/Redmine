@@ -5988,9 +5988,10 @@ def buildPlanningProjectsPage() -> str:
     }
     h1 {
       margin: 0 0 10px;
-      font-size: clamp(2rem, 5vw, 3.2rem);
-      line-height: 1.03;
-      letter-spacing: -0.03em;
+      font-size: clamp(2.5rem, 5.6vw, 4.25rem);
+      line-height: 1;
+      letter-spacing: -0.04em;
+      font-weight: 400;
     }
     .lead {
       margin: 0 0 20px;
