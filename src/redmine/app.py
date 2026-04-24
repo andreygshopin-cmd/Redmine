@@ -253,6 +253,13 @@ def _requireAdminUser(request: Request) -> dict[str, object]:
     return user
 
 
+def _getSafeNextPath(nextPath: str | None) -> str:
+    candidate = str(nextPath or "").strip()
+    if not candidate.startswith("/") or candidate.startswith("//"):
+        return "/"
+    return candidate or "/"
+
+
 @app.middleware("http")
 async def authMiddleware(request: Request, call_next):
     if not config.databaseUrl:
@@ -6782,6 +6789,7 @@ def buildPlanningProjectsPage() -> str:
 
 
 def buildLoginPage(nextPath: str = "/") -> str:
+    safeNextPath = escape(_getSafeNextPath(nextPath), quote=True)
     return f"""<!doctype html>
 <html lang="ru">
 <head>
