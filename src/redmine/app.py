@@ -2352,7 +2352,7 @@ def buildSnapshotComparisonPage(
     {buildProjectContextNavCss()}
     h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; }}
     .meta {{ color: #64798d; margin: 0 0 18px; line-height: 1.6; }}
-    .meta-strong {{ color: #375d77; font-weight: 800; }}
+    .meta-strong {{ color: #52cee6; font-weight: 800; }}
     .controls-panel {{ border: 1px solid #d9e5eb; border-radius: 8px; padding: 18px 20px; background: #ffffff; }}
     .controls-grid {{ display: grid; grid-template-columns: 1fr; gap: 14px; }}
     .field {{ display: flex; flex-direction: column; gap: 6px; }}
@@ -2662,7 +2662,7 @@ def buildSnapshotComparisonPage(
     }}
     button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; background: var(--orange); color: #ffffff; }}
     .summary-note {{ color: var(--muted); margin: 0 0 14px; }}
-    .table-wrap {{ overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
+    .table-wrap {{ position: relative; overflow: auto; border: 1px solid var(--line); border-radius: 8px; max-height: calc(100vh - 250px); }}
     table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: #ffffff; min-width: 1080px; }}
     th, td {{ text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }}
     th {{ position: sticky; top: 0; z-index: 2; background: #eef6f7; color: #426179; text-transform: uppercase; font-size: 0.88rem; }}
@@ -3061,7 +3061,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     }}
 
     .meta-strong {{
-      color: #375d77;
+      color: #52cee6;
       font-weight: 800;
     }}
 
@@ -3999,7 +3999,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     {buildProjectContextNavCss()}
     h1 {{ margin: 18px 0 12px; font-size: 2rem; }}
     .meta {{ color: #64798d; margin: 0 0 24px; }}
-    .meta-strong {{ color: #375d77; font-weight: 800; }}
+    .meta-strong {{ color: #52cee6; font-weight: 800; }}
   </style>
 </head>
 <body>
@@ -4113,6 +4113,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         background: #e4eaef;
       }}
       h1 {{ margin: 18px 0 12px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }}
+      .meta-strong {{ color: #52cee6; font-weight: 800; }}
       form {{ display: flex; gap: 10px; align-items: center; margin: 0; flex-wrap: wrap; }}
       label {{ font-weight: 600; }}
       select,
