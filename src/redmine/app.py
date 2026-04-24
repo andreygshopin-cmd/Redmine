@@ -3,12 +3,14 @@ from html import escape
 import csv
 import io
 import json
+from pathlib import Path
 import requests
 from datetime import date, timedelta
 from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from src.redmine.config import loadConfig
@@ -47,6 +49,66 @@ from src.redmine.snapshots import (
 
 config = loadConfig()
 app = FastAPI(title="Redmine Snapshot Viewer")
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+LOCAL_GOLOS_FONT_CSS = """
+    @font-face {
+      font-family: "Golos Text";
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url("/static/fonts/GolosText-400.ttf") format("truetype");
+    }
+
+    @font-face {
+      font-family: "Golos Text";
+      font-style: normal;
+      font-weight: 500;
+      font-display: swap;
+      src: url("/static/fonts/GolosText-500.ttf") format("truetype");
+    }
+
+    @font-face {
+      font-family: "Golos Text";
+      font-style: normal;
+      font-weight: 600;
+      font-display: swap;
+      src: url("/static/fonts/GolosText-600.ttf") format("truetype");
+    }
+
+    @font-face {
+      font-family: "Golos Text";
+      font-style: normal;
+      font-weight: 700;
+      font-display: swap;
+      src: url("/static/fonts/GolosText-700.ttf") format("truetype");
+    }
+
+    @font-face {
+      font-family: "Golos Text";
+      font-style: normal;
+      font-weight: 800;
+      font-display: swap;
+      src: url("/static/fonts/GolosText-800.ttf") format("truetype");
+    }
+""".strip()
+
+GOOGLE_FONTS_SNIPPETS = (
+    '  <link rel="preconnect" href="https://fonts.googleapis.com">\n',
+    '  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n',
+    '  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">\n',
+)
+
+
+def _renderHtmlPage(html: str) -> HTMLResponse:
+    for snippet in GOOGLE_FONTS_SNIPPETS:
+        html = html.replace(snippet, "")
+
+    if LOCAL_GOLOS_FONT_CSS not in html:
+        html = html.replace("<style>", f"<style>\n{LOCAL_GOLOS_FONT_CSS}\n", 1)
+
+    return HTMLResponse(html)
 
 
 class ProjectSettingsUpdate(BaseModel):
@@ -449,16 +511,10 @@ PAGE_HTML = """<!doctype html>
       box-shadow: 0 14px 24px rgba(255, 108, 14, 0.22);
     }
 
-    #refreshProjectsButton {
-      background: var(--yellow-109);
-      color: #16324a;
-      box-shadow: 0 14px 24px rgba(255, 198, 0, 0.24);
-    }
-
     #captureSnapshotsButton {
-      background: var(--cyan-310);
-      color: #16324a;
-      box-shadow: 0 14px 24px rgba(82, 206, 230, 0.24);
+      background: var(--orange-1585);
+      color: #ffffff;
+      box-shadow: 0 14px 24px rgba(255, 108, 14, 0.22);
     }
 
     input[type="date"] {
@@ -6488,18 +6544,18 @@ def buildPlanningProjectsPage() -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def readRoot() -> HTMLResponse:
-    return HTMLResponse(PAGE_HTML)
+    return _renderHtmlPage(PAGE_HTML)
 
 
 @app.get("/Bitrix", response_class=HTMLResponse)
 @app.get("/bitrix", response_class=HTMLResponse, include_in_schema=False)
 def readBitrixPage() -> HTMLResponse:
-    return HTMLResponse(BITRIX_PAGE_HTML)
+    return _renderHtmlPage(BITRIX_PAGE_HTML)
 
 
 @app.get("/snapshot-rules", response_class=HTMLResponse)
 def getSnapshotRulesPage() -> HTMLResponse:
-    return HTMLResponse(buildSnapshotRulesPage())
+    return _renderHtmlPage(buildSnapshotRulesPage())
 
 
 @app.get("/planning-projects", response_class=HTMLResponse)
@@ -6508,7 +6564,7 @@ def getPlanningProjectsPage() -> HTMLResponse:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensurePlanningProjectsTable()
-    return HTMLResponse(buildPlanningProjectsPage())
+    return _renderHtmlPage(buildPlanningProjectsPage())
 
 
 @app.get("/strange-snapshot-issues", response_class=HTMLResponse)
@@ -6516,7 +6572,7 @@ def getStrangeSnapshotIssuesPage() -> HTMLResponse:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
-    return HTMLResponse(buildStrangeSnapshotIssuesPage())
+    return _renderHtmlPage(buildStrangeSnapshotIssuesPage())
 
 
 @app.get("/api/time")
@@ -6589,7 +6645,7 @@ def getProjectLatestSnapshotIssuesPage(
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureIssueSnapshotTables()
-    return HTMLResponse(buildLatestSnapshotIssuesPageClean(project_redmine_id, captured_for_date))
+    return _renderHtmlPage(buildLatestSnapshotIssuesPageClean(project_redmine_id, captured_for_date))
 
 
 @app.get("/api/projects/{project_redmine_id}/latest-snapshot-issues")
@@ -6775,7 +6831,7 @@ def getProjectSnapshotComparePage(
 
     ensureProjectsTable()
     ensureIssueSnapshotTables()
-    return HTMLResponse(
+    return _renderHtmlPage(
         buildSnapshotComparisonPage(
             project_redmine_id,
             left_date,
@@ -6793,7 +6849,7 @@ def getProjectBurndownPage(project_redmine_id: int) -> HTMLResponse:
 
     ensureProjectsTable()
     ensureIssueSnapshotTables()
-    return HTMLResponse(buildBurndownPage(project_redmine_id))
+    return _renderHtmlPage(buildBurndownPage(project_redmine_id))
 
 
 @app.post("/api/projects/refresh")
