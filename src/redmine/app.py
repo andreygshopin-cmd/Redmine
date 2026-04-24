@@ -798,7 +798,7 @@ PAGE_HTML = """<!doctype html>
         <div class="row">
           <button id="captureSnapshotsButton" type="button">Получить срезы задач</button>
           <button id="recaptureSnapshotsButton" type="button">Обновить последние срезы</button>
-          <button id="strangeIssuesPageButton" type="button">Внутренняя</button>
+          <button id="strangeIssuesPageButton" type="button">Вопросы по задачам</button>
         </div>
         <div class="status" id="captureStatus"></div>
       </article>
@@ -1060,7 +1060,7 @@ PAGE_HTML = """<!doctype html>
         ["#snapshot-actions p", "textContent", "Запрашивает срезы только для тех проектов, по которым на сегодняшнюю дату еще нет записи в базе данных."],
         ["#captureSnapshotsButton", "textContent", "Получить срезы задач"],
         ["#recaptureSnapshotsButton", "textContent", "Обновить последние срезы"],
-        ["#strangeIssuesPageButton", "textContent", "Внутренняя"],
+        ["#strangeIssuesPageButton", "textContent", "Вопросы по задачам"],
         ["#delete-snapshot h2", "textContent", "Удаление среза по дате"],
         ["#delete-snapshot p", "textContent", "Удаляет все срезы и все строки задач за выбранную календарную дату."],
         ["#deleteSnapshotsButton", "textContent", "Очистить срез на дату"],
@@ -4291,15 +4291,15 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <th>Все задачи без фич</th>
-              <td class="summary-empty"></td>
-              <td class="summary-metric" id="summaryEstimated">{formatPageHours(totalEstimatedHours)}</td>
-              <td class="summary-metric" id="summaryRiskEstimate">{formatPageHours(totalRiskEstimateHours)}</td>
-              <td class="summary-metric" id="summarySpentYear" colspan="2">{formatPageHours(totalSpentHoursYear)}</td>
-              <td class="summary-empty"></td>
-              <td class="summary-metric" id="summarySpent" colspan="2">{formatPageHours(totalSpentHours)}</td>
-              <td class="summary-empty"></td>
+              <tr>
+                <th>Все задачи без фич</th>
+                <td class="summary-empty"></td>
+                <td class="summary-metric" id="summaryEstimated">{formatPageHours(totalEstimatedHours)}</td>
+                <td class="summary-empty"></td>
+                <td class="summary-metric" id="summarySpentYear" colspan="2">{formatPageHours(totalSpentHoursYear)}</td>
+                <td class="summary-empty"></td>
+                <td class="summary-metric" id="summarySpent" colspan="2">{formatPageHours(totalSpentHours)}</td>
+                <td class="summary-empty"></td>
             </tr>
             <tr>
               <th>Разработка, ч</th>
