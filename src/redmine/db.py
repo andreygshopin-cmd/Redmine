@@ -997,10 +997,13 @@ def listPlanningDirections() -> list[str]:
         rows = connection.execute(
             text(
                 """
-                SELECT DISTINCT TRIM(direction) AS direction
-                FROM planning_projects
-                WHERE TRIM(COALESCE(direction, '')) <> ''
-                ORDER BY LOWER(TRIM(direction))
+                SELECT direction
+                FROM (
+                    SELECT DISTINCT TRIM(direction) AS direction
+                    FROM planning_projects
+                    WHERE TRIM(COALESCE(direction, '')) <> ''
+                ) directions
+                ORDER BY LOWER(direction)
                 """
             )
         ).fetchall()

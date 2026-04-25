@@ -6964,10 +6964,10 @@ def normalizePlanningProjectPayload(payload: PlanningProjectPayload) -> dict[str
 def buildProjectsSummaryPage() -> str:
     todayIso = date.today().isoformat()
     directions = listPlanningDirections()
-    if "KOT" not in directions:
-        directions = ["KOT", *directions]
+    if "КОТ" not in directions:
+        directions = ["КОТ", *directions]
     directionOptionsHtml = "".join(
-        f'<option value="{escape(direction)}"{" selected" if direction == "KOT" else ""}>{escape(direction)}</option>'
+        f'<option value="{escape(direction)}"{" selected" if direction == "КОТ" else ""}>{escape(direction)}</option>'
         for direction in directions
     )
     return f"""<!doctype html>
@@ -8963,7 +8963,7 @@ def getPlanningProjects(
 @app.get("/api/projects-summary")
 def getProjectsSummaryApi(
     report_date: str | None = Query(None),
-    direction: str | None = Query("KOT"),
+    direction: str | None = Query("КОТ"),
     is_closed: bool = Query(False),
 ) -> dict[str, object]:
     if not config.databaseUrl:
