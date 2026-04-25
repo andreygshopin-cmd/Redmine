@@ -3282,7 +3282,7 @@ def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str
         baselineEstimateHours = float(issue.get("baseline_estimate_hours") or 0)
         group["baseline_total"] = float(group["baseline_total"]) + baselineEstimateHours
 
-        if trackerName == "??????????":
+        if trackerName == "разработка":
             if isBurndownClosedTaskStatus(statusName):
                 volume = factHours
                 remaining = 0.0
@@ -3297,12 +3297,12 @@ def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str
             group["development_remaining"] = float(group["development_remaining"]) + remaining
             group["development_volume_risk"] = float(group["development_volume_risk"]) + riskVolume
             group["development_remaining_risk"] = float(group["development_remaining_risk"]) + riskRemaining
-        elif trackerName == "???????? ??????????":
+        elif trackerName == "процессы разработки":
             volume = max(planHours, factHours)
             riskVolume = max(riskPlanHours, factHours)
             group["development_volume"] = float(group["development_volume"]) + volume
             group["development_volume_risk"] = float(group["development_volume_risk"]) + riskVolume
-        elif trackerName == "??????":
+        elif trackerName == "ошибка":
             if isBurndownClosedTaskStatus(statusName):
                 volume = factHours
                 remaining = 0.0
@@ -3427,26 +3427,17 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     planningP2Value = escape(formatPageHours(planningP2Percent))
     planningP1InputClass = " planning-input-warning" if planningP1Mixed else ""
     planningP2InputClass = " planning-input-warning" if planningP2Mixed else ""
-    projectMetricsItemsHtml = "".join(
+    planningProjectLinesHtml = "".join(
         (
-            '<li>'
-            f'<span class="project-metrics-name">{escape(str(project.get("project_name") or "Без названия"))}</span> '
-            f'({escape(formatPlanningMetric(project.get("baseline_estimate_hours")))}/'
-            f'{escape(formatPlanningMetric(project.get("development_hours")))}/'
-            f'{escape(formatPlanningPercent(project.get("p1")))}/'
-            f'{escape(formatPlanningPercent(project.get("p2")))})'
-            "</li>"
+            '<div class="planning-project-line">'
+            f'{escape(str(project.get("customer") or "—"))} - {escape(str(project.get("project_name") or "Без названия"))}'
+            "</div>"
         )
         for project in planningProjects
     )
-    projectMetricsPanelHtml = (
-        f"""
-    <section class="project-metrics-panel">
-      <div class="project-metrics-title">Проекты с идентификатором {projectIdentifier}</div>
-      <ul class="project-metrics-list">{projectMetricsItemsHtml}</ul>
-    </section>
-"""
-        if projectMetricsItemsHtml
+    planningProjectsTextHtml = (
+        f'<div class="planning-project-lines">{planningProjectLinesHtml}</div>'
+        if planningProjectLinesHtml
         else ""
     )
     snapshotIssuesUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
@@ -3472,9 +3463,6 @@ def buildBurndownPage(projectRedmineId: int) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Диаграмма сгорания</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <style>
     :root {{
@@ -3496,7 +3484,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
 
     body {{
       margin: 0;
-      font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
       background: var(--bg);
       color: var(--text);
     }}
@@ -3528,32 +3516,11 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       font-weight: 400;
     }}
 
-    .project-metrics-panel {{
-      margin: 0 0 18px;
-      padding: 16px 20px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #ffffff;
-      box-shadow: var(--shadow-soft);
-    }}
-
-    .project-metrics-title {{
-      margin: 0 0 10px;
-      font-size: 0.98rem;
-      font-weight: 700;
-      color: var(--text);
-    }}
-
-    .project-metrics-list {{
-      margin: 0;
-      padding-left: 18px;
+    .planning-project-lines {{
+      margin: -4px 0 18px;
       color: var(--muted);
-      line-height: 1.6;
-    }}
-
-    .project-metrics-name {{
-      color: var(--text);
-      font-weight: 600;
+      font-size: 0.98rem;
+      line-height: 1.65;
     }}
 
     .controls-panel,
@@ -3780,8 +3747,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     {navPanelHtml}
     <h1>Диаграмма сгорания</h1>
     <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Период диаграммы: 01.04.{currentYear} — 30.04.{currentYear}. Срезов за апрель: {len(chartSeeds)}.</p>
-
-    {projectMetricsPanelHtml}
+    {planningProjectsTextHtml}
 
     <section class="controls-panel">
       <div class="field">
@@ -4062,7 +4028,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       if (!burndownSnapshots.length) {{
         emptyState.style.display = "block";
         chartCanvas.style.display = "none";
-        statusNode.textContent = "?? ?????? ???????? ???? ???? ??? ?????? ??? ??????? ?????????.";
+        statusNode.textContent = "За апрель текущего года по проекту пока нет срезов для построения диаграммы.";
         return;
       }}
 
@@ -4070,15 +4036,15 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       chartCanvas.style.display = "block";
 
       if (typeof Chart === "undefined") {{
-        statusNode.textContent = "?? ??????? ????????? ?????????? ????????.";
+        statusNode.textContent = "Не удалось загрузить библиотеку диаграмм.";
         return;
       }}
 
       const p1Factor = p1Percent / 100;
       const p2Factor = p2Percent / 100;
       const datasets = buildBurndownDatasets(p1Factor, p2Factor, useRiskPlan);
-      const planModeText = useRiskPlan ? "???????????? ???? ? ???????." : "???????????? ??????? ????.";
-      statusNode.textContent = `P1 = ${{formatHours(p1Percent)}}%, P2 = ${{formatHours(p2Percent)}}%. ?????? ? ???????: ${{burndownSnapshots.length}}. ${{planModeText}}`;
+      const planModeText = useRiskPlan ? "Используется План с рисками." : "Используется обычный План.";
+      statusNode.textContent = `P1 = ${{formatHours(p1Percent)}}%, P2 = ${{formatHours(p2Percent)}}%. Срезов в расчете: ${{burndownSnapshots.length}}. ${{planModeText}}`;
       const allChartValues = [
         ...datasets.budgetData,
         ...datasets.forecastData,
@@ -4098,7 +4064,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       const chartDatasets = [
         {{
           type: "bar",
-          label: "????? ??????????",
+          label: "Объем разработки",
           data: datasets.currentDevelopmentData,
           stack: "current",
           backgroundColor: "rgba(82, 206, 230, 0.38)",
@@ -4109,7 +4075,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         }},
         {{
           type: "bar",
-          label: "????? ??????",
+          label: "Объем ошибок",
           data: datasets.currentBugData,
           stack: "current",
           backgroundColor: "rgba(255, 108, 14, 0.30)",
@@ -4120,7 +4086,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         }},
         {{
           type: "bar",
-          label: "??????? ??????????",
+          label: "Остаток разработки",
           data: datasets.remainingDevelopmentData,
           stack: "remaining",
           backgroundColor: "#52cee6",
@@ -4131,7 +4097,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         }},
         {{
           type: "bar",
-          label: "??????? ??????",
+          label: "Остаток ошибок",
           data: datasets.remainingBugData,
           stack: "remaining",
           backgroundColor: "#ffc600",
@@ -4142,7 +4108,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         }},
         {{
           type: "line",
-          label: "??????",
+          label: "Бюджет",
           data: datasets.budgetData,
           borderColor: "#ff6c0e",
           backgroundColor: "#ff6c0e",
@@ -4156,7 +4122,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         }},
         {{
           type: "line",
-          label: "?????.???????",
+          label: "Объем.Прогноз",
           data: datasets.forecastData,
           borderColor: "#375d77",
           backgroundColor: "#375d77",
@@ -4170,7 +4136,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         }},
         {{
           type: "line",
-          label: "?????.???????",
+          label: "Объем.Текущий",
           data: datasets.currentTotalData,
           borderColor: "#0f9bb8",
           backgroundColor: "#0f9bb8",
@@ -4184,7 +4150,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         }},
         {{
           type: "line",
-          label: "?????.???????",
+          label: "Объем.Остаток",
           data: datasets.remainingTotalData,
           borderColor: "#7b8c9d",
           backgroundColor: "#7b8c9d",
@@ -4201,7 +4167,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       if (planningDevelopmentHoursTotal > 0) {{
         chartDatasets.push({{
           type: "line",
-          label: "???? ??????????",
+          label: "Часы разработки",
           data: datasets.developmentHoursData,
           borderColor: "#d9534f",
           backgroundColor: "#d9534f",
