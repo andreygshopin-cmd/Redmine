@@ -7464,7 +7464,7 @@ def buildPlanningProjectsPage() -> str:
     th.identifier-col, td.identifier-col { width: 276px; min-width: 276px; max-width: 276px; }
     th.pm-col, td.pm-col { width: 150px; }
     th.start-date-col, td.start-date-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
-    th.end-date-col, td.end-date-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
+    th.end-date-col, td.end-date-col { width: 12ch; min-width: 12ch; max-width: 12ch; white-space: nowrap; }
     th.development-col, td.development-col { width: 190px; min-width: 190px; }
     th.year-col, td.year-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
     th.year-hours-col, td.year-hours-col { width: 14ch; min-width: 14ch; max-width: 14ch; white-space: nowrap; }
@@ -7772,6 +7772,17 @@ def buildPlanningProjectsPage() -> str:
       return parsed.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     }
 
+    function formatOptionalInteger(value) {
+      if (value === null || value === undefined || value === "") {
+        return "—";
+      }
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) {
+        return "—";
+      }
+      return Math.round(parsed).toLocaleString("ru-RU", { maximumFractionDigits: 0 });
+    }
+
     function truncateDisplay(value, maxLength = 30) {
       const text = String(value ?? "").trim();
       if (!text) {
@@ -7862,10 +7873,22 @@ def buildPlanningProjectsPage() -> str:
         return;
       }
 
-      const matchedProject = projects.find((project) => String(project?.redmine_identifier ?? "").trim() === queryState.redmineIdentifier);
-      if (matchedProject) {
-        fillPlanningProjectForm(matchedProject);
+      const matchedProjects = projects.filter((project) => String(project?.redmine_identifier ?? "").trim() === queryState.redmineIdentifier);
+      if (matchedProjects.length === 1) {
+        fillPlanningProjectForm(matchedProjects[0]);
         setPlanningProjectsStatus(`Открыто редактирование записи для проекта с идентификатором ${queryState.redmineIdentifier}.`);
+        if (planningProjectsSearch) {
+          planningProjectsSearch.value = "";
+        }
+        clearPlanningProjectsQueryState();
+        return;
+      }
+
+      if (matchedProjects.length > 1) {
+        if (planningProjectsSearch) {
+          planningProjectsSearch.value = queryState.redmineIdentifier;
+        }
+        setPlanningProjectsStatus(`Найдено несколько записей по идентификатору ${queryState.redmineIdentifier}. Оставили фильтр на таблице.`);
         clearPlanningProjectsQueryState();
         return;
       }
@@ -7907,11 +7930,11 @@ def buildPlanningProjectsPage() -> str:
           <td class="start-date-col">${formatOptionalDate(project.start_date)}</td>
           <td class="end-date-col">${formatOptionalDate(project.end_date)}</td>
           <td class="development-col">${formatOptionalNumber(project.development_hours)}</td>
-          <td class="year-col">${formatOptionalNumber(project.year_1)}</td>
+          <td class="year-col">${formatOptionalInteger(project.year_1)}</td>
           <td class="year-hours-col">${formatOptionalNumber(project.hours_1)}</td>
-          <td class="year-col">${formatOptionalNumber(project.year_2)}</td>
+          <td class="year-col">${formatOptionalInteger(project.year_2)}</td>
           <td class="year-hours-col">${formatOptionalNumber(project.hours_2)}</td>
-          <td class="year-col">${formatOptionalNumber(project.year_3)}</td>
+          <td class="year-col">${formatOptionalInteger(project.year_3)}</td>
           <td class="year-hours-col">${formatOptionalNumber(project.hours_3)}</td>
           <td class="baseline-col">${formatOptionalNumber(project.baseline_estimate_hours)}</td>
           <td class="p-col">${formatOptionalNumber(project.p1)}</td>
