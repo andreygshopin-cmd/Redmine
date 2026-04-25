@@ -3330,6 +3330,7 @@ def buildBurndownDateLabels(year: int, month: int) -> list[str]:
 def buildBurndownPage(projectRedmineId: int) -> str:
     currentYear = datetime.now(UTC).year
     targetMonth = 4
+    ensurePlanningProjectsTable()
     burndownPayload = getSnapshotRunsWithIssuesForProjectYear(projectRedmineId, currentYear)
     storedProjects = listStoredProjects()
     storedProject = next(
