@@ -57,6 +57,8 @@ from src.redmine.db import (
     updateUserPassword,
     updatePlanningProject,
     updateProjectLoadSettings,
+    listPlanningDirections,
+    listProjectPlanningSummary,
 )
 from src.redmine.redmine_client import fetchAllProjectsFromRedmine
 from src.redmine.snapshots import (
@@ -1526,6 +1528,7 @@ PAGE_HTML = """<!doctype html>
 
     #refreshProjectsButton,
     #planningProjectsPageButton,
+    #projectsSummaryPageButton,
     #recaptureSnapshotsButton,
     #strangeIssuesPageButton,
     #deleteSnapshotsButton,
@@ -1537,6 +1540,7 @@ PAGE_HTML = """<!doctype html>
 
     #refreshProjectsButton:hover,
     #planningProjectsPageButton:hover,
+    #projectsSummaryPageButton:hover,
     #recaptureSnapshotsButton:hover,
     #strangeIssuesPageButton:hover,
     #deleteSnapshotsButton:hover,
@@ -1559,6 +1563,16 @@ PAGE_HTML = """<!doctype html>
       background: var(--orange-1585);
       color: #ffffff;
       box-shadow: 0 14px 24px rgba(255, 108, 14, 0.22);
+    }
+
+    #projectsSummaryPageButton {
+      background: var(--orange-1585);
+      color: #ffffff;
+      box-shadow: 0 14px 24px rgba(255, 108, 14, 0.22);
+    }
+
+    #projectsSummaryPageButton:hover {
+      background: #f56d13;
     }
 
     input[type="date"] {
@@ -1900,10 +1914,11 @@ PAGE_HTML = """<!doctype html>
 
     <section class="grid" id="data-load-section">
       <article class="panel" id="project-actions">
-        <h2>Проекты Redmine</h2>
+        <h2>Управление проектами</h2>
         <p>Получает список проектов из Redmine, добавляет новые записи и обновляет измененные.</p>
         <div class="row">
-          <button id="refreshProjectsButton" type="button">Обновить список проектов</button>
+          <button id="refreshProjectsButton" type="button">Обновить проекты Redmine</button>
+          <button id="projectsSummaryPageButton" type="button">Сводка по проектам</button>
           <button id="planningProjectsPageButton" type="button">Планирование проектов</button>
         </div>
         <div class="status" id="projectsStatus"></div>
@@ -2062,6 +2077,7 @@ PAGE_HTML = """<!doctype html>
     const applyProjectsSettingsButton = document.getElementById("applyProjectsSettingsButton");
     const refreshProjectsButton = document.getElementById("refreshProjectsButton");
     const planningProjectsPageButton = document.getElementById("planningProjectsPageButton");
+    const projectsSummaryPageButton = document.getElementById("projectsSummaryPageButton");
     const strangeIssuesPageButton = document.getElementById("strangeIssuesPageButton");
     const adminPageButton = document.getElementById("adminPageButton");
     const captureSnapshotsButton = document.getElementById("captureSnapshotsButton");
@@ -2177,9 +2193,10 @@ PAGE_HTML = """<!doctype html>
         [".quick-links a:nth-child(2)", "textContent", "Таблица проектов"],
         [".quick-links a:nth-child(3)", "textContent", "Таблица срезов"],
         [".hero h1", "textContent", "Анализ проектов Redmine"],
-        ["#project-actions h2", "textContent", "Проекты Redmine"],
+        ["#project-actions h2", "textContent", "Управление проектами"],
         ["#project-actions p", "textContent", "Получает список проектов из Redmine, добавляет новые записи и обновляет измененные."],
-        ["#refreshProjectsButton", "textContent", "Обновить список проектов"],
+        ["#refreshProjectsButton", "textContent", "Обновить проекты Redmine"],
+        ["#projectsSummaryPageButton", "textContent", "Сводка по проектам"],
         ["#snapshot-actions h2", "textContent", "Получение срезов задач"],
         ["#snapshot-actions p", "textContent", "Запрашивает срезы только для тех проектов, по которым на сегодняшнюю дату еще нет записи в базе данных."],
         ["#captureSnapshotsButton", "textContent", "Получить срезы задач"],
@@ -2838,6 +2855,9 @@ PAGE_HTML = """<!doctype html>
     }
 
     refreshProjectsButton.addEventListener("click", refreshProjects);
+    projectsSummaryPageButton.addEventListener("click", () => {
+      window.location.href = "/projects-summary";
+    });
     planningProjectsPageButton.addEventListener("click", () => {
       window.location.href = "/planning-projects";
     });
@@ -6941,6 +6961,354 @@ def normalizePlanningProjectPayload(payload: PlanningProjectPayload) -> dict[str
     }
 
 
+def buildProjectsSummaryPage() -> str:
+    todayIso = date.today().isoformat()
+    directions = listPlanningDirections()
+    if "KOT" not in directions:
+        directions = ["KOT", *directions]
+    directionOptionsHtml = "".join(
+        f'<option value="{escape(direction)}"{" selected" if direction == "KOT" else ""}>{escape(direction)}</option>'
+        for direction in directions
+    )
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Сводка по проектам</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue-302: #375d77;
+      --yellow-109: #ffc600;
+      --cyan-310: #52cee6;
+      --orange-1585: #ff6c0e;
+      --shadow-soft: 0 12px 24px rgba(22, 50, 74, 0.06);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }}
+    main {{
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 24px 20px 56px;
+    }}
+    .page-head {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin: 0 0 18px;
+    }}
+    .brand {{
+      display: inline-flex;
+      align-items: center;
+      text-decoration: none;
+    }}
+    .brand img {{
+      width: 220px;
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }}
+    .head-actions {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }}
+    .head-actions a {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 700;
+      box-shadow: var(--shadow-soft);
+    }}
+    .head-actions a.home-link {{
+      background: var(--yellow-109);
+      color: #16324a;
+    }}
+    .head-actions a.planning-link {{
+      background: var(--blue-302);
+      color: #ffffff;
+    }}
+    h1 {{
+      margin: 0 0 10px;
+      font-size: clamp(2.15rem, 4.9vw, 3.6rem);
+      line-height: 0.98;
+      letter-spacing: -0.04em;
+      font-weight: 400;
+    }}
+    .lead {{
+      margin: 0 0 20px;
+      color: var(--muted);
+      line-height: 1.6;
+    }}
+    .panel {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: var(--shadow-soft);
+      margin: 0 0 18px;
+    }}
+    .controls {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(180px, 1fr));
+      gap: 14px 16px;
+      align-items: end;
+    }}
+    .field {{
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }}
+    .field label {{
+      font-weight: 700;
+    }}
+    .field input,
+    .field select {{
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font: inherit;
+      color: var(--text);
+      background: #ffffff;
+    }}
+    .checkbox-field {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      font-weight: 600;
+      color: var(--text);
+    }}
+    .checkbox-field input {{
+      width: 16px;
+      height: 16px;
+      margin: 0;
+    }}
+    button {{
+      border: 0;
+      border-radius: 6px;
+      padding: 11px 18px;
+      font: inherit;
+      font-weight: 700;
+      color: #ffffff;
+      cursor: pointer;
+      background: var(--orange-1585);
+      box-shadow: var(--shadow-soft);
+    }}
+    .meta {{
+      min-height: 22px;
+      margin: 0 0 12px;
+      color: var(--muted);
+    }}
+    .table-wrap {{
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+    }}
+    table {{
+      width: 100%;
+      min-width: 1180px;
+      border-collapse: collapse;
+      background: #ffffff;
+    }}
+    th, td {{
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }}
+    th {{
+      background: #eef6f7;
+      color: #426179;
+      text-transform: uppercase;
+      font-size: 0.78rem;
+      line-height: 1.2;
+    }}
+    tr:last-child td {{ border-bottom: 0; }}
+    .mono {{ font-family: Consolas, "Courier New", monospace; }}
+    .empty-state {{
+      padding: 28px 20px;
+      color: var(--muted);
+      text-align: center;
+    }}
+    @media (max-width: 980px) {{
+      .controls {{
+        grid-template-columns: repeat(2, minmax(180px, 1fr));
+      }}
+    }}
+    @media (max-width: 700px) {{
+      .page-head {{
+        flex-direction: column;
+        align-items: flex-start;
+      }}
+      .head-actions {{
+        justify-content: flex-start;
+      }}
+      .controls {{
+        grid-template-columns: 1fr;
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="page-head">
+      <a class="brand" href="/" aria-label="На главную">
+        <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+      </a>
+      <div class="head-actions">
+        <a class="home-link" href="/">Главная</a>
+        <a class="planning-link" href="/planning-projects">Планирование проектов</a>
+      </div>
+    </div>
+
+    <h1>Сводка по проектам</h1>
+    <p class="lead">Сводим плановые данные из планирования проектов и фактические часы разработки по последним срезам на выбранную дату.</p>
+
+    <section class="panel">
+      <div class="controls">
+        <div class="field">
+          <label for="projectsSummaryDateInput">Дата отчета</label>
+          <input id="projectsSummaryDateInput" type="date" value="{todayIso}">
+        </div>
+        <div class="field">
+          <label for="projectsSummaryDirectionSelect">Направление</label>
+          <select id="projectsSummaryDirectionSelect">
+            <option value="">Все направления</option>
+            {directionOptionsHtml}
+          </select>
+        </div>
+        <label class="checkbox-field" for="projectsSummaryClosedCheckbox">
+          <input id="projectsSummaryClosedCheckbox" type="checkbox">
+          <span>Закрытые проекты</span>
+        </label>
+        <button type="button" id="projectsSummaryRefreshButton">Показать сводку</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="meta" id="projectsSummaryMeta">Загрузка...</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Направление</th>
+              <th>Заказчик</th>
+              <th>Название проекта</th>
+              <th>Идентификатор в Redmine</th>
+              <th>ПМ</th>
+              <th>Часы разработки с багфиксом</th>
+              <th>Часы за год отчета</th>
+              <th>Разработка: факт за год, ч</th>
+            </tr>
+          </thead>
+          <tbody id="projectsSummaryTableBody">
+            <tr><td colspan="8" class="empty-state">Загружаем сводку...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const projectsSummaryDateInput = document.getElementById("projectsSummaryDateInput");
+    const projectsSummaryDirectionSelect = document.getElementById("projectsSummaryDirectionSelect");
+    const projectsSummaryClosedCheckbox = document.getElementById("projectsSummaryClosedCheckbox");
+    const projectsSummaryRefreshButton = document.getElementById("projectsSummaryRefreshButton");
+    const projectsSummaryMeta = document.getElementById("projectsSummaryMeta");
+    const projectsSummaryTableBody = document.getElementById("projectsSummaryTableBody");
+
+    function formatSummaryHours(value) {{
+      if (value === null || value === undefined || value === "") {{
+        return "—";
+      }}
+      const number = Number(value);
+      if (!Number.isFinite(number)) {{
+        return "—";
+      }}
+      return number.toLocaleString("ru-RU", {{ minimumFractionDigits: 1, maximumFractionDigits: 1 }});
+    }}
+
+    function formatSummaryText(value) {{
+      const text = String(value ?? "").trim();
+      return text || "—";
+    }}
+
+    function renderProjectsSummaryRows(rows) {{
+      if (!rows.length) {{
+        projectsSummaryTableBody.innerHTML = '<tr><td colspan="8" class="empty-state">По выбранным условиям записей не найдено.</td></tr>';
+        return;
+      }}
+
+      projectsSummaryTableBody.innerHTML = rows.map((row) => `
+        <tr>
+          <td>${{formatSummaryText(row.direction)}}</td>
+          <td>${{formatSummaryText(row.customer)}}</td>
+          <td>${{formatSummaryText(row.project_name)}}</td>
+          <td class="mono">${{formatSummaryText(row.redmine_identifier)}}</td>
+          <td>${{formatSummaryText(row.pm_name)}}</td>
+          <td>${{formatSummaryHours(row.development_hours)}}</td>
+          <td>${{formatSummaryHours(row.report_year_hours)}}</td>
+          <td>${{formatSummaryHours(row.development_spent_hours_year)}}</td>
+        </tr>
+      `).join("");
+    }}
+
+    async function loadProjectsSummary() {{
+      projectsSummaryMeta.textContent = "Загружаем сводку...";
+      projectsSummaryTableBody.innerHTML = '<tr><td colspan="8" class="empty-state">Загружаем сводку...</td></tr>';
+      const params = new URLSearchParams();
+      params.set("report_date", String(projectsSummaryDateInput.value || "{todayIso}"));
+      params.set("direction", String(projectsSummaryDirectionSelect.value || ""));
+      params.set("is_closed", projectsSummaryClosedCheckbox.checked ? "true" : "false");
+
+      try {{
+        const response = await fetch(`/api/projects-summary?${{params.toString()}}`);
+        const payload = await response.json();
+        if (!response.ok) {{
+          throw new Error(payload.detail || "Не удалось загрузить сводку по проектам.");
+        }}
+
+        const rows = Array.isArray(payload.projects) ? payload.projects : [];
+        projectsSummaryMeta.textContent = `Дата отчета: ${{payload.report_date}}. Год отчета: ${{payload.report_year}}. Записей: ${{rows.length}}.`;
+        renderProjectsSummaryRows(rows);
+      }} catch (error) {{
+        projectsSummaryMeta.textContent = "Ошибка";
+        projectsSummaryTableBody.innerHTML = '<tr><td colspan="8" class="empty-state">Не удалось загрузить сводку.</td></tr>';
+      }}
+    }}
+
+    projectsSummaryRefreshButton?.addEventListener("click", loadProjectsSummary);
+    projectsSummaryDateInput?.addEventListener("change", loadProjectsSummary);
+    projectsSummaryDirectionSelect?.addEventListener("change", loadProjectsSummary);
+    projectsSummaryClosedCheckbox?.addEventListener("change", loadProjectsSummary);
+
+    loadProjectsSummary();
+  </script>
+</body>
+</html>"""
+
+
 def buildStrangeSnapshotIssuesPage() -> str:
     diagnostics = getLatestSnapshotIssuesWithExternalParents()
     issues = diagnostics.get("issues") or []
@@ -8538,6 +8906,17 @@ def getPlanningProjectsPage() -> HTMLResponse:
     return _renderHtmlPage(buildPlanningProjectsPage())
 
 
+@app.get("/projects-summary", response_class=HTMLResponse)
+def getProjectsSummaryPage() -> HTMLResponse:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+    ensurePlanningProjectsTable()
+    return _renderHtmlPage(buildProjectsSummaryPage())
+
+
 @app.get("/strange-snapshot-issues", response_class=HTMLResponse)
 def getStrangeSnapshotIssuesPage() -> HTMLResponse:
     if not config.databaseUrl:
@@ -8578,6 +8957,38 @@ def getPlanningProjects(
         "projects": listPlanningProjects(searchText=q, includeClosed=include_closed, limit=limit),
         "total": countPlanningProjects(searchText=q, includeClosed=include_closed),
         "limit": limit,
+    }
+
+
+@app.get("/api/projects-summary")
+def getProjectsSummaryApi(
+    report_date: str | None = Query(None),
+    direction: str | None = Query("KOT"),
+    is_closed: bool = Query(False),
+) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+    ensurePlanningProjectsTable()
+
+    try:
+        reportDate = date.fromisoformat(str(report_date or date.today().isoformat()))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Некорректная дата отчета.") from exc
+
+    projects = listProjectPlanningSummary(
+        reportDate=reportDate.isoformat(),
+        direction=direction,
+        isClosed=is_closed,
+    )
+    return {
+        "projects": projects,
+        "report_date": reportDate.isoformat(),
+        "report_year": reportDate.year,
+        "direction": str(direction or "").strip(),
+        "is_closed": bool(is_closed),
     }
 
 
