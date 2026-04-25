@@ -435,6 +435,754 @@ def _sendPasswordResetEmail(loginValue: str, resetUrl: str) -> None:
         smtp.send_message(message)
 
 
+AUTH_PAGE_STYLES = """
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      font-family: "Golos", "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #f6f9fb 0%, #eef6f7 100%);
+      color: #16324a;
+    }
+    .card {
+      width: min(520px, 100%);
+      background: #ffffff;
+      border: 1px solid #d9e5eb;
+      border-radius: 16px;
+      box-shadow: 0 18px 40px rgba(22, 50, 74, 0.08);
+      padding: 28px 28px 24px;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+    .brand img {
+      width: 180px;
+      height: auto;
+      display: block;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(1.8rem, 4vw, 2.4rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
+    }
+    .lead {
+      margin: 0 0 22px;
+      color: #64798d;
+      line-height: 1.55;
+    }
+    form {
+      display: grid;
+      gap: 16px;
+    }
+    label {
+      display: grid;
+      gap: 7px;
+      font-size: 0.96rem;
+      font-weight: 600;
+    }
+    input {
+      width: 100%;
+      border: 1px solid #d9e5eb;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font: inherit;
+      color: #16324a;
+      background: #ffffff;
+    }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 13px 18px;
+      background: #ff6c0e;
+      color: #ffffff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.7;
+      cursor: wait;
+    }
+    .secondary-link {
+      display: inline;
+      color: #375d77;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      font-weight: 600;
+    }
+    .secondary-link:hover {
+      color: #ff6c0e;
+    }
+    .status {
+      min-height: 22px;
+      color: #64798d;
+      font-size: 0.95rem;
+    }
+    .status.error {
+      color: #d54343;
+    }
+""".strip()
+
+
+def buildLoginPage(nextPath: str = "/") -> str:
+    safeNextPath = escape(_getSafeNextPath(nextPath))
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Вход в систему</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+{LOCAL_GOLOS_FONT_CSS}
+{AUTH_PAGE_STYLES}
+  </style>
+</head>
+<body>
+  <section class="card">
+    <a class="brand" href="/" aria-label="СМС-ИТ">
+      <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+    </a>
+    <h1>Вход в систему</h1>
+    <p class="lead">Введите логин и пароль, чтобы открыть систему анализа проектов Redmine.</p>
+    <form id="loginForm">
+      <input id="nextPathInput" type="hidden" value="{safeNextPath}">
+      <label for="loginInput">
+        Логин
+        <input id="loginInput" type="text" autocomplete="username" required>
+      </label>
+      <label for="passwordInput">
+        Пароль
+        <input id="passwordInput" type="password" autocomplete="current-password" required>
+      </label>
+      <button id="loginButton" type="submit">Войти</button>
+    </form>
+    <a class="secondary-link" href="/forgot-password">Сбросить пароль</a>
+    <div class="status" id="loginStatus"></div>
+  </section>
+
+  <script>
+    const loginForm = document.getElementById("loginForm");
+    const loginButton = document.getElementById("loginButton");
+    const loginStatus = document.getElementById("loginStatus");
+    const nextPathInput = document.getElementById("nextPathInput");
+
+    function setStatus(message, kind = "") {{
+      loginStatus.textContent = message;
+      loginStatus.className = "status" + (kind ? " " + kind : "");
+    }}
+
+    loginForm.addEventListener("submit", async (event) => {{
+      event.preventDefault();
+      loginButton.disabled = true;
+      setStatus("Проверяем логин и пароль...");
+
+      try {{
+        const response = await fetch(`/api/auth/login?next=${{encodeURIComponent(nextPathInput.value || "/")}}`, {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{
+            login: document.getElementById("loginInput").value,
+            password: document.getElementById("passwordInput").value,
+          }}),
+        }});
+        const payload = await response.json();
+        if (!response.ok) {{
+          throw new Error(payload.detail || "Не удалось войти в систему.");
+        }}
+
+        const nextPath = payload.next_path || nextPathInput.value || "/";
+        window.location.href = payload.must_change_password ? "/change-password" : nextPath;
+      }} catch (error) {{
+        setStatus(error.message, "error");
+        loginButton.disabled = false;
+      }}
+    }});
+  </script>
+</body>
+</html>"""
+
+
+def buildForgotPasswordPage() -> str:
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Сброс пароля</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+{LOCAL_GOLOS_FONT_CSS}
+{AUTH_PAGE_STYLES}
+  </style>
+</head>
+<body>
+  <section class="card">
+    <a class="brand" href="/" aria-label="СМС-ИТ">
+      <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+    </a>
+    <h1>Сброс пароля</h1>
+    <p class="lead">Введите email-логин. Мы отправим письмо со ссылкой для задания нового пароля.</p>
+    <form id="forgotPasswordForm">
+      <label for="emailInput">
+        Email
+        <input id="emailInput" type="email" autocomplete="email" required>
+      </label>
+      <button id="forgotPasswordButton" type="submit">Отправить письмо</button>
+    </form>
+    <a class="secondary-link" href="/login">Вернуться ко входу</a>
+    <div class="status" id="forgotPasswordStatus"></div>
+  </section>
+
+  <script>
+    const forgotPasswordForm = document.getElementById("forgotPasswordForm");
+    const forgotPasswordButton = document.getElementById("forgotPasswordButton");
+    const forgotPasswordStatus = document.getElementById("forgotPasswordStatus");
+
+    function setStatus(message, kind = "") {{
+      forgotPasswordStatus.textContent = message;
+      forgotPasswordStatus.className = "status" + (kind ? " " + kind : "");
+    }}
+
+    forgotPasswordForm.addEventListener("submit", async (event) => {{
+      event.preventDefault();
+      forgotPasswordButton.disabled = true;
+      setStatus("Отправляем письмо...");
+      try {{
+        const response = await fetch("/api/auth/request-password-reset", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{ email: document.getElementById("emailInput").value }}),
+        }});
+        const payload = await response.json();
+        if (!response.ok) {{
+          throw new Error(payload.detail || "Не удалось отправить письмо.");
+        }}
+        setStatus(payload.detail || "Если пользователь найден, письмо отправлено.");
+      }} catch (error) {{
+        setStatus(error.message, "error");
+      }} finally {{
+        forgotPasswordButton.disabled = false;
+      }}
+    }});
+  </script>
+</body>
+</html>"""
+
+
+def buildResetPasswordPage(token: str) -> str:
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Новый пароль</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+{LOCAL_GOLOS_FONT_CSS}
+{AUTH_PAGE_STYLES}
+  </style>
+</head>
+<body>
+  <section class="card">
+    <a class="brand" href="/" aria-label="СМС-ИТ">
+      <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+    </a>
+    <h1>Задание нового пароля</h1>
+    <p class="lead">Введите новый пароль. После сохранения можно будет войти в систему под этим логином.</p>
+    <form id="resetPasswordForm">
+      <input id="tokenInput" type="hidden" value="{escape(token)}">
+      <label for="newPasswordInput">
+        Новый пароль
+        <input id="newPasswordInput" type="password" autocomplete="new-password" required>
+      </label>
+      <button id="resetPasswordButton" type="submit">Сохранить пароль</button>
+    </form>
+    <a class="secondary-link" href="/login">Вернуться ко входу</a>
+    <div class="status" id="resetPasswordStatus"></div>
+  </section>
+
+  <script>
+    const resetPasswordForm = document.getElementById("resetPasswordForm");
+    const resetPasswordButton = document.getElementById("resetPasswordButton");
+    const resetPasswordStatus = document.getElementById("resetPasswordStatus");
+
+    function setStatus(message, kind = "") {{
+      resetPasswordStatus.textContent = message;
+      resetPasswordStatus.className = "status" + (kind ? " " + kind : "");
+    }}
+
+    resetPasswordForm.addEventListener("submit", async (event) => {{
+      event.preventDefault();
+      resetPasswordButton.disabled = true;
+      setStatus("Сохраняем новый пароль...");
+      try {{
+        const response = await fetch("/api/auth/reset-password", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{
+            token: document.getElementById("tokenInput").value,
+            new_password: document.getElementById("newPasswordInput").value,
+          }}),
+        }});
+        const payload = await response.json();
+        if (!response.ok) {{
+          throw new Error(payload.detail || "Не удалось сохранить новый пароль.");
+        }}
+        setStatus("Пароль обновлен. Перенаправляем на форму входа...");
+        window.setTimeout(() => {{ window.location.href = "/login"; }}, 900);
+      }} catch (error) {{
+        setStatus(error.message, "error");
+        resetPasswordButton.disabled = false;
+      }}
+    }});
+  </script>
+</body>
+</html>"""
+
+
+def buildChangePasswordPage() -> str:
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Смена пароля</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+{LOCAL_GOLOS_FONT_CSS}
+{AUTH_PAGE_STYLES}
+  </style>
+</head>
+<body>
+  <section class="card">
+    <a class="brand" href="/" aria-label="СМС-ИТ">
+      <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+    </a>
+    <h1>Смена пароля</h1>
+    <p class="lead">Для этого пользователя требуется обязательная смена пароля перед продолжением работы.</p>
+    <form id="changePasswordForm">
+      <label for="changePasswordInput">
+        Новый пароль
+        <input id="changePasswordInput" type="password" autocomplete="new-password" required>
+      </label>
+      <button id="changePasswordButton" type="submit">Сменить пароль</button>
+    </form>
+    <div class="status" id="changePasswordStatus"></div>
+  </section>
+
+  <script>
+    const changePasswordForm = document.getElementById("changePasswordForm");
+    const changePasswordButton = document.getElementById("changePasswordButton");
+    const changePasswordStatus = document.getElementById("changePasswordStatus");
+
+    function setStatus(message, kind = "") {{
+      changePasswordStatus.textContent = message;
+      changePasswordStatus.className = "status" + (kind ? " " + kind : "");
+    }}
+
+    changePasswordForm.addEventListener("submit", async (event) => {{
+      event.preventDefault();
+      changePasswordButton.disabled = true;
+      setStatus("Сохраняем пароль...");
+      try {{
+        const response = await fetch("/api/auth/change-password", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{
+            new_password: document.getElementById("changePasswordInput").value,
+          }}),
+        }});
+        const payload = await response.json();
+        if (!response.ok) {{
+          throw new Error(payload.detail || "Не удалось сменить пароль.");
+        }}
+        setStatus("Пароль обновлен. Перенаправляем...");
+        window.setTimeout(() => {{
+          window.location.href = payload.next_path || "/";
+        }}, 900);
+      }} catch (error) {{
+        setStatus(error.message, "error");
+        changePasswordButton.disabled = false;
+      }}
+    }});
+  </script>
+</body>
+</html>"""
+
+
+def buildAdminUsersPage(users: list[dict[str, object]]) -> str:
+    usersJson = json.dumps(
+        [
+            {
+                **user,
+                "roles": _parseRoles(user.get("roles")),
+            }
+            for user in users
+        ],
+        ensure_ascii=False,
+    )
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Администрирование пользователей</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+{LOCAL_GOLOS_FONT_CSS}
+    body {{
+      margin: 0;
+      font-family: "Golos", "Segoe UI", sans-serif;
+      background: #f6f9fb;
+      color: #16324a;
+    }}
+    main {{
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 24px 20px 48px;
+    }}
+    h1 {{
+      margin: 0 0 12px;
+      font-size: clamp(1.85rem, 4.2vw, 2.75rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
+    }}
+    .lead {{
+      margin: 0 0 18px;
+      color: #64798d;
+      line-height: 1.55;
+    }}
+    .top-link {{
+      display: inline-flex;
+      margin-bottom: 18px;
+      color: #375d77;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      font-weight: 600;
+    }}
+    .layout {{
+      display: grid;
+      gap: 18px;
+    }}
+    .panel {{
+      background: #ffffff;
+      border: 1px solid #d9e5eb;
+      border-radius: 8px;
+      box-shadow: 0 12px 24px rgba(22, 50, 74, 0.06);
+      padding: 18px 20px 20px;
+    }}
+    .table-wrap {{
+      overflow: auto;
+      border: 1px solid #d9e5eb;
+      border-radius: 8px;
+      background: #ffffff;
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }}
+    th, td {{
+      border-bottom: 1px solid #d9e5eb;
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+      line-height: 1.45;
+    }}
+    th {{
+      background: #f8fbfd;
+      font-weight: 700;
+    }}
+    .row-actions {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
+    .row-actions button, .form-actions button {{
+      border: 0;
+      border-radius: 8px;
+      padding: 9px 14px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      color: #ffffff;
+    }}
+    .edit-button {{ background: #375d77; }}
+    .delete-button {{ background: #d54343; }}
+    .save-button {{ background: #ff6c0e; }}
+    .reset-button {{ background: #375d77; }}
+    .form-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px 16px;
+    }}
+    .field {{
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }}
+    .field label {{
+      font-weight: 700;
+    }}
+    .field input {{
+      width: 100%;
+      border: 1px solid #d9e5eb;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font: inherit;
+      color: #16324a;
+      background: #ffffff;
+    }}
+    .roles-grid {{
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      align-items: center;
+      min-height: 42px;
+    }}
+    .checkbox-field {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+    }}
+    .form-actions {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }}
+    .status {{
+      min-height: 22px;
+      margin-top: 12px;
+      color: #64798d;
+      font-size: 0.95rem;
+    }}
+    .status.error {{ color: #d54343; }}
+  </style>
+</head>
+<body>
+  <main>
+    <a class="top-link" href="/">Вернуться на главную</a>
+    <h1>Администрирование пользователей</h1>
+    <p class="lead">Здесь можно создавать пользователей, выдавать роли и включать обязательную смену пароля.</p>
+
+    <section class="panel">
+      <h2>Пользователи</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Логин</th>
+              <th>Права</th>
+              <th>Сменить пароль</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody id="usersTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2 id="userFormTitle">Новый пользователь</h2>
+      <form id="userForm">
+        <input id="userId" type="hidden">
+        <div class="form-grid">
+          <div class="field">
+            <label for="userLogin">Логин</label>
+            <input id="userLogin" type="email" required>
+          </div>
+          <div class="field">
+            <label for="userPassword">Пароль</label>
+            <input id="userPassword" type="password" autocomplete="new-password">
+          </div>
+          <div class="field">
+            <label>Права</label>
+            <div class="roles-grid">
+              <label class="checkbox-field"><input type="checkbox" value="User" class="role-checkbox"> <span>User</span></label>
+              <label class="checkbox-field"><input type="checkbox" value="Finance" class="role-checkbox"> <span>Finance</span></label>
+              <label class="checkbox-field"><input type="checkbox" value="Admin" class="role-checkbox"> <span>Admin</span></label>
+            </div>
+          </div>
+          <div class="field">
+            <label class="checkbox-field" for="userMustChangePassword">
+              <input id="userMustChangePassword" type="checkbox">
+              <span>Сменить пароль</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="save-button" type="submit">Сохранить</button>
+          <button class="reset-button" id="resetUserFormButton" type="button">Очистить форму</button>
+        </div>
+      </form>
+      <div class="status" id="userStatus"></div>
+    </section>
+  </main>
+
+  <script>
+    const initialUsers = {usersJson};
+    const usersTableBody = document.getElementById("usersTableBody");
+    const userForm = document.getElementById("userForm");
+    const userFormTitle = document.getElementById("userFormTitle");
+    const userId = document.getElementById("userId");
+    const userLogin = document.getElementById("userLogin");
+    const userPassword = document.getElementById("userPassword");
+    const userMustChangePassword = document.getElementById("userMustChangePassword");
+    const userStatus = document.getElementById("userStatus");
+    const resetUserFormButton = document.getElementById("resetUserFormButton");
+
+    let currentUsers = Array.isArray(initialUsers) ? initialUsers : [];
+
+    function setStatus(message, kind = "") {{
+      userStatus.textContent = message;
+      userStatus.className = "status" + (kind ? " " + kind : "");
+    }}
+
+    function selectedRoles() {{
+      return Array.from(document.querySelectorAll(".role-checkbox:checked")).map((checkbox) => checkbox.value);
+    }}
+
+    function resetUserForm() {{
+      userForm.reset();
+      userId.value = "";
+      userFormTitle.textContent = "Новый пользователь";
+      setStatus("");
+    }}
+
+    function fillUserForm(user) {{
+      userId.value = user.id ?? "";
+      userLogin.value = user.login ?? "";
+      userPassword.value = "";
+      userMustChangePassword.checked = Boolean(user.must_change_password);
+      const roles = Array.isArray(user.roles) ? user.roles : [];
+      document.querySelectorAll(".role-checkbox").forEach((checkbox) => {{
+        checkbox.checked = roles.includes(checkbox.value);
+      }});
+      userFormTitle.textContent = "Редактирование пользователя";
+      setStatus("Пользователь загружен в форму.");
+      userForm.scrollIntoView({{ behavior: "smooth", block: "start" }});
+    }}
+
+    function renderUsers(users) {{
+      if (!users.length) {{
+        usersTableBody.innerHTML = '<tr><td colspan="4">Пока нет пользователей.</td></tr>';
+        return;
+      }}
+
+      usersTableBody.innerHTML = users.map((user) => `
+        <tr>
+          <td>${{user.login || ""}}</td>
+          <td>${{Array.isArray(user.roles) ? user.roles.join(", ") : ""}}</td>
+          <td>${{user.must_change_password ? "Да" : "Нет"}}</td>
+          <td>
+            <div class="row-actions">
+              <button type="button" class="edit-button" data-action="edit" data-id="${{user.id}}">Изм.</button>
+              <button type="button" class="delete-button" data-action="delete" data-id="${{user.id}}">Удалить</button>
+            </div>
+          </td>
+        </tr>
+      `).join("");
+    }}
+
+    async function loadUsers() {{
+      const response = await fetch("/api/admin/users");
+      const payload = await response.json();
+      if (!response.ok) {{
+        throw new Error(payload.detail || "Не удалось загрузить пользователей.");
+      }}
+      currentUsers = Array.isArray(payload.users) ? payload.users : [];
+      renderUsers(currentUsers);
+    }}
+
+    userForm.addEventListener("submit", async (event) => {{
+      event.preventDefault();
+      const id = userId.value;
+      const method = id ? "PUT" : "POST";
+      const url = id ? `/api/admin/users/${{encodeURIComponent(id)}}` : "/api/admin/users";
+      setStatus(id ? "Сохраняем изменения..." : "Создаем пользователя...");
+      try {{
+        const response = await fetch(url, {{
+          method,
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{
+            login: userLogin.value,
+            password: userPassword.value || null,
+            roles: selectedRoles(),
+            must_change_password: userMustChangePassword.checked,
+          }}),
+        }});
+        const payload = await response.json();
+        if (!response.ok) {{
+          throw new Error(payload.detail || "Не удалось сохранить пользователя.");
+        }}
+        await loadUsers();
+        resetUserForm();
+        setStatus(id ? "Пользователь обновлен." : "Пользователь создан.");
+      }} catch (error) {{
+        setStatus(error.message, "error");
+      }}
+    }});
+
+    resetUserFormButton.addEventListener("click", resetUserForm);
+
+    usersTableBody.addEventListener("click", async (event) => {{
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {{
+        return;
+      }}
+      const action = target.dataset.action;
+      const id = target.dataset.id;
+      if (!action || !id) {{
+        return;
+      }}
+      const user = currentUsers.find((item) => String(item.id) === String(id));
+      if (!user) {{
+        setStatus("Пользователь не найден.", "error");
+        return;
+      }}
+      if (action === "edit") {{
+        fillUserForm(user);
+        return;
+      }}
+      if (action === "delete") {{
+        if (!window.confirm(`Удалить пользователя "${{user.login}}"?`)) {{
+          return;
+        }}
+        try {{
+          setStatus("Удаляем пользователя...");
+          const response = await fetch(`/api/admin/users/${{encodeURIComponent(id)}}`, {{ method: "DELETE" }});
+          const payload = await response.json();
+          if (!response.ok) {{
+            throw new Error(payload.detail || "Не удалось удалить пользователя.");
+          }}
+          await loadUsers();
+          if (String(userId.value) === String(id)) {{
+            resetUserForm();
+          }}
+          setStatus("Пользователь удален.");
+        }} catch (error) {{
+          setStatus(error.message, "error");
+        }}
+      }}
+    }});
+
+    renderUsers(currentUsers);
+  </script>
+</body>
+</html>"""
+
+
 def _isIssueIncludedByPartialRules(issuePayload: dict[str, object], cutoffDateIso: str) -> tuple[bool, str]:
     status = issuePayload.get("status") or {}
     statusName = str(status.get("name") or "")
@@ -7235,6 +7983,218 @@ def buildPlanningProjectsPage() -> str:
   </script>
 </body>
 </html>""".replace("__DEFAULT_YEAR_1__", str(defaultYear1)).replace("__DEFAULT_YEAR_2__", str(defaultYear2)).replace("__DEFAULT_YEAR_3__", str(defaultYear3))
+
+
+@app.get("/", response_class=HTMLResponse)
+def getIndexPage() -> HTMLResponse:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+    ensurePlanningProjectsTable()
+    return _renderHtmlPage(PAGE_HTML)
+
+
+@app.get("/login", response_class=HTMLResponse)
+def getLoginPage(next: str | None = Query("/", alias="next")) -> HTMLResponse:
+    _ensureAuthStorage()
+    return _renderHtmlPage(buildLoginPage(next or "/"))
+
+
+@app.get("/forgot-password", response_class=HTMLResponse)
+def getForgotPasswordPage() -> HTMLResponse:
+    _ensureAuthStorage()
+    return _renderHtmlPage(buildForgotPasswordPage())
+
+
+@app.get("/reset-password", response_class=HTMLResponse)
+def getResetPasswordPage(token: str = Query(...)) -> HTMLResponse:
+    _ensureAuthStorage()
+    return _renderHtmlPage(buildResetPasswordPage(token))
+
+
+@app.get("/change-password", response_class=HTMLResponse)
+def getChangePasswordPage(request: Request) -> HTMLResponse:
+    _ensureAuthStorage()
+    user = _getCurrentUser(request)
+    if not user:
+      return RedirectResponse(url="/login?next=/change-password", status_code=303)
+    return _renderHtmlPage(buildChangePasswordPage())
+
+
+@app.get("/logout")
+def logout(request: Request) -> RedirectResponse:
+    request.session.clear()
+    return RedirectResponse(url="/login", status_code=303)
+
+
+@app.post("/api/auth/login")
+def loginApi(
+    request: Request,
+    payload: LoginPayload,
+    next: str | None = Query("/", alias="next"),
+) -> dict[str, object]:
+    _ensureAuthStorage()
+    user = getUserByLogin(str(payload.login or "").strip())
+    if not user or not _verifyPassword(str(payload.password or ""), str(user.get("password_hash") or "")):
+        raise HTTPException(status_code=401, detail="Неверный логин или пароль.")
+
+    request.session["user_login"] = str(user.get("login") or "")
+    return {
+        "ok": True,
+        "must_change_password": bool(user.get("must_change_password")),
+        "next_path": _getSafeNextPath(next),
+    }
+
+
+@app.post("/api/auth/change-password")
+def changePasswordApi(request: Request, payload: ChangePasswordPayload) -> dict[str, object]:
+    _ensureAuthStorage()
+    user = _getCurrentUser(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Требуется вход в систему.")
+
+    newPassword = str(payload.new_password or "")
+    if len(newPassword) < 3:
+        raise HTTPException(status_code=400, detail="Новый пароль должен содержать не меньше 3 символов.")
+
+    updatedUser = updateUserPassword(int(user["id"]), _hashPassword(newPassword), False)
+    if not updatedUser:
+        raise HTTPException(status_code=404, detail="Пользователь не найден.")
+
+    request.session["user_login"] = str(updatedUser.get("login") or user.get("login") or "")
+    return {"ok": True, "next_path": "/"}
+
+
+@app.post("/api/auth/request-password-reset")
+def requestPasswordResetApi(request: Request, payload: PasswordResetRequestPayload) -> dict[str, object]:
+    _ensureAuthStorage()
+    loginValue = str(payload.email or "").strip()
+    if not loginValue:
+        raise HTTPException(status_code=400, detail="Укажите email.")
+
+    smtpHost = str(config.smtpHost or "").strip()
+    smtpFromEmail = str(config.smtpFromEmail or "").strip()
+    if not smtpHost or not smtpFromEmail:
+        raise HTTPException(status_code=503, detail="Отправка писем для сброса пароля пока не настроена.")
+
+    user = getUserByLogin(loginValue)
+    if user:
+        rawToken = secrets.token_urlsafe(32)
+        expiresAt = datetime.now(UTC) + timedelta(minutes=30)
+        storeUserPasswordResetToken(int(user["id"]), _hashResetToken(rawToken), expiresAt)
+        _sendPasswordResetEmail(loginValue, _buildPasswordResetLink(request, rawToken))
+
+    return {"ok": True, "detail": "Если пользователь найден, письмо отправлено."}
+
+
+@app.post("/api/auth/reset-password")
+def resetPasswordApi(payload: PasswordResetCompletePayload) -> dict[str, object]:
+    _ensureAuthStorage()
+    newPassword = str(payload.new_password or "")
+    if len(newPassword) < 3:
+        raise HTTPException(status_code=400, detail="Новый пароль должен содержать не меньше 3 символов.")
+
+    user = getUserByPasswordResetToken(_hashResetToken(str(payload.token or "")), datetime.now(UTC))
+    if not user:
+        raise HTTPException(status_code=400, detail="Ссылка для сброса пароля недействительна или устарела.")
+
+    updatedUser = updateUserPassword(int(user["id"]), _hashPassword(newPassword), False)
+    if not updatedUser:
+        raise HTTPException(status_code=404, detail="Пользователь не найден.")
+
+    clearUserPasswordResetToken(int(user["id"]))
+    return {"ok": True}
+
+
+@app.get("/admin/users", response_class=HTMLResponse)
+def getAdminUsersPage(request: Request) -> HTMLResponse:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    _requireAdminUser(request)
+    _ensureAuthStorage()
+    return _renderHtmlPage(buildAdminUsersPage(listUsers()))
+
+
+@app.get("/api/admin/users")
+def getAdminUsersApi(request: Request) -> dict[str, object]:
+    _requireAdminUser(request)
+    _ensureAuthStorage()
+    return {
+        "users": [
+            {**user, "roles": _parseRoles(user.get("roles"))}
+            for user in listUsers()
+        ]
+    }
+
+
+@app.post("/api/admin/users")
+def createAdminUserApi(request: Request, payload: UserPayload) -> dict[str, object]:
+    _requireAdminUser(request)
+    _ensureAuthStorage()
+
+    loginValue = str(payload.login or "").strip()
+    if not loginValue:
+        raise HTTPException(status_code=400, detail="Укажите логин.")
+    if getUserByLogin(loginValue):
+        raise HTTPException(status_code=400, detail="Пользователь с таким логином уже существует.")
+    if not payload.password:
+        raise HTTPException(status_code=400, detail="Укажите пароль.")
+
+    created = createUser(
+        {
+            "login": loginValue,
+            "password_hash": _hashPassword(payload.password),
+            "roles": _serializeRoles(payload.roles),
+            "must_change_password": bool(payload.must_change_password),
+        }
+    )
+    created["roles"] = _parseRoles(created.get("roles"))
+    return {"user": created}
+
+
+@app.put("/api/admin/users/{user_id}")
+def updateAdminUserApi(request: Request, user_id: int, payload: UserPayload) -> dict[str, object]:
+    _requireAdminUser(request)
+    _ensureAuthStorage()
+
+    loginValue = str(payload.login or "").strip()
+    if not loginValue:
+        raise HTTPException(status_code=400, detail="Укажите логин.")
+
+    existingByLogin = getUserByLogin(loginValue)
+    if existingByLogin and int(existingByLogin["id"]) != user_id:
+        raise HTTPException(status_code=400, detail="Пользователь с таким логином уже существует.")
+
+    updated = updateUser(
+        user_id,
+        {
+            "login": loginValue,
+            "roles": _serializeRoles(payload.roles),
+            "must_change_password": bool(payload.must_change_password),
+            "password_hash": _hashPassword(payload.password) if payload.password else None,
+        },
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Пользователь не найден.")
+    updated["roles"] = _parseRoles(updated.get("roles"))
+    return {"user": updated}
+
+
+@app.delete("/api/admin/users/{user_id}")
+def deleteAdminUserApi(request: Request, user_id: int) -> dict[str, object]:
+    currentUser = _requireAdminUser(request)
+    _ensureAuthStorage()
+
+    if int(currentUser["id"]) == user_id:
+        raise HTTPException(status_code=400, detail="Нельзя удалить текущего пользователя.")
+
+    deleted = deleteUser(user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Пользователь не найден.")
+    return {"deleted": True}
 
 
 @app.get("/planning-projects", response_class=HTMLResponse)
