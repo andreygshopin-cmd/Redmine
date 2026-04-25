@@ -348,6 +348,7 @@ def ensurePlanningProjectsTable() -> None:
                         estimate_doc_url TEXT,
                         bitrix_url TEXT,
                         comment_text TEXT,
+                        is_closed BOOLEAN NOT NULL DEFAULT FALSE,
                         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
@@ -403,6 +404,15 @@ def ensurePlanningProjectsTable() -> None:
                     """
                     ALTER TABLE planning_projects
                     ADD COLUMN IF NOT EXISTS direction TEXT
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE planning_projects
+                    ADD COLUMN IF NOT EXISTS is_closed BOOLEAN NOT NULL DEFAULT FALSE
                     """
                 )
             )
@@ -816,14 +826,53 @@ def listRecentIssueSnapshotRuns(limit: int | None = 20) -> list[dict[str, object
         return [dict(row._mapping) for row in rows]
 
 
-def listPlanningProjects() -> list[dict[str, object]]:
+def countPlanningProjects(searchText: str | None = None, includeClosed: bool = False) -> int:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
 
+    normalizedSearch = str(searchText or "").strip()
+    searchPattern = f"%{normalizedSearch.lower()}%" if normalizedSearch else ""
+
     with engine.connect() as connection:
-        rows = connection.execute(
+        row = connection.execute(
             text(
                 """
+                SELECT COUNT(*)
+                FROM planning_projects
+                WHERE (:include_closed = TRUE OR COALESCE(is_closed, FALSE) = FALSE)
+                  AND (
+                    :search_pattern = ''
+                    OR LOWER(COALESCE(direction, '')) LIKE :search_pattern
+                    OR LOWER(COALESCE(project_name, '')) LIKE :search_pattern
+                    OR LOWER(COALESCE(redmine_identifier, '')) LIKE :search_pattern
+                    OR LOWER(COALESCE(pm_name, '')) LIKE :search_pattern
+                    OR LOWER(COALESCE(customer, '')) LIKE :search_pattern
+                    OR LOWER(COALESCE(estimate_doc_url, '')) LIKE :search_pattern
+                    OR LOWER(COALESCE(bitrix_url, '')) LIKE :search_pattern
+                    OR LOWER(COALESCE(comment_text, '')) LIKE :search_pattern
+                  )
+                """
+            ),
+            {"include_closed": includeClosed, "search_pattern": searchPattern},
+        ).scalar_one()
+    return int(row or 0)
+
+
+def listPlanningProjects(
+    searchText: str | None = None,
+    includeClosed: bool = False,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict[str, object]]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    normalizedSearch = str(searchText or "").strip()
+    searchPattern = f"%{normalizedSearch.lower()}%" if normalizedSearch else ""
+    normalizedLimit = max(1, int(limit)) if limit is not None else None
+    normalizedOffset = max(0, int(offset or 0))
+
+    queryText = """
                 SELECT
                     id,
                     direction,
@@ -840,13 +889,37 @@ def listPlanningProjects() -> list[dict[str, object]]:
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
+                    is_closed,
                     created_at,
                     updated_at
                 FROM planning_projects
+                WHERE (:include_closed = TRUE OR COALESCE(is_closed, FALSE) = FALSE)
+                  AND (
+                    :search_pattern = ''
+                    OR LOWER(COALESCE(direction, '')) LIKE :search_pattern
+                    OR LOWER(COALESCE(project_name, '')) LIKE :search_pattern
+                    OR LOWER(COALESCE(redmine_identifier, '')) LIKE :search_pattern
+                    OR LOWER(COALESCE(pm_name, '')) LIKE :search_pattern
+                    OR LOWER(COALESCE(customer, '')) LIKE :search_pattern
+                    OR LOWER(COALESCE(estimate_doc_url, '')) LIKE :search_pattern
+                    OR LOWER(COALESCE(bitrix_url, '')) LIKE :search_pattern
+                    OR LOWER(COALESCE(comment_text, '')) LIKE :search_pattern
+                  )
                 ORDER BY LOWER(project_name), id
-                """
-            )
-        )
+    """
+    if normalizedLimit is not None:
+        queryText += "\n                LIMIT :limit OFFSET :offset"
+
+    params: dict[str, object] = {
+        "include_closed": includeClosed,
+        "search_pattern": searchPattern,
+    }
+    if normalizedLimit is not None:
+        params["limit"] = normalizedLimit
+        params["offset"] = normalizedOffset
+
+    with engine.connect() as connection:
+        rows = connection.execute(text(queryText), params)
     return [dict(row._mapping) for row in rows]
 
 
@@ -878,6 +951,7 @@ def getPlanningProjectByRedmineIdentifier(redmineIdentifier: str) -> dict[str, o
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
+                    is_closed,
                     created_at,
                     updated_at
                 FROM planning_projects
@@ -2187,6 +2261,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
+                    is_closed,
                     updated_at
                 ) VALUES (
                     :direction,
@@ -2203,6 +2278,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     :estimate_doc_url,
                     :bitrix_url,
                     :comment_text,
+                    :is_closed,
                     CURRENT_TIMESTAMP
                 )
                 RETURNING
@@ -2221,6 +2297,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
+                    is_closed,
                     created_at,
                     updated_at
                 """
@@ -2254,6 +2331,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     estimate_doc_url = :estimate_doc_url,
                     bitrix_url = :bitrix_url,
                     comment_text = :comment_text,
+                    is_closed = :is_closed,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = :project_id
                 RETURNING
@@ -2272,6 +2350,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
+                    is_closed,
                     created_at,
                     updated_at
                 """

@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from src.redmine.config import loadConfig
 from src.redmine.db import (
     checkDatabaseConnection,
+    countPlanningProjects,
     countIssueSnapshotRuns,
     createPlanningProject,
     createUser,
@@ -322,6 +323,7 @@ class PlanningProjectPayload(BaseModel):
     estimate_doc_url: str | None = None
     bitrix_url: str | None = None
     comment_text: str | None = None
+    is_closed: bool = False
 
 
 class LoginPayload(BaseModel):
@@ -6016,6 +6018,7 @@ def normalizePlanningProjectPayload(payload: PlanningProjectPayload) -> dict[str
         "estimate_doc_url": _normalizePlanningProjectText(payload.estimate_doc_url),
         "bitrix_url": _normalizePlanningProjectText(payload.bitrix_url),
         "comment_text": _normalizePlanningProjectText(payload.comment_text),
+        "is_closed": bool(payload.is_closed),
     }
 
 
@@ -6519,6 +6522,16 @@ def buildPlanningProjectsPage() -> str:
         <h2 style="margin:0;">Таблица планирования</h2>
         <span id="planningProjectsCount">Загрузка...</span>
       </div>
+      <div class="table-filters">
+        <div class="table-filter-field">
+          <label for="planningProjectsSearch">????????????</label>
+          <input id="planningProjectsSearch" type="text" placeholder="????????????????, ??????????????????????????, ????...">
+        </div>
+        <label class="checkbox-field" for="planningProjectsShowClosed">
+          <input id="planningProjectsShowClosed" type="checkbox">
+          <span>???????????????????? ????????????????</span>
+        </label>
+      </div>
       <div class="table-wrap">
         <table>
           <thead>
@@ -6612,6 +6625,8 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectsTableBody = document.getElementById("planningProjectsTableBody");
     const planningProjectsCount = document.getElementById("planningProjectsCount");
     const planningProjectsStatus = document.getElementById("planningProjectsStatus");
+    const planningProjectsSearch = document.getElementById("planningProjectsSearch");
+    const planningProjectsShowClosed = document.getElementById("planningProjectsShowClosed");
     const planningProjectForm = document.getElementById("planningProjectForm");
     const planningFormTitle = document.getElementById("planningFormTitle");
     const planningProjectId = document.getElementById("planningProjectId");
@@ -6629,6 +6644,8 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectComment = document.getElementById("planningProjectComment");
     const resetPlanningProjectFormButton = document.getElementById("resetPlanningProjectFormButton");
     const planningProjectFormSection = planningProjectForm ? planningProjectForm.closest(".panel") : null;
+    let currentPlanningProjects = [];
+    let planningProjectsSearchTimer = null;
 
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, (char) => {
@@ -6694,6 +6711,7 @@ def buildPlanningProjectsPage() -> str:
 
     function fillPlanningProjectForm(project) {
       planningProjectId.value = project.id ?? "";
+      planningProjectClosed.checked = Boolean(project.is_closed);
       planningProjectName.value = project.project_name ?? "";
       planningProjectIdentifier.value = project.redmine_identifier ?? "";
       planningProjectPm.value = project.pm_name ?? "";
@@ -6735,46 +6753,62 @@ def buildPlanningProjectsPage() -> str:
     }
 
     function renderPlanningProjects(projects) {
-      planningProjectsCount.textContent = `Всего записей: ${projects.length}`;
+      const totalProjects = Number(window.__planningProjectsTotal || projects.length || 0);
+      planningProjectsCount.textContent = `Показано: ${projects.length} из ${totalProjects} (лимит 100)`;
       if (!projects.length) {
-        planningProjectsTableBody.innerHTML = '<tr><td colspan="13" class="empty-state">Пока нет ни одной записи.</td></tr>';
+        planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Пока нет ни одной записи.</td></tr>';
         return;
       }
 
       planningProjectsTableBody.innerHTML = projects.map((project) => `
         <tr>
-          <td>${escapeHtml(project.project_name ?? "—")}</td>
-          <td class="mono">${escapeHtml(project.redmine_identifier ?? "—")}</td>
-          <td>${escapeHtml(project.pm_name ?? "—")}</td>
-          <td>${escapeHtml(project.customer ?? "—")}</td>
-          <td>${formatOptionalDate(project.start_date)}</td>
-          <td>${formatOptionalDate(project.end_date)}</td>
-          <td>${formatOptionalNumber(project.baseline_estimate_hours)}</td>
-          <td>${formatOptionalNumber(project.p1)}</td>
-          <td>${formatOptionalNumber(project.p2)}</td>
-          <td class="link-cell">${buildOptionalLink(project.estimate_doc_url)}</td>
-          <td class="link-cell">${buildOptionalLink(project.bitrix_url)}</td>
-          <td>${escapeHtml(project.comment_text ?? "—")}</td>
-          <td>
+          <td class="actions-col">
             <div class="row-actions">
-              <button type="button" class="edit-button" data-action="edit" data-id="${project.id}">Редактировать</button>
+              <button type="button" class="edit-button" data-action="edit" data-id="${project.id}">Изм.</button>
               <button type="button" class="delete-button" data-action="delete" data-id="${project.id}">Удалить</button>
             </div>
           </td>
+          <td class="direction-col">${escapeHtml(project.direction ?? "?")}</td>
+          <td class="closed-col">${project.is_closed ? "Да" : "?"}</td>
+          <td class="customer-col">${escapeHtml(project.customer ?? "?")}</td>
+          <td class="project-name-col">${escapeHtml(project.project_name ?? "?")}</td>
+          <td class="identifier-col mono">${escapeHtml(project.redmine_identifier ?? "?")}</td>
+          <td class="pm-col">${escapeHtml(project.pm_name ?? "?")}</td>
+          <td class="start-date-col">${formatOptionalDate(project.start_date)}</td>
+          <td class="end-date-col">${formatOptionalDate(project.end_date)}</td>
+          <td class="development-col">${formatOptionalNumber(project.development_hours)}</td>
+          <td class="baseline-col">${formatOptionalNumber(project.baseline_estimate_hours)}</td>
+          <td class="p-col">${formatOptionalNumber(project.p1)}</td>
+          <td class="p-col">${formatOptionalNumber(project.p2)}</td>
+          <td class="doc-col link-cell">${buildOptionalLink(project.estimate_doc_url)}</td>
+          <td class="bitrix-col link-cell">${buildOptionalLink(project.bitrix_url)}</td>
+          <td class="comment-col" title="${escapeHtml(project.comment_text ?? "")}">${truncateDisplay(project.comment_text)}</td>
         </tr>
       `).join("");
     }
 
     async function loadPlanningProjects() {
-      planningProjectsTableBody.innerHTML = '<tr><td colspan="13" class="empty-state">Загружаем записи...</td></tr>';
-      const response = await fetch("/api/planning-projects");
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Загружаем записи...</td></tr>';
+      const params = new URLSearchParams();
+      const searchValue = String(planningProjectsSearch?.value || "").trim();
+      if (searchValue) {
+        params.set("q", searchValue);
+      }
+      if (planningProjectsShowClosed?.checked) {
+        params.set("include_closed", "true");
+      }
+      params.set("limit", "100");
+      const response = await fetch(`/api/planning-projects?${params.toString()}`);
       const payload = await response.json();
       if (!response.ok) {
         throw new Error(payload.detail || "Не удалось загрузить планирование проектов.");
       }
-      renderPlanningProjects(payload.projects || []);
-      applyPlanningProjectPrefill(payload.projects || []);
-      return payload.projects || [];
+      const projects = payload.projects || [];
+      currentPlanningProjects = projects;
+      window.__planningProjectsTotal = Number(payload.total || projects.length || 0);
+      renderPlanningProjects(projects);
+      applyPlanningProjectPrefill(projects);
+      return projects;
     }
 
     function collectPlanningProjectPayload() {
@@ -6791,6 +6825,7 @@ def buildPlanningProjectsPage() -> str:
         estimate_doc_url: planningProjectEstimateDoc.value.trim(),
         bitrix_url: planningProjectBitrix.value.trim(),
         comment_text: planningProjectComment.value.trim(),
+        is_closed: Boolean(planningProjectClosed.checked),
       };
     }
 
@@ -6870,6 +6905,27 @@ def buildPlanningProjectsPage() -> str:
       } catch (error) {
         setPlanningProjectsStatus(error instanceof Error ? error.message : "Ошибка обработки записи.");
       }
+    });
+
+    planningProjectsSearch?.addEventListener("input", () => {
+      if (planningProjectsSearchTimer) {
+        window.clearTimeout(planningProjectsSearchTimer);
+      }
+      planningProjectsSearchTimer = window.setTimeout(() => {
+        loadPlanningProjects().catch((error) => {
+          planningProjectsCount.textContent = "Ошибка";
+          planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Не удалось загрузить записи.</td></tr>';
+          setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
+        });
+      }, 300);
+    });
+
+    planningProjectsShowClosed?.addEventListener("change", () => {
+      loadPlanningProjects().catch((error) => {
+        planningProjectsCount.textContent = "??????";
+        planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">?? ??????? ????????? ??????.</td></tr>';
+        setPlanningProjectsStatus(error instanceof Error ? error.message : "?? ??????? ????????? ???????????? ????????.");
+      });
     });
 
     loadPlanningProjects().catch((error) => {
@@ -6985,13 +7041,15 @@ def buildLoginPage(nextPath: str = "/") -> str:
     }}
     .status.error {{ color: #d54343; }}
     .secondary-link {{
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
+      display: inline;
       margin-top: 8px;
       color: var(--blue-302);
-      text-decoration: none;
+      text-decoration: underline;
+      text-underline-offset: 2px;
       font-weight: 600;
+    }}
+    .secondary-link:hover {{
+      color: var(--orange-1585);
     }}
   </style>
 </head>
@@ -8717,6 +8775,8 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectsTableBody = document.getElementById("planningProjectsTableBody");
     const planningProjectsCount = document.getElementById("planningProjectsCount");
     const planningProjectsStatus = document.getElementById("planningProjectsStatus");
+    const planningProjectsSearch = document.getElementById("planningProjectsSearch");
+    const planningProjectsShowClosed = document.getElementById("planningProjectsShowClosed");
     const planningProjectForm = document.getElementById("planningProjectForm");
     const planningFormTitle = document.getElementById("planningFormTitle");
     const planningProjectId = document.getElementById("planningProjectId");
@@ -8735,6 +8795,8 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectComment = document.getElementById("planningProjectComment");
     const resetPlanningProjectFormButton = document.getElementById("resetPlanningProjectFormButton");
     const planningProjectFormSection = planningProjectForm ? planningProjectForm.closest(".panel") : null;
+    let currentPlanningProjects = [];
+    let planningProjectsSearchTimer = null;
 
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, (char) => {
@@ -8808,6 +8870,7 @@ def buildPlanningProjectsPage() -> str:
 
     function fillPlanningProjectForm(project) {
       planningProjectId.value = project.id ?? "";
+      planningProjectClosed.checked = Boolean(project.is_closed);
       planningProjectName.value = project.project_name ?? "";
       planningProjectIdentifier.value = project.redmine_identifier ?? "";
       planningProjectPm.value = project.pm_name ?? "";
@@ -8888,9 +8951,12 @@ def buildPlanningProjectsPage() -> str:
       if (!response.ok) {
         throw new Error(payload.detail || "Не удалось загрузить планирование проектов.");
       }
-      renderPlanningProjects(payload.projects || []);
-      applyPlanningProjectPrefill(payload.projects || []);
-      return payload.projects || [];
+      const projects = payload.projects || [];
+      currentPlanningProjects = projects;
+      window.__planningProjectsTotal = Number(payload.total || projects.length || 0);
+      renderPlanningProjects(projects);
+      applyPlanningProjectPrefill(projects);
+      return projects;
     }
 
     function collectPlanningProjectPayload() {
@@ -8908,6 +8974,7 @@ def buildPlanningProjectsPage() -> str:
         estimate_doc_url: planningProjectEstimateDoc.value.trim(),
         bitrix_url: planningProjectBitrix.value.trim(),
         comment_text: planningProjectComment.value.trim(),
+        is_closed: Boolean(planningProjectClosed.checked),
       };
     }
 
@@ -8987,6 +9054,27 @@ def buildPlanningProjectsPage() -> str:
       } catch (error) {
         setPlanningProjectsStatus(error instanceof Error ? error.message : "Ошибка обработки записи.");
       }
+    });
+
+    planningProjectsSearch?.addEventListener("input", () => {
+      if (planningProjectsSearchTimer) {
+        window.clearTimeout(planningProjectsSearchTimer);
+      }
+      planningProjectsSearchTimer = window.setTimeout(() => {
+        loadPlanningProjects().catch((error) => {
+          planningProjectsCount.textContent = "Ошибка";
+          planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Не удалось загрузить записи.</td></tr>';
+          setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
+        });
+      }, 300);
+    });
+
+    planningProjectsShowClosed?.addEventListener("change", () => {
+      loadPlanningProjects().catch((error) => {
+        planningProjectsCount.textContent = "??????";
+        planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">?? ??????? ????????? ??????.</td></tr>';
+        setPlanningProjectsStatus(error instanceof Error ? error.message : "?? ??????? ????????? ???????????? ????????.");
+      });
     });
 
     loadPlanningProjects().catch((error) => {
@@ -9177,6 +9265,45 @@ def buildPlanningProjectsPage() -> str:
       margin: 0 0 12px;
       color: var(--muted);
     }
+    .table-filters {
+      display: flex;
+      gap: 12px;
+      align-items: end;
+      flex-wrap: wrap;
+      margin: 0 0 12px;
+    }
+    .table-filter-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 280px;
+    }
+    .table-filter-field label {
+      font-weight: 700;
+      font-size: 0.92rem;
+    }
+    .table-filter-field input[type="text"] {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font: inherit;
+      color: var(--text);
+      background: #ffffff;
+    }
+    .checkbox-field {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .checkbox-field input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+    }
     .table-wrap {
       overflow: auto;
       border: 1px solid var(--line);
@@ -9184,7 +9311,7 @@ def buildPlanningProjectsPage() -> str:
     }
     table {
       width: 100%;
-      min-width: 1940px;
+      min-width: 2080px;
       border-collapse: collapse;
       background: #ffffff;
     }
@@ -9207,12 +9334,13 @@ def buildPlanningProjectsPage() -> str:
     tr:last-child td { border-bottom: 0; }
     .mono { font-family: Consolas, "Courier New", monospace; }
     th.direction-col, td.direction-col { width: 12ch; min-width: 12ch; max-width: 12ch; white-space: nowrap; }
+    th.closed-col, td.closed-col { width: 8ch; min-width: 8ch; max-width: 8ch; white-space: nowrap; text-align: center; }
     th.customer-col, td.customer-col { width: 180px; }
     th.project-name-col, td.project-name-col { width: 15ch; min-width: 15ch; max-width: 15ch; }
-    th.identifier-col, td.identifier-col { width: 230px; }
+    th.identifier-col, td.identifier-col { width: 276px; min-width: 276px; max-width: 276px; }
     th.pm-col, td.pm-col { width: 150px; }
     th.start-date-col, td.start-date-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
-    th.end-date-col, td.end-date-col { width: 160px; }
+    th.end-date-col, td.end-date-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
     th.development-col, td.development-col { width: 150px; }
     th.baseline-col, td.baseline-col { width: 140px; }
     th.p-col, td.p-col { width: 10ch; min-width: 10ch; max-width: 10ch; }
@@ -9291,12 +9419,23 @@ def buildPlanningProjectsPage() -> str:
         <h2 style="margin:0;">Таблица планирования</h2>
         <span id="planningProjectsCount">Загрузка...</span>
       </div>
+      <div class="table-filters">
+        <div class="table-filter-field">
+          <label for="planningProjectsSearch">&#1055;&#1086;&#1080;&#1089;&#1082;</label>
+          <input id="planningProjectsSearch" type="search" placeholder="&#1053;&#1072;&#1079;&#1074;&#1072;&#1085;&#1080;&#1077;, &#1080;&#1076;&#1077;&#1085;&#1090;&#1080;&#1092;&#1080;&#1082;&#1072;&#1090;&#1086;&#1088;, &#1079;&#1072;&#1082;&#1072;&#1079;&#1095;&#1080;&#1082;...">
+        </div>
+        <label class="checkbox-field" for="planningProjectsShowClosed">
+          <input id="planningProjectsShowClosed" type="checkbox">
+          <span>&#1055;&#1086;&#1082;&#1072;&#1079;&#1099;&#1074;&#1072;&#1090;&#1100; &#1079;&#1072;&#1082;&#1088;&#1099;&#1090;&#1099;&#1077;</span>
+        </label>
+      </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
               <th class="actions-col">Действия</th>
               <th class="direction-col">Направление</th>
+              <th class="closed-col">&#1047;&#1072;&#1082;&#1088;&#1099;&#1090;</th>
               <th class="customer-col">Заказчик</th>
               <th class="project-name-col">Название проекта</th>
               <th class="identifier-col">Идентификатор в Redmine</th>
@@ -9313,7 +9452,7 @@ def buildPlanningProjectsPage() -> str:
             </tr>
           </thead>
           <tbody id="planningProjectsTableBody">
-            <tr><td colspan="15" class="empty-state">Загружаем записи...</td></tr>
+            <tr><td colspan="16" class="empty-state">Загружаем записи...</td></tr>
           </tbody>
         </table>
       </div>
@@ -9328,6 +9467,10 @@ def buildPlanningProjectsPage() -> str:
             <label for="planningProjectDirection">Направление</label>
             <input id="planningProjectDirection" type="text">
           </div>
+          <label class="checkbox-field" for="planningProjectClosed">
+            <input id="planningProjectClosed" type="checkbox">
+            <span>&#1047;&#1072;&#1082;&#1088;&#1099;&#1090;</span>
+          </label>
           <div class="field field-wide">
             <label for="planningProjectName">Название проекта</label>
             <input id="planningProjectName" type="text" required>
@@ -9394,10 +9537,13 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectsTableBody = document.getElementById("planningProjectsTableBody");
     const planningProjectsCount = document.getElementById("planningProjectsCount");
     const planningProjectsStatus = document.getElementById("planningProjectsStatus");
+    const planningProjectsSearch = document.getElementById("planningProjectsSearch");
+    const planningProjectsShowClosed = document.getElementById("planningProjectsShowClosed");
     const planningProjectForm = document.getElementById("planningProjectForm");
     const planningFormTitle = document.getElementById("planningFormTitle");
     const planningProjectId = document.getElementById("planningProjectId");
     const planningProjectDirection = document.getElementById("planningProjectDirection");
+    const planningProjectClosed = document.getElementById("planningProjectClosed");
     const planningProjectName = document.getElementById("planningProjectName");
     const planningProjectIdentifier = document.getElementById("planningProjectIdentifier");
     const planningProjectPm = document.getElementById("planningProjectPm");
@@ -9413,6 +9559,8 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectComment = document.getElementById("planningProjectComment");
     const resetPlanningProjectFormButton = document.getElementById("resetPlanningProjectFormButton");
     const planningProjectFormSection = planningProjectForm ? planningProjectForm.closest(".panel") : null;
+    let currentPlanningProjects = [];
+    let planningProjectsSearchTimer = null;
 
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, (char) => {
@@ -9487,6 +9635,7 @@ def buildPlanningProjectsPage() -> str:
     function fillPlanningProjectForm(project) {
       planningProjectId.value = project.id ?? "";
       planningProjectDirection.value = project.direction ?? "";
+      planningProjectClosed.checked = Boolean(project.is_closed);
       planningProjectName.value = project.project_name ?? "";
       planningProjectIdentifier.value = project.redmine_identifier ?? "";
       planningProjectPm.value = project.pm_name ?? "";
@@ -9529,9 +9678,10 @@ def buildPlanningProjectsPage() -> str:
     }
 
     function renderPlanningProjects(projects) {
-      planningProjectsCount.textContent = `Всего записей: ${projects.length}`;
+      const totalProjects = Number(window.__planningProjectsTotal || projects.length || 0);
+      planningProjectsCount.textContent = `Показано: ${projects.length} из ${totalProjects} (лимит 100)`;
       if (!projects.length) {
-        planningProjectsTableBody.innerHTML = '<tr><td colspan="15" class="empty-state">Пока нет ни одной записи.</td></tr>';
+        planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Пока нет ни одной записи.</td></tr>';
         return;
       }
 
@@ -9543,11 +9693,12 @@ def buildPlanningProjectsPage() -> str:
               <button type="button" class="delete-button" data-action="delete" data-id="${project.id}">Удалить</button>
             </div>
           </td>
-          <td class="direction-col">${escapeHtml(project.direction ?? "—")}</td>
-          <td class="customer-col">${escapeHtml(project.customer ?? "—")}</td>
-          <td class="project-name-col">${escapeHtml(project.project_name ?? "—")}</td>
-          <td class="identifier-col mono">${escapeHtml(project.redmine_identifier ?? "—")}</td>
-          <td class="pm-col">${escapeHtml(project.pm_name ?? "—")}</td>
+          <td class="direction-col">${escapeHtml(project.direction ?? "?")}</td>
+          <td class="closed-col">${project.is_closed ? "Да" : "?"}</td>
+          <td class="customer-col">${escapeHtml(project.customer ?? "?")}</td>
+          <td class="project-name-col">${escapeHtml(project.project_name ?? "?")}</td>
+          <td class="identifier-col mono">${escapeHtml(project.redmine_identifier ?? "?")}</td>
+          <td class="pm-col">${escapeHtml(project.pm_name ?? "?")}</td>
           <td class="start-date-col">${formatOptionalDate(project.start_date)}</td>
           <td class="end-date-col">${formatOptionalDate(project.end_date)}</td>
           <td class="development-col">${formatOptionalNumber(project.development_hours)}</td>
@@ -9562,17 +9713,28 @@ def buildPlanningProjectsPage() -> str:
     }
 
     async function loadPlanningProjects() {
-      planningProjectsTableBody.innerHTML = '<tr><td colspan="15" class="empty-state">Загружаем записи...</td></tr>';
-      const response = await fetch("/api/planning-projects");
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Загружаем записи...</td></tr>';
+      const params = new URLSearchParams();
+      const searchValue = String(planningProjectsSearch?.value || "").trim();
+      if (searchValue) {
+        params.set("q", searchValue);
+      }
+      if (planningProjectsShowClosed?.checked) {
+        params.set("include_closed", "true");
+      }
+      params.set("limit", "100");
+      const response = await fetch(`/api/planning-projects?${params.toString()}`);
       const payload = await response.json();
       if (!response.ok) {
         throw new Error(payload.detail || "Не удалось загрузить планирование проектов.");
       }
-      renderPlanningProjects(payload.projects || []);
-      applyPlanningProjectPrefill(payload.projects || []);
-      return payload.projects || [];
+      const projects = payload.projects || [];
+      currentPlanningProjects = projects;
+      window.__planningProjectsTotal = Number(payload.total || projects.length || 0);
+      renderPlanningProjects(projects);
+      applyPlanningProjectPrefill(projects);
+      return projects;
     }
-
     function collectPlanningProjectPayload() {
       return {
         direction: planningProjectDirection.value.trim(),
@@ -9589,6 +9751,7 @@ def buildPlanningProjectsPage() -> str:
         estimate_doc_url: planningProjectEstimateDoc.value.trim(),
         bitrix_url: planningProjectBitrix.value.trim(),
         comment_text: planningProjectComment.value.trim(),
+        is_closed: Boolean(planningProjectClosed.checked),
       };
     }
 
@@ -9633,13 +9796,7 @@ def buildPlanningProjectsPage() -> str:
       }
 
       try {
-        const response = await fetch("/api/planning-projects");
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.detail || "Не удалось загрузить записи.");
-        }
-        const projects = payload.projects || [];
-        const currentProject = projects.find((item) => String(item.id) === String(projectId));
+        const currentProject = currentPlanningProjects.find((item) => String(item.id) === String(projectId));
         if (!currentProject) {
           throw new Error("Запись не найдена.");
         }
@@ -9670,10 +9827,31 @@ def buildPlanningProjectsPage() -> str:
       }
     });
 
+    planningProjectsSearch?.addEventListener("input", () => {
+      if (planningProjectsSearchTimer) {
+        window.clearTimeout(planningProjectsSearchTimer);
+      }
+      planningProjectsSearchTimer = window.setTimeout(() => {
+        loadPlanningProjects().catch((error) => {
+          planningProjectsCount.textContent = "Ошибка";
+          planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Не удалось загрузить записи.</td></tr>';
+          setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
+        });
+      }, 300);
+    });
+
+    planningProjectsShowClosed?.addEventListener("change", () => {
+      loadPlanningProjects().catch((error) => {
+        planningProjectsCount.textContent = "????????????";
+        planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">???? ?????????????? ?????????????????? ????????????.</td></tr>';
+        setPlanningProjectsStatus(error instanceof Error ? error.message : "???? ?????????????? ?????????????????? ???????????????????????? ????????????????.");
+      });
+    });
+
     loadPlanningProjects().catch((error) => {
-      planningProjectsCount.textContent = "Ошибка";
-      planningProjectsTableBody.innerHTML = '<tr><td colspan="15" class="empty-state">Не удалось загрузить записи.</td></tr>';
-      setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
+      planningProjectsCount.textContent = "????????????";
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">???? ?????????????? ?????????????????? ????????????.</td></tr>';
+      setPlanningProjectsStatus(error instanceof Error ? error.message : "???? ?????????????? ?????????????????? ???????????????????????? ????????????????.");
     });
   </script>
 </body>
@@ -9716,12 +9894,20 @@ def getProjects() -> dict[str, object]:
 
 
 @app.get("/api/planning-projects")
-def getPlanningProjects() -> dict[str, object]:
+def getPlanningProjects(
+    q: str | None = Query(None),
+    include_closed: bool = Query(False),
+    limit: int = Query(100, ge=1, le=500),
+) -> dict[str, object]:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensurePlanningProjectsTable()
-    return {"projects": listPlanningProjects()}
+    return {
+        "projects": listPlanningProjects(searchText=q, includeClosed=include_closed, limit=limit),
+        "total": countPlanningProjects(searchText=q, includeClosed=include_closed),
+        "limit": limit,
+    }
 
 
 @app.post("/api/planning-projects")
