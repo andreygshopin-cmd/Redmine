@@ -4773,7 +4773,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
           remainingTotalData.push(null);
           remainingDevelopmentData.push(null);
           remainingBugData.push(null);
-          developmentHoursData.push(planningDevelopmentHoursTotal > 0 ? planningDevelopmentHoursTotal : null);
+          developmentHoursData.push(null);
           continue;
         }}
 
