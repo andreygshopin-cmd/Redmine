@@ -35,11 +35,11 @@ from src.redmine.db import (
     ensureProjectsTable,
     ensureUsersTable,
     getFilteredSnapshotIssuesForProjectByDate,
-    getPlanningProjectByRedmineIdentifier,
     getSnapshotRunsWithIssuesForProjectYear,
     getSnapshotIssuesForProjectByDate,
     getUserByPasswordResetToken,
     getUserByLogin,
+    listPlanningProjectsByRedmineIdentifier,
     listFilteredSnapshotIssuesForProjectByDate,
     listLatestSnapshotIssuesWithParents,
     listPlanningProjects,
@@ -3254,14 +3254,19 @@ def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str
                 "baseline_total": 0.0,
                 "development_volume": 0.0,
                 "development_remaining": 0.0,
+                "development_volume_risk": 0.0,
+                "development_remaining_risk": 0.0,
                 "bug_volume": 0.0,
                 "bug_remaining": 0.0,
+                "bug_volume_risk": 0.0,
+                "bug_remaining_risk": 0.0,
             },
         )
 
         trackerName = normalizeBurndownText(issue.get("tracker_name"))
         statusName = issue.get("status_name")
         planHours = float(issue.get("estimated_hours") or 0)
+        riskPlanHours = float(issue.get("risk_estimate_hours") or 0)
         factHours = float(issue.get("spent_hours") or 0)
 
         if featureId is not None and featureId == issueId and trackerName == "feature":
@@ -3271,27 +3276,41 @@ def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str
         baselineEstimateHours = float(issue.get("baseline_estimate_hours") or 0)
         group["baseline_total"] = float(group["baseline_total"]) + baselineEstimateHours
 
-        if trackerName == "разработка":
+        if trackerName == "??????????":
             if isBurndownClosedTaskStatus(statusName):
                 volume = factHours
                 remaining = 0.0
+                riskVolume = factHours
+                riskRemaining = 0.0
             else:
                 volume = max(baselineEstimateHours, planHours, factHours)
                 remaining = max(0.0, max(baselineEstimateHours, planHours) - factHours)
+                riskVolume = max(baselineEstimateHours, riskPlanHours, factHours)
+                riskRemaining = max(0.0, max(baselineEstimateHours, riskPlanHours) - factHours)
             group["development_volume"] = float(group["development_volume"]) + volume
             group["development_remaining"] = float(group["development_remaining"]) + remaining
-        elif trackerName == "процессы разработки":
+            group["development_volume_risk"] = float(group["development_volume_risk"]) + riskVolume
+            group["development_remaining_risk"] = float(group["development_remaining_risk"]) + riskRemaining
+        elif trackerName == "???????? ??????????":
             volume = max(planHours, factHours)
+            riskVolume = max(riskPlanHours, factHours)
             group["development_volume"] = float(group["development_volume"]) + volume
-        elif trackerName == "ошибка":
+            group["development_volume_risk"] = float(group["development_volume_risk"]) + riskVolume
+        elif trackerName == "??????":
             if isBurndownClosedTaskStatus(statusName):
                 volume = factHours
                 remaining = 0.0
+                riskVolume = factHours
+                riskRemaining = 0.0
             else:
                 volume = max(planHours, factHours)
                 remaining = max(0.0, planHours - factHours)
+                riskVolume = max(riskPlanHours, factHours)
+                riskRemaining = max(0.0, riskPlanHours - factHours)
             group["bug_volume"] = float(group["bug_volume"]) + volume
             group["bug_remaining"] = float(group["bug_remaining"]) + remaining
+            group["bug_volume_risk"] = float(group["bug_volume_risk"]) + riskVolume
+            group["bug_remaining_risk"] = float(group["bug_remaining_risk"]) + riskRemaining
 
     return list(groupsByKey.values())
 
@@ -3346,7 +3365,9 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         projectInfo.get("project_identifier") or (storedProject.get("identifier") if storedProject else "")
     ).strip()
     projectIdentifier = escape(projectIdentifierRaw or "—")
-    planningProject = getPlanningProjectByRedmineIdentifier(projectIdentifierRaw) if projectIdentifierRaw else None
+    planningProjects = (
+        listPlanningProjectsByRedmineIdentifier(projectIdentifierRaw) if projectIdentifierRaw else []
+    )
 
     def formatPlanningMetric(value: object) -> str:
         if value in (None, ""):
@@ -3366,16 +3387,62 @@ def buildBurndownPage(projectRedmineId: int) -> str:
             return defaultPercent
         return numericValue * 100 if abs(numericValue) <= 10 else numericValue
 
-    planningP1Percent = normalizePlanningPercent(planningProject.get("p1") if planningProject else None, 150.0)
-    planningP2Percent = normalizePlanningPercent(planningProject.get("p2") if planningProject else None, 150.0)
-    planningBaselineText = escape(
-        formatPlanningMetric(planningProject.get("baseline_estimate_hours") if planningProject else None)
-    )
-    planningDevelopmentHoursText = escape(
-        formatPlanningMetric(planningProject.get("development_hours") if planningProject else None)
-    )
+    def formatPlanningPercent(value: object) -> str:
+        if value in (None, ""):
+            return "—"
+        try:
+            numericValue = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+        normalizedValue = numericValue * 100 if abs(numericValue) <= 10 else numericValue
+        return formatPageHours(normalizedValue)
+
+    planningP1Values = [
+        normalizePlanningPercent(project.get("p1"), 150.0)
+        for project in planningProjects
+        if project.get("p1") not in (None, "")
+    ]
+    planningP2Values = [
+        normalizePlanningPercent(project.get("p2"), 150.0)
+        for project in planningProjects
+        if project.get("p2") not in (None, "")
+    ]
+    planningP1Unique = sorted({round(value, 6) for value in planningP1Values})
+    planningP2Unique = sorted({round(value, 6) for value in planningP2Values})
+    planningP1Mixed = len(planningP1Unique) > 1
+    planningP2Mixed = len(planningP2Unique) > 1
+    planningP1Percent = planningP1Unique[0] if len(planningP1Unique) == 1 else 150.0
+    planningP2Percent = planningP2Unique[0] if len(planningP2Unique) == 1 else 150.0
+    totalPlanningBaseline = sum(float(project.get("baseline_estimate_hours") or 0) for project in planningProjects)
+    totalPlanningDevelopmentHours = sum(float(project.get("development_hours") or 0) for project in planningProjects)
+    planningBaselineText = escape(formatPlanningMetric(totalPlanningBaseline))
+    planningDevelopmentHoursText = escape(formatPlanningMetric(totalPlanningDevelopmentHours))
     planningP1Value = escape(formatPageHours(planningP1Percent))
     planningP2Value = escape(formatPageHours(planningP2Percent))
+    planningP1InputClass = " planning-input-warning" if planningP1Mixed else ""
+    planningP2InputClass = " planning-input-warning" if planningP2Mixed else ""
+    projectMetricsItemsHtml = "".join(
+        (
+            '<li>'
+            f'<span class="project-metrics-name">{escape(str(project.get("project_name") or "Без названия"))}</span> '
+            f'({escape(formatPlanningMetric(project.get("baseline_estimate_hours")))}/'
+            f'{escape(formatPlanningMetric(project.get("development_hours")))}/'
+            f'{escape(formatPlanningPercent(project.get("p1")))}/'
+            f'{escape(formatPlanningPercent(project.get("p2")))})'
+            "</li>"
+        )
+        for project in planningProjects
+    )
+    projectMetricsPanelHtml = (
+        f"""
+    <section class="project-metrics-panel">
+      <div class="project-metrics-title">Проекты с идентификатором {projectIdentifier}</div>
+      <ul class="project-metrics-list">{projectMetricsItemsHtml}</ul>
+    </section>
+"""
+        if projectMetricsItemsHtml
+        else ""
+    )
     snapshotIssuesUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
     navPanelHtml = buildProjectContextNavPanel(
         projectRedmineId,
@@ -3455,6 +3522,34 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       font-weight: 400;
     }}
 
+    .project-metrics-panel {{
+      margin: 0 0 18px;
+      padding: 16px 20px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: var(--shadow-soft);
+    }}
+
+    .project-metrics-title {{
+      margin: 0 0 10px;
+      font-size: 0.98rem;
+      font-weight: 700;
+      color: var(--text);
+    }}
+
+    .project-metrics-list {{
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      line-height: 1.6;
+    }}
+
+    .project-metrics-name {{
+      color: var(--text);
+      font-weight: 600;
+    }}
+
     .controls-panel,
     .chart-panel {{
       background: var(--panel);
@@ -3487,6 +3582,25 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       color: var(--muted);
       font-size: 0.92rem;
       line-height: 1.4;
+    }}
+
+    .field-checkbox {{
+      min-width: 280px;
+      justify-content: flex-end;
+    }}
+
+    .field-checkbox-label {{
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      min-height: 44px;
+    }}
+
+    .planning-input-warning {{
+      border-color: #d9534f !important;
+      color: #d9534f !important;
+      font-weight: 700;
     }}
 
     .field input {{
@@ -3661,15 +3775,17 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     <h1>Диаграмма сгорания</h1>
     <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Период диаграммы: 01.04.{currentYear} — 30.04.{currentYear}. Срезов за апрель: {len(chartSeeds)}.</p>
 
+    {projectMetricsPanelHtml}
+
     <section class="controls-panel">
       <div class="field">
         <label for="p1Input">P1 = факт / база, %</label>
-        <input id="p1Input" type="text" inputmode="decimal" value="{planningP1Value}">
+        <input id="p1Input" class="{planningP1InputClass.strip()}" type="text" inputmode="decimal" value="{planningP1Value}">
         <div class="field-note">Используется в расчете бюджета и прогнозного объема.</div>
       </div>
       <div class="field">
         <label for="p2Input">P2 = факт с багами / факт, %</label>
-        <input id="p2Input" type="text" inputmode="decimal" value="{planningP2Value}">
+        <input id="p2Input" class="{planningP2InputClass.strip()}" type="text" inputmode="decimal" value="{planningP2Value}">
         <div class="field-note">Изменения пересчитываются сразу после ввода без перезагрузки страницы.</div>
       </div>
       <div class="field">
@@ -3681,6 +3797,12 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         <label>Часы разработки</label>
         <input type="text" value="{planningDevelopmentHoursText}" readonly>
         <div class="field-note">Значение подтянуто из формы «Планирование проектов».</div>
+      </div>
+      <div class="field field-checkbox">
+        <label class="field-checkbox-label" for="useRiskPlanCheckbox">
+          <input id="useRiskPlanCheckbox" type="checkbox">
+          <span>Использовать План с рисками</span>
+        </label>
       </div>
     </section>
 
@@ -3799,9 +3921,11 @@ def buildBurndownPage(projectRedmineId: int) -> str:
   <script>
     const burndownDateLabels = {chartDatesJson};
     const burndownSnapshots = {chartSeedsJson};
+    const planningDevelopmentHoursTotal = {json.dumps(totalPlanningDevelopmentHours, ensure_ascii=False)};
 
     const p1Input = document.getElementById("p1Input");
     const p2Input = document.getElementById("p2Input");
+    const useRiskPlanCheckbox = document.getElementById("useRiskPlanCheckbox");
     const statusNode = document.getElementById("burndownStatus");
     const chartCanvas = document.getElementById("burndownChart");
     const emptyState = document.getElementById("burndownEmptyState");
@@ -3830,7 +3954,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       return `${{parts[2]}}.${{parts[1]}}.${{parts[0]}}`;
     }}
 
-    function computeSnapshotMetrics(snapshot, p1Factor, p2Factor) {{
+    function computeSnapshotMetrics(snapshot, p1Factor, p2Factor, useRiskPlan) {{
       const groups = Array.isArray(snapshot?.groups) ? snapshot.groups : [];
       let forecast = 0;
       let currentDevelopment = 0;
@@ -3840,10 +3964,10 @@ def buildBurndownPage(projectRedmineId: int) -> str:
 
       for (const group of groups) {{
         const baselineTotal = Number(group?.baseline_total || 0);
-        const developmentVolume = Number(group?.development_volume || 0);
-        const bugVolume = Number(group?.bug_volume || 0);
-        const developmentRemaining = Number(group?.development_remaining || 0);
-        const bugRemaining = Number(group?.bug_remaining || 0);
+        const developmentVolume = Number(useRiskPlan ? (group?.development_volume_risk || 0) : (group?.development_volume || 0));
+        const bugVolume = Number(useRiskPlan ? (group?.bug_volume_risk || 0) : (group?.bug_volume || 0));
+        const developmentRemaining = Number(useRiskPlan ? (group?.development_remaining_risk || 0) : (group?.development_remaining || 0));
+        const bugRemaining = Number(useRiskPlan ? (group?.bug_remaining_risk || 0) : (group?.bug_remaining || 0));
         const currentTotal = developmentVolume + bugVolume;
         const forecastFloor = baselineTotal * p1Factor * p2Factor;
         const groupForecast = group?.is_ready ? currentTotal : Math.max(currentTotal, forecastFloor);
@@ -3869,10 +3993,10 @@ def buildBurndownPage(projectRedmineId: int) -> str:
 
     let burndownChart = null;
 
-    function buildBurndownDatasets(p1Factor, p2Factor) {{
+    function buildBurndownDatasets(p1Factor, p2Factor, useRiskPlan) {{
       const metricsByDate = new Map();
       for (const snapshot of burndownSnapshots) {{
-        metricsByDate.set(String(snapshot?.date || ""), computeSnapshotMetrics(snapshot, p1Factor, p2Factor));
+        metricsByDate.set(String(snapshot?.date || ""), computeSnapshotMetrics(snapshot, p1Factor, p2Factor, useRiskPlan));
       }}
 
       const budgetData = [];
@@ -3883,6 +4007,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       const remainingTotalData = [];
       const remainingDevelopmentData = [];
       const remainingBugData = [];
+      const developmentHoursData = [];
 
       for (const currentDate of burndownDateLabels) {{
         const metrics = metricsByDate.get(currentDate);
@@ -3895,6 +4020,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
           remainingTotalData.push(null);
           remainingDevelopmentData.push(null);
           remainingBugData.push(null);
+          developmentHoursData.push(planningDevelopmentHoursTotal > 0 ? planningDevelopmentHoursTotal : null);
           continue;
         }}
 
@@ -3906,6 +4032,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         remainingTotalData.push(metrics.remainingTotal);
         remainingDevelopmentData.push(metrics.remainingDevelopment);
         remainingBugData.push(metrics.remainingBugs);
+        developmentHoursData.push(planningDevelopmentHoursTotal > 0 ? planningDevelopmentHoursTotal : null);
       }}
 
       return {{
@@ -3917,17 +4044,19 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         remainingTotalData,
         remainingDevelopmentData,
         remainingBugData,
+        developmentHoursData,
       }};
     }}
 
     function renderBurndownChart() {{
       const p1Percent = parsePercentValue(p1Input.value, {planningP1Percent});
       const p2Percent = parsePercentValue(p2Input.value, {planningP2Percent});
+      const useRiskPlan = Boolean(useRiskPlanCheckbox?.checked);
 
       if (!burndownSnapshots.length) {{
         emptyState.style.display = "block";
         chartCanvas.style.display = "none";
-        statusNode.textContent = "За апрель текущего года пока нет срезов для расчета диаграммы.";
+        statusNode.textContent = "?? ?????? ???????? ???? ???? ??? ?????? ??? ??????? ?????????.";
         return;
       }}
 
@@ -3935,14 +4064,15 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       chartCanvas.style.display = "block";
 
       if (typeof Chart === "undefined") {{
-        statusNode.textContent = "Не удалось загрузить библиотеку графиков.";
+        statusNode.textContent = "?? ??????? ????????? ?????????? ????????.";
         return;
       }}
 
       const p1Factor = p1Percent / 100;
       const p2Factor = p2Percent / 100;
-      const datasets = buildBurndownDatasets(p1Factor, p2Factor);
-      statusNode.textContent = `P1 = ${{formatHours(p1Percent)}}%, P2 = ${{formatHours(p2Percent)}}%. Срезов в расчете: ${{burndownSnapshots.length}}.`;
+      const datasets = buildBurndownDatasets(p1Factor, p2Factor, useRiskPlan);
+      const planModeText = useRiskPlan ? "???????????? ???? ? ???????." : "???????????? ??????? ????.";
+      statusNode.textContent = `P1 = ${{formatHours(p1Percent)}}%, P2 = ${{formatHours(p2Percent)}}%. ?????? ? ???????: ${{burndownSnapshots.length}}. ${{planModeText}}`;
       const allChartValues = [
         ...datasets.budgetData,
         ...datasets.forecastData,
@@ -3952,117 +4082,137 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         ...datasets.currentBugData,
         ...datasets.remainingDevelopmentData,
         ...datasets.remainingBugData,
+        ...datasets.developmentHoursData,
       ].filter((value) => value !== null && value !== undefined);
       const maxChartValue = allChartValues.length
         ? Math.max(...allChartValues.map((value) => Number(value || 0)))
         : 0;
       const chartMax = maxChartValue > 0 ? maxChartValue * 1.08 : 10;
 
+      const chartDatasets = [
+        {{
+          type: "bar",
+          label: "????? ??????????",
+          data: datasets.currentDevelopmentData,
+          stack: "current",
+          backgroundColor: "rgba(82, 206, 230, 0.38)",
+          borderColor: "rgba(82, 206, 230, 0.9)",
+          borderWidth: 1,
+          yAxisID: "yBars",
+          order: 3,
+        }},
+        {{
+          type: "bar",
+          label: "????? ??????",
+          data: datasets.currentBugData,
+          stack: "current",
+          backgroundColor: "rgba(255, 108, 14, 0.30)",
+          borderColor: "rgba(255, 108, 14, 0.85)",
+          borderWidth: 1,
+          yAxisID: "yBars",
+          order: 3,
+        }},
+        {{
+          type: "bar",
+          label: "??????? ??????????",
+          data: datasets.remainingDevelopmentData,
+          stack: "remaining",
+          backgroundColor: "#52cee6",
+          borderColor: "#52cee6",
+          borderWidth: 1,
+          yAxisID: "yBars",
+          order: 3,
+        }},
+        {{
+          type: "bar",
+          label: "??????? ??????",
+          data: datasets.remainingBugData,
+          stack: "remaining",
+          backgroundColor: "#ffc600",
+          borderColor: "#ffc600",
+          borderWidth: 1,
+          yAxisID: "yBars",
+          order: 3,
+        }},
+        {{
+          type: "line",
+          label: "??????",
+          data: datasets.budgetData,
+          borderColor: "#ff6c0e",
+          backgroundColor: "#ff6c0e",
+          borderWidth: 3,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          spanGaps: true,
+          tension: 0.2,
+          yAxisID: "yLines",
+          order: 1,
+        }},
+        {{
+          type: "line",
+          label: "?????.???????",
+          data: datasets.forecastData,
+          borderColor: "#375d77",
+          backgroundColor: "#375d77",
+          borderWidth: 3,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          spanGaps: true,
+          tension: 0.2,
+          yAxisID: "yLines",
+          order: 1,
+        }},
+        {{
+          type: "line",
+          label: "?????.???????",
+          data: datasets.currentTotalData,
+          borderColor: "#0f9bb8",
+          backgroundColor: "#0f9bb8",
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          spanGaps: true,
+          tension: 0.15,
+          yAxisID: "yLines",
+          order: 1,
+        }},
+        {{
+          type: "line",
+          label: "?????.???????",
+          data: datasets.remainingTotalData,
+          borderColor: "#7b8c9d",
+          backgroundColor: "#7b8c9d",
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          spanGaps: true,
+          tension: 0.15,
+          yAxisID: "yLines",
+          order: 1,
+        }},
+      ];
+
+      if (planningDevelopmentHoursTotal > 0) {{
+        chartDatasets.push({{
+          type: "line",
+          label: "???? ??????????",
+          data: datasets.developmentHoursData,
+          borderColor: "#d9534f",
+          backgroundColor: "#d9534f",
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          spanGaps: true,
+          tension: 0,
+          yAxisID: "yLines",
+          order: 1,
+        }});
+      }}
+
       const chartConfig = {{
         data: {{
           labels: burndownDateLabels,
-          datasets: [
-            {{
-              type: "bar",
-              label: "Объем разработки",
-              data: datasets.currentDevelopmentData,
-              stack: "current",
-              backgroundColor: "rgba(82, 206, 230, 0.38)",
-              borderColor: "rgba(82, 206, 230, 0.9)",
-              borderWidth: 1,
-              yAxisID: "yBars",
-              order: 3,
-            }},
-            {{
-              type: "bar",
-              label: "Объем ошибок",
-              data: datasets.currentBugData,
-              stack: "current",
-              backgroundColor: "rgba(255, 108, 14, 0.30)",
-              borderColor: "rgba(255, 108, 14, 0.85)",
-              borderWidth: 1,
-              yAxisID: "yBars",
-              order: 3,
-            }},
-            {{
-              type: "bar",
-              label: "Остаток разработки",
-              data: datasets.remainingDevelopmentData,
-              stack: "remaining",
-              backgroundColor: "#52cee6",
-              borderColor: "#52cee6",
-              borderWidth: 1,
-              yAxisID: "yBars",
-              order: 3,
-            }},
-            {{
-              type: "bar",
-              label: "Остаток ошибок",
-              data: datasets.remainingBugData,
-              stack: "remaining",
-              backgroundColor: "#ffc600",
-              borderColor: "#ffc600",
-              borderWidth: 1,
-              yAxisID: "yBars",
-              order: 3,
-            }},
-            {{
-              type: "line",
-              label: "Бюджет",
-              data: datasets.budgetData,
-              borderColor: "#ff6c0e",
-              backgroundColor: "#ff6c0e",
-              borderWidth: 3,
-              pointRadius: 0,
-              pointHoverRadius: 4,
-              spanGaps: true,
-              tension: 0.2,
-              yAxisID: "yLines",
-              order: 1,
-            }},
-            {{
-              type: "line",
-              label: "Объем.Прогноз",
-              data: datasets.forecastData,
-              borderColor: "#375d77",
-              backgroundColor: "#375d77",
-              borderWidth: 3,
-              pointRadius: 0,
-              pointHoverRadius: 4,
-              spanGaps: true,
-              tension: 0.2,
-              yAxisID: "yLines",
-              order: 1,
-            }},
-            {{
-              type: "line",
-              label: "Объем.Текущий",
-              data: datasets.currentTotalData,
-              borderColor: "#0f9bb8",
-              backgroundColor: "#0f9bb8",
-              borderWidth: 2,
-              pointRadius: 0,
-              pointHoverRadius: 4,
-              spanGaps: true,
-              tension: 0.15,
-              yAxisID: "yLines",
-              order: 1,
-            }},
-            {{
-              type: "line",
-              label: "Объем.Остаток",
-              data: datasets.remainingTotalData,
-              borderColor: "#7b8c9d",
-              backgroundColor: "#7b8c9d",
-              borderWidth: 2,
-              pointRadius: 0,
-              pointHoverRadius: 4,
-              spanGaps: true,
-              tension: 0.15,
-              yAxisID: "yLines",
-              order: 1,
-            }},
-          ],
+          datasets: chartDatasets,
         }},
         options: {{
           responsive: true,
@@ -4151,6 +4301,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
 
     p1Input.addEventListener("input", scheduleBurndownRender);
     p2Input.addEventListener("input", scheduleBurndownRender);
+    useRiskPlanCheckbox?.addEventListener("change", scheduleBurndownRender);
 
     renderBurndownChart();
   </script>
