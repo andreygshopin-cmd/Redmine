@@ -3355,7 +3355,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
             numericValue = float(value)
         except (TypeError, ValueError):
             return str(value)
-        return formatHoursValue(numericValue)
+        return formatPageHours(numericValue)
 
     def normalizePlanningPercent(value: object, defaultPercent: float) -> float:
         if value in (None, ""):
@@ -3374,8 +3374,8 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     planningDevelopmentHoursText = escape(
         formatPlanningMetric(planningProject.get("development_hours") if planningProject else None)
     )
-    planningP1Value = escape(formatHoursValue(planningP1Percent))
-    planningP2Value = escape(formatHoursValue(planningP2Percent))
+    planningP1Value = escape(formatPageHours(planningP1Percent))
+    planningP2Value = escape(formatPageHours(planningP2Percent))
     snapshotIssuesUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
     navPanelHtml = buildProjectContextNavPanel(
         projectRedmineId,
