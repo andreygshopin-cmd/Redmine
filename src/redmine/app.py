@@ -688,22 +688,18 @@ PAGE_HTML = """<!doctype html>
       transition: transform 120ms ease, border-color 120ms ease;
     }
 
-    .quick-links a:nth-child(4n + 1) {
-      background: var(--blue-302);
+    .quick-links a#projectsNavButton {
+      background: #eef2f5;
+      color: var(--text);
+      border-color: var(--line);
+      box-shadow: none;
     }
 
-    .quick-links a:nth-child(4n + 2) {
-      background: var(--yellow-109);
-      color: #16324a;
-    }
-
-    .quick-links a:nth-child(4n + 3) {
-      background: var(--cyan-310);
-      color: #16324a;
-    }
-
-    .quick-links a:nth-child(4n + 4) {
-      background: var(--orange-1585);
+    .quick-links a#snapshotRunsNavButton {
+      background: #eef2f5;
+      color: var(--text);
+      border-color: var(--line);
+      box-shadow: none;
     }
 
     .quick-links a#adminPageButton {
@@ -711,21 +707,6 @@ PAGE_HTML = """<!doctype html>
       color: var(--text);
       border-color: var(--line);
       box-shadow: none;
-    }
-
-    .quick-links a:nth-child(2) {
-      background: var(--blue-302);
-      color: #ffffff;
-    }
-
-    .quick-links a:nth-child(3) {
-      background: var(--yellow-109);
-      color: #16324a;
-    }
-
-    .quick-links a:nth-child(4) {
-      background: var(--cyan-310);
-      color: #16324a;
     }
 
     .quick-links a:hover {
@@ -1143,10 +1124,9 @@ PAGE_HTML = """<!doctype html>
       </a>
       <nav class="hero-nav" aria-label="Быстрый переход по разделам">
         <div class="quick-links">
-          <a id="adminPageButton" href="/admin/users" style="display:none;">Администрирование</a>
-          <a href="#data-load-section">Загрузка данных</a>
-          <a href="#projects-table">Таблица проектов</a>
-          <a href="#snapshot-runs-table">Таблица срезов</a>
+          <a id="projectsNavButton" href="#projects-table">Проекты Redmine</a>
+          <a id="snapshotRunsNavButton" href="#snapshot-runs-table">Срезы задач</a>
+          <a id="adminPageButton" href="/admin/users">Администрирование</a>
         </div>
       </nav>
     </div>
@@ -1356,23 +1336,6 @@ PAGE_HTML = """<!doctype html>
       }
 
       return number.toFixed(1).replace(".", ",");
-    }
-
-    async function loadCurrentUser() {
-      try {
-        const response = await fetch("/api/auth/me");
-        if (!response.ok) {
-          return;
-        }
-
-        const payload = await response.json();
-        const roles = Array.isArray(payload?.user?.roles) ? payload.user.roles : [];
-        if (roles.includes("Admin") && adminPageButton) {
-          adminPageButton.style.display = "";
-        }
-      } catch (error) {
-        console.error("Failed to load current user", error);
-      }
     }
 
     function getProjectsFactFilterValue() {
@@ -2216,12 +2179,10 @@ PAGE_HTML = """<!doctype html>
       rerenderProjects();
     });
 
-    localizeUi();
     restoreProjectsNameFilterValue();
     restoreProjectsFactFilterValue();
     restoreShowDisabledProjectsValue();
     restoreSnapshotRunsPerProjectValue();
-    loadCurrentUser();
     loadProjects();
     loadSnapshotRuns();
   </script>
