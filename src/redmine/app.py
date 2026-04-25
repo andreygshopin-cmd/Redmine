@@ -7432,6 +7432,8 @@ def buildPlanningProjectsPage() -> str:
       overflow: auto;
       border: 1px solid var(--line);
       border-radius: 8px;
+      max-height: min(68vh, 980px);
+      background: #ffffff;
     }
     table {
       width: 100%;
@@ -7445,15 +7447,54 @@ def buildPlanningProjectsPage() -> str:
       text-align: left;
       vertical-align: top;
     }
-    th {
+    .planning-projects-table th {
       background: #eef6f7;
       color: #426179;
       text-transform: uppercase;
       font-size: 0.78rem;
       line-height: 1.2;
+    }
+    .planning-projects-table thead tr:first-child th {
       position: sticky;
       top: 0;
-      z-index: 1;
+      z-index: 3;
+      cursor: pointer;
+    }
+    .planning-projects-table thead tr:first-child th.no-sort {
+      cursor: default;
+    }
+    .planning-projects-table thead tr.filter-row th {
+      position: sticky;
+      top: 42px;
+      z-index: 2;
+      padding: 8px 10px;
+      background: #f8fbfd;
+      text-transform: none;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .planning-filter-input,
+    .planning-filter-select {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font: inherit;
+      font-size: 0.82rem;
+      color: var(--text);
+      background: #ffffff;
+      box-sizing: border-box;
+    }
+    .planning-filter-input::placeholder {
+      color: #96a7b7;
+    }
+    .sort-indicator {
+      display: inline-block;
+      margin-left: 6px;
+      color: #7f93a6;
+      font-size: 0.72rem;
+      vertical-align: middle;
     }
     tr:last-child td { border-bottom: 0; }
     .mono { font-family: Consolas, "Courier New", monospace; }
@@ -7495,8 +7536,19 @@ def buildPlanningProjectsPage() -> str:
       flex-wrap: nowrap;
     }
     .row-actions button {
-      padding: 7px 9px;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       font-size: 0.92rem;
+      border-radius: 8px;
+    }
+    .row-actions button svg {
+      width: 16px;
+      height: 16px;
+      display: block;
     }
     .row-actions .edit-button {
       background: var(--cyan-310);
@@ -7565,31 +7617,61 @@ def buildPlanningProjectsPage() -> str:
         <button type="button" id="exportPlanningProjectsButton">Выгрузить в Excel</button>
       </div>
       <div class="table-wrap">
-        <table>
+        <table class="planning-projects-table">
           <thead>
             <tr>
-              <th class="actions-col">Действия</th>
-              <th class="direction-col">Направление</th>
-              <th class="closed-col">&#1047;&#1072;&#1082;&#1088;&#1099;&#1090;</th>
-              <th class="customer-col">Заказчик</th>
-              <th class="project-name-col">Название проекта</th>
-              <th class="identifier-col">Идентификатор в Redmine</th>
-              <th class="pm-col">ПМ</th>
-              <th class="start-date-col">Дата старта</th>
-              <th class="end-date-col">Дата окончания</th>
-              <th class="development-col">Часы разработки с багфиксом</th>
-              <th class="year-col">Год 1</th>
-              <th class="year-hours-col">Часы 1</th>
-              <th class="year-col">Год 2</th>
-              <th class="year-hours-col">Часы 2</th>
-              <th class="year-col">Год 3</th>
-              <th class="year-hours-col">Часы 3</th>
-              <th class="baseline-col">Базовая оценка</th>
-              <th class="p-col">P1 (факт / база), %</th>
-              <th class="p2-col">P2 (факт с багами / факт), %</th>
-              <th class="doc-col">Док с оценкой</th>
-              <th class="bitrix-col">Bitrix</th>
-              <th class="comment-col">Комментарий</th>
+              <th class="actions-col no-sort">Действия</th>
+              <th class="direction-col" data-sort-key="direction">Направление<span class="sort-indicator"></span></th>
+              <th class="closed-col" data-sort-key="is_closed">&#1047;&#1072;&#1082;&#1088;&#1099;&#1090;<span class="sort-indicator"></span></th>
+              <th class="customer-col" data-sort-key="customer">Заказчик<span class="sort-indicator"></span></th>
+              <th class="project-name-col" data-sort-key="project_name">Название проекта<span class="sort-indicator"></span></th>
+              <th class="identifier-col" data-sort-key="redmine_identifier">Идентификатор в Redmine<span class="sort-indicator"></span></th>
+              <th class="pm-col" data-sort-key="pm_name">ПМ<span class="sort-indicator"></span></th>
+              <th class="start-date-col" data-sort-key="start_date">Дата старта<span class="sort-indicator"></span></th>
+              <th class="end-date-col" data-sort-key="end_date">Дата окончания<span class="sort-indicator"></span></th>
+              <th class="development-col" data-sort-key="development_hours">Часы разработки с багфиксом<span class="sort-indicator"></span></th>
+              <th class="year-col" data-sort-key="year_1">Год 1<span class="sort-indicator"></span></th>
+              <th class="year-hours-col" data-sort-key="hours_1">Часы 1<span class="sort-indicator"></span></th>
+              <th class="year-col" data-sort-key="year_2">Год 2<span class="sort-indicator"></span></th>
+              <th class="year-hours-col" data-sort-key="hours_2">Часы 2<span class="sort-indicator"></span></th>
+              <th class="year-col" data-sort-key="year_3">Год 3<span class="sort-indicator"></span></th>
+              <th class="year-hours-col" data-sort-key="hours_3">Часы 3<span class="sort-indicator"></span></th>
+              <th class="baseline-col" data-sort-key="baseline_estimate_hours">Базовая оценка<span class="sort-indicator"></span></th>
+              <th class="p-col" data-sort-key="p1">P1 (факт / база), %<span class="sort-indicator"></span></th>
+              <th class="p2-col" data-sort-key="p2">P2 (факт с багами / факт), %<span class="sort-indicator"></span></th>
+              <th class="doc-col" data-sort-key="estimate_doc_url">Док с оценкой<span class="sort-indicator"></span></th>
+              <th class="bitrix-col" data-sort-key="bitrix_url">Bitrix<span class="sort-indicator"></span></th>
+              <th class="comment-col" data-sort-key="comment_text">Комментарий<span class="sort-indicator"></span></th>
+            </tr>
+            <tr class="filter-row">
+              <th class="actions-col no-sort"></th>
+              <th class="direction-col"><input class="planning-filter-input" data-filter-key="direction" type="text" placeholder="Фильтр"></th>
+              <th class="closed-col">
+                <select class="planning-filter-select" data-filter-key="is_closed">
+                  <option value="">Все</option>
+                  <option value="true">Да</option>
+                  <option value="false">Нет</option>
+                </select>
+              </th>
+              <th class="customer-col"><input class="planning-filter-input" data-filter-key="customer" type="text" placeholder="Фильтр"></th>
+              <th class="project-name-col"><input class="planning-filter-input" data-filter-key="project_name" type="text" placeholder="Фильтр"></th>
+              <th class="identifier-col"><input class="planning-filter-input" data-filter-key="redmine_identifier" type="text" placeholder="Фильтр"></th>
+              <th class="pm-col"><input class="planning-filter-input" data-filter-key="pm_name" type="text" placeholder="Фильтр"></th>
+              <th class="start-date-col"><input class="planning-filter-input" data-filter-key="start_date" type="text" placeholder="Фильтр"></th>
+              <th class="end-date-col"><input class="planning-filter-input" data-filter-key="end_date" type="text" placeholder="Фильтр"></th>
+              <th class="development-col"><input class="planning-filter-input" data-filter-key="development_hours" type="text" placeholder="Фильтр"></th>
+              <th class="year-col"><input class="planning-filter-input" data-filter-key="year_1" type="text" placeholder="Фильтр"></th>
+              <th class="year-hours-col"><input class="planning-filter-input" data-filter-key="hours_1" type="text" placeholder="Фильтр"></th>
+              <th class="year-col"><input class="planning-filter-input" data-filter-key="year_2" type="text" placeholder="Фильтр"></th>
+              <th class="year-hours-col"><input class="planning-filter-input" data-filter-key="hours_2" type="text" placeholder="Фильтр"></th>
+              <th class="year-col"><input class="planning-filter-input" data-filter-key="year_3" type="text" placeholder="Фильтр"></th>
+              <th class="year-hours-col"><input class="planning-filter-input" data-filter-key="hours_3" type="text" placeholder="Фильтр"></th>
+              <th class="baseline-col"><input class="planning-filter-input" data-filter-key="baseline_estimate_hours" type="text" placeholder="Фильтр"></th>
+              <th class="p-col"><input class="planning-filter-input" data-filter-key="p1" type="text" placeholder="Фильтр"></th>
+              <th class="p2-col"><input class="planning-filter-input" data-filter-key="p2" type="text" placeholder="Фильтр"></th>
+              <th class="doc-col"><input class="planning-filter-input" data-filter-key="estimate_doc_url" type="text" placeholder="Фильтр"></th>
+              <th class="bitrix-col"><input class="planning-filter-input" data-filter-key="bitrix_url" type="text" placeholder="Фильтр"></th>
+              <th class="comment-col"><input class="planning-filter-input" data-filter-key="comment_text" type="text" placeholder="Фильтр"></th>
             </tr>
           </thead>
           <tbody id="planningProjectsTableBody">
@@ -7744,8 +7826,14 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectComment = document.getElementById("planningProjectComment");
     const resetPlanningProjectFormButton = document.getElementById("resetPlanningProjectFormButton");
     const planningProjectFormSection = planningProjectForm ? planningProjectForm.closest(".panel") : null;
+    const planningProjectsTable = document.querySelector(".planning-projects-table");
+    const planningColumnFilterInputs = Array.from(document.querySelectorAll(".planning-filter-input, .planning-filter-select"));
     let currentPlanningProjects = [];
+    let filteredPlanningProjects = [];
     let planningProjectsSearchTimer = null;
+    let planningProjectsColumnFilterTimer = null;
+    let planningProjectsSortState = { key: "", direction: "asc" };
+    let planningProjectsColumnFilters = {};
 
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, (char) => {
@@ -7788,6 +7876,92 @@ def buildPlanningProjectsPage() -> str:
         return "—";
       }
       return formatOptionalInteger(yearValue);
+    }
+
+    function normalizePlanningFilterValue(value) {
+      return String(value ?? "").trim().toLowerCase();
+    }
+
+    function getPlanningProjectFieldValue(project, key) {
+      if (key === "is_closed") {
+        return project?.is_closed ? "true" : "false";
+      }
+      if (["year_1", "year_2", "year_3"].includes(key)) {
+        const hoursKey = `hours_${key.slice(-1)}`;
+        return project?.[hoursKey] === null || project?.[hoursKey] === undefined || project?.[hoursKey] === ""
+          ? ""
+          : String(project?.[key] ?? "");
+      }
+      const value = project?.[key];
+      return value === null || value === undefined ? "" : String(value);
+    }
+
+    function applyPlanningProjectsColumnFilters(projects) {
+      return projects.filter((project) => {
+        return Object.entries(planningProjectsColumnFilters).every(([key, rawValue]) => {
+          const filterValue = normalizePlanningFilterValue(rawValue);
+          if (!filterValue) {
+            return true;
+          }
+          if (key === "is_closed") {
+            return getPlanningProjectFieldValue(project, key) === filterValue;
+          }
+          return normalizePlanningFilterValue(getPlanningProjectFieldValue(project, key)).includes(filterValue);
+        });
+      });
+    }
+
+    function comparePlanningProjectValues(leftValue, rightValue) {
+      const leftNumber = Number(leftValue);
+      const rightNumber = Number(rightValue);
+      const bothNumbers = leftValue !== "" && rightValue !== "" && Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
+      if (bothNumbers) {
+        return leftNumber - rightNumber;
+      }
+      return String(leftValue).localeCompare(String(rightValue), "ru", { numeric: true, sensitivity: "base" });
+    }
+
+    function sortPlanningProjects(projects) {
+      if (!planningProjectsSortState.key) {
+        return [...projects];
+      }
+      const directionFactor = planningProjectsSortState.direction === "desc" ? -1 : 1;
+      return [...projects].sort((leftProject, rightProject) => {
+        const leftValue = getPlanningProjectFieldValue(leftProject, planningProjectsSortState.key);
+        const rightValue = getPlanningProjectFieldValue(rightProject, planningProjectsSortState.key);
+        const comparison = comparePlanningProjectValues(leftValue, rightValue);
+        if (comparison !== 0) {
+          return comparison * directionFactor;
+        }
+        return comparePlanningProjectValues(
+          getPlanningProjectFieldValue(leftProject, "project_name"),
+          getPlanningProjectFieldValue(rightProject, "project_name"),
+        );
+      });
+    }
+
+    function updatePlanningProjectsSortIndicators() {
+      if (!planningProjectsTable) {
+        return;
+      }
+      planningProjectsTable.querySelectorAll("thead tr:first-child th[data-sort-key]").forEach((headerCell) => {
+        const indicator = headerCell.querySelector(".sort-indicator");
+        if (!(indicator instanceof HTMLElement)) {
+          return;
+        }
+        const sortKey = String(headerCell.dataset.sortKey || "");
+        if (!sortKey || planningProjectsSortState.key !== sortKey) {
+          indicator.textContent = "";
+          return;
+        }
+        indicator.textContent = planningProjectsSortState.direction === "desc" ? "▼" : "▲";
+      });
+    }
+
+    function refreshPlanningProjectsTable() {
+      filteredPlanningProjects = sortPlanningProjects(applyPlanningProjectsColumnFilters(currentPlanningProjects));
+      renderPlanningProjects(filteredPlanningProjects);
+      updatePlanningProjectsSortIndicators();
     }
 
     function truncateDisplay(value, maxLength = 30) {
@@ -7912,8 +8086,8 @@ def buildPlanningProjectsPage() -> str:
     }
 
     function renderPlanningProjects(projects) {
-      const totalProjects = Number(window.__planningProjectsTotal || projects.length || 0);
-      planningProjectsCount.textContent = `Показано: ${projects.length} из ${totalProjects} (лимит 100)`;
+      const totalProjects = Number(window.__planningProjectsTotal || currentPlanningProjects.length || 0);
+      planningProjectsCount.textContent = `Показано: ${projects.length} из ${currentPlanningProjects.length || 0} (в выборке ${totalProjects}, лимит 100)`;
       if (!projects.length) {
         planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Пока нет ни одной записи.</td></tr>';
         return;
@@ -7923,9 +8097,15 @@ def buildPlanningProjectsPage() -> str:
         <tr>
           <td class="actions-col">
             <div class="row-actions">
-              <button type="button" class="edit-button" data-action="edit" data-id="${project.id}">Изм.</button>
-              <button type="button" class="copy-button" data-action="copy" data-id="${project.id}">Копир.</button>
-              <button type="button" class="delete-button" data-action="delete" data-id="${project.id}">Удалить</button>
+              <button type="button" class="edit-button" data-action="edit" data-id="${project.id}" title="Изменить" aria-label="Изменить">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+              </button>
+              <button type="button" class="copy-button" data-action="copy" data-id="${project.id}" title="Копировать" aria-label="Копировать">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              </button>
+              <button type="button" class="delete-button" data-action="delete" data-id="${project.id}" title="Удалить" aria-label="Удалить">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+              </button>
             </div>
           </td>
           <td class="direction-col">${escapeHtml(project.direction ?? "—")}</td>
@@ -7976,7 +8156,7 @@ def buildPlanningProjectsPage() -> str:
       const projects = payload.projects || [];
       currentPlanningProjects = projects;
       window.__planningProjectsTotal = Number(payload.total || projects.length || 0);
-      renderPlanningProjects(projects);
+      refreshPlanningProjectsTable();
       applyPlanningProjectPrefill(projects);
       return projects;
     }
@@ -8094,6 +8274,51 @@ def buildPlanningProjectsPage() -> str:
           setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
         });
       }, 300);
+    });
+
+    planningColumnFilterInputs.forEach((input) => {
+      const key = String(input.dataset.filterKey || "");
+      if (key) {
+        planningProjectsColumnFilters[key] = String(input.value || "");
+      }
+      input.addEventListener("input", () => {
+        const currentKey = String(input.dataset.filterKey || "");
+        if (!currentKey) {
+          return;
+        }
+        planningProjectsColumnFilters[currentKey] = String(input.value || "");
+        if (planningProjectsColumnFilterTimer) {
+          window.clearTimeout(planningProjectsColumnFilterTimer);
+        }
+        planningProjectsColumnFilterTimer = window.setTimeout(() => {
+          refreshPlanningProjectsTable();
+        }, 150);
+      });
+      input.addEventListener("change", () => {
+        const currentKey = String(input.dataset.filterKey || "");
+        if (!currentKey) {
+          return;
+        }
+        planningProjectsColumnFilters[currentKey] = String(input.value || "");
+        refreshPlanningProjectsTable();
+      });
+    });
+
+    planningProjectsTable?.querySelector("thead tr:first-child")?.addEventListener("click", (event) => {
+      const headerCell = event.target instanceof HTMLElement ? event.target.closest("th[data-sort-key]") : null;
+      if (!(headerCell instanceof HTMLElement)) {
+        return;
+      }
+      const sortKey = String(headerCell.dataset.sortKey || "");
+      if (!sortKey) {
+        return;
+      }
+      if (planningProjectsSortState.key === sortKey) {
+        planningProjectsSortState.direction = planningProjectsSortState.direction === "asc" ? "desc" : "asc";
+      } else {
+        planningProjectsSortState = { key: sortKey, direction: "asc" };
+      }
+      refreshPlanningProjectsTable();
     });
 
     planningProjectsShowClosed?.addEventListener("change", () => {
