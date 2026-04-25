@@ -9138,7 +9138,7 @@ def buildPlanningProjectsPage() -> str:
     }
     table {
       width: 100%;
-      min-width: 1960px;
+      min-width: 1940px;
       border-collapse: collapse;
       background: #ffffff;
     }
@@ -9160,12 +9160,12 @@ def buildPlanningProjectsPage() -> str:
     }
     tr:last-child td { border-bottom: 0; }
     .mono { font-family: Consolas, "Courier New", monospace; }
-    th.direction-col, td.direction-col { width: 180px; }
+    th.direction-col, td.direction-col { width: 210px; }
     th.customer-col, td.customer-col { width: 180px; }
     th.project-name-col, td.project-name-col { width: 520px; }
     th.identifier-col, td.identifier-col { width: 230px; }
     th.pm-col, td.pm-col { width: 150px; }
-    th.start-date-col, td.start-date-col { width: 160px; }
+    th.start-date-col, td.start-date-col { width: 180px; }
     th.end-date-col, td.end-date-col { width: 160px; }
     th.development-col, td.development-col { width: 150px; }
     th.baseline-col, td.baseline-col { width: 140px; }
@@ -9173,7 +9173,7 @@ def buildPlanningProjectsPage() -> str:
     th.doc-col, td.doc-col,
     th.bitrix-col, td.bitrix-col,
     th.comment-col, td.comment-col { width: 300px; }
-    th.actions-col, td.actions-col { width: 220px; white-space: nowrap; }
+    th.actions-col, td.actions-col { width: 160px; white-space: nowrap; }
     .link-cell a {
       color: var(--blue-302);
       text-decoration: none;
@@ -9185,11 +9185,11 @@ def buildPlanningProjectsPage() -> str:
     }
     .row-actions {
       display: flex;
-      gap: 8px;
+      gap: 6px;
       flex-wrap: nowrap;
     }
     .row-actions button {
-      padding: 7px 11px;
+      padding: 7px 9px;
       font-size: 0.92rem;
     }
     .row-actions .edit-button {
@@ -9229,10 +9229,6 @@ def buildPlanningProjectsPage() -> str:
       <a class="brand" href="/" aria-label="На главную">
         <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
       </a>
-      <div class="head-actions">
-        <a class="home-link" href="/">Главная</a>
-        <a class="redmine-link" href="https://redmine.sms-it.ru" target="_blank" rel="noreferrer">Redmine</a>
-      </div>
     </div>
 
     <h1>Планирование проектов</h1>
@@ -9247,6 +9243,7 @@ def buildPlanningProjectsPage() -> str:
         <table>
           <thead>
             <tr>
+              <th class="actions-col">Действия</th>
               <th class="direction-col">Направление</th>
               <th class="customer-col">Заказчик</th>
               <th class="project-name-col">Название проекта</th>
@@ -9261,7 +9258,6 @@ def buildPlanningProjectsPage() -> str:
               <th class="doc-col">Док с оценкой</th>
               <th class="bitrix-col">Bitrix</th>
               <th class="comment-col">Комментарий</th>
-              <th class="actions-col">Действия</th>
             </tr>
           </thead>
           <tbody id="planningProjectsTableBody">
@@ -9489,6 +9485,12 @@ def buildPlanningProjectsPage() -> str:
 
       planningProjectsTableBody.innerHTML = projects.map((project) => `
         <tr>
+          <td class="actions-col">
+            <div class="row-actions">
+              <button type="button" class="edit-button" data-action="edit" data-id="${project.id}">Изм.</button>
+              <button type="button" class="delete-button" data-action="delete" data-id="${project.id}">Удалить</button>
+            </div>
+          </td>
           <td class="direction-col">${escapeHtml(project.direction ?? "—")}</td>
           <td class="customer-col">${escapeHtml(project.customer ?? "—")}</td>
           <td class="project-name-col">${escapeHtml(project.project_name ?? "—")}</td>
@@ -9503,12 +9505,6 @@ def buildPlanningProjectsPage() -> str:
           <td class="doc-col link-cell">${buildOptionalLink(project.estimate_doc_url)}</td>
           <td class="bitrix-col link-cell">${buildOptionalLink(project.bitrix_url)}</td>
           <td class="comment-col" title="${escapeHtml(project.comment_text ?? "")}">${truncateDisplay(project.comment_text)}</td>
-          <td class="actions-col">
-            <div class="row-actions">
-              <button type="button" class="edit-button" data-action="edit" data-id="${project.id}">Редактировать</button>
-              <button type="button" class="delete-button" data-action="delete" data-id="${project.id}">Удалить</button>
-            </div>
-          </td>
         </tr>
       `).join("");
     }
