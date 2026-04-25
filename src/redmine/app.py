@@ -4554,7 +4554,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         <div class="field-note">Значение подтянуто из формы «Планирование проектов».</div>
       </div>
       <div class="field">
-        <label>Часы разработки</label>
+        <label>Лимит разработки с багфиксом</label>
         <input type="text" value="{planningDevelopmentHoursText}" readonly>
         <div class="field-note">Значение подтянуто из формы «Планирование проектов».</div>
       </div>
@@ -4956,7 +4956,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       if (planningDevelopmentHoursTotal > 0) {{
         chartDatasets.push({{
           type: "line",
-          label: "Часы разработки",
+          label: "Лимит разработки с багфиксом",
           data: datasets.developmentHoursData,
           borderColor: "#d9534f",
           backgroundColor: "#d9534f",
