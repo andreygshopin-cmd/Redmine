@@ -1217,7 +1217,7 @@ PAGE_HTML = """<!doctype html>
               <th class="checkbox-cell project-sticky-1">
                 <label>
                   <input id="enableVisibleProjectsCheckbox" type="checkbox">
-                  Р'РєР».
+                  Вкл.
                 </label>
               </th>
               <th class="checkbox-cell">Част.</th>
@@ -1459,7 +1459,7 @@ PAGE_HTML = """<!doctype html>
       }
 
       const projectsHeaders = [
-        "Р'РєР».",
+        "Вкл.",
         "Част.",
         "ID",
         "Название",
@@ -1479,7 +1479,7 @@ PAGE_HTML = """<!doctype html>
       document.querySelectorAll("#projects-table thead th").forEach((element, index) => {
         if (index === 0) {
           const label = element.querySelector("label");
-          if (label) label.lastChild.textContent = " Р'РєР».";
+          if (label) label.lastChild.textContent = " Вкл.";
           return;
         }
         if (projectsHeaders[index]) {
@@ -1735,7 +1735,7 @@ PAGE_HTML = """<!doctype html>
                 <button class="project-capture-button" type="button" data-project-id="${redmineId}" title="Получить срез по проекту" ${project?.is_enabled ? "" : "disabled"}>↓</button>
               </span>
             </td>
-            <td class="project-name-cell project-sticky-3"><span class="${projectTreeClass}" style="--tree-level:${level};"><span class="project-name-wrap"><a class="project-link" href="/projects/${encodeURIComponent(redmineId)}/burndown" target="_blank" rel="noreferrer">${project?.name ?? "\u2014"}</a><a class="project-planning-button" href="${planningProjectUrl}" title="Открыть планирование проекта" aria-label="Открыть планирование проекта">i</a></span></span></td>
+            <td class="project-name-cell project-sticky-3"><span class="${projectTreeClass}" style="--tree-level:${level};"><span class="project-name-wrap"><a class="project-link" href="/projects/${encodeURIComponent(redmineId)}/burndown" target="_blank" rel="noreferrer">${project?.name ?? "\u2014"}</a><a class="project-planning-button" href="${planningProjectUrl}" target="_blank" rel="noreferrer" title="Открыть планирование проекта" aria-label="Открыть планирование проекта">i</a></span></span></td>
             <td>${identifierHtml}</td>
             <td>${formatHours(project?.baseline_estimate_hours)}</td>
             <td>${formatHours(project?.development_estimate_hours)}</td>
@@ -9273,6 +9273,9 @@ def buildPlanningProjectsPage() -> str:
       flex-wrap: wrap;
       margin: 0 0 12px;
     }
+    .table-filters-spacer {
+      flex: 1 1 auto;
+    }
     .table-filter-field {
       display: flex;
       flex-direction: column;
@@ -9342,7 +9345,7 @@ def buildPlanningProjectsPage() -> str:
     th.pm-col, td.pm-col { width: 150px; }
     th.start-date-col, td.start-date-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
     th.end-date-col, td.end-date-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
-    th.development-col, td.development-col { width: 150px; }
+    th.development-col, td.development-col { width: 190px; min-width: 190px; }
     th.baseline-col, td.baseline-col { width: 140px; }
     th.p-col, td.p-col { width: 10ch; min-width: 10ch; max-width: 10ch; }
     th.p2-col, td.p2-col { width: 18ch; min-width: 18ch; max-width: 18ch; }
@@ -9376,6 +9379,12 @@ def buildPlanningProjectsPage() -> str:
     .row-actions .edit-button {
       background: var(--cyan-310);
       color: #16324a;
+    }
+    .row-actions .copy-button {
+      background: #eef2f5;
+      color: var(--blue-302);
+      border: 1px solid var(--line);
+      box-shadow: none;
     }
     .row-actions .delete-button {
       background: #eef2f5;
@@ -9429,6 +9438,8 @@ def buildPlanningProjectsPage() -> str:
           <input id="planningProjectsShowClosed" type="checkbox">
           <span>&#1055;&#1086;&#1082;&#1072;&#1079;&#1099;&#1074;&#1072;&#1090;&#1100; &#1079;&#1072;&#1082;&#1088;&#1099;&#1090;&#1099;&#1077;</span>
         </label>
+        <span class="table-filters-spacer"></span>
+        <button type="button" id="exportPlanningProjectsButton">Выгрузить в Excel</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -9443,7 +9454,7 @@ def buildPlanningProjectsPage() -> str:
               <th class="pm-col">ПМ</th>
               <th class="start-date-col">Дата старта</th>
               <th class="end-date-col">Дата окончания</th>
-              <th class="development-col">Часы разработки</th>
+              <th class="development-col">Часы разработки с багфиксом</th>
               <th class="baseline-col">Базовая оценка</th>
               <th class="p-col">P1 (факт / база), %</th>
               <th class="p-col">P2 (факт с багами / факт), %</th>
@@ -9497,7 +9508,7 @@ def buildPlanningProjectsPage() -> str:
             <input id="planningProjectEndDate" type="date">
           </div>
           <div class="field">
-            <label for="planningProjectDevelopmentHours">Часы разработки</label>
+            <label for="planningProjectDevelopmentHours">Часы разработки с багфиксом</label>
             <input id="planningProjectDevelopmentHours" type="number" step="0.1" inputmode="decimal">
           </div>
           <div class="field">
@@ -9540,6 +9551,7 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectsStatus = document.getElementById("planningProjectsStatus");
     const planningProjectsSearch = document.getElementById("planningProjectsSearch");
     const planningProjectsShowClosed = document.getElementById("planningProjectsShowClosed");
+    const exportPlanningProjectsButton = document.getElementById("exportPlanningProjectsButton");
     const planningProjectForm = document.getElementById("planningProjectForm");
     const planningFormTitle = document.getElementById("planningFormTitle");
     const planningProjectId = document.getElementById("planningProjectId");
@@ -9633,8 +9645,9 @@ def buildPlanningProjectsPage() -> str:
       }
     }
 
-    function fillPlanningProjectForm(project) {
-      planningProjectId.value = project.id ?? "";
+    function fillPlanningProjectForm(project, options = {}) {
+      const preserveId = options.preserveId !== false;
+      planningProjectId.value = preserveId ? (project.id ?? "") : "";
       planningProjectDirection.value = project.direction ?? "";
       planningProjectClosed.checked = Boolean(project.is_closed);
       planningProjectName.value = project.project_name ?? "";
@@ -9650,8 +9663,8 @@ def buildPlanningProjectsPage() -> str:
       planningProjectEstimateDoc.value = project.estimate_doc_url ?? "";
       planningProjectBitrix.value = project.bitrix_url ?? "";
       planningProjectComment.value = project.comment_text ?? "";
-      planningFormTitle.textContent = "Редактирование записи";
-      setPlanningProjectsStatus("Запись загружена в форму для редактирования.");
+      planningFormTitle.textContent = preserveId ? "Редактирование записи" : "Новая запись (копия)";
+      setPlanningProjectsStatus(preserveId ? "Запись загружена в форму для редактирования." : "Поля заполнены из существующей записи. Можно сохранить как новую.");
       scrollPlanningProjectFormIntoView();
     }
 
@@ -9691,15 +9704,16 @@ def buildPlanningProjectsPage() -> str:
           <td class="actions-col">
             <div class="row-actions">
               <button type="button" class="edit-button" data-action="edit" data-id="${project.id}">Изм.</button>
+              <button type="button" class="copy-button" data-action="copy" data-id="${project.id}">Копир.</button>
               <button type="button" class="delete-button" data-action="delete" data-id="${project.id}">Удалить</button>
             </div>
           </td>
-          <td class="direction-col">${escapeHtml(project.direction ?? "?")}</td>
-          <td class="closed-col">${project.is_closed ? "Да" : "?"}</td>
-          <td class="customer-col">${escapeHtml(project.customer ?? "?")}</td>
-          <td class="project-name-col">${escapeHtml(project.project_name ?? "?")}</td>
-          <td class="identifier-col mono">${escapeHtml(project.redmine_identifier ?? "?")}</td>
-          <td class="pm-col">${escapeHtml(project.pm_name ?? "?")}</td>
+          <td class="direction-col">${escapeHtml(project.direction ?? "—")}</td>
+          <td class="closed-col">${project.is_closed ? "Да" : ""}</td>
+          <td class="customer-col">${escapeHtml(project.customer ?? "—")}</td>
+          <td class="project-name-col">${escapeHtml(project.project_name ?? "—")}</td>
+          <td class="identifier-col mono">${escapeHtml(project.redmine_identifier ?? "—")}</td>
+          <td class="pm-col">${escapeHtml(project.pm_name ?? "—")}</td>
           <td class="start-date-col">${formatOptionalDate(project.start_date)}</td>
           <td class="end-date-col">${formatOptionalDate(project.end_date)}</td>
           <td class="development-col">${formatOptionalNumber(project.development_hours)}</td>
@@ -9807,6 +9821,11 @@ def buildPlanningProjectsPage() -> str:
           return;
         }
 
+        if (action === "copy") {
+          fillPlanningProjectForm(currentProject, { preserveId: false });
+          return;
+        }
+
         if (action === "delete") {
           if (!window.confirm(`Удалить запись по проекту "${currentProject.project_name}"?`)) {
             return;
@@ -9843,16 +9862,29 @@ def buildPlanningProjectsPage() -> str:
 
     planningProjectsShowClosed?.addEventListener("change", () => {
       loadPlanningProjects().catch((error) => {
-        planningProjectsCount.textContent = "????????????";
-        planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">???? ?????????????? ?????????????????? ????????????.</td></tr>';
-        setPlanningProjectsStatus(error instanceof Error ? error.message : "???? ?????????????? ?????????????????? ???????????????????????? ????????????????.");
+        planningProjectsCount.textContent = "Ошибка";
+        planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Не удалось загрузить записи.</td></tr>';
+        setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
       });
     });
 
     loadPlanningProjects().catch((error) => {
-      planningProjectsCount.textContent = "????????????";
-      planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">???? ?????????????? ?????????????????? ????????????.</td></tr>';
-      setPlanningProjectsStatus(error instanceof Error ? error.message : "???? ?????????????? ?????????????????? ???????????????????????? ????????????????.");
+      planningProjectsCount.textContent = "Ошибка";
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Не удалось загрузить записи.</td></tr>';
+      setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
+    });
+
+    exportPlanningProjectsButton?.addEventListener("click", () => {
+      const params = new URLSearchParams();
+      const searchValue = String(planningProjectsSearch?.value || "").trim();
+      if (searchValue) {
+        params.set("q", searchValue);
+      }
+      if (planningProjectsShowClosed?.checked) {
+        params.set("include_closed", "true");
+      }
+      const query = params.toString();
+      window.location.href = `/api/planning-projects/export.csv${query ? `?${query}` : ""}`;
     });
   </script>
 </body>
@@ -9909,6 +9941,68 @@ def getPlanningProjects(
         "total": countPlanningProjects(searchText=q, includeClosed=include_closed),
         "limit": limit,
     }
+
+
+@app.get("/api/planning-projects/export.csv")
+def exportPlanningProjectsCsv(
+    q: str | None = Query(None),
+    include_closed: bool = Query(False),
+) -> Response:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensurePlanningProjectsTable()
+    projects = listPlanningProjects(searchText=q, includeClosed=include_closed, limit=None)
+
+    output = io.StringIO(newline="")
+    output.write("sep=;\n")
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow(
+        [
+            "Направление",
+            "Закрыт",
+            "Заказчик",
+            "Название проекта",
+            "Идентификатор в Redmine",
+            "ПМ",
+            "Дата старта",
+            "Дата окончания",
+            "Часы разработки с багфиксом",
+            "Базовая оценка",
+            "P1 (факт / база), %",
+            "P2 (факт с багами / факт), %",
+            "Док с оценкой",
+            "Bitrix",
+            "Комментарий",
+        ]
+    )
+    for project in projects:
+        writer.writerow(
+            [
+                str(project.get("direction") or ""),
+                "Да" if project.get("is_closed") else "",
+                str(project.get("customer") or ""),
+                str(project.get("project_name") or ""),
+                str(project.get("redmine_identifier") or ""),
+                str(project.get("pm_name") or ""),
+                str(project.get("start_date") or ""),
+                str(project.get("end_date") or ""),
+                formatPageHours(project.get("development_hours")) if project.get("development_hours") not in (None, "") else "",
+                formatPageHours(project.get("baseline_estimate_hours")) if project.get("baseline_estimate_hours") not in (None, "") else "",
+                formatPageHours(project.get("p1")) if project.get("p1") not in (None, "") else "",
+                formatPageHours(project.get("p2")) if project.get("p2") not in (None, "") else "",
+                str(project.get("estimate_doc_url") or ""),
+                str(project.get("bitrix_url") or ""),
+                str(project.get("comment_text") or ""),
+            ]
+        )
+
+    csvBytes = output.getvalue().encode("cp1251", errors="replace")
+    return Response(
+        content=csvBytes,
+        media_type="text/csv; charset=windows-1251",
+        headers={"Content-Disposition": 'attachment; filename="planning_projects.csv"'},
+    )
 
 
 @app.post("/api/planning-projects")
