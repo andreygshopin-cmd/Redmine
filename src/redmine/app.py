@@ -7464,7 +7464,7 @@ def buildPlanningProjectsPage() -> str:
     th.identifier-col, td.identifier-col { width: 276px; min-width: 276px; max-width: 276px; }
     th.pm-col, td.pm-col { width: 150px; }
     th.start-date-col, td.start-date-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
-    th.end-date-col, td.end-date-col { width: 12ch; min-width: 12ch; max-width: 12ch; white-space: nowrap; }
+    th.end-date-col, td.end-date-col { width: 14ch; min-width: 14ch; max-width: 14ch; white-space: nowrap; }
     th.development-col, td.development-col { width: 190px; min-width: 190px; }
     th.year-col, td.year-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
     th.year-hours-col, td.year-hours-col { width: 14ch; min-width: 14ch; max-width: 14ch; white-space: nowrap; }
@@ -7930,11 +7930,11 @@ def buildPlanningProjectsPage() -> str:
           <td class="start-date-col">${formatOptionalDate(project.start_date)}</td>
           <td class="end-date-col">${formatOptionalDate(project.end_date)}</td>
           <td class="development-col">${formatOptionalNumber(project.development_hours)}</td>
-          <td class="year-col">${formatOptionalInteger(project.year_1)}</td>
+          <td class="year-col">${formatPlanningYearCell(project.year_1, project.hours_1)}</td>
           <td class="year-hours-col">${formatOptionalNumber(project.hours_1)}</td>
-          <td class="year-col">${formatOptionalInteger(project.year_2)}</td>
+          <td class="year-col">${formatPlanningYearCell(project.year_2, project.hours_2)}</td>
           <td class="year-hours-col">${formatOptionalNumber(project.hours_2)}</td>
-          <td class="year-col">${formatOptionalInteger(project.year_3)}</td>
+          <td class="year-col">${formatPlanningYearCell(project.year_3, project.hours_3)}</td>
           <td class="year-hours-col">${formatOptionalNumber(project.hours_3)}</td>
           <td class="baseline-col">${formatOptionalNumber(project.baseline_estimate_hours)}</td>
           <td class="p-col">${formatOptionalNumber(project.p1)}</td>
@@ -7950,7 +7950,7 @@ def buildPlanningProjectsPage() -> str:
       planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Загружаем записи...</td></tr>';
       const params = new URLSearchParams();
       const queryState = getPlanningProjectsQueryState();
-      const searchValue = String(planningProjectsSearch?.value || queryState.redmineIdentifier || "").trim();
+      const searchValue = String(planningProjectsSearch?.value || "").trim();
       if (planningProjectsSearch && searchValue && !String(planningProjectsSearch.value || "").trim()) {
         planningProjectsSearch.value = searchValue;
       }
