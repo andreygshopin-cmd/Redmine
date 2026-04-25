@@ -1879,11 +1879,20 @@ def listFilteredSnapshotIssuesForProjectByDate(
 
 
 def getSnapshotRunsWithIssuesForProjectYear(projectRedmineId: int, year: int) -> dict[str, object]:
+    return getSnapshotRunsWithIssuesForProjectDateRange(
+        projectRedmineId,
+        f"{year}-01-01",
+        f"{year}-12-31",
+    )
+
+
+def getSnapshotRunsWithIssuesForProjectDateRange(
+    projectRedmineId: int,
+    dateFrom: str,
+    dateTo: str,
+) -> dict[str, object]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
-
-    yearStart = f"{year}-01-01"
-    yearEnd = f"{year}-12-31"
 
     with engine.connect() as connection:
         runRows = connection.execute(
@@ -1902,19 +1911,19 @@ def getSnapshotRunsWithIssuesForProjectYear(projectRedmineId: int, year: int) ->
                     r.total_spent_hours,
                     r.total_spent_hours_year
                 FROM issue_snapshot_runs r
-                LEFT JOIN projects p
-                    ON p.redmine_id = r.project_redmine_id
-                WHERE r.project_redmine_id = :project_redmine_id
-                  AND r.captured_for_date BETWEEN :year_start AND :year_end
-                ORDER BY r.captured_for_date ASC, r.captured_at ASC, r.id ASC
-                """
-            ),
-            {
-                "project_redmine_id": projectRedmineId,
-                "year_start": yearStart,
-                "year_end": yearEnd,
-            },
-        ).mappings().all()
+                  LEFT JOIN projects p
+                      ON p.redmine_id = r.project_redmine_id
+                  WHERE r.project_redmine_id = :project_redmine_id
+                    AND r.captured_for_date BETWEEN :date_from AND :date_to
+                  ORDER BY r.captured_for_date ASC, r.captured_at ASC, r.id ASC
+                  """
+              ),
+              {
+                  "project_redmine_id": projectRedmineId,
+                  "date_from": dateFrom,
+                  "date_to": dateTo,
+              },
+          ).mappings().all()
 
         if not runRows:
             return {"project": None, "snapshot_runs": []}

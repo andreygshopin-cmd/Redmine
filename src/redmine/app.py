@@ -36,6 +36,7 @@ from src.redmine.db import (
     ensureUsersTable,
     getFilteredSnapshotIssuesForProjectByDate,
     getSnapshotRunsWithIssuesForProjectYear,
+    getSnapshotRunsWithIssuesForProjectDateRange,
     getSnapshotIssuesForProjectByDate,
     getUserByPasswordResetToken,
     getUserByLogin,
@@ -4085,12 +4086,9 @@ def buildBurndownChartSeeds(snapshotRuns: list[dict[str, object]]) -> list[dict[
     return chartSeeds
 
 
-def buildBurndownDateLabels(year: int, month: int) -> list[str]:
-    currentDate = date(year, month, 1)
-    if month == 12:
-        lastDate = date(year, 12, 31)
-    else:
-        lastDate = date(year, month + 1, 1) - timedelta(days=1)
+def buildBurndownDateLabels(dateFrom: date, dateTo: date) -> list[str]:
+    currentDate = dateFrom
+    lastDate = dateTo
     labels: list[str] = []
 
     while currentDate <= lastDate:
@@ -4101,10 +4099,7 @@ def buildBurndownDateLabels(year: int, month: int) -> list[str]:
 
 
 def buildBurndownPage(projectRedmineId: int) -> str:
-    currentYear = datetime.now(UTC).year
-    targetMonth = 4
     ensurePlanningProjectsTable()
-    burndownPayload = getSnapshotRunsWithIssuesForProjectYear(projectRedmineId, currentYear)
     storedProjects = listStoredProjects()
     storedProject = next(
         (item for item in storedProjects if int(item.get("redmine_id") or 0) == projectRedmineId),
@@ -4121,6 +4116,38 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     projectIdentifier = escape(projectIdentifierRaw or "—")
     planningProjects = (
         listPlanningProjectsByRedmineIdentifier(projectIdentifierRaw) if projectIdentifierRaw else []
+    )
+
+    def addMonths(baseDate: date, monthsDelta: int) -> date:
+        monthIndex = (baseDate.month - 1) + monthsDelta
+        year = baseDate.year + monthIndex // 12
+        month = monthIndex % 12 + 1
+        if month == 12:
+            monthLastDay = 31
+        else:
+            monthLastDay = (date(year, month + 1, 1) - timedelta(days=1)).day
+        return date(year, month, min(baseDate.day, monthLastDay))
+
+    planningStartDates = []
+    for project in planningProjects:
+        rawStartDate = str(project.get("start_date") or "").strip()
+        if not rawStartDate:
+            continue
+        try:
+            planningStartDates.append(date.fromisoformat(rawStartDate))
+        except ValueError:
+            continue
+
+    todayLocal = datetime.now().date()
+    chartStartDate = min(planningStartDates) if planningStartDates else addMonths(todayLocal, -1)
+    chartEndDate = addMonths(todayLocal, 1)
+    if chartStartDate > chartEndDate:
+        chartStartDate = chartEndDate
+
+    burndownPayload = getSnapshotRunsWithIssuesForProjectDateRange(
+        projectRedmineId,
+        chartStartDate.isoformat(),
+        chartEndDate.isoformat(),
     )
 
     def formatPlanningMetric(value: object) -> str:
@@ -4195,13 +4222,9 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         currentPage="burndown",
         snapshotUrl=snapshotIssuesUrl,
     )
-    snapshotRuns = [
-        snapshotRun
-        for snapshotRun in list(burndownPayload.get("snapshot_runs") or [])
-        if str(snapshotRun.get("captured_for_date") or "").startswith(f"{currentYear}-{targetMonth:02d}-")
-    ]
+    snapshotRuns = list(burndownPayload.get("snapshot_runs") or [])
     chartSeeds = buildBurndownChartSeeds(snapshotRuns)
-    chartDatesJson = json.dumps(buildBurndownDateLabels(currentYear, targetMonth), ensure_ascii=False)
+    chartDatesJson = json.dumps(buildBurndownDateLabels(chartStartDate, chartEndDate), ensure_ascii=False)
     chartSeedsJson = json.dumps(chartSeeds, ensure_ascii=False)
 
     return f"""<!doctype html>
@@ -4504,7 +4527,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
   <main>
     {navPanelHtml}
     <h1>Диаграмма сгорания</h1>
-    <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Период диаграммы: 01.04.{currentYear} — 30.04.{currentYear}. Срезов за апрель: {len(chartSeeds)}.</p>
+    <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Период диаграммы: {chartStartDate.strftime("%d.%m.%Y")} — {chartEndDate.strftime("%d.%m.%Y")}. Срезов в диапазоне: {len(chartSeeds)}.</p>
     {planningProjectsTextHtml}
 
     <section class="controls-panel">
@@ -4643,7 +4666,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
               </div>
             </li>
           </ul>
-          <p class="legend-note">Итоговые линии «Объем.Текущий», «Объем.Остаток» и «Объем.Прогноз» — это суммы по всем Feature и по виртуальной Feature в выбранном апрельском срезе.</p>
+          <p class="legend-note">Итоговые линии «Объем.Текущий», «Объем.Остаток» и «Объем.Прогноз» — это суммы по всем Feature и по виртуальной Feature в выбранном диапазоне срезов.</p>
         </div>
       </div>
     </section>
@@ -7244,15 +7267,47 @@ def buildPlanningProjectsPage() -> str:
     }
     .form-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(180px, 1fr));
+      gap: 16px 18px;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(160px, 1fr));
       gap: 14px 16px;
+      align-items: end;
+    }
+    .form-panels {
+      display: grid;
+      grid-template-columns: minmax(280px, 34%) minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .subpanel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fbfd;
+      padding: 16px;
+    }
+    .subpanel-title {
+      margin: 0 0 12px;
+      font-size: 0.96rem;
+      font-weight: 700;
+      color: #426179;
+    }
+    .years-grid {
+      display: grid;
+      grid-template-columns: minmax(90px, 110px) minmax(0, 1fr);
+      gap: 12px 14px;
+      align-items: end;
+    }
+    .links-grid {
+      display: grid;
+      gap: 14px;
     }
     .field {
       display: flex;
       flex-direction: column;
       gap: 6px;
     }
-    .field-wide { grid-column: span 2; }
     .field label {
       font-weight: 700;
       font-size: 0.95rem;
@@ -7452,7 +7507,8 @@ def buildPlanningProjectsPage() -> str:
       text-align: center;
     }
     @media (max-width: 1100px) {
-      .form-grid { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+      .form-row { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+      .form-panels { grid-template-columns: 1fr; }
     }
     @media (max-width: 700px) {
       .page-head {
@@ -7462,8 +7518,8 @@ def buildPlanningProjectsPage() -> str:
       .head-actions {
         justify-content: flex-start;
       }
-      .form-grid { grid-template-columns: 1fr; }
-      .field-wide { grid-column: span 1; }
+      .form-row { grid-template-columns: 1fr; }
+      .years-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -7529,89 +7585,107 @@ def buildPlanningProjectsPage() -> str:
       <form id="planningProjectForm">
         <input type="hidden" id="planningProjectId">
         <div class="form-grid">
-          <div class="field field-wide">
-            <label for="planningProjectDirection">Направление</label>
-            <input id="planningProjectDirection" type="text">
+          <div class="form-row">
+            <div class="field">
+              <label for="planningProjectDirection">Направление</label>
+              <input id="planningProjectDirection" type="text">
+            </div>
+            <div class="field">
+              <label for="planningProjectCustomer">Заказчик</label>
+              <input id="planningProjectCustomer" type="text">
+            </div>
+            <div class="field">
+              <label for="planningProjectName">Название проекта</label>
+              <input id="planningProjectName" type="text" required>
+            </div>
+            <label class="checkbox-field" for="planningProjectClosed">
+              <input id="planningProjectClosed" type="checkbox">
+              <span>&#1047;&#1072;&#1082;&#1088;&#1099;&#1090;</span>
+            </label>
           </div>
-          <label class="checkbox-field" for="planningProjectClosed">
-            <input id="planningProjectClosed" type="checkbox">
-            <span>&#1047;&#1072;&#1082;&#1088;&#1099;&#1090;</span>
-          </label>
-          <div class="field field-wide">
-            <label for="planningProjectName">Название проекта</label>
-            <input id="planningProjectName" type="text" required>
+          <div class="form-row">
+            <div class="field">
+              <label for="planningProjectIdentifier">Идентификатор в Redmine</label>
+              <input id="planningProjectIdentifier" type="text">
+            </div>
+            <div class="field">
+              <label for="planningProjectPm">ПМ</label>
+              <input id="planningProjectPm" type="text">
+            </div>
+            <div class="field">
+              <label for="planningProjectStartDate">Дата старта</label>
+              <input id="planningProjectStartDate" type="date">
+            </div>
+            <div class="field">
+              <label for="planningProjectEndDate">Дата окончания</label>
+              <input id="planningProjectEndDate" type="date">
+            </div>
           </div>
-          <div class="field">
-            <label for="planningProjectCustomer">Заказчик</label>
-            <input id="planningProjectCustomer" type="text">
+          <div class="form-row">
+            <div class="field">
+              <label for="planningProjectDevelopmentHours">Часы разработки с багфиксом</label>
+              <input id="planningProjectDevelopmentHours" type="number" step="0.1" inputmode="decimal">
+            </div>
+            <div class="field">
+              <label for="planningProjectBaselineEstimate">Базовая оценка</label>
+              <input id="planningProjectBaselineEstimate" type="number" step="0.1" inputmode="decimal">
+            </div>
+            <div class="field">
+              <label for="planningProjectP1">P1 (факт / база), %</label>
+              <input id="planningProjectP1" type="number" step="0.1" inputmode="decimal">
+            </div>
+            <div class="field">
+              <label for="planningProjectP2">P2 (факт с багами / факт), %</label>
+              <input id="planningProjectP2" type="number" step="0.1" inputmode="decimal">
+            </div>
           </div>
-          <div class="field">
-            <label for="planningProjectIdentifier">Идентификатор в Redmine</label>
-            <input id="planningProjectIdentifier" type="text">
-          </div>
-          <div class="field">
-            <label for="planningProjectPm">ПМ</label>
-            <input id="planningProjectPm" type="text">
-          </div>
-          <div class="field">
-            <label for="planningProjectStartDate">Дата старта</label>
-            <input id="planningProjectStartDate" type="date">
-          </div>
-          <div class="field">
-            <label for="planningProjectEndDate">Дата окончания</label>
-            <input id="planningProjectEndDate" type="date">
-          </div>
-          <div class="field">
-            <label for="planningProjectDevelopmentHours">Часы разработки с багфиксом</label>
-            <input id="planningProjectDevelopmentHours" type="number" step="0.1" inputmode="decimal">
-          </div>
-          <div class="field">
-            <label for="planningProjectYear1">Год 1</label>
-            <input id="planningProjectYear1" type="number" step="1" inputmode="numeric" value="__DEFAULT_YEAR_1__">
-          </div>
-          <div class="field">
-            <label for="planningProjectHours1">Часы 1</label>
-            <input id="planningProjectHours1" type="number" step="0.1" inputmode="decimal">
-          </div>
-          <div class="field">
-            <label for="planningProjectYear2">Год 2</label>
-            <input id="planningProjectYear2" type="number" step="1" inputmode="numeric" value="__DEFAULT_YEAR_2__">
-          </div>
-          <div class="field">
-            <label for="planningProjectHours2">Часы 2</label>
-            <input id="planningProjectHours2" type="number" step="0.1" inputmode="decimal">
-          </div>
-          <div class="field">
-            <label for="planningProjectYear3">Год 3</label>
-            <input id="planningProjectYear3" type="number" step="1" inputmode="numeric" value="__DEFAULT_YEAR_3__">
-          </div>
-          <div class="field">
-            <label for="planningProjectHours3">Часы 3</label>
-            <input id="planningProjectHours3" type="number" step="0.1" inputmode="decimal">
-          </div>
-          <div class="field">
-            <label for="planningProjectBaselineEstimate">Базовая оценка</label>
-            <input id="planningProjectBaselineEstimate" type="number" step="0.1" inputmode="decimal">
-          </div>
-          <div class="field">
-            <label for="planningProjectP1">P1 (факт / база), %</label>
-            <input id="planningProjectP1" type="number" step="0.1" inputmode="decimal">
-          </div>
-          <div class="field">
-            <label for="planningProjectP2">P2 (факт с багами / факт), %</label>
-            <input id="planningProjectP2" type="number" step="0.1" inputmode="decimal">
-          </div>
-          <div class="field field-wide">
-            <label for="planningProjectEstimateDoc">Док с оценкой</label>
-            <input id="planningProjectEstimateDoc" type="url" placeholder="https://">
-          </div>
-          <div class="field field-wide">
-            <label for="planningProjectBitrix">Bitrix</label>
-            <input id="planningProjectBitrix" type="url" placeholder="https://">
-          </div>
-          <div class="field field-wide">
-            <label for="planningProjectComment">Комментарий</label>
-            <textarea id="planningProjectComment"></textarea>
+          <div class="form-panels">
+            <section class="subpanel">
+              <h3 class="subpanel-title">План по годам</h3>
+              <div class="years-grid">
+                <div class="field">
+                  <label for="planningProjectYear1">Год 1</label>
+                  <input id="planningProjectYear1" type="number" step="1" inputmode="numeric" value="__DEFAULT_YEAR_1__">
+                </div>
+                <div class="field">
+                  <label for="planningProjectHours1">Часы 1</label>
+                  <input id="planningProjectHours1" type="number" step="0.1" inputmode="decimal">
+                </div>
+                <div class="field">
+                  <label for="planningProjectYear2">Год 2</label>
+                  <input id="planningProjectYear2" type="number" step="1" inputmode="numeric" value="__DEFAULT_YEAR_2__">
+                </div>
+                <div class="field">
+                  <label for="planningProjectHours2">Часы 2</label>
+                  <input id="planningProjectHours2" type="number" step="0.1" inputmode="decimal">
+                </div>
+                <div class="field">
+                  <label for="planningProjectYear3">Год 3</label>
+                  <input id="planningProjectYear3" type="number" step="1" inputmode="numeric" value="__DEFAULT_YEAR_3__">
+                </div>
+                <div class="field">
+                  <label for="planningProjectHours3">Часы 3</label>
+                  <input id="planningProjectHours3" type="number" step="0.1" inputmode="decimal">
+                </div>
+              </div>
+            </section>
+            <section class="subpanel">
+              <h3 class="subpanel-title">Ссылки и комментарии</h3>
+              <div class="links-grid">
+                <div class="field">
+                  <label for="planningProjectEstimateDoc">Док с оценкой</label>
+                  <input id="planningProjectEstimateDoc" type="url" placeholder="https://">
+                </div>
+                <div class="field">
+                  <label for="planningProjectBitrix">Bitrix</label>
+                  <input id="planningProjectBitrix" type="url" placeholder="https://">
+                </div>
+                <div class="field">
+                  <label for="planningProjectComment">Комментарий</label>
+                  <textarea id="planningProjectComment"></textarea>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
         <div class="actions">
