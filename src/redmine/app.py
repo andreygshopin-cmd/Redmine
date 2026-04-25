@@ -7394,6 +7394,12 @@ def buildPlanningProjectsPage() -> str:
       font-weight: 600;
       color: var(--text);
     }
+    .table-action-button {
+      background: #eef2f5;
+      color: var(--text);
+      border: 1px solid var(--line);
+      box-shadow: none;
+    }
     .checkbox-field input {
       width: 16px;
       height: 16px;
@@ -7575,6 +7581,8 @@ def buildPlanningProjectsPage() -> str:
         <h2 style="margin:0;">Таблица планирования</h2>
         <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
           <span id="planningProjectsCount">Загрузка...</span>
+          <button type="button" id="resetPlanningProjectsFiltersButton" class="table-action-button">Сбросить фильтры</button>
+          <button type="button" id="resetPlanningProjectsSortingButton" class="table-action-button">Сбросить сортировку</button>
           <button type="button" id="exportPlanningProjectsButton">Выгрузить в Excel</button>
         </div>
       </div>
@@ -7766,6 +7774,8 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectsCount = document.getElementById("planningProjectsCount");
     const planningProjectsStatus = document.getElementById("planningProjectsStatus");
     const exportPlanningProjectsButton = document.getElementById("exportPlanningProjectsButton");
+    const resetPlanningProjectsFiltersButton = document.getElementById("resetPlanningProjectsFiltersButton");
+    const resetPlanningProjectsSortingButton = document.getElementById("resetPlanningProjectsSortingButton");
     const planningProjectForm = document.getElementById("planningProjectForm");
     const planningFormTitle = document.getElementById("planningFormTitle");
     const planningProjectId = document.getElementById("planningProjectId");
@@ -7921,6 +7931,19 @@ def buildPlanningProjectsPage() -> str:
       filteredPlanningProjects = sortPlanningProjects(applyPlanningProjectsColumnFilters(currentPlanningProjects));
       renderPlanningProjects(filteredPlanningProjects);
       updatePlanningProjectsSortIndicators();
+    }
+
+    function resetPlanningProjectsColumnFilters() {
+      planningColumnFilterInputs.forEach((input) => {
+        input.value = "";
+      });
+      planningProjectsColumnFilters = {};
+      refreshPlanningProjectsTable();
+    }
+
+    function resetPlanningProjectsSorting() {
+      planningProjectsSortState = { key: "", direction: "asc" };
+      refreshPlanningProjectsTable();
     }
 
     function truncateDisplay(value, maxLength = 30) {
@@ -8278,6 +8301,16 @@ def buildPlanningProjectsPage() -> str:
       params.set("include_closed", "true");
       const query = params.toString();
       window.location.href = `/api/planning-projects/export.csv${query ? `?${query}` : ""}`;
+    });
+
+    resetPlanningProjectsFiltersButton?.addEventListener("click", () => {
+      resetPlanningProjectsColumnFilters();
+      setPlanningProjectsStatus("");
+    });
+
+    resetPlanningProjectsSortingButton?.addEventListener("click", () => {
+      resetPlanningProjectsSorting();
+      setPlanningProjectsStatus("");
     });
   </script>
 </body>
