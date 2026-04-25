@@ -334,6 +334,7 @@ def ensurePlanningProjectsTable() -> None:
                     """
                     CREATE TABLE IF NOT EXISTS planning_projects (
                         id SERIAL PRIMARY KEY,
+                        direction TEXT,
                         project_name TEXT NOT NULL,
                         redmine_identifier TEXT,
                         pm_name TEXT,
@@ -393,6 +394,15 @@ def ensurePlanningProjectsTable() -> None:
                     """
                     ALTER TABLE planning_projects
                     ADD COLUMN IF NOT EXISTS development_hours DOUBLE PRECISION NULL
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE planning_projects
+                    ADD COLUMN IF NOT EXISTS direction TEXT
                     """
                 )
             )
@@ -816,6 +826,7 @@ def listPlanningProjects() -> list[dict[str, object]]:
                 """
                 SELECT
                     id,
+                    direction,
                     project_name,
                     redmine_identifier,
                     pm_name,
@@ -2120,6 +2131,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
             text(
                 """
                 INSERT INTO planning_projects (
+                    direction,
                     project_name,
                     redmine_identifier,
                     pm_name,
@@ -2135,6 +2147,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     comment_text,
                     updated_at
                 ) VALUES (
+                    :direction,
                     :project_name,
                     :redmine_identifier,
                     :pm_name,
@@ -2152,6 +2165,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                 )
                 RETURNING
                     id,
+                    direction,
                     project_name,
                     redmine_identifier,
                     pm_name,
@@ -2184,6 +2198,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                 """
                 UPDATE planning_projects
                 SET
+                    direction = :direction,
                     project_name = :project_name,
                     redmine_identifier = :redmine_identifier,
                     pm_name = :pm_name,
@@ -2201,6 +2216,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                 WHERE id = :project_id
                 RETURNING
                     id,
+                    direction,
                     project_name,
                     redmine_identifier,
                     pm_name,
