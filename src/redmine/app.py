@@ -8632,7 +8632,7 @@ def buildPlanningProjectsPage() -> str:
               <th class="development-col">Часы разработки</th>
               <th class="baseline-col">Базовая оценка</th>
               <th class="p-col">P1 (факт / база), %</th>
-              <th class="p-col">P2 (факт с багами / факт), %</th>
+              <th class="p2-col">P2 (факт с багами / факт), %</th>
               <th class="doc-col">Док с оценкой</th>
               <th class="bitrix-col">Bitrix</th>
               <th class="comment-col">Комментарий</th>
@@ -8867,7 +8867,7 @@ def buildPlanningProjectsPage() -> str:
           <td class="development-col">${formatOptionalNumber(project.development_hours)}</td>
           <td class="baseline-col">${formatOptionalNumber(project.baseline_estimate_hours)}</td>
           <td class="p-col">${formatOptionalNumber(project.p1)}</td>
-          <td class="p-col">${formatOptionalNumber(project.p2)}</td>
+          <td class="p2-col">${formatOptionalNumber(project.p2)}</td>
           <td class="doc-col link-cell">${buildOptionalLink(project.estimate_doc_url)}</td>
           <td class="bitrix-col link-cell">${buildOptionalLink(project.bitrix_url)}</td>
           <td class="comment-col" title="${escapeHtml(project.comment_text ?? "")}">${truncateDisplay(project.comment_text)}</td>
@@ -9206,24 +9206,30 @@ def buildPlanningProjectsPage() -> str:
     }
     tr:last-child td { border-bottom: 0; }
     .mono { font-family: Consolas, "Courier New", monospace; }
-    th.direction-col, td.direction-col { width: 210px; }
+    th.direction-col, td.direction-col { width: 12ch; min-width: 12ch; max-width: 12ch; white-space: nowrap; }
     th.customer-col, td.customer-col { width: 180px; }
-    th.project-name-col, td.project-name-col { width: 520px; }
+    th.project-name-col, td.project-name-col { width: 15ch; min-width: 15ch; max-width: 15ch; }
     th.identifier-col, td.identifier-col { width: 230px; }
     th.pm-col, td.pm-col { width: 150px; }
-    th.start-date-col, td.start-date-col { width: 180px; }
+    th.start-date-col, td.start-date-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
     th.end-date-col, td.end-date-col { width: 160px; }
     th.development-col, td.development-col { width: 150px; }
     th.baseline-col, td.baseline-col { width: 140px; }
-    th.p-col, td.p-col { width: 180px; }
+    th.p-col, td.p-col { width: 10ch; min-width: 10ch; max-width: 10ch; }
+    th.p2-col, td.p2-col { width: 18ch; min-width: 18ch; max-width: 18ch; }
     th.doc-col, td.doc-col,
     th.bitrix-col, td.bitrix-col,
-    th.comment-col, td.comment-col { width: 300px; }
+    th.comment-col, td.comment-col { width: 30ch; min-width: 30ch; max-width: 30ch; white-space: nowrap; }
     th.actions-col, td.actions-col { width: 160px; white-space: nowrap; }
     .link-cell a {
       color: var(--blue-302);
       text-decoration: none;
       border-bottom: 1px dashed currentColor;
+      display: inline-block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .link-cell a:hover {
       color: var(--orange-1585);
