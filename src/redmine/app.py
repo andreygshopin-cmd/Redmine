@@ -313,6 +313,7 @@ class PlanningProjectPayload(BaseModel):
     customer: str | None = None
     start_date: str | None = None
     end_date: str | None = None
+    development_hours: float | None = None
     baseline_estimate_hours: float | None = None
     p1: float | None = None
     p2: float | None = None
@@ -5960,6 +5961,7 @@ def normalizePlanningProjectPayload(payload: PlanningProjectPayload) -> dict[str
         "customer": _normalizePlanningProjectText(payload.customer),
         "start_date": _normalizePlanningProjectDate(payload.start_date),
         "end_date": _normalizePlanningProjectDate(payload.end_date),
+        "development_hours": payload.development_hours,
         "baseline_estimate_hours": payload.baseline_estimate_hours,
         "p1": payload.p1,
         "p2": payload.p2,
@@ -8278,6 +8280,675 @@ def readBitrixPage() -> HTMLResponse:
 @app.get("/snapshot-rules", response_class=HTMLResponse)
 def getSnapshotRulesPage() -> HTMLResponse:
     return _renderHtmlPage(buildSnapshotRulesPage())
+
+
+def buildPlanningProjectsPage() -> str:
+    return """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Планирование проектов</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue-302: #375d77;
+      --yellow-109: #ffc600;
+      --cyan-310: #52cee6;
+      --orange-1585: #ff6c0e;
+      --shadow-soft: 0 12px 24px rgba(22, 50, 74, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    main {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px 20px 56px;
+    }
+    .page-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin: 0 0 18px;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      text-decoration: none;
+    }
+    .brand img {
+      width: 220px;
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }
+    .head-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .head-actions a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 700;
+      box-shadow: var(--shadow-soft);
+    }
+    .head-actions a.home-link {
+      background: var(--yellow-109);
+      color: #16324a;
+    }
+    .head-actions a.redmine-link {
+      background: var(--blue-302);
+      color: #ffffff;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(2.15rem, 4.9vw, 3.6rem);
+      line-height: 0.98;
+      letter-spacing: -0.04em;
+      font-weight: 400;
+    }
+    .lead {
+      margin: 0 0 20px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: var(--shadow-soft);
+      margin: 0 0 18px;
+    }
+    .panel h2 {
+      margin: 0 0 12px;
+      font-size: 1.1rem;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(180px, 1fr));
+      gap: 14px 16px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .field-wide { grid-column: span 2; }
+    .field label {
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+    .field input,
+    .field textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font: inherit;
+      color: var(--text);
+      background: #ffffff;
+    }
+    .field textarea {
+      resize: vertical;
+      min-height: 88px;
+    }
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type="number"] {
+      -moz-appearance: textfield;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+    button {
+      border: 0;
+      border-radius: 6px;
+      padding: 10px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: var(--shadow-soft);
+    }
+    #savePlanningProjectButton {
+      background: var(--blue-302);
+      color: #ffffff;
+    }
+    #resetPlanningProjectFormButton {
+      background: #eef2f5;
+      color: var(--text);
+      border: 1px solid var(--line);
+      box-shadow: none;
+    }
+    .status {
+      min-height: 22px;
+      margin-top: 14px;
+      color: var(--muted);
+    }
+    .table-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin: 0 0 12px;
+      color: var(--muted);
+    }
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    table {
+      width: 100%;
+      min-width: 1760px;
+      border-collapse: collapse;
+      background: #ffffff;
+    }
+    th, td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #eef6f7;
+      color: #426179;
+      text-transform: uppercase;
+      font-size: 0.78rem;
+      line-height: 1.2;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    tr:last-child td { border-bottom: 0; }
+    .mono { font-family: Consolas, "Courier New", monospace; }
+    th.customer-col, td.customer-col { width: 180px; }
+    th.project-name-col, td.project-name-col { width: 520px; }
+    th.identifier-col, td.identifier-col { width: 230px; }
+    th.pm-col, td.pm-col { width: 150px; }
+    th.start-date-col, td.start-date-col { width: 220px; }
+    th.end-date-col, td.end-date-col { width: 160px; }
+    th.development-col, td.development-col { width: 150px; }
+    th.baseline-col, td.baseline-col { width: 140px; }
+    th.p-col, td.p-col { width: 180px; }
+    th.doc-col, td.doc-col,
+    th.bitrix-col, td.bitrix-col,
+    th.comment-col, td.comment-col { width: 220px; }
+    th.actions-col, td.actions-col { width: 170px; }
+    .link-cell a {
+      color: var(--blue-302);
+      text-decoration: none;
+      border-bottom: 1px dashed currentColor;
+    }
+    .link-cell a:hover {
+      color: var(--orange-1585);
+      border-bottom-style: solid;
+    }
+    .row-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .row-actions button {
+      padding: 7px 11px;
+      font-size: 0.92rem;
+    }
+    .row-actions .edit-button {
+      background: var(--cyan-310);
+      color: #16324a;
+    }
+    .row-actions .delete-button {
+      background: #eef2f5;
+      color: #d54343;
+      border: 1px solid #f0c8c8;
+      box-shadow: none;
+    }
+    .empty-state {
+      padding: 28px 20px;
+      color: var(--muted);
+      text-align: center;
+    }
+    @media (max-width: 1100px) {
+      .form-grid { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+    }
+    @media (max-width: 700px) {
+      .page-head {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .head-actions {
+        justify-content: flex-start;
+      }
+      .form-grid { grid-template-columns: 1fr; }
+      .field-wide { grid-column: span 1; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="page-head">
+      <a class="brand" href="/" aria-label="На главную">
+        <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+      </a>
+      <div class="head-actions">
+        <a class="home-link" href="/">Главная</a>
+        <a class="redmine-link" href="https://redmine.sms-it.ru" target="_blank" rel="noreferrer">Redmine</a>
+      </div>
+    </div>
+
+    <h1>Планирование проектов</h1>
+    <p class="lead">Здесь можно вести ручной план по проектам: сроки, коэффициенты, ссылки на документы и Bitrix, а также ответственного ПМ.</p>
+
+    <section class="panel">
+      <div class="table-meta">
+        <h2 style="margin:0;">Таблица планирования</h2>
+        <span id="planningProjectsCount">Загрузка...</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="customer-col">Заказчик</th>
+              <th class="project-name-col">Название проекта</th>
+              <th class="identifier-col">Идентификатор в Redmine</th>
+              <th class="pm-col">ПМ</th>
+              <th class="start-date-col">Дата старта</th>
+              <th class="end-date-col">Дата окончания</th>
+              <th class="development-col">Часы разработки</th>
+              <th class="baseline-col">Базовая оценка</th>
+              <th class="p-col">P1 (факт / база), %</th>
+              <th class="p-col">P2 (факт с багами / факт), %</th>
+              <th class="doc-col">Док с оценкой</th>
+              <th class="bitrix-col">Bitrix</th>
+              <th class="comment-col">Комментарий</th>
+              <th class="actions-col">Действия</th>
+            </tr>
+          </thead>
+          <tbody id="planningProjectsTableBody">
+            <tr><td colspan="14" class="empty-state">Загружаем записи...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2 id="planningFormTitle">Новая запись</h2>
+      <form id="planningProjectForm">
+        <input type="hidden" id="planningProjectId">
+        <div class="form-grid">
+          <div class="field field-wide">
+            <label for="planningProjectName">Название проекта</label>
+            <input id="planningProjectName" type="text" required>
+          </div>
+          <div class="field">
+            <label for="planningProjectCustomer">Заказчик</label>
+            <input id="planningProjectCustomer" type="text">
+          </div>
+          <div class="field">
+            <label for="planningProjectIdentifier">Идентификатор в Redmine</label>
+            <input id="planningProjectIdentifier" type="text">
+          </div>
+          <div class="field">
+            <label for="planningProjectPm">ПМ</label>
+            <input id="planningProjectPm" type="text">
+          </div>
+          <div class="field">
+            <label for="planningProjectStartDate">Дата старта</label>
+            <input id="planningProjectStartDate" type="date">
+          </div>
+          <div class="field">
+            <label for="planningProjectEndDate">Дата окончания</label>
+            <input id="planningProjectEndDate" type="date">
+          </div>
+          <div class="field">
+            <label for="planningProjectDevelopmentHours">Часы разработки</label>
+            <input id="planningProjectDevelopmentHours" type="number" step="0.1" inputmode="decimal">
+          </div>
+          <div class="field">
+            <label for="planningProjectBaselineEstimate">Базовая оценка</label>
+            <input id="planningProjectBaselineEstimate" type="number" step="0.1" inputmode="decimal">
+          </div>
+          <div class="field">
+            <label for="planningProjectP1">P1 (факт / база), %</label>
+            <input id="planningProjectP1" type="number" step="0.1" inputmode="decimal">
+          </div>
+          <div class="field">
+            <label for="planningProjectP2">P2 (факт с багами / факт), %</label>
+            <input id="planningProjectP2" type="number" step="0.1" inputmode="decimal">
+          </div>
+          <div class="field field-wide">
+            <label for="planningProjectEstimateDoc">Док с оценкой</label>
+            <input id="planningProjectEstimateDoc" type="url" placeholder="https://">
+          </div>
+          <div class="field field-wide">
+            <label for="planningProjectBitrix">Bitrix</label>
+            <input id="planningProjectBitrix" type="url" placeholder="https://">
+          </div>
+          <div class="field field-wide">
+            <label for="planningProjectComment">Комментарий</label>
+            <textarea id="planningProjectComment"></textarea>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit" id="savePlanningProjectButton">Сохранить</button>
+          <button type="button" id="resetPlanningProjectFormButton">Очистить форму</button>
+        </div>
+      </form>
+      <div class="status" id="planningProjectsStatus"></div>
+    </section>
+  </main>
+
+  <script>
+    const planningProjectsTableBody = document.getElementById("planningProjectsTableBody");
+    const planningProjectsCount = document.getElementById("planningProjectsCount");
+    const planningProjectsStatus = document.getElementById("planningProjectsStatus");
+    const planningProjectForm = document.getElementById("planningProjectForm");
+    const planningFormTitle = document.getElementById("planningFormTitle");
+    const planningProjectId = document.getElementById("planningProjectId");
+    const planningProjectName = document.getElementById("planningProjectName");
+    const planningProjectIdentifier = document.getElementById("planningProjectIdentifier");
+    const planningProjectPm = document.getElementById("planningProjectPm");
+    const planningProjectCustomer = document.getElementById("planningProjectCustomer");
+    const planningProjectStartDate = document.getElementById("planningProjectStartDate");
+    const planningProjectEndDate = document.getElementById("planningProjectEndDate");
+    const planningProjectDevelopmentHours = document.getElementById("planningProjectDevelopmentHours");
+    const planningProjectBaselineEstimate = document.getElementById("planningProjectBaselineEstimate");
+    const planningProjectP1 = document.getElementById("planningProjectP1");
+    const planningProjectP2 = document.getElementById("planningProjectP2");
+    const planningProjectEstimateDoc = document.getElementById("planningProjectEstimateDoc");
+    const planningProjectBitrix = document.getElementById("planningProjectBitrix");
+    const planningProjectComment = document.getElementById("planningProjectComment");
+    const resetPlanningProjectFormButton = document.getElementById("resetPlanningProjectFormButton");
+    const planningProjectFormSection = planningProjectForm ? planningProjectForm.closest(".panel") : null;
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => {
+        if (char === "&") return "&amp;";
+        if (char === "<") return "&lt;";
+        if (char === ">") return "&gt;";
+        if (char === '"') return "&quot;";
+        return "&#39;";
+      });
+    }
+
+    function formatOptionalDate(value) {
+      return value ? String(value) : "—";
+    }
+
+    function formatOptionalNumber(value) {
+      if (value === null || value === undefined || value === "") {
+        return "—";
+      }
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) {
+        return "—";
+      }
+      return parsed.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    }
+
+    function truncateDisplay(value, maxLength = 20) {
+      const text = String(value ?? "").trim();
+      if (!text) {
+        return "—";
+      }
+      return text.length > maxLength ? `${escapeHtml(text.slice(0, maxLength))} ...` : escapeHtml(text);
+    }
+
+    function buildOptionalLink(url) {
+      if (!url) {
+        return "—";
+      }
+      const safeUrl = escapeHtml(url);
+      return `<a href="${safeUrl}" target="_blank" rel="noreferrer" title="${safeUrl}">${truncateDisplay(url)}</a>`;
+    }
+
+    function setPlanningProjectsStatus(message) {
+      if (planningProjectsStatus) {
+        planningProjectsStatus.textContent = message || "";
+      }
+    }
+
+    function getPlanningProjectsQueryState() {
+      const params = new URLSearchParams(window.location.search);
+      const redmineIdentifier = String(params.get("redmine_identifier") || "").trim();
+      const projectName = String(params.get("project_name") || "").trim();
+      return {
+        redmineIdentifier,
+        projectName,
+      };
+    }
+
+    function resetPlanningProjectForm() {
+      planningProjectId.value = "";
+      planningProjectForm.reset();
+      planningFormTitle.textContent = "Новая запись";
+      setPlanningProjectsStatus("");
+    }
+
+    function scrollPlanningProjectFormIntoView() {
+      if (planningProjectFormSection instanceof HTMLElement) {
+        planningProjectFormSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+
+    function fillPlanningProjectForm(project) {
+      planningProjectId.value = project.id ?? "";
+      planningProjectName.value = project.project_name ?? "";
+      planningProjectIdentifier.value = project.redmine_identifier ?? "";
+      planningProjectPm.value = project.pm_name ?? "";
+      planningProjectCustomer.value = project.customer ?? "";
+      planningProjectStartDate.value = project.start_date ?? "";
+      planningProjectEndDate.value = project.end_date ?? "";
+      planningProjectDevelopmentHours.value = project.development_hours ?? "";
+      planningProjectBaselineEstimate.value = project.baseline_estimate_hours ?? "";
+      planningProjectP1.value = project.p1 ?? "";
+      planningProjectP2.value = project.p2 ?? "";
+      planningProjectEstimateDoc.value = project.estimate_doc_url ?? "";
+      planningProjectBitrix.value = project.bitrix_url ?? "";
+      planningProjectComment.value = project.comment_text ?? "";
+      planningFormTitle.textContent = "Редактирование записи";
+      setPlanningProjectsStatus("Запись загружена в форму для редактирования.");
+      scrollPlanningProjectFormIntoView();
+    }
+
+    function applyPlanningProjectPrefill(projects) {
+      const queryState = getPlanningProjectsQueryState();
+      if (!queryState.redmineIdentifier) {
+        return;
+      }
+
+      const matchedProject = projects.find((project) => String(project?.redmine_identifier ?? "").trim() === queryState.redmineIdentifier);
+      if (matchedProject) {
+        fillPlanningProjectForm(matchedProject);
+        setPlanningProjectsStatus(`Открыто редактирование записи для проекта с идентификатором ${queryState.redmineIdentifier}.`);
+        return;
+      }
+
+      resetPlanningProjectForm();
+      planningProjectIdentifier.value = queryState.redmineIdentifier;
+      if (queryState.projectName) {
+        planningProjectName.value = queryState.projectName;
+      }
+      planningFormTitle.textContent = "Новая запись";
+      setPlanningProjectsStatus(`Запись не найдена. Подготовлена новая форма для проекта с идентификатором ${queryState.redmineIdentifier}.`);
+      scrollPlanningProjectFormIntoView();
+    }
+
+    function renderPlanningProjects(projects) {
+      planningProjectsCount.textContent = `Всего записей: ${projects.length}`;
+      if (!projects.length) {
+        planningProjectsTableBody.innerHTML = '<tr><td colspan="14" class="empty-state">Пока нет ни одной записи.</td></tr>';
+        return;
+      }
+
+      planningProjectsTableBody.innerHTML = projects.map((project) => `
+        <tr>
+          <td class="customer-col">${escapeHtml(project.customer ?? "—")}</td>
+          <td class="project-name-col">${escapeHtml(project.project_name ?? "—")}</td>
+          <td class="identifier-col mono">${escapeHtml(project.redmine_identifier ?? "—")}</td>
+          <td class="pm-col">${escapeHtml(project.pm_name ?? "—")}</td>
+          <td class="start-date-col">${formatOptionalDate(project.start_date)}</td>
+          <td class="end-date-col">${formatOptionalDate(project.end_date)}</td>
+          <td class="development-col">${formatOptionalNumber(project.development_hours)}</td>
+          <td class="baseline-col">${formatOptionalNumber(project.baseline_estimate_hours)}</td>
+          <td class="p-col">${formatOptionalNumber(project.p1)}</td>
+          <td class="p-col">${formatOptionalNumber(project.p2)}</td>
+          <td class="doc-col link-cell">${buildOptionalLink(project.estimate_doc_url)}</td>
+          <td class="bitrix-col link-cell">${buildOptionalLink(project.bitrix_url)}</td>
+          <td class="comment-col" title="${escapeHtml(project.comment_text ?? "")}">${truncateDisplay(project.comment_text)}</td>
+          <td class="actions-col">
+            <div class="row-actions">
+              <button type="button" class="edit-button" data-action="edit" data-id="${project.id}">Редактировать</button>
+              <button type="button" class="delete-button" data-action="delete" data-id="${project.id}">Удалить</button>
+            </div>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadPlanningProjects() {
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="14" class="empty-state">Загружаем записи...</td></tr>';
+      const response = await fetch("/api/planning-projects");
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || "Не удалось загрузить планирование проектов.");
+      }
+      renderPlanningProjects(payload.projects || []);
+      applyPlanningProjectPrefill(payload.projects || []);
+      return payload.projects || [];
+    }
+
+    function collectPlanningProjectPayload() {
+      return {
+        project_name: planningProjectName.value.trim(),
+        redmine_identifier: planningProjectIdentifier.value.trim(),
+        pm_name: planningProjectPm.value.trim(),
+        customer: planningProjectCustomer.value.trim(),
+        start_date: planningProjectStartDate.value || null,
+        end_date: planningProjectEndDate.value || null,
+        development_hours: planningProjectDevelopmentHours.value === "" ? null : Number(planningProjectDevelopmentHours.value),
+        baseline_estimate_hours: planningProjectBaselineEstimate.value === "" ? null : Number(planningProjectBaselineEstimate.value),
+        p1: planningProjectP1.value === "" ? null : Number(planningProjectP1.value),
+        p2: planningProjectP2.value === "" ? null : Number(planningProjectP2.value),
+        estimate_doc_url: planningProjectEstimateDoc.value.trim(),
+        bitrix_url: planningProjectBitrix.value.trim(),
+        comment_text: planningProjectComment.value.trim(),
+      };
+    }
+
+    planningProjectForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const projectId = planningProjectId.value.trim();
+      const method = projectId ? "PUT" : "POST";
+      const url = projectId ? `/api/planning-projects/${encodeURIComponent(projectId)}` : "/api/planning-projects";
+      setPlanningProjectsStatus(projectId ? "Сохраняем изменения..." : "Создаем запись...");
+
+      try {
+        const response = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(collectPlanningProjectPayload()),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось сохранить запись.");
+        }
+        await loadPlanningProjects();
+        resetPlanningProjectForm();
+        setPlanningProjectsStatus(projectId ? "Изменения сохранены." : "Запись создана.");
+      } catch (error) {
+        setPlanningProjectsStatus(error instanceof Error ? error.message : "Ошибка сохранения.");
+      }
+    });
+
+    resetPlanningProjectFormButton.addEventListener("click", () => {
+      resetPlanningProjectForm();
+    });
+
+    planningProjectsTableBody.addEventListener("click", async (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const action = target.dataset.action;
+      const projectId = target.dataset.id;
+      if (!action || !projectId) {
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/planning-projects");
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось загрузить записи.");
+        }
+        const projects = payload.projects || [];
+        const currentProject = projects.find((item) => String(item.id) === String(projectId));
+        if (!currentProject) {
+          throw new Error("Запись не найдена.");
+        }
+
+        if (action === "edit") {
+          fillPlanningProjectForm(currentProject);
+          return;
+        }
+
+        if (action === "delete") {
+          if (!window.confirm(`Удалить запись по проекту "${currentProject.project_name}"?`)) {
+            return;
+          }
+          setPlanningProjectsStatus("Удаляем запись...");
+          const deleteResponse = await fetch(`/api/planning-projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
+          const deletePayload = await deleteResponse.json();
+          if (!deleteResponse.ok) {
+            throw new Error(deletePayload.detail || "Не удалось удалить запись.");
+          }
+          await loadPlanningProjects();
+          if (planningProjectId.value === String(projectId)) {
+            resetPlanningProjectForm();
+          }
+          setPlanningProjectsStatus("Запись удалена.");
+        }
+      } catch (error) {
+        setPlanningProjectsStatus(error instanceof Error ? error.message : "Ошибка обработки записи.");
+      }
+    });
+
+    loadPlanningProjects().catch((error) => {
+      planningProjectsCount.textContent = "Ошибка";
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="14" class="empty-state">Не удалось загрузить записи.</td></tr>';
+      setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
+    });
+  </script>
+</body>
+</html>"""
 
 
 @app.get("/planning-projects", response_class=HTMLResponse)

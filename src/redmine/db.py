@@ -340,6 +340,7 @@ def ensurePlanningProjectsTable() -> None:
                         customer TEXT,
                         start_date DATE NULL,
                         end_date DATE NULL,
+                        development_hours DOUBLE PRECISION NULL,
                         baseline_estimate_hours DOUBLE PRECISION NULL,
                         p1 DOUBLE PRECISION NULL,
                         p2 DOUBLE PRECISION NULL,
@@ -383,6 +384,15 @@ def ensurePlanningProjectsTable() -> None:
                     """
                     ALTER TABLE planning_projects
                     ADD COLUMN IF NOT EXISTS comment_text TEXT
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE planning_projects
+                    ADD COLUMN IF NOT EXISTS development_hours DOUBLE PRECISION NULL
                     """
                 )
             )
@@ -812,6 +822,7 @@ def listPlanningProjects() -> list[dict[str, object]]:
                     customer,
                     start_date,
                     end_date,
+                    development_hours,
                     baseline_estimate_hours,
                     p1,
                     p2,
@@ -2115,6 +2126,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     customer,
                     start_date,
                     end_date,
+                    development_hours,
                     baseline_estimate_hours,
                     p1,
                     p2,
@@ -2129,6 +2141,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     :customer,
                     :start_date,
                     :end_date,
+                    :development_hours,
                     :baseline_estimate_hours,
                     :p1,
                     :p2,
@@ -2145,6 +2158,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     customer,
                     start_date,
                     end_date,
+                    development_hours,
                     baseline_estimate_hours,
                     p1,
                     p2,
@@ -2176,6 +2190,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     customer = :customer,
                     start_date = :start_date,
                     end_date = :end_date,
+                    development_hours = :development_hours,
                     baseline_estimate_hours = :baseline_estimate_hours,
                     p1 = :p1,
                     p2 = :p2,
@@ -2192,6 +2207,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     customer,
                     start_date,
                     end_date,
+                    development_hours,
                     baseline_estimate_hours,
                     p1,
                     p2,
