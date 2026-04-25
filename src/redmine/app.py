@@ -7464,7 +7464,7 @@ def buildPlanningProjectsPage() -> str:
     th.identifier-col, td.identifier-col { width: 276px; min-width: 276px; max-width: 276px; }
     th.pm-col, td.pm-col { width: 150px; }
     th.start-date-col, td.start-date-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
-    th.end-date-col, td.end-date-col { width: 14ch; min-width: 14ch; max-width: 14ch; white-space: nowrap; }
+    th.end-date-col, td.end-date-col { width: 16ch; min-width: 16ch; max-width: 16ch; white-space: nowrap; }
     th.development-col, td.development-col { width: 190px; min-width: 190px; }
     th.year-col, td.year-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
     th.year-hours-col, td.year-hours-col { width: 14ch; min-width: 14ch; max-width: 14ch; white-space: nowrap; }
@@ -7545,7 +7545,7 @@ def buildPlanningProjectsPage() -> str:
     </div>
 
     <h1>Планирование проектов</h1>
-    <p class="lead">Здесь можно вести ручной план по проектам: сроки, коэффициенты, ссылки на документы и Bitrix, а также ответственного ПМ.</p>
+    <p class="lead">Инициализация проектов, критерии успешности, связь с контрактами</p>
 
     <section class="panel">
       <div class="table-meta">
@@ -7661,7 +7661,7 @@ def buildPlanningProjectsPage() -> str:
           <div class="form-panels">
             <section class="subpanel">
               <h3 class="subpanel-title">План по годам по разработке с багфиксом</h3>
-              <p class="subpanel-note">Если План по годам не заполнен, то подразумевается, что все затраты ложатся в макс (год старта, окончания договора, текущий год).</p>
+              <p class="subpanel-note">Если План по годам не заполнен, то подразумевается, что все затраты ложатся в год = max (год старта, окончания договора, текущий год).</p>
               <div class="years-grid">
                 <div class="field">
                   <label for="planningProjectYear1">Год 1</label>
