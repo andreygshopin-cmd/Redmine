@@ -7386,35 +7386,6 @@ def buildPlanningProjectsPage() -> str:
       margin: 0 0 12px;
       color: var(--muted);
     }
-    .table-filters {
-      display: flex;
-      gap: 12px;
-      align-items: end;
-      flex-wrap: wrap;
-      margin: 0 0 12px;
-    }
-    .table-filters-spacer {
-      flex: 1 1 auto;
-    }
-    .table-filter-field {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      min-width: 280px;
-    }
-    .table-filter-field label {
-      font-weight: 700;
-      font-size: 0.92rem;
-    }
-    .table-filter-field input[type="text"] {
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      padding: 10px 12px;
-      font: inherit;
-      color: var(--text);
-      background: #ffffff;
-    }
     .checkbox-field {
       display: inline-flex;
       align-items: center;
@@ -7602,19 +7573,10 @@ def buildPlanningProjectsPage() -> str:
     <section class="panel">
       <div class="table-meta">
         <h2 style="margin:0;">Таблица планирования</h2>
-        <span id="planningProjectsCount">Загрузка...</span>
-      </div>
-      <div class="table-filters">
-        <div class="table-filter-field">
-          <label for="planningProjectsSearch">&#1055;&#1086;&#1080;&#1089;&#1082;</label>
-          <input id="planningProjectsSearch" type="search" placeholder="&#1053;&#1072;&#1079;&#1074;&#1072;&#1085;&#1080;&#1077;, &#1080;&#1076;&#1077;&#1085;&#1090;&#1080;&#1092;&#1080;&#1082;&#1072;&#1090;&#1086;&#1088;, &#1079;&#1072;&#1082;&#1072;&#1079;&#1095;&#1080;&#1082;...">
+        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
+          <span id="planningProjectsCount">Загрузка...</span>
+          <button type="button" id="exportPlanningProjectsButton">Выгрузить в Excel</button>
         </div>
-        <label class="checkbox-field" for="planningProjectsShowClosed">
-          <input id="planningProjectsShowClosed" type="checkbox">
-          <span>&#1055;&#1086;&#1082;&#1072;&#1079;&#1099;&#1074;&#1072;&#1090;&#1100; &#1079;&#1072;&#1082;&#1088;&#1099;&#1090;&#1099;&#1077;</span>
-        </label>
-        <span class="table-filters-spacer"></span>
-        <button type="button" id="exportPlanningProjectsButton">Выгрузить в Excel</button>
       </div>
       <div class="table-wrap">
         <table class="planning-projects-table">
@@ -7803,8 +7765,6 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectsTableBody = document.getElementById("planningProjectsTableBody");
     const planningProjectsCount = document.getElementById("planningProjectsCount");
     const planningProjectsStatus = document.getElementById("planningProjectsStatus");
-    const planningProjectsSearch = document.getElementById("planningProjectsSearch");
-    const planningProjectsShowClosed = document.getElementById("planningProjectsShowClosed");
     const exportPlanningProjectsButton = document.getElementById("exportPlanningProjectsButton");
     const planningProjectForm = document.getElementById("planningProjectForm");
     const planningFormTitle = document.getElementById("planningFormTitle");
@@ -7830,7 +7790,6 @@ def buildPlanningProjectsPage() -> str:
     const planningColumnFilterInputs = Array.from(document.querySelectorAll(".planning-filter-input, .planning-filter-select"));
     let currentPlanningProjects = [];
     let filteredPlanningProjects = [];
-    let planningProjectsSearchTimer = null;
     let planningProjectsColumnFilterTimer = null;
     let planningProjectsSortState = { key: "", direction: "asc" };
     let planningProjectsColumnFilters = {};
@@ -8012,6 +7971,18 @@ def buildPlanningProjectsPage() -> str:
       window.history.replaceState({}, "", nextUrl);
     }
 
+    function getPlanningColumnFilterInput(key) {
+      return planningColumnFilterInputs.find((input) => String(input.dataset.filterKey || "") === key) || null;
+    }
+
+    function setPlanningColumnFilter(key, value) {
+      planningProjectsColumnFilters[key] = String(value ?? "");
+      const filterInput = getPlanningColumnFilterInput(key);
+      if (filterInput) {
+        filterInput.value = String(value ?? "");
+      }
+    }
+
     function resetPlanningProjectForm() {
       planningProjectId.value = "";
       planningProjectForm.reset();
@@ -8058,17 +8029,15 @@ def buildPlanningProjectsPage() -> str:
       if (matchedProjects.length === 1) {
         fillPlanningProjectForm(matchedProjects[0]);
         setPlanningProjectsStatus(`Открыто редактирование записи для проекта с идентификатором ${queryState.redmineIdentifier}.`);
-        if (planningProjectsSearch) {
-          planningProjectsSearch.value = "";
-        }
+        setPlanningColumnFilter("redmine_identifier", "");
+        refreshPlanningProjectsTable();
         clearPlanningProjectsQueryState();
         return;
       }
 
       if (matchedProjects.length > 1) {
-        if (planningProjectsSearch) {
-          planningProjectsSearch.value = queryState.redmineIdentifier;
-        }
+        setPlanningColumnFilter("redmine_identifier", queryState.redmineIdentifier);
+        refreshPlanningProjectsTable();
         setPlanningProjectsStatus(`Найдено несколько записей по идентификатору ${queryState.redmineIdentifier}. Оставили фильтр на таблице.`);
         clearPlanningProjectsQueryState();
         return;
@@ -8136,17 +8105,7 @@ def buildPlanningProjectsPage() -> str:
     async function loadPlanningProjects() {
       planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Загружаем записи...</td></tr>';
       const params = new URLSearchParams();
-      const queryState = getPlanningProjectsQueryState();
-      const searchValue = String(planningProjectsSearch?.value || "").trim();
-      if (planningProjectsSearch && searchValue && !String(planningProjectsSearch.value || "").trim()) {
-        planningProjectsSearch.value = searchValue;
-      }
-      if (searchValue) {
-        params.set("q", searchValue);
-      }
-      if (planningProjectsShowClosed?.checked) {
-        params.set("include_closed", "true");
-      }
+      params.set("include_closed", "true");
       params.set("limit", "100");
       const response = await fetch(`/api/planning-projects?${params.toString()}`);
       const payload = await response.json();
@@ -8263,19 +8222,6 @@ def buildPlanningProjectsPage() -> str:
       }
     });
 
-    planningProjectsSearch?.addEventListener("input", () => {
-      if (planningProjectsSearchTimer) {
-        window.clearTimeout(planningProjectsSearchTimer);
-      }
-      planningProjectsSearchTimer = window.setTimeout(() => {
-        loadPlanningProjects().catch((error) => {
-          planningProjectsCount.textContent = "Ошибка";
-        planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Не удалось загрузить записи.</td></tr>';
-          setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
-        });
-      }, 300);
-    });
-
     planningColumnFilterInputs.forEach((input) => {
       const key = String(input.dataset.filterKey || "");
       if (key) {
@@ -8321,14 +8267,6 @@ def buildPlanningProjectsPage() -> str:
       refreshPlanningProjectsTable();
     });
 
-    planningProjectsShowClosed?.addEventListener("change", () => {
-      loadPlanningProjects().catch((error) => {
-        planningProjectsCount.textContent = "Ошибка";
-        planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Не удалось загрузить записи.</td></tr>';
-        setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
-      });
-    });
-
     loadPlanningProjects().catch((error) => {
       planningProjectsCount.textContent = "Ошибка";
       planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Не удалось загрузить записи.</td></tr>';
@@ -8337,13 +8275,7 @@ def buildPlanningProjectsPage() -> str:
 
     exportPlanningProjectsButton?.addEventListener("click", () => {
       const params = new URLSearchParams();
-      const searchValue = String(planningProjectsSearch?.value || "").trim();
-      if (searchValue) {
-        params.set("q", searchValue);
-      }
-      if (planningProjectsShowClosed?.checked) {
-        params.set("include_closed", "true");
-      }
+      params.set("include_closed", "true");
       const query = params.toString();
       window.location.href = `/api/planning-projects/export.csv${query ? `?${query}` : ""}`;
     });
