@@ -690,24 +690,24 @@ PAGE_HTML = """<!doctype html>
     }
 
     .quick-links a#projectsNavButton {
-      background: #eef2f5;
-      color: var(--text);
-      border-color: var(--line);
-      box-shadow: none;
+      background: var(--blue-302);
+      color: #ffffff;
+      border-color: transparent;
+      box-shadow: 0 10px 18px rgba(55, 93, 119, 0.2);
     }
 
     .quick-links a#snapshotRunsNavButton {
-      background: #eef2f5;
+      background: var(--yellow-109);
       color: var(--text);
-      border-color: var(--line);
-      box-shadow: none;
+      border-color: transparent;
+      box-shadow: 0 10px 18px rgba(255, 198, 0, 0.24);
     }
 
     .quick-links a#adminPageButton {
-      background: #eef2f5;
+      background: var(--cyan-310);
       color: var(--text);
-      border-color: var(--line);
-      box-shadow: none;
+      border-color: transparent;
+      box-shadow: 0 10px 18px rgba(82, 206, 230, 0.24);
     }
 
     .quick-links a:hover {
