@@ -850,6 +850,48 @@ def listPlanningProjects() -> list[dict[str, object]]:
     return [dict(row._mapping) for row in rows]
 
 
+def getPlanningProjectByRedmineIdentifier(redmineIdentifier: str) -> dict[str, object] | None:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    normalizedIdentifier = str(redmineIdentifier or "").strip()
+    if not normalizedIdentifier:
+        return None
+
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    direction,
+                    project_name,
+                    redmine_identifier,
+                    pm_name,
+                    customer,
+                    start_date,
+                    end_date,
+                    development_hours,
+                    baseline_estimate_hours,
+                    p1,
+                    p2,
+                    estimate_doc_url,
+                    bitrix_url,
+                    comment_text,
+                    created_at,
+                    updated_at
+                FROM planning_projects
+                WHERE lower(trim(COALESCE(redmine_identifier, ''))) = lower(trim(:redmine_identifier))
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ),
+            {"redmine_identifier": normalizedIdentifier},
+        ).mappings().first()
+
+    return dict(row) if row else None
+
+
 def listUsers() -> list[dict[str, object]]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")

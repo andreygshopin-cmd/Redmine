@@ -34,6 +34,7 @@ from src.redmine.db import (
     ensureProjectsTable,
     ensureUsersTable,
     getFilteredSnapshotIssuesForProjectByDate,
+    getPlanningProjectByRedmineIdentifier,
     getSnapshotRunsWithIssuesForProjectYear,
     getSnapshotIssuesForProjectByDate,
     getUserByPasswordResetToken,
@@ -3342,6 +3343,36 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         projectInfo.get("project_identifier") or (storedProject.get("identifier") if storedProject else "")
     ).strip()
     projectIdentifier = escape(projectIdentifierRaw or "—")
+    planningProject = getPlanningProjectByRedmineIdentifier(projectIdentifierRaw) if projectIdentifierRaw else None
+
+    def formatPlanningMetric(value: object) -> str:
+        if value in (None, ""):
+            return "—"
+        try:
+            numericValue = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+        return formatHoursValue(numericValue)
+
+    def normalizePlanningPercent(value: object, defaultPercent: float) -> float:
+        if value in (None, ""):
+            return defaultPercent
+        try:
+            numericValue = float(value)
+        except (TypeError, ValueError):
+            return defaultPercent
+        return numericValue * 100 if abs(numericValue) <= 10 else numericValue
+
+    planningP1Percent = normalizePlanningPercent(planningProject.get("p1") if planningProject else None, 150.0)
+    planningP2Percent = normalizePlanningPercent(planningProject.get("p2") if planningProject else None, 150.0)
+    planningBaselineText = escape(
+        formatPlanningMetric(planningProject.get("baseline_estimate_hours") if planningProject else None)
+    )
+    planningDevelopmentHoursText = escape(
+        formatPlanningMetric(planningProject.get("development_hours") if planningProject else None)
+    )
+    planningP1Value = escape(formatHoursValue(planningP1Percent))
+    planningP2Value = escape(formatHoursValue(planningP2Percent))
     snapshotIssuesUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
     navPanelHtml = buildProjectContextNavPanel(
         projectRedmineId,
@@ -3629,14 +3660,24 @@ def buildBurndownPage(projectRedmineId: int) -> str:
 
     <section class="controls-panel">
       <div class="field">
-        <label for="p1Input">P1 = факт / база</label>
-        <input id="p1Input" type="text" inputmode="decimal" value="1,5">
+        <label for="p1Input">P1 = факт / база, %</label>
+        <input id="p1Input" type="text" inputmode="decimal" value="{planningP1Value}">
         <div class="field-note">Используется в расчете бюджета и прогнозного объема.</div>
       </div>
       <div class="field">
-        <label for="p2Input">P2 = факт с багами / факт</label>
-        <input id="p2Input" type="text" inputmode="decimal" value="1,5">
+        <label for="p2Input">P2 = факт с багами / факт, %</label>
+        <input id="p2Input" type="text" inputmode="decimal" value="{planningP2Value}">
         <div class="field-note">Изменения пересчитываются сразу после ввода без перезагрузки страницы.</div>
+      </div>
+      <div class="field">
+        <label>Базовая оценка</label>
+        <input type="text" value="{planningBaselineText}" readonly>
+        <div class="field-note">Значение подтянуто из формы «Планирование проектов».</div>
+      </div>
+      <div class="field">
+        <label>Часы разработки</label>
+        <input type="text" value="{planningDevelopmentHoursText}" readonly>
+        <div class="field-note">Значение подтянуто из формы «Планирование проектов».</div>
       </div>
     </section>
 
@@ -3665,7 +3706,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
               <span class="legend-swatch budget-line"></span>
               <div>
                 <div class="legend-name">Бюджет</div>
-                <div class="legend-text">Оранжевая линия. Для каждого среза: сумма базовых оценок всех задач среза без Feature × P1 × P2.</div>
+                <div class="legend-text">Оранжевая линия. Для каждого среза: сумма базовых оценок всех задач среза без Feature × P1/100 × P2/100.</div>
               </div>
             </li>
             <li>
@@ -3742,7 +3783,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
             <li>
               <div>
                 <div class="legend-name">Feature и виртуальная Feature</div>
-                <div class="formula-text">Для каждой Feature отдельно собираются объем/остаток по разработке и по ошибкам. Если Feature в статусе «Готов*», «Закрыта» или «Решена», прогноз = разработка + ошибки. Иначе прогноз = max(текущий объем, сумма базовых оценок задач Feature × P1 × P2). Для задач без Feature считается отдельная виртуальная Feature по тем же правилам.</div>
+                <div class="formula-text">Для каждой Feature отдельно собираются объем/остаток по разработке и по ошибкам. Если Feature в статусе «Готов*», «Закрыта» или «Решена», прогноз = разработка + ошибки. Иначе прогноз = max(текущий объем, сумма базовых оценок задач Feature × P1/100 × P2/100). Для задач без Feature считается отдельная виртуальная Feature по тем же правилам.</div>
               </div>
             </li>
           </ul>
@@ -3762,10 +3803,13 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     const chartCanvas = document.getElementById("burndownChart");
     const emptyState = document.getElementById("burndownEmptyState");
 
-    function parseFactor(rawValue, fallbackValue) {{
+    function parsePercentValue(rawValue, fallbackPercent) {{
       const normalized = String(rawValue ?? "").trim().replace(",", ".");
       const parsed = Number.parseFloat(normalized);
-      return Number.isFinite(parsed) ? parsed : fallbackValue;
+      if (!Number.isFinite(parsed)) {{
+        return fallbackPercent;
+      }}
+      return Math.abs(parsed) <= 10 ? parsed * 100 : parsed;
     }}
 
     function formatHours(value) {{
@@ -3783,7 +3827,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       return `${{parts[2]}}.${{parts[1]}}.${{parts[0]}}`;
     }}
 
-    function computeSnapshotMetrics(snapshot, p1Value, p2Value) {{
+    function computeSnapshotMetrics(snapshot, p1Factor, p2Factor) {{
       const groups = Array.isArray(snapshot?.groups) ? snapshot.groups : [];
       let forecast = 0;
       let currentDevelopment = 0;
@@ -3798,7 +3842,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         const developmentRemaining = Number(group?.development_remaining || 0);
         const bugRemaining = Number(group?.bug_remaining || 0);
         const currentTotal = developmentVolume + bugVolume;
-        const forecastFloor = baselineTotal * p1Value * p2Value;
+        const forecastFloor = baselineTotal * p1Factor * p2Factor;
         const groupForecast = group?.is_ready ? currentTotal : Math.max(currentTotal, forecastFloor);
 
         forecast += groupForecast;
@@ -3809,7 +3853,7 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       }}
 
       return {{
-        budget: Number(snapshot?.budget_baseline_total || 0) * p1Value * p2Value,
+        budget: Number(snapshot?.budget_baseline_total || 0) * p1Factor * p2Factor,
         forecast,
         currentDevelopment,
         currentBugs,
@@ -3822,10 +3866,10 @@ def buildBurndownPage(projectRedmineId: int) -> str:
 
     let burndownChart = null;
 
-    function buildBurndownDatasets(p1Value, p2Value) {{
+    function buildBurndownDatasets(p1Factor, p2Factor) {{
       const metricsByDate = new Map();
       for (const snapshot of burndownSnapshots) {{
-        metricsByDate.set(String(snapshot?.date || ""), computeSnapshotMetrics(snapshot, p1Value, p2Value));
+        metricsByDate.set(String(snapshot?.date || ""), computeSnapshotMetrics(snapshot, p1Factor, p2Factor));
       }}
 
       const budgetData = [];
@@ -3874,8 +3918,8 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     }}
 
     function renderBurndownChart() {{
-      const p1Value = parseFactor(p1Input.value, 1);
-      const p2Value = parseFactor(p2Input.value, 1);
+      const p1Percent = parsePercentValue(p1Input.value, {planningP1Percent});
+      const p2Percent = parsePercentValue(p2Input.value, {planningP2Percent});
 
       if (!burndownSnapshots.length) {{
         emptyState.style.display = "block";
@@ -3892,8 +3936,10 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         return;
       }}
 
-      const datasets = buildBurndownDatasets(p1Value, p2Value);
-      statusNode.textContent = `P1 = ${{formatHours(p1Value)}}, P2 = ${{formatHours(p2Value)}}. Срезов в расчете: ${{burndownSnapshots.length}}.`;
+      const p1Factor = p1Percent / 100;
+      const p2Factor = p2Percent / 100;
+      const datasets = buildBurndownDatasets(p1Factor, p2Factor);
+      statusNode.textContent = `P1 = ${{formatHours(p1Percent)}}%, P2 = ${{formatHours(p2Percent)}}%. Срезов в расчете: ${{burndownSnapshots.length}}.`;
       const allChartValues = [
         ...datasets.budgetData,
         ...datasets.forecastData,
