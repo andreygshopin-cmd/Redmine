@@ -4105,14 +4105,9 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         (item for item in storedProjects if int(item.get("redmine_id") or 0) == projectRedmineId),
         None,
     )
-
-    projectInfo = burndownPayload.get("project") or {}
-    projectName = escape(
-        str(projectInfo.get("project_name") or (storedProject.get("name") if storedProject else "—"))
-    )
-    projectIdentifierRaw = str(
-        projectInfo.get("project_identifier") or (storedProject.get("identifier") if storedProject else "")
-    ).strip()
+    projectNameRaw = str(storedProject.get("name") if storedProject else "—")
+    projectIdentifierRaw = str(storedProject.get("identifier") if storedProject else "").strip()
+    projectName = escape(projectNameRaw)
     projectIdentifier = escape(projectIdentifierRaw or "—")
     planningProjects = (
         listPlanningProjectsByRedmineIdentifier(projectIdentifierRaw) if projectIdentifierRaw else []
@@ -4149,6 +4144,10 @@ def buildBurndownPage(projectRedmineId: int) -> str:
         chartStartDate.isoformat(),
         chartEndDate.isoformat(),
     )
+    projectInfo = burndownPayload.get("project") or {}
+    projectName = escape(str(projectInfo.get("project_name") or projectNameRaw or "—"))
+    projectIdentifierRaw = str(projectInfo.get("project_identifier") or projectIdentifierRaw or "").strip()
+    projectIdentifier = escape(projectIdentifierRaw or "—")
 
     def formatPlanningMetric(value: object) -> str:
         if value in (None, ""):
