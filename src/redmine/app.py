@@ -317,6 +317,12 @@ class PlanningProjectPayload(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
     development_hours: float | None = None
+    year_1: int | None = None
+    hours_1: float | None = None
+    year_2: int | None = None
+    hours_2: float | None = None
+    year_3: int | None = None
+    hours_3: float | None = None
     baseline_estimate_hours: float | None = None
     p1: float | None = None
     p2: float | None = None
@@ -1721,7 +1727,7 @@ PAGE_HTML = """<!doctype html>
           const identifierHtml = identifier
             ? `<a class="project-link mono" href="${projectIssuesUrl}" target="_blank" rel="noreferrer">${identifier}</a>`
             : "—";
-          const planningProjectUrl = `/planning-projects?redmine_identifier=${encodeURIComponent(identifier)}&project_name=${encodeURIComponent(project?.name ?? "")}`;
+          const planningProjectUrl = `/planning-projects?redmine_identifier=${encodeURIComponent(identifier)}&project_name=${encodeURIComponent(project?.name ?? "")}&open_mode=auto`;
           const level = Math.max(Number(project?.hierarchy_level ?? 0) || 0, 0);
           const projectTreeClass = level > 0 ? "project-tree has-parent" : "project-tree";
           const row = document.createElement("tr");
@@ -6164,6 +6170,12 @@ def normalizePlanningProjectPayload(payload: PlanningProjectPayload) -> dict[str
         "start_date": _normalizePlanningProjectDate(payload.start_date),
         "end_date": _normalizePlanningProjectDate(payload.end_date),
         "development_hours": payload.development_hours,
+        "year_1": payload.year_1,
+        "hours_1": payload.hours_1,
+        "year_2": payload.year_2,
+        "hours_2": payload.hours_2,
+        "year_3": payload.year_3,
+        "hours_3": payload.hours_3,
         "baseline_estimate_hours": payload.baseline_estimate_hours,
         "p1": payload.p1,
         "p2": payload.p2,
@@ -7066,7 +7078,7 @@ def buildPlanningProjectsPage() -> str:
       planningProjectsSearchTimer = window.setTimeout(() => {
         loadPlanningProjects().catch((error) => {
           planningProjectsCount.textContent = "Ошибка";
-          planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Не удалось загрузить записи.</td></tr>';
+          planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Не удалось загрузить записи.</td></tr>';
           setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
         });
       }, 300);
@@ -8541,6 +8553,10 @@ def getSnapshotRulesPage() -> HTMLResponse:
 
 
 def buildPlanningProjectsPage() -> str:
+    currentYear = datetime.now(UTC).year
+    defaultYear1 = currentYear - 1
+    defaultYear2 = currentYear
+    defaultYear3 = currentYear + 1
     return """<!doctype html>
 <html lang="ru">
 <head>
@@ -8839,7 +8855,13 @@ def buildPlanningProjectsPage() -> str:
               <th class="pm-col">ПМ</th>
               <th class="start-date-col">Дата старта</th>
               <th class="end-date-col">Дата окончания</th>
-              <th class="development-col">Часы разработки</th>
+              <th class="development-col">Часы разработки с багфиксом</th>
+              <th class="year-col">Год 1</th>
+              <th class="year-hours-col">Часы 1</th>
+              <th class="year-col">Год 2</th>
+              <th class="year-hours-col">Часы 2</th>
+              <th class="year-col">Год 3</th>
+              <th class="year-hours-col">Часы 3</th>
               <th class="baseline-col">Базовая оценка</th>
               <th class="p-col">P1 (факт / база), %</th>
               <th class="p2-col">P2 (факт с багами / факт), %</th>
@@ -8939,6 +8961,12 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectStartDate = document.getElementById("planningProjectStartDate");
     const planningProjectEndDate = document.getElementById("planningProjectEndDate");
     const planningProjectDevelopmentHours = document.getElementById("planningProjectDevelopmentHours");
+    const planningProjectYear1 = document.getElementById("planningProjectYear1");
+    const planningProjectHours1 = document.getElementById("planningProjectHours1");
+    const planningProjectYear2 = document.getElementById("planningProjectYear2");
+    const planningProjectHours2 = document.getElementById("planningProjectHours2");
+    const planningProjectYear3 = document.getElementById("planningProjectYear3");
+    const planningProjectHours3 = document.getElementById("planningProjectHours3");
     const planningProjectBaselineEstimate = document.getElementById("planningProjectBaselineEstimate");
     const planningProjectP1 = document.getElementById("planningProjectP1");
     const planningProjectP2 = document.getElementById("planningProjectP2");
@@ -8947,6 +8975,7 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectComment = document.getElementById("planningProjectComment");
     const resetPlanningProjectFormButton = document.getElementById("resetPlanningProjectFormButton");
     const planningProjectFormSection = planningProjectForm ? planningProjectForm.closest(".panel") : null;
+    const defaultPlanningYears = [__DEFAULT_YEAR_1__, __DEFAULT_YEAR_2__, __DEFAULT_YEAR_3__];
     let currentPlanningProjects = [];
     let planningProjectsSearchTimer = null;
 
@@ -9001,15 +9030,30 @@ def buildPlanningProjectsPage() -> str:
       const params = new URLSearchParams(window.location.search);
       const redmineIdentifier = String(params.get("redmine_identifier") || "").trim();
       const projectName = String(params.get("project_name") || "").trim();
+      const openMode = String(params.get("open_mode") || "").trim();
       return {
         redmineIdentifier,
         projectName,
+        openMode,
       };
+    }
+
+    function applyDefaultPlanningYears() {
+      if (planningProjectYear1 && !String(planningProjectYear1.value || "").trim()) {
+        planningProjectYear1.value = String(defaultPlanningYears[0]);
+      }
+      if (planningProjectYear2 && !String(planningProjectYear2.value || "").trim()) {
+        planningProjectYear2.value = String(defaultPlanningYears[1]);
+      }
+      if (planningProjectYear3 && !String(planningProjectYear3.value || "").trim()) {
+        planningProjectYear3.value = String(defaultPlanningYears[2]);
+      }
     }
 
     function resetPlanningProjectForm() {
       planningProjectId.value = "";
       planningProjectForm.reset();
+      applyDefaultPlanningYears();
       planningFormTitle.textContent = "Новая запись";
       setPlanningProjectsStatus("");
     }
@@ -9030,6 +9074,12 @@ def buildPlanningProjectsPage() -> str:
       planningProjectStartDate.value = project.start_date ?? "";
       planningProjectEndDate.value = project.end_date ?? "";
       planningProjectDevelopmentHours.value = project.development_hours ?? "";
+      planningProjectYear1.value = project.year_1 ?? defaultPlanningYears[0];
+      planningProjectHours1.value = project.hours_1 ?? "";
+      planningProjectYear2.value = project.year_2 ?? defaultPlanningYears[1];
+      planningProjectHours2.value = project.hours_2 ?? "";
+      planningProjectYear3.value = project.year_3 ?? defaultPlanningYears[2];
+      planningProjectHours3.value = project.hours_3 ?? "";
       planningProjectBaselineEstimate.value = project.baseline_estimate_hours ?? "";
       planningProjectP1.value = project.p1 ?? "";
       planningProjectP2.value = project.p2 ?? "";
@@ -9047,7 +9097,17 @@ def buildPlanningProjectsPage() -> str:
         return;
       }
 
-      const matchedProject = projects.find((project) => String(project?.redmine_identifier ?? "").trim() === queryState.redmineIdentifier);
+      const exactMatches = projects.filter((project) => String(project?.redmine_identifier ?? "").trim() === queryState.redmineIdentifier);
+      if (queryState.openMode === "auto" && exactMatches.length > 1) {
+        if (planningProjectsSearch) {
+          planningProjectsSearch.value = queryState.redmineIdentifier;
+        }
+        planningFormTitle.textContent = "Новая запись";
+        setPlanningProjectsStatus(`Найдено несколько записей с идентификатором ${queryState.redmineIdentifier}. Таблица отфильтрована по идентификатору.`);
+        return;
+      }
+
+      const matchedProject = exactMatches[0];
       if (matchedProject) {
         fillPlanningProjectForm(matchedProject);
         setPlanningProjectsStatus(`Открыто редактирование записи для проекта с идентификатором ${queryState.redmineIdentifier}.`);
@@ -9215,7 +9275,7 @@ def buildPlanningProjectsPage() -> str:
       planningProjectsSearchTimer = window.setTimeout(() => {
         loadPlanningProjects().catch((error) => {
           planningProjectsCount.textContent = "Ошибка";
-          planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Не удалось загрузить записи.</td></tr>';
+          planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Не удалось загрузить записи.</td></tr>';
           setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
         });
       }, 300);
@@ -9240,6 +9300,10 @@ def buildPlanningProjectsPage() -> str:
 
 
 def buildPlanningProjectsPage() -> str:
+    currentYear = datetime.now(UTC).year
+    defaultYear1 = currentYear - 1
+    defaultYear2 = currentYear
+    defaultYear3 = currentYear + 1
     return """<!doctype html>
 <html lang="ru">
 <head>
@@ -9466,7 +9530,7 @@ def buildPlanningProjectsPage() -> str:
     }
     table {
       width: 100%;
-      min-width: 2080px;
+      min-width: 2500px;
       border-collapse: collapse;
       background: #ffffff;
     }
@@ -9497,6 +9561,8 @@ def buildPlanningProjectsPage() -> str:
     th.start-date-col, td.start-date-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
     th.end-date-col, td.end-date-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
     th.development-col, td.development-col { width: 190px; min-width: 190px; }
+    th.year-col, td.year-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
+    th.year-hours-col, td.year-hours-col { width: 14ch; min-width: 14ch; max-width: 14ch; white-space: nowrap; }
     th.baseline-col, td.baseline-col { width: 140px; }
     th.p-col, td.p-col { width: 10ch; min-width: 10ch; max-width: 10ch; }
     th.p2-col, td.p2-col { width: 18ch; min-width: 18ch; max-width: 18ch; }
@@ -9615,7 +9681,7 @@ def buildPlanningProjectsPage() -> str:
             </tr>
           </thead>
           <tbody id="planningProjectsTableBody">
-            <tr><td colspan="16" class="empty-state">Загружаем записи...</td></tr>
+            <tr><td colspan="22" class="empty-state">Загружаем записи...</td></tr>
           </tbody>
         </table>
       </div>
@@ -9661,6 +9727,30 @@ def buildPlanningProjectsPage() -> str:
           <div class="field">
             <label for="planningProjectDevelopmentHours">Часы разработки с багфиксом</label>
             <input id="planningProjectDevelopmentHours" type="number" step="0.1" inputmode="decimal">
+          </div>
+          <div class="field">
+            <label for="planningProjectYear1">Год 1</label>
+            <input id="planningProjectYear1" type="number" step="1" inputmode="numeric" value="__DEFAULT_YEAR_1__">
+          </div>
+          <div class="field">
+            <label for="planningProjectHours1">Часы 1</label>
+            <input id="planningProjectHours1" type="number" step="0.1" inputmode="decimal">
+          </div>
+          <div class="field">
+            <label for="planningProjectYear2">Год 2</label>
+            <input id="planningProjectYear2" type="number" step="1" inputmode="numeric" value="__DEFAULT_YEAR_2__">
+          </div>
+          <div class="field">
+            <label for="planningProjectHours2">Часы 2</label>
+            <input id="planningProjectHours2" type="number" step="0.1" inputmode="decimal">
+          </div>
+          <div class="field">
+            <label for="planningProjectYear3">Год 3</label>
+            <input id="planningProjectYear3" type="number" step="1" inputmode="numeric" value="__DEFAULT_YEAR_3__">
+          </div>
+          <div class="field">
+            <label for="planningProjectHours3">Часы 3</label>
+            <input id="planningProjectHours3" type="number" step="0.1" inputmode="decimal">
           </div>
           <div class="field">
             <label for="planningProjectBaselineEstimate">Базовая оценка</label>
@@ -9846,7 +9936,7 @@ def buildPlanningProjectsPage() -> str:
       const totalProjects = Number(window.__planningProjectsTotal || projects.length || 0);
       planningProjectsCount.textContent = `Показано: ${projects.length} из ${totalProjects} (лимит 100)`;
       if (!projects.length) {
-        planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Пока нет ни одной записи.</td></tr>';
+        planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Пока нет ни одной записи.</td></tr>';
         return;
       }
 
@@ -9868,6 +9958,12 @@ def buildPlanningProjectsPage() -> str:
           <td class="start-date-col">${formatOptionalDate(project.start_date)}</td>
           <td class="end-date-col">${formatOptionalDate(project.end_date)}</td>
           <td class="development-col">${formatOptionalNumber(project.development_hours)}</td>
+          <td class="year-col">${formatOptionalNumber(project.year_1)}</td>
+          <td class="year-hours-col">${formatOptionalNumber(project.hours_1)}</td>
+          <td class="year-col">${formatOptionalNumber(project.year_2)}</td>
+          <td class="year-hours-col">${formatOptionalNumber(project.hours_2)}</td>
+          <td class="year-col">${formatOptionalNumber(project.year_3)}</td>
+          <td class="year-hours-col">${formatOptionalNumber(project.hours_3)}</td>
           <td class="baseline-col">${formatOptionalNumber(project.baseline_estimate_hours)}</td>
           <td class="p-col">${formatOptionalNumber(project.p1)}</td>
           <td class="p-col">${formatOptionalNumber(project.p2)}</td>
@@ -9879,9 +9975,13 @@ def buildPlanningProjectsPage() -> str:
     }
 
     async function loadPlanningProjects() {
-      planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Загружаем записи...</td></tr>';
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Загружаем записи...</td></tr>';
       const params = new URLSearchParams();
-      const searchValue = String(planningProjectsSearch?.value || "").trim();
+      const queryState = getPlanningProjectsQueryState();
+      const searchValue = String(planningProjectsSearch?.value || queryState.redmineIdentifier || "").trim();
+      if (planningProjectsSearch && searchValue && !String(planningProjectsSearch.value || "").trim()) {
+        planningProjectsSearch.value = searchValue;
+      }
       if (searchValue) {
         params.set("q", searchValue);
       }
@@ -9911,6 +10011,12 @@ def buildPlanningProjectsPage() -> str:
         start_date: planningProjectStartDate.value || null,
         end_date: planningProjectEndDate.value || null,
         development_hours: planningProjectDevelopmentHours.value === "" ? null : Number(planningProjectDevelopmentHours.value),
+        year_1: planningProjectYear1.value === "" ? null : Number(planningProjectYear1.value),
+        hours_1: planningProjectHours1.value === "" ? null : Number(planningProjectHours1.value),
+        year_2: planningProjectYear2.value === "" ? null : Number(planningProjectYear2.value),
+        hours_2: planningProjectHours2.value === "" ? null : Number(planningProjectHours2.value),
+        year_3: planningProjectYear3.value === "" ? null : Number(planningProjectYear3.value),
+        hours_3: planningProjectHours3.value === "" ? null : Number(planningProjectHours3.value),
         baseline_estimate_hours: planningProjectBaselineEstimate.value === "" ? null : Number(planningProjectBaselineEstimate.value),
         p1: planningProjectP1.value === "" ? null : Number(planningProjectP1.value),
         p2: planningProjectP2.value === "" ? null : Number(planningProjectP2.value),
@@ -10005,7 +10111,7 @@ def buildPlanningProjectsPage() -> str:
       planningProjectsSearchTimer = window.setTimeout(() => {
         loadPlanningProjects().catch((error) => {
           planningProjectsCount.textContent = "Ошибка";
-          planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Не удалось загрузить записи.</td></tr>';
+        planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Не удалось загрузить записи.</td></tr>';
           setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
         });
       }, 300);
@@ -10014,14 +10120,14 @@ def buildPlanningProjectsPage() -> str:
     planningProjectsShowClosed?.addEventListener("change", () => {
       loadPlanningProjects().catch((error) => {
         planningProjectsCount.textContent = "Ошибка";
-        planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Не удалось загрузить записи.</td></tr>';
+        planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Не удалось загрузить записи.</td></tr>';
         setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
       });
     });
 
     loadPlanningProjects().catch((error) => {
       planningProjectsCount.textContent = "Ошибка";
-      planningProjectsTableBody.innerHTML = '<tr><td colspan="16" class="empty-state">Не удалось загрузить записи.</td></tr>';
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Не удалось загрузить записи.</td></tr>';
       setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
     });
 
@@ -10039,7 +10145,7 @@ def buildPlanningProjectsPage() -> str:
     });
   </script>
 </body>
-</html>"""
+</html>""".replace("__DEFAULT_YEAR_1__", str(defaultYear1)).replace("__DEFAULT_YEAR_2__", str(defaultYear2)).replace("__DEFAULT_YEAR_3__", str(defaultYear3))
 
 
 @app.get("/planning-projects", response_class=HTMLResponse)
@@ -10119,6 +10225,12 @@ def exportPlanningProjectsCsv(
             "Дата старта",
             "Дата окончания",
             "Часы разработки с багфиксом",
+            "Год 1",
+            "Часы 1",
+            "Год 2",
+            "Часы 2",
+            "Год 3",
+            "Часы 3",
             "Базовая оценка",
             "P1 (факт / база), %",
             "P2 (факт с багами / факт), %",
@@ -10139,6 +10251,12 @@ def exportPlanningProjectsCsv(
                 str(project.get("start_date") or ""),
                 str(project.get("end_date") or ""),
                 formatPageHours(project.get("development_hours")) if project.get("development_hours") not in (None, "") else "",
+                str(project.get("year_1") or ""),
+                formatPageHours(project.get("hours_1")) if project.get("hours_1") not in (None, "") else "",
+                str(project.get("year_2") or ""),
+                formatPageHours(project.get("hours_2")) if project.get("hours_2") not in (None, "") else "",
+                str(project.get("year_3") or ""),
+                formatPageHours(project.get("hours_3")) if project.get("hours_3") not in (None, "") else "",
                 formatPageHours(project.get("baseline_estimate_hours")) if project.get("baseline_estimate_hours") not in (None, "") else "",
                 formatPageHours(project.get("p1")) if project.get("p1") not in (None, "") else "",
                 formatPageHours(project.get("p2")) if project.get("p2") not in (None, "") else "",

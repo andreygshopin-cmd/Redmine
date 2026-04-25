@@ -342,6 +342,12 @@ def ensurePlanningProjectsTable() -> None:
                         start_date DATE NULL,
                         end_date DATE NULL,
                         development_hours DOUBLE PRECISION NULL,
+                        year_1 INTEGER NULL,
+                        hours_1 DOUBLE PRECISION NULL,
+                        year_2 INTEGER NULL,
+                        hours_2 DOUBLE PRECISION NULL,
+                        year_3 INTEGER NULL,
+                        hours_3 DOUBLE PRECISION NULL,
                         baseline_estimate_hours DOUBLE PRECISION NULL,
                         p1 DOUBLE PRECISION NULL,
                         p2 DOUBLE PRECISION NULL,
@@ -395,6 +401,60 @@ def ensurePlanningProjectsTable() -> None:
                     """
                     ALTER TABLE planning_projects
                     ADD COLUMN IF NOT EXISTS development_hours DOUBLE PRECISION NULL
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE planning_projects
+                    ADD COLUMN IF NOT EXISTS year_1 INTEGER NULL
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE planning_projects
+                    ADD COLUMN IF NOT EXISTS hours_1 DOUBLE PRECISION NULL
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE planning_projects
+                    ADD COLUMN IF NOT EXISTS year_2 INTEGER NULL
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE planning_projects
+                    ADD COLUMN IF NOT EXISTS hours_2 DOUBLE PRECISION NULL
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE planning_projects
+                    ADD COLUMN IF NOT EXISTS year_3 INTEGER NULL
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE planning_projects
+                    ADD COLUMN IF NOT EXISTS hours_3 DOUBLE PRECISION NULL
                     """
                 )
             )
@@ -883,6 +943,12 @@ def listPlanningProjects(
                     start_date,
                     end_date,
                     development_hours,
+                    year_1,
+                    hours_1,
+                    year_2,
+                    hours_2,
+                    year_3,
+                    hours_3,
                     baseline_estimate_hours,
                     p1,
                     p2,
@@ -945,6 +1011,12 @@ def getPlanningProjectByRedmineIdentifier(redmineIdentifier: str) -> dict[str, o
                     start_date,
                     end_date,
                     development_hours,
+                    year_1,
+                    hours_1,
+                    year_2,
+                    hours_2,
+                    year_3,
+                    hours_3,
                     baseline_estimate_hours,
                     p1,
                     p2,
@@ -988,6 +1060,12 @@ def listPlanningProjectsByRedmineIdentifier(redmineIdentifier: str) -> list[dict
                     start_date,
                     end_date,
                     development_hours,
+                    year_1,
+                    hours_1,
+                    year_2,
+                    hours_2,
+                    year_3,
+                    hours_3,
                     baseline_estimate_hours,
                     p1,
                     p2,
@@ -2297,6 +2375,12 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     start_date,
                     end_date,
                     development_hours,
+                    year_1,
+                    hours_1,
+                    year_2,
+                    hours_2,
+                    year_3,
+                    hours_3,
                     baseline_estimate_hours,
                     p1,
                     p2,
@@ -2314,6 +2398,12 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     :start_date,
                     :end_date,
                     :development_hours,
+                    :year_1,
+                    :hours_1,
+                    :year_2,
+                    :hours_2,
+                    :year_3,
+                    :hours_3,
                     :baseline_estimate_hours,
                     :p1,
                     :p2,
@@ -2333,6 +2423,12 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     start_date,
                     end_date,
                     development_hours,
+                    year_1,
+                    hours_1,
+                    year_2,
+                    hours_2,
+                    year_3,
+                    hours_3,
                     baseline_estimate_hours,
                     p1,
                     p2,
@@ -2367,6 +2463,12 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     start_date = :start_date,
                     end_date = :end_date,
                     development_hours = :development_hours,
+                    year_1 = :year_1,
+                    hours_1 = :hours_1,
+                    year_2 = :year_2,
+                    hours_2 = :hours_2,
+                    year_3 = :year_3,
+                    hours_3 = :hours_3,
                     baseline_estimate_hours = :baseline_estimate_hours,
                     p1 = :p1,
                     p2 = :p2,
@@ -2386,6 +2488,12 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     start_date,
                     end_date,
                     development_hours,
+                    year_1,
+                    hours_1,
+                    year_2,
+                    hours_2,
+                    year_3,
+                    hours_3,
                     baseline_estimate_hours,
                     p1,
                     p2,
