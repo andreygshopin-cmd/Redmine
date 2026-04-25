@@ -7783,6 +7783,13 @@ def buildPlanningProjectsPage() -> str:
       return Math.round(parsed).toLocaleString("ru-RU", { maximumFractionDigits: 0 });
     }
 
+    function formatPlanningYearCell(yearValue, hoursValue) {
+      if (hoursValue === null || hoursValue === undefined || hoursValue === "") {
+        return "—";
+      }
+      return formatOptionalInteger(yearValue);
+    }
+
     function truncateDisplay(value, maxLength = 30) {
       const text = String(value ?? "").trim();
       if (!text) {
