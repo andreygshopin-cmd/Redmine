@@ -1207,6 +1207,25 @@ def listPlanningProjectsByRedmineIdentifier(redmineIdentifier: str) -> list[dict
     return [dict(row) for row in rows]
 
 
+def listPlanningProjectIdentifiers() -> list[str]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT DISTINCT lower(trim(COALESCE(redmine_identifier, ''))) AS redmine_identifier
+                FROM planning_projects
+                WHERE trim(COALESCE(redmine_identifier, '')) <> ''
+                ORDER BY lower(trim(COALESCE(redmine_identifier, '')))
+                """
+            )
+        ).fetchall()
+
+    return [str(row.redmine_identifier) for row in rows if str(row.redmine_identifier or "").strip()]
+
+
 def listUsers() -> list[dict[str, object]]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")

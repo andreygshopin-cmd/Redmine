@@ -40,6 +40,7 @@ from src.redmine.db import (
     getSnapshotIssuesForProjectByDate,
     getUserByPasswordResetToken,
     getUserByLogin,
+    listPlanningProjectIdentifiers,
     listPlanningProjectsByRedmineIdentifier,
     listFilteredSnapshotIssuesForProjectByDate,
     listLatestSnapshotIssuesWithParents,
@@ -1560,19 +1561,23 @@ PAGE_HTML = """<!doctype html>
     }
 
     #captureSnapshotsButton {
-      background: var(--orange-1585);
-      color: #ffffff;
-      box-shadow: 0 14px 24px rgba(255, 108, 14, 0.22);
+      background: var(--cyan-310);
+      color: var(--blue-302);
+      box-shadow: 0 14px 24px rgba(82, 206, 230, 0.24);
     }
 
     #projectsSummaryPageButton {
-      background: var(--orange-1585);
-      color: #ffffff;
-      box-shadow: 0 14px 24px rgba(255, 108, 14, 0.22);
+      background: var(--yellow-109);
+      color: var(--blue-302);
+      box-shadow: 0 14px 24px rgba(255, 198, 0, 0.24);
+    }
+
+    #captureSnapshotsButton:hover {
+      background: #44c8e0;
     }
 
     #projectsSummaryPageButton:hover {
-      background: #f56d13;
+      background: #f4bd00;
     }
 
     input[type="date"] {
@@ -1680,6 +1685,19 @@ PAGE_HTML = """<!doctype html>
       border-color: #375d77;
       color: #375d77;
       background: #f5fafb;
+    }
+
+    .project-planning-button.has-planning {
+      border-color: var(--yellow-109);
+      background: var(--yellow-109);
+      color: var(--blue-302);
+      box-shadow: 0 0 0 1px rgba(255, 198, 0, 0.25);
+    }
+
+    .project-planning-button.has-planning:hover {
+      border-color: #f4bd00;
+      background: #f4bd00;
+      color: var(--blue-302);
     }
 
     .project-tree {
@@ -1954,7 +1972,7 @@ PAGE_HTML = """<!doctype html>
     </section>
 
     <section class="panel table-panel" id="projects-table">
-      <h2>Проекты в базе данных</h2>
+        <h2>Проекты Redmine</h2>
       <p class="meta" id="projectsCount">Загрузка списка проектов...</p>
       <div class="table-toolbar">
         <label for="projectsNameFilterInput">Фильтр по названию</label>
@@ -2086,6 +2104,7 @@ PAGE_HTML = """<!doctype html>
     const pruneSnapshotsButton = document.getElementById("pruneSnapshotsButton");
     let captureStatusPollTimer = null;
     let allProjects = [];
+    let planningProjectIdentifiers = new Set();
     let allSnapshotRuns = [];
     const projectsNameFilterStorageKey = "redmine.projects.nameFilter";
     const projectsFactFilterStorageKey = "redmine.projects.factFilter.min";
@@ -2228,6 +2247,11 @@ PAGE_HTML = """<!doctype html>
         } else {
           element.setAttribute(mode, value);
         }
+      }
+
+      const projectsSectionHeading = document.querySelector("#projects-table h2");
+      if (projectsSectionHeading) {
+        projectsSectionHeading.textContent = "Проекты Redmine";
       }
 
       const projectsHeaders = [
@@ -2494,6 +2518,11 @@ PAGE_HTML = """<!doctype html>
             ? `<a class="project-link mono" href="${projectIssuesUrl}" target="_blank" rel="noreferrer">${identifier}</a>`
             : "—";
           const planningProjectUrl = `/planning-projects?redmine_identifier=${encodeURIComponent(identifier)}&project_name=${encodeURIComponent(project?.name ?? "")}&open_mode=auto`;
+          const normalizedIdentifier = identifier.trim().toLocaleLowerCase("ru");
+          const hasPlanningProject = Boolean(normalizedIdentifier) && planningProjectIdentifiers.has(normalizedIdentifier);
+          const planningButtonClass = hasPlanningProject
+            ? "project-planning-button has-planning"
+            : "project-planning-button";
           const level = Math.max(Number(project?.hierarchy_level ?? 0) || 0, 0);
           const projectTreeClass = level > 0 ? "project-tree has-parent" : "project-tree";
           const row = document.createElement("tr");
@@ -2521,6 +2550,7 @@ PAGE_HTML = """<!doctype html>
             <td>${formatDate(project?.updated_on)}</td>
             <td>${formatDate(project?.synced_at)}</td>
           `;
+          row.innerHTML = row.innerHTML.replace('class="project-planning-button"', `class="${planningButtonClass}"`);
           projectsTableBody.appendChild(row);
           renderedCount += 1;
         } catch (error) {
@@ -2653,6 +2683,13 @@ PAGE_HTML = """<!doctype html>
           throw new Error(payload.detail || "Не удалось загрузить проекты из базы.");
         }
 
+        planningProjectIdentifiers = new Set(
+          Array.isArray(payload.planning_project_identifiers)
+            ? payload.planning_project_identifiers
+                .map((value) => String(value ?? "").trim().toLocaleLowerCase("ru"))
+                .filter(Boolean)
+            : []
+        );
         renderProjects(payload.projects ?? []);
         setStatus(projectsStatus, "");
       } catch (error) {
@@ -9511,7 +9548,11 @@ def getProjects() -> dict[str, object]:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureProjectsTable()
-    return {"projects": listStoredProjects()}
+    ensurePlanningProjectsTable()
+    return {
+        "projects": listStoredProjects(),
+        "planning_project_identifiers": listPlanningProjectIdentifiers(),
+    }
 
 
 @app.get("/api/planning-projects")
