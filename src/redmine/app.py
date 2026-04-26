@@ -7283,7 +7283,7 @@ def buildProjectsSummaryPage() -> str:
       params.set("is_closed", projectsSummaryClosedCheckbox.checked ? "true" : "false");
 
       try {{
-        const response = await fetch(`/api/projects-summary?${{params.toString()}}`);
+        const response = await fetch(`/api/projects-summary-v2?${{params.toString()}}`);
         const payload = await response.json();
         if (!response.ok) {{
           throw new Error(payload.detail || "Не удалось загрузить сводку по проектам.");
@@ -8566,12 +8566,12 @@ def buildPlanningProjectsPage() -> str:
     });
 
     planningProjectsTableBody.addEventListener("click", async (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) {
+      const triggerButton = event.target instanceof HTMLElement ? event.target.closest("button[data-action][data-id]") : null;
+      if (!(triggerButton instanceof HTMLButtonElement)) {
         return;
       }
-      const action = target.dataset.action;
-      const projectId = target.dataset.id;
+      const action = triggerButton.dataset.action;
+      const projectId = triggerButton.dataset.id;
       if (!action || !projectId) {
         return;
       }
@@ -8906,6 +8906,436 @@ def getPlanningProjectsPage() -> HTMLResponse:
     return _renderHtmlPage(buildPlanningProjectsPage())
 
 
+def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    groupedRows: list[dict[str, object]] = []
+    groupedByKey: dict[str, dict[str, object]] = {}
+
+    for index, row in enumerate(rows):
+        identifier = str(row.get("redmine_identifier") or "").strip()
+        groupKey = identifier.lower() if identifier else f"__row_{index}_{row.get('id') or ''}"
+        group = groupedByKey.get(groupKey)
+        if group is None:
+            group = {
+                "redmine_identifier": identifier,
+                "items": [],
+                "_fact_values": [],
+            }
+            groupedByKey[groupKey] = group
+            groupedRows.append(group)
+
+        factYearValue = row.get("development_spent_hours_year")
+        if factYearValue not in (None, ""):
+            try:
+                group["_fact_values"].append(float(factYearValue))
+            except (TypeError, ValueError):
+                pass
+
+        group["items"].append(
+            {
+                "direction": row.get("direction"),
+                "customer": row.get("customer"),
+                "project_name": row.get("project_name"),
+                "report_year_hours": row.get("report_year_hours"),
+                "development_hours": row.get("development_hours"),
+            }
+        )
+
+    for group in groupedRows:
+        factValues = list(group.pop("_fact_values", []))
+        group["row_span"] = len(group.get("items") or [])
+        group["development_spent_hours_year_average"] = (
+            sum(factValues) / len(factValues) if factValues else None
+        )
+
+    return groupedRows
+
+
+def buildProjectsSummaryPage() -> str:
+    todayIso = date.today().isoformat()
+    directions = listPlanningDirections()
+    if "КОТ" not in directions:
+        directions = ["КОТ", *directions]
+    directionOptionsHtml = "".join(
+        f'<option value="{escape(direction)}"{" selected" if direction == "КОТ" else ""}>{escape(direction)}</option>'
+        for direction in directions
+    )
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Сводка по проектам</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue-302: #375d77;
+      --yellow-109: #ffc600;
+      --cyan-310: #52cee6;
+      --orange-1585: #ff6c0e;
+      --shadow-soft: 0 12px 24px rgba(22, 50, 74, 0.06);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }}
+    main {{
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 24px 20px 56px;
+    }}
+    .page-head {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin: 0 0 18px;
+    }}
+    .brand {{
+      display: inline-flex;
+      align-items: center;
+      text-decoration: none;
+    }}
+    .brand img {{
+      width: 220px;
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }}
+    .head-actions {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }}
+    .head-actions a {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 700;
+      box-shadow: var(--shadow-soft);
+    }}
+    .head-actions a.home-link {{
+      background: var(--yellow-109);
+      color: #16324a;
+    }}
+    .head-actions a.planning-link {{
+      background: var(--blue-302);
+      color: #ffffff;
+    }}
+    h1 {{
+      margin: 0 0 10px;
+      font-size: clamp(2.15rem, 4.9vw, 3.6rem);
+      line-height: 0.98;
+      letter-spacing: -0.04em;
+      font-weight: 400;
+    }}
+    .lead {{
+      margin: 0 0 20px;
+      color: var(--muted);
+      line-height: 1.6;
+    }}
+    .panel {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: var(--shadow-soft);
+      margin: 0 0 18px;
+    }}
+    .controls {{
+      display: grid;
+      grid-template-columns: minmax(180px, 220px) minmax(180px, 220px) auto auto;
+      gap: 14px 16px;
+      align-items: end;
+    }}
+    .field {{
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }}
+    .field label {{
+      font-weight: 700;
+    }}
+    .field input,
+    .field select {{
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font: inherit;
+      color: var(--text);
+      background: #ffffff;
+    }}
+    .checkbox-field {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      font-weight: 600;
+      color: var(--text);
+    }}
+    .checkbox-field input {{
+      width: 16px;
+      height: 16px;
+      margin: 0;
+    }}
+    .control-actions {{
+      display: inline-flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }}
+    button {{
+      border: 0;
+      border-radius: 6px;
+      padding: 11px 18px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: var(--shadow-soft);
+    }}
+    #projectsSummaryRefreshButton {{
+      background: var(--orange-1585);
+      color: #ffffff;
+    }}
+    #exportProjectsSummaryButton {{
+      background: #eceff3;
+      color: var(--text);
+    }}
+    .meta {{
+      min-height: 22px;
+      margin: 0 0 12px;
+      color: var(--muted);
+    }}
+    .table-wrap {{
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+    }}
+    table {{
+      width: 100%;
+      min-width: 1180px;
+      border-collapse: collapse;
+      background: #ffffff;
+    }}
+    th, td {{
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }}
+    th {{
+      background: #eef6f7;
+      color: #426179;
+      text-transform: uppercase;
+      font-size: 0.78rem;
+      line-height: 1.2;
+    }}
+    td.group-cell {{
+      background: #f7fbfc;
+      font-weight: 600;
+      vertical-align: middle;
+    }}
+    tr:last-child td {{ border-bottom: 0; }}
+    .mono {{ font-family: Consolas, "Courier New", monospace; }}
+    .empty-state {{
+      padding: 28px 20px;
+      color: var(--muted);
+      text-align: center;
+    }}
+    @media (max-width: 980px) {{
+      .controls {{
+        grid-template-columns: repeat(2, minmax(180px, 1fr));
+      }}
+      .control-actions {{
+        grid-column: 1 / -1;
+      }}
+    }}
+    @media (max-width: 700px) {{
+      .page-head {{
+        flex-direction: column;
+        align-items: flex-start;
+      }}
+      .head-actions {{
+        justify-content: flex-start;
+      }}
+      .controls {{
+        grid-template-columns: 1fr;
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="page-head">
+      <a class="brand" href="/" aria-label="На главную">
+        <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+      </a>
+      <div class="head-actions">
+        <a class="home-link" href="/">Главная</a>
+        <a class="planning-link" href="/planning-projects">Планирование проектов</a>
+      </div>
+    </div>
+
+    <h1>Сводка по проектам</h1>
+    <p class="lead">Сводим данные планирования проектов и фактические часы разработки по последним срезам на выбранную дату.</p>
+
+    <section class="panel">
+      <div class="controls">
+        <div class="field">
+          <label for="projectsSummaryDateInput">Дата отчета</label>
+          <input id="projectsSummaryDateInput" type="date" value="{todayIso}">
+        </div>
+        <div class="field">
+          <label for="projectsSummaryDirectionSelect">Направление</label>
+          <select id="projectsSummaryDirectionSelect">
+            <option value="">Все направления</option>
+            {directionOptionsHtml}
+          </select>
+        </div>
+        <label class="checkbox-field" for="projectsSummaryClosedCheckbox">
+          <input id="projectsSummaryClosedCheckbox" type="checkbox">
+          <span>Закрытые проекты</span>
+        </label>
+        <div class="control-actions">
+          <button type="button" id="projectsSummaryRefreshButton">Показать сводку</button>
+          <button type="button" id="exportProjectsSummaryButton">Выгрузить в Excel</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="meta" id="projectsSummaryMeta">Загрузка...</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Идентификатор в Redmine</th>
+              <th>Разработка: факт за год, ч</th>
+              <th>Направление</th>
+              <th>Заказчик</th>
+              <th>Название проекта</th>
+              <th>Часы за год отчета</th>
+              <th>Часы разработки с багфиксом</th>
+            </tr>
+          </thead>
+          <tbody id="projectsSummaryTableBody">
+            <tr><td colspan="7" class="empty-state">Загружаем сводку...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const projectsSummaryDateInput = document.getElementById("projectsSummaryDateInput");
+    const projectsSummaryDirectionSelect = document.getElementById("projectsSummaryDirectionSelect");
+    const projectsSummaryClosedCheckbox = document.getElementById("projectsSummaryClosedCheckbox");
+    const projectsSummaryRefreshButton = document.getElementById("projectsSummaryRefreshButton");
+    const exportProjectsSummaryButton = document.getElementById("exportProjectsSummaryButton");
+    const projectsSummaryMeta = document.getElementById("projectsSummaryMeta");
+    const projectsSummaryTableBody = document.getElementById("projectsSummaryTableBody");
+
+    function formatSummaryHours(value) {{
+      if (value === null || value === undefined || value === "") {{
+        return "—";
+      }}
+      const number = Number(value);
+      if (!Number.isFinite(number)) {{
+        return "—";
+      }}
+      return number.toLocaleString("ru-RU", {{ minimumFractionDigits: 1, maximumFractionDigits: 1 }});
+    }}
+
+    function formatSummaryText(value) {{
+      const text = String(value ?? "").trim();
+      return text || "—";
+    }}
+
+    function renderProjectsSummaryRows(groups) {{
+      if (!groups.length) {{
+        projectsSummaryTableBody.innerHTML = '<tr><td colspan="7" class="empty-state">По выбранным условиям записей не найдено.</td></tr>';
+        return;
+      }}
+
+      projectsSummaryTableBody.innerHTML = groups.map((group) => {{
+        const items = Array.isArray(group.items) ? group.items : [];
+        const rowSpan = Number(group.row_span || items.length || 1);
+        const identifierCell = `<td class="mono group-cell" rowspan="${{rowSpan}}">${{formatSummaryText(group.redmine_identifier)}}</td>`;
+        const factCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{formatSummaryHours(group.development_spent_hours_year_average)}}</td>`;
+        return items.map((item, index) => `
+          <tr>
+            ${{index === 0 ? identifierCell : ""}}
+            ${{index === 0 ? factCell : ""}}
+            <td>${{formatSummaryText(item.direction)}}</td>
+            <td>${{formatSummaryText(item.customer)}}</td>
+            <td>${{formatSummaryText(item.project_name)}}</td>
+            <td>${{formatSummaryHours(item.report_year_hours)}}</td>
+            <td>${{formatSummaryHours(item.development_hours)}}</td>
+          </tr>
+        `).join("");
+      }}).join("");
+    }}
+
+    function buildProjectsSummaryParams() {{
+      const params = new URLSearchParams();
+      params.set("report_date", String(projectsSummaryDateInput.value || "{todayIso}"));
+      params.set("direction", String(projectsSummaryDirectionSelect.value || ""));
+      params.set("is_closed", projectsSummaryClosedCheckbox.checked ? "true" : "false");
+      return params;
+    }}
+
+    async function loadProjectsSummary() {{
+      projectsSummaryMeta.textContent = "Загружаем сводку...";
+      projectsSummaryTableBody.innerHTML = '<tr><td colspan="7" class="empty-state">Загружаем сводку...</td></tr>';
+      const params = buildProjectsSummaryParams();
+
+      try {{
+        const response = await fetch(`/api/projects-summary-v2?${{params.toString()}}`);
+        const payload = await response.json();
+        if (!response.ok) {{
+          throw new Error(payload.detail || "Не удалось загрузить сводку по проектам.");
+        }}
+
+        const groups = Array.isArray(payload.groups) ? payload.groups : [];
+        const rowsCount = groups.reduce((sum, group) => sum + Number(group.row_span || 0), 0);
+        projectsSummaryMeta.textContent = `Дата отчета: ${{payload.report_date}}. Год отчета: ${{payload.report_year}}. Групп: ${{groups.length}}. Строк: ${{rowsCount}}.`;
+        renderProjectsSummaryRows(groups);
+      }} catch (error) {{
+        projectsSummaryMeta.textContent = "Ошибка";
+        projectsSummaryTableBody.innerHTML = '<tr><td colspan="7" class="empty-state">Не удалось загрузить сводку.</td></tr>';
+      }}
+    }}
+
+    projectsSummaryRefreshButton?.addEventListener("click", loadProjectsSummary);
+    projectsSummaryDateInput?.addEventListener("change", loadProjectsSummary);
+    projectsSummaryDirectionSelect?.addEventListener("change", loadProjectsSummary);
+    projectsSummaryClosedCheckbox?.addEventListener("change", loadProjectsSummary);
+    exportProjectsSummaryButton?.addEventListener("click", () => {{
+      const params = buildProjectsSummaryParams();
+      window.location.href = `/api/projects-summary/export.csv?${{params.toString()}}`;
+    }});
+
+    loadProjectsSummary();
+  </script>
+</body>
+</html>"""
+
+
 @app.get("/projects-summary", response_class=HTMLResponse)
 def getProjectsSummaryPage() -> HTMLResponse:
     if not config.databaseUrl:
@@ -8990,6 +9420,104 @@ def getProjectsSummaryApi(
         "direction": str(direction or "").strip(),
         "is_closed": bool(is_closed),
     }
+
+
+@app.get("/api/projects-summary-v2")
+def getProjectsSummaryApiV2(
+    report_date: str | None = Query(None),
+    direction: str | None = Query("КОТ"),
+    is_closed: bool = Query(False),
+) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+    ensurePlanningProjectsTable()
+
+    try:
+        reportDate = date.fromisoformat(str(report_date or date.today().isoformat()))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Некорректная дата отчета.") from exc
+
+    projects = listProjectPlanningSummary(
+        reportDate=reportDate.isoformat(),
+        direction=direction,
+        isClosed=is_closed,
+    )
+    groups = _buildProjectsSummaryGroups(projects)
+    return {
+        "projects": projects,
+        "groups": groups,
+        "report_date": reportDate.isoformat(),
+        "report_year": reportDate.year,
+        "direction": str(direction or "").strip(),
+        "is_closed": bool(is_closed),
+    }
+
+
+@app.get("/api/projects-summary/export.csv")
+def exportProjectsSummaryCsv(
+    report_date: str | None = Query(None),
+    direction: str | None = Query("КОТ"),
+    is_closed: bool = Query(False),
+) -> Response:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+    ensurePlanningProjectsTable()
+
+    try:
+        reportDate = date.fromisoformat(str(report_date or date.today().isoformat()))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Некорректная дата отчета.") from exc
+
+    projects = listProjectPlanningSummary(
+        reportDate=reportDate.isoformat(),
+        direction=direction,
+        isClosed=is_closed,
+    )
+    groups = _buildProjectsSummaryGroups(projects)
+
+    output = io.StringIO(newline="")
+    output.write("sep=;\n")
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow(
+        [
+            "Идентификатор в Redmine",
+            "Разработка: факт за год, ч",
+            "Направление",
+            "Заказчик",
+            "Название проекта",
+            "Часы за год отчета",
+            "Часы разработки с багфиксом",
+        ]
+    )
+    for group in groups:
+        items = list(group.get("items") or [])
+        identifier = str(group.get("redmine_identifier") or "")
+        factAverage = group.get("development_spent_hours_year_average")
+        for itemIndex, item in enumerate(items):
+            writer.writerow(
+                [
+                    identifier if itemIndex == 0 else "",
+                    formatPageHours(factAverage) if itemIndex == 0 and factAverage not in (None, "") else "",
+                    str(item.get("direction") or ""),
+                    str(item.get("customer") or ""),
+                    str(item.get("project_name") or ""),
+                    formatPageHours(item.get("report_year_hours")) if item.get("report_year_hours") not in (None, "") else "",
+                    formatPageHours(item.get("development_hours")) if item.get("development_hours") not in (None, "") else "",
+                ]
+            )
+
+    csvBytes = output.getvalue().encode("cp1251", errors="replace")
+    return Response(
+        content=csvBytes,
+        media_type="text/csv; charset=windows-1251",
+        headers={"Content-Disposition": 'attachment; filename="projects_summary.csv"'},
+    )
 
 
 @app.get("/api/planning-projects/export.csv")
