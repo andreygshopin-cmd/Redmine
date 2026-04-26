@@ -7340,6 +7340,62 @@ def buildProjectsSummaryPage() -> str:
     projectsSummaryDirectionSelect?.addEventListener("change", loadProjectsSummary);
     projectsSummaryClosedCheckbox?.addEventListener("change", loadProjectsSummary);
 
+    projectsSummaryHeaderCells.forEach((cell, index) => {{
+      const key = projectsSummaryColumnKeys[index] || "";
+      if (!key) {{
+        return;
+      }}
+      cell.dataset.sortKey = key;
+      cell.addEventListener("click", () => {{
+        if (projectsSummarySortKey === key) {{
+          projectsSummarySortDirection = projectsSummarySortDirection === "asc" ? "desc" : "asc";
+        }} else {{
+          projectsSummarySortKey = key;
+          projectsSummarySortDirection = "asc";
+        }}
+        refreshProjectsSummaryView();
+      }});
+    }});
+
+    projectsSummaryFilterInputs.forEach((input) => {{
+      const key = String(input.dataset.filterKey || "");
+      const eventName = input.tagName === "SELECT" ? "change" : "input";
+      input.addEventListener(eventName, () => {{
+        projectsSummaryFilters[key] = String(input.value || "");
+        refreshProjectsSummaryView();
+      }});
+    }});
+
+    updateProjectsSummarySortIndicators();
+
+    projectsSummaryHeaderCells.forEach((cell, index) => {{
+      const key = projectsSummaryColumnKeys[index] || "";
+      if (!key) {{
+        return;
+      }}
+      cell.dataset.sortKey = key;
+      cell.addEventListener("click", () => {{
+        if (projectsSummarySortKey === key) {{
+          projectsSummarySortDirection = projectsSummarySortDirection === "asc" ? "desc" : "asc";
+        }} else {{
+          projectsSummarySortKey = key;
+          projectsSummarySortDirection = "asc";
+        }}
+        refreshProjectsSummaryView();
+      }});
+    }});
+
+    projectsSummaryFilterInputs.forEach((input) => {{
+      const key = String(input.dataset.filterKey || "");
+      const eventName = input.tagName === "SELECT" ? "change" : "input";
+      input.addEventListener(eventName, () => {{
+        projectsSummaryFilters[key] = String(input.value || "");
+        refreshProjectsSummaryView();
+      }});
+    }});
+
+    updateProjectsSummarySortIndicators();
+
     loadProjectsSummary();
   </script>
 </body>
@@ -9000,6 +9056,8 @@ def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str,
                 "pm_name": row.get("pm_name"),
                 "report_year_hours": row.get("report_year_hours"),
                 "development_hours": row.get("development_hours"),
+                "link_project_name": row.get("link_project_name") or row.get("project_name"),
+                "is_missing_planning_project": bool(row.get("is_missing_planning_project")),
             }
         )
 
@@ -9010,12 +9068,67 @@ def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str,
         group["development_spent_hours_year_average"] = (
             sum(factValues) / len(factValues) if factValues else None
         )
-        group["development_limit_hours"] = sum(
-            float(item.get("report_year_hours") or 0) + float(item.get("development_hours") or 0)
+        hasLimitValues = any(
+            item.get("report_year_hours") not in (None, "") or item.get("development_hours") not in (None, "")
             for item in items
+        )
+        group["development_limit_hours"] = (
+            sum(
+                float(item.get("report_year_hours") or 0) + float(item.get("development_hours") or 0)
+                for item in items
+            )
+            if hasLimitValues
+            else None
         )
 
     return groupedRows
+
+
+def _listProjectsSummaryRows(
+    reportDate: date,
+    direction: str | None = None,
+    isClosed: bool | None = None,
+) -> list[dict[str, object]]:
+    if isClosed is None:
+        planningRows = [
+            *listProjectPlanningSummary(reportDate=reportDate.isoformat(), direction=direction, isClosed=False),
+            *listProjectPlanningSummary(reportDate=reportDate.isoformat(), direction=direction, isClosed=True),
+        ]
+    else:
+        planningRows = listProjectPlanningSummary(
+            reportDate=reportDate.isoformat(),
+            direction=direction,
+            isClosed=isClosed,
+        )
+
+    planningIdentifiers = set(listPlanningProjectIdentifiers())
+    summaryRows = list(planningRows)
+
+    for project in listStoredProjects():
+        identifier = str(project.get("identifier") or "").strip()
+        if not identifier:
+            continue
+        if identifier.lower() in planningIdentifiers:
+            continue
+
+        summaryRows.append(
+            {
+                "id": None,
+                "direction": None,
+                "customer": None,
+                "project_name": project.get("name"),
+                "redmine_identifier": identifier,
+                "pm_name": None,
+                "development_hours": None,
+                "report_year_hours": None,
+                "development_spent_hours_year": project.get("development_spent_hours_year"),
+                "is_closed": None,
+                "link_project_name": project.get("name"),
+                "is_missing_planning_project": True,
+            }
+        )
+
+    return summaryRows
 
 
 def buildProjectsSummaryPage() -> str:
@@ -9227,6 +9340,18 @@ def buildProjectsSummaryPage() -> str:
       color: var(--text);
       background: #ffffff;
     }}
+    .summary-filter-select {{
+      min-width: 140px;
+    }}
+    th[data-sort-key] {{
+      cursor: pointer;
+      user-select: none;
+    }}
+    th[data-sort-key] .sort-indicator {{
+      margin-left: 4px;
+      color: #90a4b4;
+      font-size: 0.72rem;
+    }}
     td.group-cell {{
       background: #f7fbfc;
       font-weight: 600;
@@ -9331,9 +9456,44 @@ def buildProjectsSummaryPage() -> str:
     const exportProjectsSummaryButton = document.getElementById("exportProjectsSummaryButton");
     const projectsSummaryMeta = document.getElementById("projectsSummaryMeta");
     const projectsSummaryTableBody = document.getElementById("projectsSummaryTableBody");
-    const projectsSummaryFilterInputs = Array.from(document.querySelectorAll(".summary-filter-input"));
+    const projectsSummaryColumnKeys = [
+      "redmine_identifier",
+      "development_spent_hours_year_average",
+      "direction",
+      "customer",
+      "project_name",
+      "pm_name",
+      "development_limit_hours",
+      "report_year_hours",
+      "development_hours",
+    ];
+    const projectsSummarySortableKeys = new Set(projectsSummaryColumnKeys);
+    const projectsSummaryItemKeys = new Set([
+      "direction",
+      "customer",
+      "project_name",
+      "pm_name",
+      "report_year_hours",
+      "development_hours",
+    ]);
+    const projectsSummaryNumericKeys = new Set([
+      "development_spent_hours_year_average",
+      "development_limit_hours",
+      "report_year_hours",
+      "development_hours",
+    ]);
+    const projectsSummaryHeaderCells = Array.from(document.querySelectorAll("table thead tr:first-child th"));
+    const projectsSummaryDirectionFilterCell = document.querySelector('.summary-filter-row [data-filter-key="direction"]')?.parentElement;
+    if (projectsSummaryDirectionFilterCell) {{
+      projectsSummaryDirectionFilterCell.innerHTML = '<select class="summary-filter-input summary-filter-select" data-filter-key="direction"><option value="">Р’СЃРµ</option></select>';
+    }}
+    let projectsSummaryFilterInputs = Array.from(document.querySelectorAll(".summary-filter-input"));
     let allProjectsSummaryGroups = [];
     let projectsSummaryFilters = {{}};
+    let projectsSummarySortKey = "";
+    let projectsSummarySortDirection = "asc";
+    let currentProjectsSummaryReportDate = String(projectsSummaryDateInput?.value || "{todayIso}");
+    let currentProjectsSummaryReportYear = String(currentProjectsSummaryReportDate).slice(0, 4);
 
     function formatSummaryHours(value) {{
       if (value === null || value === undefined || value === "") {{
@@ -9351,17 +9511,20 @@ def buildProjectsSummaryPage() -> str:
       return text || "—";
     }}
 
-    function buildPlanningProjectLink(projectId, redmineIdentifier = "") {{
+    function buildPlanningProjectLink(projectId, redmineIdentifier = "", projectName = "") {{
       const id = String(projectId ?? "").trim();
       if (id) {{
         return `/planning-projects?planning_project_id=${{encodeURIComponent(id)}}&open_mode=edit`;
       }}
       const identifier = String(redmineIdentifier ?? "").trim();
-      return identifier ? `/planning-projects?redmine_identifier=${{encodeURIComponent(identifier)}}&open_mode=auto` : "";
+      const normalizedProjectName = String(projectName ?? "").trim();
+      return identifier
+        ? `/planning-projects?redmine_identifier=${{encodeURIComponent(identifier)}}&project_name=${{encodeURIComponent(normalizedProjectName)}}&open_mode=auto`
+        : "";
     }}
 
-    function wrapSummaryLink(content, projectId, redmineIdentifier = "") {{
-      const href = buildPlanningProjectLink(projectId, redmineIdentifier);
+    function wrapSummaryLink(content, projectId, redmineIdentifier = "", projectName = "") {{
+      const href = buildPlanningProjectLink(projectId, redmineIdentifier, projectName);
       if (!href) {{
         return content;
       }}
@@ -9370,6 +9533,85 @@ def buildProjectsSummaryPage() -> str:
 
     function normalizeSummaryFilterValue(value) {{
       return String(value ?? "").trim().toLowerCase();
+    }}
+
+    function updateProjectsSummarySortIndicators() {{
+      projectsSummaryHeaderCells.forEach((cell, index) => {{
+        const key = projectsSummaryColumnKeys[index] || "";
+        if (!key) {{
+          return;
+        }}
+        cell.dataset.sortKey = key;
+        const label = String(cell.dataset.label || cell.textContent || "").replace(/[↑↓]$/, "").trim();
+        cell.dataset.label = label;
+        const indicator = key === projectsSummarySortKey
+          ? (projectsSummarySortDirection === "desc" ? " ↓" : " ↑")
+          : "";
+        cell.textContent = `${{label}}${{indicator}}`;
+      }});
+    }}
+
+    function compareProjectsSummaryValues(leftValue, rightValue, key) {{
+      if (projectsSummaryNumericKeys.has(key)) {{
+        const leftNumber = Number(leftValue);
+        const rightNumber = Number(rightValue);
+        const leftMissing = !Number.isFinite(leftNumber);
+        const rightMissing = !Number.isFinite(rightNumber);
+        if (leftMissing && rightMissing) {{
+          return 0;
+        }}
+        if (leftMissing) {{
+          return 1;
+        }}
+        if (rightMissing) {{
+          return -1;
+        }}
+        return leftNumber - rightNumber;
+      }}
+
+      const leftText = String(leftValue ?? "").trim().toLocaleLowerCase("ru");
+      const rightText = String(rightValue ?? "").trim().toLocaleLowerCase("ru");
+      if (!leftText && !rightText) {{
+        return 0;
+      }}
+      if (!leftText) {{
+        return 1;
+      }}
+      if (!rightText) {{
+        return -1;
+      }}
+      return leftText.localeCompare(rightText, "ru");
+    }}
+
+    function populateProjectsSummaryDirectionFilter(groups) {{
+      const directionSelect = document.querySelector('.summary-filter-input[data-filter-key="direction"]');
+      if (!(directionSelect instanceof HTMLSelectElement)) {{
+        return;
+      }}
+      const currentValue = String(projectsSummaryFilters.direction ?? directionSelect.value ?? "");
+      const directions = new Set();
+      for (const group of groups) {{
+        for (const item of Array.isArray(group.items) ? group.items : []) {{
+          const direction = String(item.direction ?? "").trim();
+          if (direction) {{
+            directions.add(direction);
+          }}
+        }}
+      }}
+      directionSelect.innerHTML = "";
+      const allOption = document.createElement("option");
+      allOption.value = "";
+      allOption.textContent = "Все";
+      directionSelect.appendChild(allOption);
+      for (const direction of Array.from(directions).sort((left, right) => left.localeCompare(right, "ru"))) {{
+        const option = document.createElement("option");
+        option.value = direction;
+        option.textContent = direction;
+        directionSelect.appendChild(option);
+      }}
+      directionSelect.value = directions.has(currentValue) ? currentValue : "";
+      projectsSummaryFilters.direction = String(directionSelect.value || "");
+      projectsSummaryFilterInputs = Array.from(document.querySelectorAll(".summary-filter-input"));
     }}
 
     function applyProjectsSummaryFilters(groups) {{
@@ -9422,13 +9664,69 @@ def buildProjectsSummaryPage() -> str:
             ...group,
             items: visibleItems,
             row_span: visibleItems.length,
-            development_limit_hours: visibleItems.reduce(
-              (sum, item) => sum + Number(item.report_year_hours || 0) + Number(item.development_hours || 0),
-              0,
-            ),
+            development_limit_hours: visibleItems.some((item) => item.report_year_hours !== null && item.report_year_hours !== undefined && item.report_year_hours !== "" || item.development_hours !== null && item.development_hours !== undefined && item.development_hours !== "")
+              ? visibleItems.reduce(
+                  (sum, item) => sum + Number(item.report_year_hours || 0) + Number(item.development_hours || 0),
+                  0,
+                )
+              : null,
           }};
         }})
         .filter(Boolean);
+    }}
+
+    function sortProjectsSummaryGroups(groups) {{
+      const sortedGroups = groups.map((group) => {{
+        const clonedItems = Array.isArray(group.items) ? [...group.items] : [];
+        return {{
+          ...group,
+          items: clonedItems,
+        }};
+      }});
+
+      if (!projectsSummarySortKey || !projectsSummarySortableKeys.has(projectsSummarySortKey)) {{
+        return sortedGroups;
+      }}
+
+      const sortMultiplier = projectsSummarySortDirection === "desc" ? -1 : 1;
+
+      if (projectsSummaryItemKeys.has(projectsSummarySortKey)) {{
+        sortedGroups.forEach((group) => {{
+          group.items.sort((left, right) => (
+            compareProjectsSummaryValues(left?.[projectsSummarySortKey], right?.[projectsSummarySortKey], projectsSummarySortKey) * sortMultiplier
+          ));
+          group.row_span = group.items.length;
+          const hasLimitValues = group.items.some((item) => item?.report_year_hours !== null && item?.report_year_hours !== undefined && item?.report_year_hours !== "" || item?.development_hours !== null && item?.development_hours !== undefined && item?.development_hours !== "");
+          group.development_limit_hours = hasLimitValues
+            ? group.items.reduce((sum, item) => sum + Number(item?.report_year_hours || 0) + Number(item?.development_hours || 0), 0)
+            : null;
+        }});
+      }}
+
+      sortedGroups.sort((left, right) => {{
+        const leftValue = projectsSummaryItemKeys.has(projectsSummarySortKey)
+          ? left?.items?.[0]?.[projectsSummarySortKey]
+          : left?.[projectsSummarySortKey];
+        const rightValue = projectsSummaryItemKeys.has(projectsSummarySortKey)
+          ? right?.items?.[0]?.[projectsSummarySortKey]
+          : right?.[projectsSummarySortKey];
+        const primary = compareProjectsSummaryValues(leftValue, rightValue, projectsSummarySortKey);
+        if (primary !== 0) {{
+          return primary * sortMultiplier;
+        }}
+        return compareProjectsSummaryValues(left?.redmine_identifier, right?.redmine_identifier, "redmine_identifier");
+      }});
+
+      return sortedGroups;
+    }}
+
+    function refreshProjectsSummaryView() {{
+      const filteredGroups = applyProjectsSummaryFilters(allProjectsSummaryGroups);
+      const visibleGroups = sortProjectsSummaryGroups(filteredGroups);
+      const rowsCount = visibleGroups.reduce((sum, group) => sum + Number(group.row_span || 0), 0);
+      projectsSummaryMeta.textContent = `Р”Р°С‚Р° РѕС‚С‡РµС‚Р°: ${{currentProjectsSummaryReportDate}}. Р“РѕРґ РѕС‚С‡РµС‚Р°: ${{currentProjectsSummaryReportYear || "вЂ”"}}. Р“СЂСѓРїРї: ${{visibleGroups.length}}. РЎС‚СЂРѕРє: ${{rowsCount}}.`;
+      updateProjectsSummarySortIndicators();
+      renderProjectsSummaryRows(visibleGroups);
     }}
 
     function renderProjectsSummaryRows(groups) {{
@@ -9442,20 +9740,21 @@ def buildProjectsSummaryPage() -> str:
         const rowSpan = Number(group.row_span || items.length || 1);
         const groupIdentifier = String(group.redmine_identifier ?? "");
         const groupLinkProjectId = items.length === 1 ? items[0].id : "";
-        const identifierCell = `<td class="mono group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryText(group.redmine_identifier), groupLinkProjectId, groupIdentifier)}}</td>`;
-        const factCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryHours(group.development_spent_hours_year_average), groupLinkProjectId, groupIdentifier)}}</td>`;
-        const limitCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryHours(group.development_limit_hours), groupLinkProjectId, groupIdentifier)}}</td>`;
+        const groupProjectName = String(items[0]?.link_project_name ?? items[0]?.project_name ?? "");
+        const identifierCell = `<td class="mono group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryText(group.redmine_identifier), groupLinkProjectId, groupIdentifier, groupProjectName)}}</td>`;
+        const factCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryHours(group.development_spent_hours_year_average), groupLinkProjectId, groupIdentifier, groupProjectName)}}</td>`;
+        const limitCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryHours(group.development_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName)}}</td>`;
         return items.map((item, index) => `
           <tr>
             ${{index === 0 ? identifierCell : ""}}
             ${{index === 0 ? factCell : ""}}
-            <td>${{wrapSummaryLink(formatSummaryText(item.direction), item.id)}}</td>
-            <td>${{wrapSummaryLink(formatSummaryText(item.customer), item.id)}}</td>
-            <td>${{wrapSummaryLink(formatSummaryText(item.project_name), item.id)}}</td>
-            <td>${{wrapSummaryLink(formatSummaryText(item.pm_name), item.id)}}</td>
+            <td>${{wrapSummaryLink(formatSummaryText(item.direction), item.id, groupIdentifier, item.link_project_name)}}</td>
+            <td>${{wrapSummaryLink(formatSummaryText(item.customer), item.id, groupIdentifier, item.link_project_name)}}</td>
+            <td>${{wrapSummaryLink(formatSummaryText(item.project_name), item.id, groupIdentifier, item.link_project_name)}}</td>
+            <td>${{wrapSummaryLink(formatSummaryText(item.pm_name), item.id, groupIdentifier, item.link_project_name)}}</td>
             ${{index === 0 ? limitCell : ""}}
-            <td>${{wrapSummaryLink(formatSummaryHours(item.report_year_hours), item.id)}}</td>
-            <td>${{wrapSummaryLink(formatSummaryHours(item.development_hours), item.id)}}</td>
+            <td>${{wrapSummaryLink(formatSummaryHours(item.report_year_hours), item.id, groupIdentifier, item.link_project_name)}}</td>
+            <td>${{wrapSummaryLink(formatSummaryHours(item.development_hours), item.id, groupIdentifier, item.link_project_name)}}</td>
           </tr>
         `).join("");
       }}).join("");
@@ -9479,11 +9778,14 @@ def buildProjectsSummaryPage() -> str:
           throw new Error(payload.detail || "Не удалось загрузить сводку по проектам.");
         }}
 
+        currentProjectsSummaryReportDate = String(payload.report_date || projectsSummaryDateInput.value || "{todayIso}");
+        currentProjectsSummaryReportYear = String(payload.report_year || currentProjectsSummaryReportDate.slice(0, 4) || "");
         allProjectsSummaryGroups = Array.isArray(payload.groups) ? payload.groups : [];
-        const groups = applyProjectsSummaryFilters(allProjectsSummaryGroups);
+        populateProjectsSummaryDirectionFilter(allProjectsSummaryGroups);
+        const groups = sortProjectsSummaryGroups(applyProjectsSummaryFilters(allProjectsSummaryGroups));
         const rowsCount = groups.reduce((sum, group) => sum + Number(group.row_span || 0), 0);
+        refreshProjectsSummaryView();
         projectsSummaryMeta.textContent = `Дата отчета: ${{payload.report_date}}. Год отчета: ${{payload.report_year}}. Групп: ${{groups.length}}. Строк: ${{rowsCount}}.`;
-        renderProjectsSummaryRows(groups);
       }} catch (error) {{
         projectsSummaryMeta.textContent = "Ошибка";
         projectsSummaryTableBody.innerHTML = '<tr><td colspan="9" class="empty-state">Не удалось загрузить сводку.</td></tr>';
@@ -9590,8 +9892,8 @@ def getProjectsSummaryApi(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Некорректная дата отчета.") from exc
 
-    projects = listProjectPlanningSummary(
-        reportDate=reportDate.isoformat(),
+    projects = _listProjectsSummaryRows(
+        reportDate=reportDate,
         direction=direction,
         isClosed=is_closed,
     )
@@ -9622,17 +9924,11 @@ def getProjectsSummaryApiV2(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Некорректная дата отчета.") from exc
 
-    if is_closed is None:
-        projects = [
-            *listProjectPlanningSummary(reportDate=reportDate.isoformat(), direction=direction, isClosed=False),
-            *listProjectPlanningSummary(reportDate=reportDate.isoformat(), direction=direction, isClosed=True),
-        ]
-    else:
-        projects = listProjectPlanningSummary(
-            reportDate=reportDate.isoformat(),
-            direction=direction,
-            isClosed=is_closed,
-        )
+    projects = _listProjectsSummaryRows(
+        reportDate=reportDate,
+        direction=direction,
+        isClosed=is_closed,
+    )
     groups = _buildProjectsSummaryGroups(projects)
     return {
         "projects": projects,
@@ -9662,17 +9958,11 @@ def exportProjectsSummaryCsv(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Некорректная дата отчета.") from exc
 
-    if is_closed is None:
-        projects = [
-            *listProjectPlanningSummary(reportDate=reportDate.isoformat(), direction=direction, isClosed=False),
-            *listProjectPlanningSummary(reportDate=reportDate.isoformat(), direction=direction, isClosed=True),
-        ]
-    else:
-        projects = listProjectPlanningSummary(
-            reportDate=reportDate.isoformat(),
-            direction=direction,
-            isClosed=is_closed,
-        )
+    projects = _listProjectsSummaryRows(
+        reportDate=reportDate,
+        direction=direction,
+        isClosed=is_closed,
+    )
     groups = _buildProjectsSummaryGroups(projects)
 
     output = io.StringIO(newline="")
