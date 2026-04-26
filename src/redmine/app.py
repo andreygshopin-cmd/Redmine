@@ -1935,7 +1935,7 @@ PAGE_HTML = """<!doctype html>
         <h2>Управление проектами</h2>
         <p>Получает список проектов из Redmine, добавляет новые записи и обновляет измененные.</p>
         <div class="row">
-          <button id="refreshProjectsButton" type="button">Обновить проекты Redmine</button>
+<button id="refreshProjectsButton" type="button">Синхронизация с Redmine</button>
           <button id="projectsSummaryPageButton" type="button">Сводка по проектам</button>
           <button id="planningProjectsPageButton" type="button">Планирование проектов</button>
         </div>
@@ -2214,7 +2214,7 @@ PAGE_HTML = """<!doctype html>
         [".hero h1", "textContent", "Анализ проектов Redmine"],
         ["#project-actions h2", "textContent", "Управление проектами"],
         ["#project-actions p", "textContent", "Получает список проектов из Redmine, добавляет новые записи и обновляет измененные."],
-        ["#refreshProjectsButton", "textContent", "Обновить проекты Redmine"],
+        ["#refreshProjectsButton", "textContent", "Синхронизация с Redmine"],
         ["#projectsSummaryPageButton", "textContent", "Сводка по проектам"],
         ["#snapshot-actions h2", "textContent", "Получение срезов задач"],
         ["#snapshot-actions p", "textContent", "Запрашивает срезы только для тех проектов, по которым на сегодняшнюю дату еще нет записи в базе данных."],
@@ -7396,6 +7396,60 @@ def buildProjectsSummaryPage() -> str:
 
     updateProjectsSummarySortIndicators();
 
+    projectsSummaryHeaderCells.forEach((cell, index) => {{
+      const key = projectsSummaryColumnKeys[index] || "";
+      if (!key) {{
+        return;
+      }}
+      cell.dataset.sortKey = key;
+      cell.addEventListener("click", () => {{
+        if (projectsSummarySortKey === key) {{
+          projectsSummarySortDirection = projectsSummarySortDirection === "asc" ? "desc" : "asc";
+        }} else {{
+          projectsSummarySortKey = key;
+          projectsSummarySortDirection = "asc";
+        }}
+        refreshProjectsSummaryView();
+      }});
+    }});
+
+    projectsSummaryFilterInputs.forEach((input) => {{
+      const key = String(input.dataset.filterKey || "");
+      input.addEventListener("change", () => {{
+        projectsSummaryFilters[key] = String(input.value || "");
+        refreshProjectsSummaryView();
+      }});
+    }});
+
+    updateProjectsSummarySortIndicators();
+
+    projectsSummaryHeaderCells.forEach((cell, index) => {{
+      const key = projectsSummaryColumnKeys[index] || "";
+      if (!key) {{
+        return;
+      }}
+      cell.dataset.sortKey = key;
+      cell.addEventListener("click", () => {{
+        if (projectsSummarySortKey === key) {{
+          projectsSummarySortDirection = projectsSummarySortDirection === "asc" ? "desc" : "asc";
+        }} else {{
+          projectsSummarySortKey = key;
+          projectsSummarySortDirection = "asc";
+        }}
+        refreshProjectsSummaryView();
+      }});
+    }});
+
+    projectsSummaryFilterInputs.forEach((input) => {{
+      const key = String(input.dataset.filterKey || "");
+      input.addEventListener("change", () => {{
+        projectsSummaryFilters[key] = String(input.value || "");
+        refreshProjectsSummaryView();
+      }});
+    }});
+
+    updateProjectsSummarySortIndicators();
+
     loadProjectsSummary();
   </script>
 </body>
@@ -9603,13 +9657,17 @@ def buildProjectsSummaryPage() -> str:
       allOption.value = "";
       allOption.textContent = "Все";
       directionSelect.appendChild(allOption);
+      const emptyOption = document.createElement("option");
+      emptyOption.value = "__empty__";
+      emptyOption.textContent = "Пусто";
+      directionSelect.appendChild(emptyOption);
       for (const direction of Array.from(directions).sort((left, right) => left.localeCompare(right, "ru"))) {{
         const option = document.createElement("option");
         option.value = direction;
         option.textContent = direction;
         directionSelect.appendChild(option);
       }}
-      directionSelect.value = directions.has(currentValue) ? currentValue : "";
+      directionSelect.value = currentValue === "__empty__" || directions.has(currentValue) ? currentValue : "";
       projectsSummaryFilters.direction = String(directionSelect.value || "");
       projectsSummaryFilterInputs = Array.from(document.querySelectorAll(".summary-filter-input"));
     }}
@@ -9652,6 +9710,9 @@ def buildProjectsSummaryPage() -> str:
               if (!filterValue) {{
                 return true;
               }}
+              if (key === "direction" && filterValue === "__empty__") {{
+                return !String(rawValue ?? "").trim();
+              }}
               return normalizeSummaryFilterValue(rawValue).includes(filterValue);
             }});
           }});
@@ -9663,6 +9724,7 @@ def buildProjectsSummaryPage() -> str:
           return {{
             ...group,
             items: visibleItems,
+            source_row_span: Number(group.row_span || (Array.isArray(group.items) ? group.items.length : 0)),
             row_span: visibleItems.length,
             development_limit_hours: visibleItems.some((item) => item.report_year_hours !== null && item.report_year_hours !== undefined && item.report_year_hours !== "" || item.development_hours !== null && item.development_hours !== undefined && item.development_hours !== "")
               ? visibleItems.reduce(
@@ -9738,11 +9800,16 @@ def buildProjectsSummaryPage() -> str:
       projectsSummaryTableBody.innerHTML = groups.map((group) => {{
         const items = Array.isArray(group.items) ? group.items : [];
         const rowSpan = Number(group.row_span || items.length || 1);
+        const sourceRowSpan = Number(group.source_row_span || rowSpan || 1);
+        const factIsFiltered = sourceRowSpan > rowSpan;
         const groupIdentifier = String(group.redmine_identifier ?? "");
         const groupLinkProjectId = items.length === 1 ? items[0].id : "";
         const groupProjectName = String(items[0]?.link_project_name ?? items[0]?.project_name ?? "");
         const identifierCell = `<td class="mono group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryText(group.redmine_identifier), groupLinkProjectId, groupIdentifier, groupProjectName)}}</td>`;
-        const factCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryHours(group.development_spent_hours_year_average), groupLinkProjectId, groupIdentifier, groupProjectName)}}</td>`;
+        const factLabel = factIsFiltered
+          ? `<span style="color:#8a97a5;">${{wrapSummaryLink(formatSummaryHours(group.development_spent_hours_year_average), groupLinkProjectId, groupIdentifier, groupProjectName)}} (без учета фильтра)</span>`
+          : wrapSummaryLink(formatSummaryHours(group.development_spent_hours_year_average), groupLinkProjectId, groupIdentifier, groupProjectName);
+        const factCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{factLabel}}</td>`;
         const limitCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryHours(group.development_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName)}}</td>`;
         return items.map((item, index) => `
           <tr>
@@ -9809,6 +9876,45 @@ def buildProjectsSummaryPage() -> str:
         renderProjectsSummaryRows(groups);
       }});
     }});
+
+    projectsSummaryHeaderCells.forEach((cell, index) => {{
+      const key = projectsSummaryColumnKeys[index] || "";
+      if (!key) {{
+        return;
+      }}
+      cell.dataset.sortKey = key;
+      cell.addEventListener("click", () => {{
+        if (projectsSummarySortKey === key) {{
+          projectsSummarySortDirection = projectsSummarySortDirection === "asc" ? "desc" : "asc";
+        }} else {{
+          projectsSummarySortKey = key;
+          projectsSummarySortDirection = "asc";
+        }}
+        refreshProjectsSummaryView();
+      }});
+    }});
+
+    document.addEventListener("change", (event) => {{
+      const target = event.target;
+      if (!(target instanceof Element) || !target.classList.contains("summary-filter-input")) {{
+        return;
+      }}
+      const key = String(target.getAttribute("data-filter-key") || "");
+      projectsSummaryFilters[key] = String(target.value || "");
+      refreshProjectsSummaryView();
+    }});
+
+    document.addEventListener("input", (event) => {{
+      const target = event.target;
+      if (!(target instanceof Element) || !target.classList.contains("summary-filter-input")) {{
+        return;
+      }}
+      const key = String(target.getAttribute("data-filter-key") || "");
+      projectsSummaryFilters[key] = String(target.value || "");
+      refreshProjectsSummaryView();
+    }});
+
+    updateProjectsSummarySortIndicators();
 
     loadProjectsSummary();
   </script>
