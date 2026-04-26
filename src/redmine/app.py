@@ -7277,18 +7277,22 @@ def buildProjectsSummaryPage() -> str:
 
     function formatSummaryHours(value) {{
       if (value === null || value === undefined || value === "") {{
-        return "—";
+        return projectsSummaryStrings.dash;
       }}
       const number = Number(value);
       if (!Number.isFinite(number)) {{
-        return "—";
+        return projectsSummaryStrings.dash;
       }}
       return number.toLocaleString("ru-RU", {{ minimumFractionDigits: 1, maximumFractionDigits: 1 }});
     }}
 
     function formatSummaryText(value) {{
       const text = String(value ?? "").trim();
-      return text || "—";
+      return text || projectsSummaryStrings.dash;
+    }}
+
+    function buildProjectsSummaryMetaText(groupsCount, rowsCount) {{
+      return `\u0414\u0430\u0442\u0430 \u043e\u0442\u0447\u0435\u0442\u0430: ${{currentProjectsSummaryReportDate}}. \u0413\u043e\u0434 \u043e\u0442\u0447\u0435\u0442\u0430: ${{currentProjectsSummaryReportYear || projectsSummaryStrings.dash}}. \u0413\u0440\u0443\u043f\u043f: ${{groupsCount}}. \u0421\u0442\u0440\u043e\u043a: ${{rowsCount}}.`;
     }}
 
     function renderProjectsSummaryRows(rows) {{
@@ -9142,7 +9146,15 @@ def _listProjectsSummaryRows(
     reportDate: date,
     direction: str | None = None,
     isClosed: bool | None = None,
+    enabledOnly: bool = True,
 ) -> list[dict[str, object]]:
+    storedProjects = listStoredProjects()
+    enabledIdentifiers = {
+        str(project.get("identifier") or "").strip().lower()
+        for project in storedProjects
+        if project.get("is_enabled") and str(project.get("identifier") or "").strip()
+    }
+
     if isClosed is None:
         planningRows = [
             *listProjectPlanningSummary(reportDate=reportDate.isoformat(), direction=direction, isClosed=False),
@@ -9156,11 +9168,18 @@ def _listProjectsSummaryRows(
         )
 
     planningIdentifiers = set(listPlanningProjectIdentifiers())
-    summaryRows = list(planningRows)
+    summaryRows = [
+        row
+        for row in planningRows
+        if not enabledOnly
+        or str(row.get("redmine_identifier") or "").strip().lower() in enabledIdentifiers
+    ]
 
-    for project in listStoredProjects():
+    for project in storedProjects:
         identifier = str(project.get("identifier") or "").strip()
         if not identifier:
+            continue
+        if enabledOnly and not project.get("is_enabled"):
             continue
         if identifier.lower() in planningIdentifiers:
             continue
@@ -9327,6 +9346,12 @@ def buildProjectsSummaryPage() -> str:
       height: 16px;
       margin: 0;
     }}
+    .checkbox-hint {{
+      margin: -2px 0 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }}
     .control-actions {{
       display: inline-flex;
       gap: 10px;
@@ -9461,9 +9486,17 @@ def buildProjectsSummaryPage() -> str:
           <label for="projectsSummaryDateInput">Дата отчета</label>
           <input id="projectsSummaryDateInput" type="date" value="{todayIso}">
         </div>
+        <div class="field">
+          <label class="checkbox-field" for="projectsSummaryEnabledOnlyCheckbox">
+            <input id="projectsSummaryEnabledOnlyCheckbox" type="checkbox" checked>
+            <span>Только по включенным проектам Redmine</span>
+          </label>
+          <p class="checkbox-hint">Проекты включаются в таблице "Проекты Redmine".</p>
+        </div>
         <div class="control-actions">
           <button type="button" id="projectsSummaryRefreshButton">Показать сводку</button>
           <button type="button" id="exportProjectsSummaryButton">Выгрузить в Excel</button>
+          <button type="button" id="resetProjectsSummaryFiltersButton">Сбросить фильтр</button>
         </div>
       </div>
     </section>
@@ -9506,10 +9539,22 @@ def buildProjectsSummaryPage() -> str:
 
   <script>
     const projectsSummaryDateInput = document.getElementById("projectsSummaryDateInput");
+    const projectsSummaryEnabledOnlyCheckbox = document.getElementById("projectsSummaryEnabledOnlyCheckbox");
     const projectsSummaryRefreshButton = document.getElementById("projectsSummaryRefreshButton");
     const exportProjectsSummaryButton = document.getElementById("exportProjectsSummaryButton");
+    const resetProjectsSummaryFiltersButton = document.getElementById("resetProjectsSummaryFiltersButton");
     const projectsSummaryMeta = document.getElementById("projectsSummaryMeta");
     const projectsSummaryTableBody = document.getElementById("projectsSummaryTableBody");
+    const projectsSummaryStrings = {{
+      all: "\\u0412\\u0441\\u0435",
+      empty: "\\u041f\\u0443\\u0441\\u0442\\u043e",
+      dash: "\\u2014",
+      loading: "\\u0417\\u0430\\u0433\\u0440\\u0443\\u0436\\u0430\\u0435\\u043c \\u0441\\u0432\\u043e\\u0434\\u043a\\u0443...",
+      error: "\\u041e\\u0448\\u0438\\u0431\\u043a\\u0430",
+      loadFailed: "\\u041d\\u0435 \\u0443\\u0434\\u0430\\u043b\\u043e\\u0441\\u044c \\u0437\\u0430\\u0433\\u0440\\u0443\\u0437\\u0438\\u0442\\u044c \\u0441\\u0432\\u043e\\u0434\\u043a\\u0443.",
+      noRows: "\\u041f\\u043e \\u0432\\u044b\\u0431\\u0440\\u0430\\u043d\\u043d\\u044b\\u043c \\u0443\\u0441\\u043b\\u043e\\u0432\\u0438\\u044f\\u043c \\u0437\\u0430\\u043f\\u0438\\u0441\\u0435\\u0439 \\u043d\\u0435 \\u043d\\u0430\\u0439\\u0434\\u0435\\u043d\\u043e.",
+      factFiltered: "\\u0441\\u043e\\u0434\\u0435\\u0440\\u0436\\u0438\\u0442 \\u0437\\u0430\\u0442\\u0440\\u0430\\u0442\\u044b \\u043f\\u0440\\u043e\\u0435\\u043a\\u0442\\u043e\\u0432, \\u043d\\u0435 \\u043f\\u043e\\u043f\\u0430\\u0432\\u0448\\u0438\\u0445 \\u043f\\u043e\\u0434 \\u043a\\u0440\\u0438\\u0442\\u0435\\u0440\\u0438\\u0438 \\u0444\\u0438\\u043b\\u044c\\u0442\\u0440\\u0430",
+    }};
     const projectsSummaryColumnKeys = [
       "redmine_identifier",
       "development_spent_hours_year_average",
@@ -9539,7 +9584,7 @@ def buildProjectsSummaryPage() -> str:
     const projectsSummaryHeaderCells = Array.from(document.querySelectorAll("table thead tr:first-child th"));
     const projectsSummaryDirectionFilterCell = document.querySelector('.summary-filter-row [data-filter-key="direction"]')?.parentElement;
     if (projectsSummaryDirectionFilterCell) {{
-      projectsSummaryDirectionFilterCell.innerHTML = '<select class="summary-filter-input summary-filter-select" data-filter-key="direction"><option value="">Р’СЃРµ</option></select>';
+      projectsSummaryDirectionFilterCell.innerHTML = `<select class="summary-filter-input summary-filter-select" data-filter-key="direction"><option value="">${{projectsSummaryStrings.all}}</option></select>`;
     }}
     let projectsSummaryFilterInputs = Array.from(document.querySelectorAll(".summary-filter-input"));
     let allProjectsSummaryGroups = [];
@@ -9551,18 +9596,22 @@ def buildProjectsSummaryPage() -> str:
 
     function formatSummaryHours(value) {{
       if (value === null || value === undefined || value === "") {{
-        return "—";
+        return projectsSummaryStrings.dash;
       }}
       const number = Number(value);
       if (!Number.isFinite(number)) {{
-        return "—";
+        return projectsSummaryStrings.dash;
       }}
       return number.toLocaleString("ru-RU", {{ minimumFractionDigits: 1, maximumFractionDigits: 1 }});
     }}
 
     function formatSummaryText(value) {{
       const text = String(value ?? "").trim();
-      return text || "—";
+      return text || projectsSummaryStrings.dash;
+    }}
+
+    function buildProjectsSummaryMetaText(groupsCount, rowsCount) {{
+      return `\u0414\u0430\u0442\u0430 \u043e\u0442\u0447\u0435\u0442\u0430: ${{currentProjectsSummaryReportDate}}. \u0413\u043e\u0434 \u043e\u0442\u0447\u0435\u0442\u0430: ${{currentProjectsSummaryReportYear || projectsSummaryStrings.dash}}. \u0413\u0440\u0443\u043f\u043f: ${{groupsCount}}. \u0421\u0442\u0440\u043e\u043a: ${{rowsCount}}.`;
     }}
 
     function buildPlanningProjectLink(projectId, redmineIdentifier = "", projectName = "") {{
@@ -9655,11 +9704,11 @@ def buildProjectsSummaryPage() -> str:
       directionSelect.innerHTML = "";
       const allOption = document.createElement("option");
       allOption.value = "";
-      allOption.textContent = "Все";
+      allOption.textContent = projectsSummaryStrings.all;
       directionSelect.appendChild(allOption);
       const emptyOption = document.createElement("option");
       emptyOption.value = "__empty__";
-      emptyOption.textContent = "Пусто";
+      emptyOption.textContent = projectsSummaryStrings.empty;
       directionSelect.appendChild(emptyOption);
       for (const direction of Array.from(directions).sort((left, right) => left.localeCompare(right, "ru"))) {{
         const option = document.createElement("option");
@@ -9787,13 +9836,14 @@ def buildProjectsSummaryPage() -> str:
       const visibleGroups = sortProjectsSummaryGroups(filteredGroups);
       const rowsCount = visibleGroups.reduce((sum, group) => sum + Number(group.row_span || 0), 0);
       projectsSummaryMeta.textContent = `Р”Р°С‚Р° РѕС‚С‡РµС‚Р°: ${{currentProjectsSummaryReportDate}}. Р“РѕРґ РѕС‚С‡РµС‚Р°: ${{currentProjectsSummaryReportYear || "вЂ”"}}. Р“СЂСѓРїРї: ${{visibleGroups.length}}. РЎС‚СЂРѕРє: ${{rowsCount}}.`;
+      projectsSummaryMeta.textContent = buildProjectsSummaryMetaText(visibleGroups.length, rowsCount);
       updateProjectsSummarySortIndicators();
       renderProjectsSummaryRows(visibleGroups);
     }}
 
     function renderProjectsSummaryRows(groups) {{
       if (!groups.length) {{
-        projectsSummaryTableBody.innerHTML = '<tr><td colspan="9" class="empty-state">По выбранным условиям записей не найдено.</td></tr>';
+        projectsSummaryTableBody.innerHTML = `<tr><td colspan="9" class="empty-state">${{projectsSummaryStrings.noRows}}</td></tr>`;
         return;
       }}
 
@@ -9807,7 +9857,7 @@ def buildProjectsSummaryPage() -> str:
         const groupProjectName = String(items[0]?.link_project_name ?? items[0]?.project_name ?? "");
         const identifierCell = `<td class="mono group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryText(group.redmine_identifier), groupLinkProjectId, groupIdentifier, groupProjectName)}}</td>`;
         const factLabel = factIsFiltered
-          ? `<span style="color:#8a97a5;">${{wrapSummaryLink(formatSummaryHours(group.development_spent_hours_year_average), groupLinkProjectId, groupIdentifier, groupProjectName)}} (без учета фильтра)</span>`
+          ? `<span style="color:#8a97a5;">${{wrapSummaryLink(formatSummaryHours(group.development_spent_hours_year_average), groupLinkProjectId, groupIdentifier, groupProjectName)}} (${{projectsSummaryStrings.factFiltered}})</span>`
           : wrapSummaryLink(formatSummaryHours(group.development_spent_hours_year_average), groupLinkProjectId, groupIdentifier, groupProjectName);
         const factCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{factLabel}}</td>`;
         const limitCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryHours(group.development_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName)}}</td>`;
@@ -9830,12 +9880,13 @@ def buildProjectsSummaryPage() -> str:
     function buildProjectsSummaryParams() {{
       const params = new URLSearchParams();
       params.set("report_date", String(projectsSummaryDateInput.value || "{todayIso}"));
+      params.set("enabled_only", projectsSummaryEnabledOnlyCheckbox?.checked ? "true" : "false");
       return params;
     }}
 
     async function loadProjectsSummary() {{
-      projectsSummaryMeta.textContent = "Загружаем сводку...";
-      projectsSummaryTableBody.innerHTML = '<tr><td colspan="9" class="empty-state">Загружаем сводку...</td></tr>';
+      projectsSummaryMeta.textContent = projectsSummaryStrings.loading;
+      projectsSummaryTableBody.innerHTML = `<tr><td colspan="9" class="empty-state">${{projectsSummaryStrings.loading}}</td></tr>`;
       const params = buildProjectsSummaryParams();
 
       try {{
@@ -9849,31 +9900,36 @@ def buildProjectsSummaryPage() -> str:
         currentProjectsSummaryReportYear = String(payload.report_year || currentProjectsSummaryReportDate.slice(0, 4) || "");
         allProjectsSummaryGroups = Array.isArray(payload.groups) ? payload.groups : [];
         populateProjectsSummaryDirectionFilter(allProjectsSummaryGroups);
-        const groups = sortProjectsSummaryGroups(applyProjectsSummaryFilters(allProjectsSummaryGroups));
-        const rowsCount = groups.reduce((sum, group) => sum + Number(group.row_span || 0), 0);
         refreshProjectsSummaryView();
-        projectsSummaryMeta.textContent = `Дата отчета: ${{payload.report_date}}. Год отчета: ${{payload.report_year}}. Групп: ${{groups.length}}. Строк: ${{rowsCount}}.`;
       }} catch (error) {{
-        projectsSummaryMeta.textContent = "Ошибка";
-        projectsSummaryTableBody.innerHTML = '<tr><td colspan="9" class="empty-state">Не удалось загрузить сводку.</td></tr>';
+        projectsSummaryMeta.textContent = projectsSummaryStrings.error;
+        projectsSummaryTableBody.innerHTML = `<tr><td colspan="9" class="empty-state">${{projectsSummaryStrings.loadFailed}}</td></tr>`;
       }}
     }}
 
     projectsSummaryRefreshButton?.addEventListener("click", loadProjectsSummary);
     projectsSummaryDateInput?.addEventListener("change", loadProjectsSummary);
+    projectsSummaryEnabledOnlyCheckbox?.addEventListener("change", loadProjectsSummary);
     exportProjectsSummaryButton?.addEventListener("click", () => {{
       const params = buildProjectsSummaryParams();
       window.location.href = `/api/projects-summary/export.csv?${{params.toString()}}`;
+    }});
+    resetProjectsSummaryFiltersButton?.addEventListener("click", () => {{
+      projectsSummaryFilters = {{}};
+      projectsSummarySortKey = "";
+      projectsSummarySortDirection = "asc";
+      projectsSummaryEnabledOnlyCheckbox.checked = true;
+      projectsSummaryFilterInputs.forEach((input) => {{
+        input.value = "";
+      }});
+      loadProjectsSummary();
     }});
     projectsSummaryFilterInputs.forEach((input) => {{
       const key = String(input.dataset.filterKey || "");
       projectsSummaryFilters[key] = String(input.value || "");
       input.addEventListener("input", () => {{
         projectsSummaryFilters[key] = String(input.value || "");
-        const groups = applyProjectsSummaryFilters(allProjectsSummaryGroups);
-        const rowsCount = groups.reduce((sum, group) => sum + Number(group.row_span || 0), 0);
-        projectsSummaryMeta.textContent = `Дата отчета: ${{projectsSummaryDateInput.value || "{todayIso}"}}. Групп: ${{groups.length}}. Строк: ${{rowsCount}}.`;
-        renderProjectsSummaryRows(groups);
+        refreshProjectsSummaryView();
       }});
     }});
 
@@ -9985,6 +10041,7 @@ def getProjectsSummaryApi(
     report_date: str | None = Query(None),
     direction: str | None = Query("КОТ"),
     is_closed: bool = Query(False),
+    enabled_only: bool = Query(True),
 ) -> dict[str, object]:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
@@ -10002,6 +10059,7 @@ def getProjectsSummaryApi(
         reportDate=reportDate,
         direction=direction,
         isClosed=is_closed,
+        enabledOnly=enabled_only,
     )
     return {
         "projects": projects,
@@ -10009,6 +10067,7 @@ def getProjectsSummaryApi(
         "report_year": reportDate.year,
         "direction": str(direction or "").strip(),
         "is_closed": bool(is_closed),
+        "enabled_only": bool(enabled_only),
     }
 
 
@@ -10017,6 +10076,7 @@ def getProjectsSummaryApiV2(
     report_date: str | None = Query(None),
     direction: str | None = Query(None),
     is_closed: bool | None = Query(None),
+    enabled_only: bool = Query(True),
 ) -> dict[str, object]:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
@@ -10034,6 +10094,7 @@ def getProjectsSummaryApiV2(
         reportDate=reportDate,
         direction=direction,
         isClosed=is_closed,
+        enabledOnly=enabled_only,
     )
     groups = _buildProjectsSummaryGroups(projects)
     return {
@@ -10043,6 +10104,7 @@ def getProjectsSummaryApiV2(
         "report_year": reportDate.year,
         "direction": str(direction or "").strip(),
         "is_closed": None if is_closed is None else bool(is_closed),
+        "enabled_only": bool(enabled_only),
     }
 
 
@@ -10051,6 +10113,7 @@ def exportProjectsSummaryCsv(
     report_date: str | None = Query(None),
     direction: str | None = Query(None),
     is_closed: bool | None = Query(None),
+    enabled_only: bool = Query(True),
 ) -> Response:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
@@ -10068,6 +10131,7 @@ def exportProjectsSummaryCsv(
         reportDate=reportDate,
         direction=direction,
         isClosed=is_closed,
+        enabledOnly=enabled_only,
     )
     groups = _buildProjectsSummaryGroups(projects)
 
