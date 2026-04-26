@@ -8590,7 +8590,7 @@ def buildPlanningProjectsPage() -> str:
     });
 
     planningProjectsTableBody.addEventListener("click", async (event) => {
-      const triggerButton = event.target instanceof HTMLElement ? event.target.closest("button[data-action][data-id]") : null;
+      const triggerButton = event.target instanceof Element ? event.target.closest("button[data-action][data-id]") : null;
       if (!(triggerButton instanceof HTMLButtonElement)) {
         return;
       }
@@ -9313,7 +9313,7 @@ def buildProjectsSummaryPage() -> str:
       if (!href) {{
         return content;
       }}
-      return `<a href="${{href}}" style="color:inherit; text-decoration:none;">${{content}}</a>`;
+      return `<a href="${{href}}" target="_blank" rel="noreferrer" style="color:#0b64c0; text-decoration:underline; text-underline-offset:2px;">${{content}}</a>`;
     }}
 
     function renderProjectsSummaryRows(groups) {{
