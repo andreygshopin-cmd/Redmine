@@ -5699,7 +5699,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <th>План</th>
               <th>План с рисками</th>
               <th colspan="2">Факт (год)</th>
-              <th>% (РіРѕРґ)</th>
+              <th>% (год)</th>
               <th colspan="2">Факт (всего)</th>
               <th>% (всего)</th>
             </tr>
@@ -9187,7 +9187,11 @@ def _listProjectsSummaryRows(
         summaryRows.append(
             {
                 **row,
-                "project_redmine_id": storedProject.get("redmine_id") if storedProject else None,
+                "project_redmine_id": (
+                    row.get("project_redmine_id")
+                    if row.get("project_redmine_id") not in (None, "")
+                    else (storedProject.get("redmine_id") if storedProject else None)
+                ),
             }
         )
 

@@ -1045,6 +1045,14 @@ def listProjectPlanningSummary(reportDate: str, direction: str | None = None, is
                         OR LOWER(TRIM(COALESCE(direction, ''))) = LOWER(TRIM(:direction))
                       )
                 ),
+                project_identifier_map AS (
+                    SELECT DISTINCT ON (LOWER(TRIM(COALESCE(identifier, ''))))
+                        LOWER(TRIM(COALESCE(identifier, ''))) AS normalized_identifier,
+                        redmine_id
+                    FROM projects
+                    WHERE TRIM(COALESCE(identifier, '')) <> ''
+                    ORDER BY LOWER(TRIM(COALESCE(identifier, ''))), redmine_id
+                ),
                 latest_snapshot_runs AS (
                     SELECT DISTINCT ON (r.project_redmine_id)
                         r.id,
@@ -1079,6 +1087,7 @@ def listProjectPlanningSummary(reportDate: str, direction: str | None = None, is
                     fp.customer,
                     fp.project_name,
                     fp.redmine_identifier,
+                    pim.redmine_id AS project_redmine_id,
                     fp.pm_name,
                     fp.development_hours,
                     CASE
@@ -1092,6 +1101,8 @@ def listProjectPlanningSummary(reportDate: str, direction: str | None = None, is
                 FROM filtered_planning_projects fp
                 LEFT JOIN latest_snapshot_metrics lsm
                     ON lsm.normalized_identifier = LOWER(TRIM(COALESCE(fp.redmine_identifier, '')))
+                LEFT JOIN project_identifier_map pim
+                    ON pim.normalized_identifier = LOWER(TRIM(COALESCE(fp.redmine_identifier, '')))
                 ORDER BY
                     LOWER(COALESCE(fp.direction, '')),
                     LOWER(COALESCE(fp.customer, '')),
