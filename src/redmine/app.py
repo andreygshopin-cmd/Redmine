@@ -8159,6 +8159,12 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectBaselineEstimate = document.getElementById("planningProjectBaselineEstimate");
     const planningProjectP1 = document.getElementById("planningProjectP1");
     const planningProjectP2 = document.getElementById("planningProjectP2");
+    const planningProjectYear1 = document.getElementById("planningProjectYear1");
+    const planningProjectHours1 = document.getElementById("planningProjectHours1");
+    const planningProjectYear2 = document.getElementById("planningProjectYear2");
+    const planningProjectHours2 = document.getElementById("planningProjectHours2");
+    const planningProjectYear3 = document.getElementById("planningProjectYear3");
+    const planningProjectHours3 = document.getElementById("planningProjectHours3");
     const planningProjectEstimateDoc = document.getElementById("planningProjectEstimateDoc");
     const planningProjectBitrix = document.getElementById("planningProjectBitrix");
     const planningProjectComment = document.getElementById("planningProjectComment");
@@ -8338,9 +8344,11 @@ def buildPlanningProjectsPage() -> str:
 
     function getPlanningProjectsQueryState() {
       const params = new URLSearchParams(window.location.search);
+      const planningProjectId = String(params.get("planning_project_id") || "").trim();
       const redmineIdentifier = String(params.get("redmine_identifier") || "").trim();
       const projectName = String(params.get("project_name") || "").trim();
       return {
+        planningProjectId,
         redmineIdentifier,
         projectName,
       };
@@ -8349,7 +8357,7 @@ def buildPlanningProjectsPage() -> str:
     function clearPlanningProjectsQueryState() {
       const url = new URL(window.location.href);
       let changed = false;
-      ["redmine_identifier", "project_name", "open_mode"].forEach((key) => {
+      ["planning_project_id", "redmine_identifier", "project_name", "open_mode"].forEach((key) => {
         if (url.searchParams.has(key)) {
           url.searchParams.delete(key);
           changed = true;
@@ -8399,6 +8407,12 @@ def buildPlanningProjectsPage() -> str:
       planningProjectStartDate.value = project.start_date ?? "";
       planningProjectEndDate.value = project.end_date ?? "";
       planningProjectDevelopmentHours.value = project.development_hours ?? "";
+      planningProjectYear1.value = project.year_1 ?? "";
+      planningProjectHours1.value = project.hours_1 ?? "";
+      planningProjectYear2.value = project.year_2 ?? "";
+      planningProjectHours2.value = project.hours_2 ?? "";
+      planningProjectYear3.value = project.year_3 ?? "";
+      planningProjectHours3.value = project.hours_3 ?? "";
       planningProjectBaselineEstimate.value = project.baseline_estimate_hours ?? "";
       planningProjectP1.value = project.p1 ?? "";
       planningProjectP2.value = project.p2 ?? "";
@@ -8412,6 +8426,16 @@ def buildPlanningProjectsPage() -> str:
 
     function applyPlanningProjectPrefill(projects) {
       const queryState = getPlanningProjectsQueryState();
+      if (queryState.planningProjectId) {
+        const matchedById = projects.find((project) => String(project?.id ?? "") === queryState.planningProjectId);
+        if (matchedById) {
+          fillPlanningProjectForm(matchedById);
+          setPlanningProjectsStatus(`Открыто редактирование записи проекта "${matchedById.project_name}".`);
+          clearPlanningProjectsQueryState();
+          return;
+        }
+      }
+
       if (!queryState.redmineIdentifier) {
         return;
       }
@@ -8932,9 +8956,11 @@ def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str,
 
         group["items"].append(
             {
+                "id": row.get("id"),
                 "direction": row.get("direction"),
                 "customer": row.get("customer"),
                 "project_name": row.get("project_name"),
+                "pm_name": row.get("pm_name"),
                 "report_year_hours": row.get("report_year_hours"),
                 "development_hours": row.get("development_hours"),
             }
@@ -8942,9 +8968,14 @@ def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str,
 
     for group in groupedRows:
         factValues = list(group.pop("_fact_values", []))
-        group["row_span"] = len(group.get("items") or [])
+        items = list(group.get("items") or [])
+        group["row_span"] = len(items)
         group["development_spent_hours_year_average"] = (
             sum(factValues) / len(factValues) if factValues else None
+        )
+        group["development_limit_hours"] = sum(
+            float(item.get("report_year_hours") or 0) + float(item.get("development_hours") or 0)
+            for item in items
         )
 
     return groupedRows
@@ -9229,12 +9260,14 @@ def buildProjectsSummaryPage() -> str:
               <th>Направление</th>
               <th>Заказчик</th>
               <th>Название проекта</th>
+              <th>ПМ</th>
+              <th>Лимит разработки с багфиксом</th>
               <th>Часы за год отчета</th>
               <th>Часы разработки с багфиксом</th>
             </tr>
           </thead>
           <tbody id="projectsSummaryTableBody">
-            <tr><td colspan="7" class="empty-state">Загружаем сводку...</td></tr>
+            <tr><td colspan="8" class="empty-state">Загружаем сводку...</td></tr>
           </tbody>
         </table>
       </div>
@@ -9266,26 +9299,48 @@ def buildProjectsSummaryPage() -> str:
       return text || "—";
     }}
 
+    function buildPlanningProjectLink(projectId, redmineIdentifier = "") {{
+      const id = String(projectId ?? "").trim();
+      if (id) {{
+        return `/planning-projects?planning_project_id=${{encodeURIComponent(id)}}&open_mode=edit`;
+      }}
+      const identifier = String(redmineIdentifier ?? "").trim();
+      return identifier ? `/planning-projects?redmine_identifier=${{encodeURIComponent(identifier)}}&open_mode=auto` : "";
+    }}
+
+    function wrapSummaryLink(content, projectId, redmineIdentifier = "") {{
+      const href = buildPlanningProjectLink(projectId, redmineIdentifier);
+      if (!href) {{
+        return content;
+      }}
+      return `<a href="${{href}}" style="color:inherit; text-decoration:none;">${{content}}</a>`;
+    }}
+
     function renderProjectsSummaryRows(groups) {{
       if (!groups.length) {{
-        projectsSummaryTableBody.innerHTML = '<tr><td colspan="7" class="empty-state">По выбранным условиям записей не найдено.</td></tr>';
+        projectsSummaryTableBody.innerHTML = '<tr><td colspan="8" class="empty-state">По выбранным условиям записей не найдено.</td></tr>';
         return;
       }}
 
       projectsSummaryTableBody.innerHTML = groups.map((group) => {{
         const items = Array.isArray(group.items) ? group.items : [];
         const rowSpan = Number(group.row_span || items.length || 1);
-        const identifierCell = `<td class="mono group-cell" rowspan="${{rowSpan}}">${{formatSummaryText(group.redmine_identifier)}}</td>`;
-        const factCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{formatSummaryHours(group.development_spent_hours_year_average)}}</td>`;
+        const groupIdentifier = String(group.redmine_identifier ?? "");
+        const groupLinkProjectId = items.length === 1 ? items[0].id : "";
+        const identifierCell = `<td class="mono group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryText(group.redmine_identifier), groupLinkProjectId, groupIdentifier)}}</td>`;
+        const factCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryHours(group.development_spent_hours_year_average), groupLinkProjectId, groupIdentifier)}}</td>`;
+        const limitCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryHours(group.development_limit_hours), groupLinkProjectId, groupIdentifier)}}</td>`;
         return items.map((item, index) => `
           <tr>
             ${{index === 0 ? identifierCell : ""}}
             ${{index === 0 ? factCell : ""}}
-            <td>${{formatSummaryText(item.direction)}}</td>
-            <td>${{formatSummaryText(item.customer)}}</td>
-            <td>${{formatSummaryText(item.project_name)}}</td>
-            <td>${{formatSummaryHours(item.report_year_hours)}}</td>
-            <td>${{formatSummaryHours(item.development_hours)}}</td>
+            <td>${{wrapSummaryLink(formatSummaryText(item.direction), item.id)}}</td>
+            <td>${{wrapSummaryLink(formatSummaryText(item.customer), item.id)}}</td>
+            <td>${{wrapSummaryLink(formatSummaryText(item.project_name), item.id)}}</td>
+            <td>${{wrapSummaryLink(formatSummaryText(item.pm_name), item.id)}}</td>
+            ${{index === 0 ? limitCell : ""}}
+            <td>${{wrapSummaryLink(formatSummaryHours(item.report_year_hours), item.id)}}</td>
+            <td>${{wrapSummaryLink(formatSummaryHours(item.development_hours), item.id)}}</td>
           </tr>
         `).join("");
       }}).join("");
@@ -9301,7 +9356,7 @@ def buildProjectsSummaryPage() -> str:
 
     async function loadProjectsSummary() {{
       projectsSummaryMeta.textContent = "Загружаем сводку...";
-      projectsSummaryTableBody.innerHTML = '<tr><td colspan="7" class="empty-state">Загружаем сводку...</td></tr>';
+      projectsSummaryTableBody.innerHTML = '<tr><td colspan="8" class="empty-state">Загружаем сводку...</td></tr>';
       const params = buildProjectsSummaryParams();
 
       try {{
@@ -9317,7 +9372,7 @@ def buildProjectsSummaryPage() -> str:
         renderProjectsSummaryRows(groups);
       }} catch (error) {{
         projectsSummaryMeta.textContent = "Ошибка";
-        projectsSummaryTableBody.innerHTML = '<tr><td colspan="7" class="empty-state">Не удалось загрузить сводку.</td></tr>';
+        projectsSummaryTableBody.innerHTML = '<tr><td colspan="8" class="empty-state">Не удалось загрузить сводку.</td></tr>';
       }}
     }}
 
@@ -9491,6 +9546,8 @@ def exportProjectsSummaryCsv(
             "Направление",
             "Заказчик",
             "Название проекта",
+            "ПМ",
+            "Лимит разработки с багфиксом",
             "Часы за год отчета",
             "Часы разработки с багфиксом",
         ]
@@ -9499,6 +9556,7 @@ def exportProjectsSummaryCsv(
         items = list(group.get("items") or [])
         identifier = str(group.get("redmine_identifier") or "")
         factAverage = group.get("development_spent_hours_year_average")
+        developmentLimit = group.get("development_limit_hours")
         for itemIndex, item in enumerate(items):
             writer.writerow(
                 [
@@ -9507,6 +9565,8 @@ def exportProjectsSummaryCsv(
                     str(item.get("direction") or ""),
                     str(item.get("customer") or ""),
                     str(item.get("project_name") or ""),
+                    str(item.get("pm_name") or ""),
+                    formatPageHours(developmentLimit) if itemIndex == 0 and developmentLimit not in (None, "") else "",
                     formatPageHours(item.get("report_year_hours")) if item.get("report_year_hours") not in (None, "") else "",
                     formatPageHours(item.get("development_hours")) if item.get("development_hours") not in (None, "") else "",
                 ]
