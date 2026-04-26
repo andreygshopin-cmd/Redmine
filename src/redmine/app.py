@@ -9108,6 +9108,7 @@ def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str,
         group["items"].append(
             {
                 "id": row.get("id"),
+                "project_redmine_id": row.get("project_redmine_id"),
                 "direction": row.get("direction"),
                 "customer": row.get("customer"),
                 "project_name": row.get("project_name"),
@@ -9122,6 +9123,10 @@ def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str,
     for group in groupedRows:
         factValues = list(group.pop("_fact_values", []))
         items = list(group.get("items") or [])
+        group["project_redmine_id"] = next(
+            (item.get("project_redmine_id") for item in items if item.get("project_redmine_id") not in (None, "")),
+            None,
+        )
         group["row_span"] = len(items)
         group["development_spent_hours_year_average"] = (
             sum(factValues) / len(factValues) if factValues else None
@@ -9149,6 +9154,11 @@ def _listProjectsSummaryRows(
     enabledOnly: bool = True,
 ) -> list[dict[str, object]]:
     storedProjects = listStoredProjects()
+    storedProjectsByIdentifier = {
+        str(project.get("identifier") or "").strip().lower(): project
+        for project in storedProjects
+        if str(project.get("identifier") or "").strip()
+    }
     enabledIdentifiers = {
         str(project.get("identifier") or "").strip().lower()
         for project in storedProjects
@@ -9168,12 +9178,18 @@ def _listProjectsSummaryRows(
         )
 
     planningIdentifiers = set(listPlanningProjectIdentifiers())
-    summaryRows = [
-        row
-        for row in planningRows
-        if not enabledOnly
-        or str(row.get("redmine_identifier") or "").strip().lower() in enabledIdentifiers
-    ]
+    summaryRows = []
+    for row in planningRows:
+        identifier = str(row.get("redmine_identifier") or "").strip().lower()
+        if enabledOnly and identifier not in enabledIdentifiers:
+            continue
+        storedProject = storedProjectsByIdentifier.get(identifier)
+        summaryRows.append(
+            {
+                **row,
+                "project_redmine_id": storedProject.get("redmine_id") if storedProject else None,
+            }
+        )
 
     for project in storedProjects:
         identifier = str(project.get("identifier") or "").strip()
@@ -9191,6 +9207,7 @@ def _listProjectsSummaryRows(
                 "customer": None,
                 "project_name": project.get("name"),
                 "redmine_identifier": identifier,
+                "project_redmine_id": project.get("redmine_id"),
                 "pm_name": None,
                 "development_hours": None,
                 "report_year_hours": None,
@@ -9311,7 +9328,7 @@ def buildProjectsSummaryPage() -> str:
     }}
     .controls {{
       display: grid;
-      grid-template-columns: minmax(180px, 220px) auto;
+      grid-template-columns: minmax(180px, 220px) minmax(320px, 1fr) auto;
       gap: 14px 16px;
       align-items: end;
     }}
@@ -9355,8 +9372,12 @@ def buildProjectsSummaryPage() -> str:
     .control-actions {{
       display: inline-flex;
       gap: 10px;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       justify-content: flex-start;
+      align-items: center;
+    }}
+    .control-actions button {{
+      white-space: nowrap;
     }}
     button {{
       border: 0;
@@ -9626,8 +9647,32 @@ def buildProjectsSummaryPage() -> str:
         : "";
     }}
 
+    function buildSnapshotIssuesLink(projectRedmineId) {{
+      const redmineId = String(projectRedmineId ?? "").trim();
+      if (!redmineId) {{
+        return "";
+      }}
+      const params = new URLSearchParams();
+      if (currentProjectsSummaryReportDate) {{
+        params.set("captured_for_date", currentProjectsSummaryReportDate);
+      }}
+      const query = params.toString();
+      return `/projects/${{encodeURIComponent(redmineId)}}/latest-snapshot-issues${{query ? `?${{query}}` : ""}}`;
+    }}
+
+    function hasSummaryValue(value) {{
+      return !(value === null || value === undefined || String(value).trim() === "");
+    }}
+
     function wrapSummaryLink(content, projectId, redmineIdentifier = "", projectName = "") {{
       const href = buildPlanningProjectLink(projectId, redmineIdentifier, projectName);
+      if (!href) {{
+        return content;
+      }}
+      return `<a href="${{href}}" target="_blank" rel="noreferrer" style="color:inherit; text-decoration:none; border-bottom:1px dashed #b7c1cb;">${{content}}</a>`;
+    }}
+
+    function wrapCustomSummaryLink(content, href) {{
       if (!href) {{
         return content;
       }}
@@ -9853,25 +9898,31 @@ def buildProjectsSummaryPage() -> str:
         const sourceRowSpan = Number(group.source_row_span || rowSpan || 1);
         const factIsFiltered = sourceRowSpan > rowSpan;
         const groupIdentifier = String(group.redmine_identifier ?? "");
+        const groupProjectRedmineId = String(group.project_redmine_id ?? "");
         const groupLinkProjectId = items.length === 1 ? items[0].id : "";
         const groupProjectName = String(items[0]?.link_project_name ?? items[0]?.project_name ?? "");
-        const identifierCell = `<td class="mono group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryText(group.redmine_identifier), groupLinkProjectId, groupIdentifier, groupProjectName)}}</td>`;
+        const snapshotIssuesHref = buildSnapshotIssuesLink(groupProjectRedmineId);
+        const identifierCell = `<td class="mono group-cell" rowspan="${{rowSpan}}">${{formatSummaryText(group.redmine_identifier)}}</td>`;
+        const factContent = wrapCustomSummaryLink(
+          formatSummaryHours(group.development_spent_hours_year_average),
+          hasSummaryValue(group.development_spent_hours_year_average) ? snapshotIssuesHref : "",
+        );
         const factLabel = factIsFiltered
-          ? `<span style="color:#8a97a5;">${{wrapSummaryLink(formatSummaryHours(group.development_spent_hours_year_average), groupLinkProjectId, groupIdentifier, groupProjectName)}} (${{projectsSummaryStrings.factFiltered}})</span>`
-          : wrapSummaryLink(formatSummaryHours(group.development_spent_hours_year_average), groupLinkProjectId, groupIdentifier, groupProjectName);
+          ? `<span style="color:#8a97a5;">${{factContent}} (${{projectsSummaryStrings.factFiltered}})</span>`
+          : factContent;
         const factCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{factLabel}}</td>`;
-        const limitCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{wrapSummaryLink(formatSummaryHours(group.development_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName)}}</td>`;
+        const limitCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{hasSummaryValue(group.development_limit_hours) ? wrapSummaryLink(formatSummaryHours(group.development_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName) : formatSummaryHours(group.development_limit_hours)}}</td>`;
         return items.map((item, index) => `
           <tr>
             ${{index === 0 ? identifierCell : ""}}
             ${{index === 0 ? factCell : ""}}
-            <td>${{wrapSummaryLink(formatSummaryText(item.direction), item.id, groupIdentifier, item.link_project_name)}}</td>
-            <td>${{wrapSummaryLink(formatSummaryText(item.customer), item.id, groupIdentifier, item.link_project_name)}}</td>
+            <td>${{formatSummaryText(item.direction)}}</td>
+            <td>${{formatSummaryText(item.customer)}}</td>
             <td>${{wrapSummaryLink(formatSummaryText(item.project_name), item.id, groupIdentifier, item.link_project_name)}}</td>
-            <td>${{wrapSummaryLink(formatSummaryText(item.pm_name), item.id, groupIdentifier, item.link_project_name)}}</td>
+            <td>${{formatSummaryText(item.pm_name)}}</td>
             ${{index === 0 ? limitCell : ""}}
-            <td>${{wrapSummaryLink(formatSummaryHours(item.report_year_hours), item.id, groupIdentifier, item.link_project_name)}}</td>
-            <td>${{wrapSummaryLink(formatSummaryHours(item.development_hours), item.id, groupIdentifier, item.link_project_name)}}</td>
+            <td>${{hasSummaryValue(item.report_year_hours) ? wrapSummaryLink(formatSummaryHours(item.report_year_hours), item.id, groupIdentifier, item.link_project_name) : formatSummaryHours(item.report_year_hours)}}</td>
+            <td>${{hasSummaryValue(item.development_hours) ? wrapSummaryLink(formatSummaryHours(item.development_hours), item.id, groupIdentifier, item.link_project_name) : formatSummaryHours(item.development_hours)}}</td>
           </tr>
         `).join("");
       }}).join("");
