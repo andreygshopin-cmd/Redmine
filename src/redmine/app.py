@@ -2004,7 +2004,6 @@ PAGE_HTML = """<!doctype html>
         <div class="row">
           <button id="captureSnapshotsButton" type="button">Получить срезы задач</button>
           <button id="recaptureSnapshotsButton" type="button">Обновить последние срезы</button>
-          <button id="captureErrorsButton" class="secondary-button" type="button">История ошибок</button>
           <button id="strangeIssuesPageButton" type="button">Вопросы по задачам</button>
         </div>
         <div class="status" id="captureStatus"></div>
@@ -2153,7 +2152,6 @@ PAGE_HTML = """<!doctype html>
     const adminPageButton = document.getElementById("adminPageButton");
     const captureSnapshotsButton = document.getElementById("captureSnapshotsButton");
     const recaptureSnapshotsButton = document.getElementById("recaptureSnapshotsButton");
-    const captureErrorsButton = document.getElementById("captureErrorsButton");
     const deleteSnapshotsButton = document.getElementById("deleteSnapshotsButton");
     const pruneSnapshotsButton = document.getElementById("pruneSnapshotsButton");
     let captureStatusPollTimer = null;
@@ -2184,9 +2182,6 @@ PAGE_HTML = """<!doctype html>
       captureErrorsExpanded = false;
       captureStatusHistory.hidden = true;
       captureStatusHistory.innerHTML = "";
-      if (captureErrorsButton) {
-        captureErrorsButton.textContent = "История ошибок";
-      }
     }
 
     function renderCaptureErrorStatus(message) {
@@ -2253,9 +2248,6 @@ PAGE_HTML = """<!doctype html>
         const activeLink = document.getElementById("captureStatusHistoryLink");
         if (activeLink) {
           activeLink.textContent = "Скрыть ошибки";
-        }
-        if (captureErrorsButton) {
-          captureErrorsButton.textContent = "Скрыть ошибки";
         }
       } catch (error) {
         captureStatusHistory.innerHTML = `<p class="status-history-empty">${escapeHtml(error.message || "Не удалось загрузить историю ошибок.")}</p>`;
@@ -3054,13 +3046,6 @@ PAGE_HTML = """<!doctype html>
     });
     strangeIssuesPageButton.addEventListener("click", () => {
       window.location.href = "/strange-snapshot-issues";
-    });
-    captureErrorsButton.addEventListener("click", async () => {
-      if (captureErrorsExpanded) {
-        clearCaptureErrorHistory();
-        return;
-      }
-      await loadCaptureErrorHistory(String(captureStatus.textContent || "").trim());
     });
     applyProjectsSettingsButton.addEventListener("click", applyProjectsSettings);
     captureSnapshotsButton.addEventListener("click", captureSnapshots);

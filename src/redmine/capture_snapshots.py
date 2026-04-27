@@ -14,6 +14,7 @@ def _buildArgumentParser() -> argparse.ArgumentParser:
 def main() -> None:
     arguments = _buildArgumentParser().parse_args()
     result = runIssueSnapshotCaptureJob(arguments.mode, arguments.project_redmine_id, arguments.adopt_lock)
+    skippedProjects = result.get("skipped_projects") or []
     print(
         "Captured daily snapshots for "
         f"{result['captured_for_date']}: "
@@ -21,7 +22,7 @@ def main() -> None:
         f"{result['captured_issues']} issues, "
         f"{result['already_captured_projects']} projects already had a slice, "
         f"{result['remaining_projects']} projects still remain, "
-        f"{len(result['skipped_projects'])} skipped projects."
+        f"{len(skippedProjects)} skipped projects."
     )
 
 
