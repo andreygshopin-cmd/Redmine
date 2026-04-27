@@ -7374,6 +7374,8 @@ def buildProjectsSummaryPage() -> str:
     }}
     .table-wrap {{
       overflow: auto;
+      position: relative;
+      max-height: calc(100vh - 260px);
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #ffffff;
@@ -9646,10 +9648,18 @@ def buildProjectsSummaryPage() -> str:
       font-size: 0.78rem;
       line-height: 1.2;
     }}
+    thead tr:first-child th {{
+      position: sticky;
+      top: 0;
+      z-index: 4;
+    }}
     .summary-filter-row th {{
       background: #f8fbfc;
       padding-top: 8px;
       padding-bottom: 8px;
+      position: sticky;
+      top: var(--projects-summary-header-height, 44px);
+      z-index: 3;
     }}
     .summary-filter-input {{
       width: 100%;
@@ -9676,6 +9686,20 @@ def buildProjectsSummaryPage() -> str:
       background: #f7fbfc;
       font-weight: 600;
       vertical-align: middle;
+    }}
+    tfoot td {{
+      position: sticky;
+      bottom: 0;
+      z-index: 2;
+      background: #f1f7f8;
+      font-weight: 700;
+      border-top: 2px solid #d7e6ea;
+    }}
+    .totals-label-cell {{
+      color: var(--text);
+    }}
+    .totals-spacer-cell {{
+      background: #f1f7f8;
     }}
     tr:last-child td {{ border-bottom: 0; }}
     .mono {{ font-family: Consolas, "Courier New", monospace; }}
@@ -9773,6 +9797,7 @@ def buildProjectsSummaryPage() -> str:
           <tbody id="projectsSummaryTableBody">
             <tr><td colspan="9" class="empty-state">Загружаем сводку...</td></tr>
           </tbody>
+          <tfoot id="projectsSummaryTableFoot"></tfoot>
         </table>
       </div>
     </section>
@@ -9786,6 +9811,8 @@ def buildProjectsSummaryPage() -> str:
     const resetProjectsSummaryFiltersButton = document.getElementById("resetProjectsSummaryFiltersButton");
     const projectsSummaryMeta = document.getElementById("projectsSummaryMeta");
     const projectsSummaryTableBody = document.getElementById("projectsSummaryTableBody");
+    const projectsSummaryTableFoot = document.getElementById("projectsSummaryTableFoot");
+    const projectsSummaryTableWrap = document.querySelector(".table-wrap");
     const projectsSummaryStrings = {{
       all: "\\u0412\\u0441\\u0435",
       empty: "\\u041f\\u0443\\u0441\\u0442\\u043e",
@@ -9851,8 +9878,24 @@ def buildProjectsSummaryPage() -> str:
       return text || projectsSummaryStrings.dash;
     }}
 
+    function formatSummaryTotal(value) {{
+      return hasSummaryValue(value) ? formatSummaryHours(value) : projectsSummaryStrings.dash;
+    }}
+
     function buildProjectsSummaryMetaText(groupsCount, rowsCount) {{
       return `\u0414\u0430\u0442\u0430 \u043e\u0442\u0447\u0435\u0442\u0430: ${{currentProjectsSummaryReportDate}}. \u0413\u043e\u0434 \u043e\u0442\u0447\u0435\u0442\u0430: ${{currentProjectsSummaryReportYear || projectsSummaryStrings.dash}}. \u0413\u0440\u0443\u043f\u043f: ${{groupsCount}}. \u0421\u0442\u0440\u043e\u043a: ${{rowsCount}}.`;
+    }}
+
+    function syncProjectsSummaryStickyOffsets() {{
+      if (!(projectsSummaryTableWrap instanceof HTMLElement)) {{
+        return;
+      }}
+      const firstHeaderCell = projectsSummaryHeaderCells[0];
+      if (!(firstHeaderCell instanceof HTMLElement)) {{
+        return;
+      }}
+      const headerHeight = Math.ceil(firstHeaderCell.getBoundingClientRect().height || 44);
+      projectsSummaryTableWrap.style.setProperty("--projects-summary-header-height", `${{headerHeight}}px`);
     }}
 
     function buildPlanningProjectLink(projectId, redmineIdentifier = "", projectName = "") {{
@@ -10104,11 +10147,16 @@ def buildProjectsSummaryPage() -> str:
       projectsSummaryMeta.textContent = buildProjectsSummaryMetaText(visibleGroups.length, rowsCount);
       updateProjectsSummarySortIndicators();
       renderProjectsSummaryRows(visibleGroups);
+      renderProjectsSummaryTotals(visibleGroups);
+      syncProjectsSummaryStickyOffsets();
     }}
 
     function renderProjectsSummaryRows(groups) {{
       if (!groups.length) {{
         projectsSummaryTableBody.innerHTML = `<tr><td colspan="9" class="empty-state">${{projectsSummaryStrings.noRows}}</td></tr>`;
+        if (projectsSummaryTableFoot) {{
+          projectsSummaryTableFoot.innerHTML = "";
+        }}
         return;
       }}
 
@@ -10148,6 +10196,64 @@ def buildProjectsSummaryPage() -> str:
       }}).join("");
     }}
 
+    function renderProjectsSummaryTotals(groups) {{
+      if (!(projectsSummaryTableFoot instanceof HTMLElement)) {{
+        return;
+      }}
+      if (!groups.length) {{
+        projectsSummaryTableFoot.innerHTML = "";
+        return;
+      }}
+
+      let factTotal = 0;
+      let factHasValues = false;
+      let limitTotal = 0;
+      let limitHasValues = false;
+      let reportYearTotal = 0;
+      let reportYearHasValues = false;
+      let developmentTotal = 0;
+      let developmentHasValues = false;
+
+      for (const group of groups) {{
+        const factValue = Number(group?.development_spent_hours_year_average);
+        if (Number.isFinite(factValue)) {{
+          factTotal += factValue;
+          factHasValues = true;
+        }}
+
+        const limitValue = Number(group?.development_limit_hours);
+        if (Number.isFinite(limitValue)) {{
+          limitTotal += limitValue;
+          limitHasValues = true;
+        }}
+
+        for (const item of Array.isArray(group?.items) ? group.items : []) {{
+          const reportYearValue = Number(item?.report_year_hours);
+          if (Number.isFinite(reportYearValue)) {{
+            reportYearTotal += reportYearValue;
+            reportYearHasValues = true;
+          }}
+
+          const developmentValue = Number(item?.development_hours);
+          if (Number.isFinite(developmentValue)) {{
+            developmentTotal += developmentValue;
+            developmentHasValues = true;
+          }}
+        }}
+      }}
+
+      projectsSummaryTableFoot.innerHTML = `
+        <tr>
+          <td class="totals-label-cell mono">Итого</td>
+          <td>${{formatSummaryTotal(factHasValues ? factTotal : null)}}</td>
+          <td class="totals-spacer-cell" colspan="4"></td>
+          <td>${{formatSummaryTotal(limitHasValues ? limitTotal : null)}}</td>
+          <td>${{formatSummaryTotal(reportYearHasValues ? reportYearTotal : null)}}</td>
+          <td>${{formatSummaryTotal(developmentHasValues ? developmentTotal : null)}}</td>
+        </tr>
+      `;
+    }}
+
     function buildProjectsSummaryParams() {{
       const params = new URLSearchParams();
       params.set("report_date", String(projectsSummaryDateInput.value || "{todayIso}"));
@@ -10158,6 +10264,9 @@ def buildProjectsSummaryPage() -> str:
     async function loadProjectsSummary() {{
       projectsSummaryMeta.textContent = projectsSummaryStrings.loading;
       projectsSummaryTableBody.innerHTML = `<tr><td colspan="9" class="empty-state">${{projectsSummaryStrings.loading}}</td></tr>`;
+      if (projectsSummaryTableFoot) {{
+        projectsSummaryTableFoot.innerHTML = "";
+      }}
       const params = buildProjectsSummaryParams();
 
       try {{
@@ -10175,6 +10284,9 @@ def buildProjectsSummaryPage() -> str:
       }} catch (error) {{
         projectsSummaryMeta.textContent = projectsSummaryStrings.error;
         projectsSummaryTableBody.innerHTML = `<tr><td colspan="9" class="empty-state">${{projectsSummaryStrings.loadFailed}}</td></tr>`;
+        if (projectsSummaryTableFoot) {{
+          projectsSummaryTableFoot.innerHTML = "";
+        }}
       }}
     }}
 
@@ -10242,6 +10354,7 @@ def buildProjectsSummaryPage() -> str:
     }});
 
     updateProjectsSummarySortIndicators();
+    window.addEventListener("resize", syncProjectsSummaryStickyOffsets);
 
     loadProjectsSummary();
   </script>
