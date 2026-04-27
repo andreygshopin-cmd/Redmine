@@ -1842,7 +1842,7 @@ PAGE_HTML = """<!doctype html>
 
     .project-row-disabled a {
       color: #93a1af;
-      border-bottom-color: currentColor;
+      text-decoration-color: currentColor;
     }
 
     .project-row-disabled .project-enabled-checkbox,
@@ -1860,7 +1860,7 @@ PAGE_HTML = """<!doctype html>
     .project-row-context-only .project-id-button,
     .project-row-context-only .project-capture-button {
       color: #bcc6cf;
-      border-bottom-color: currentColor;
+      text-decoration-color: currentColor;
     }
 
     .project-row-context-only .project-planning-button {
@@ -1884,10 +1884,13 @@ PAGE_HTML = """<!doctype html>
 
     .project-link {
       color: var(--blue-302);
-      text-decoration: none;
+      text-decoration-line: underline;
+      text-decoration-style: dashed;
+      text-decoration-color: currentColor;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.14em;
       white-space: nowrap;
       font-weight: 400;
-      border-bottom: 1px dashed currentColor;
       display: block;
       flex: 1 1 auto;
       min-width: 0;
@@ -1898,7 +1901,7 @@ PAGE_HTML = """<!doctype html>
 
     .project-link:hover {
       color: var(--orange-1585);
-      border-bottom-style: solid;
+      text-decoration-style: solid;
     }
 
     .project-id-button {
