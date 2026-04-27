@@ -1,8 +1,19 @@
-from src.redmine.snapshots import captureAllIssueSnapshots
+import argparse
+
+from src.redmine.snapshots import runIssueSnapshotCaptureJob
+
+
+def _buildArgumentParser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Capture Redmine issue snapshots")
+    parser.add_argument("--mode", choices=("all", "project"), default="all")
+    parser.add_argument("--project-redmine-id", type=int, default=None)
+    parser.add_argument("--adopt-lock", action="store_true")
+    return parser
 
 
 def main() -> None:
-    result = captureAllIssueSnapshots()
+    arguments = _buildArgumentParser().parse_args()
+    result = runIssueSnapshotCaptureJob(arguments.mode, arguments.project_redmine_id, arguments.adopt_lock)
     print(
         "Captured daily snapshots for "
         f"{result['captured_for_date']}: "
