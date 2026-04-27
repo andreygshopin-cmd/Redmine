@@ -1695,7 +1695,9 @@ PAGE_HTML = """<!doctype html>
     }
 
     .checkbox-cell {
-      width: 64px;
+      width: 7ch;
+      min-width: 7ch;
+      max-width: 7ch;
       white-space: nowrap;
     }
 
@@ -1704,8 +1706,21 @@ PAGE_HTML = """<!doctype html>
       position: relative;
     }
 
+    .project-name-col {
+      width: 25ch;
+      min-width: 25ch;
+      max-width: 25ch;
+    }
+
     .project-sticky-3.project-name-cell {
-      min-width: 260px;
+      min-width: 25ch;
+    }
+
+    .projects-datetime-col {
+      width: 28ch;
+      min-width: 28ch;
+      max-width: 28ch;
+      white-space: nowrap;
     }
 
     .project-name-wrap {
@@ -1823,6 +1838,28 @@ PAGE_HTML = """<!doctype html>
     .project-row-disabled .project-partial-checkbox,
     .project-row-disabled #enableVisibleProjectsCheckbox {
       accent-color: #b4bec8;
+    }
+
+    .project-row-context-only {
+      color: #bcc6cf;
+      background: #fbfcfd;
+    }
+
+    .project-row-context-only a,
+    .project-row-context-only .project-id-button,
+    .project-row-context-only .project-capture-button {
+      color: #bcc6cf;
+      border-bottom-color: currentColor;
+    }
+
+    .project-row-context-only .project-planning-button {
+      color: #a7b4bf;
+      border-color: #d5dde5;
+      background: #f8fafb;
+    }
+
+    .project-row-context-only .project-tree::before {
+      border-top-color: #d8e0e7;
     }
 
     .mono {
@@ -2061,7 +2098,7 @@ PAGE_HTML = """<!doctype html>
               </th>
               <th class="checkbox-cell">Част.</th>
               <th class="project-sticky-2">ID</th>
-              <th class="project-sticky-3">Название</th>
+              <th class="project-sticky-3 project-name-col">Название</th>
               <th class="identifier-col">Идентификатор</th>
               <th>Базовая оценка, ч</th>
               <th>Разработка: оценка, ч</th>
@@ -2072,8 +2109,8 @@ PAGE_HTML = """<!doctype html>
               <th>Ошибка: факт за год, ч</th>
               <th>Статус проекта</th>
               <th>Дата последнего среза</th>
-              <th>Обновлен в Redmine</th>
-              <th>Синхронизирован</th>
+              <th class="projects-datetime-col">Обновлен в Redmine</th>
+              <th class="projects-datetime-col">Синхронизирован</th>
             </tr>
           </thead>
           <tbody id="projectsTableBody"></tbody>
@@ -2514,6 +2551,7 @@ PAGE_HTML = """<!doctype html>
 
     function applyProjectsFilter(projects) {
       const directlyMatchedProjects = getDirectlyMatchedProjects(projects);
+      const directlyMatchedIds = new Set(directlyMatchedProjects.map((project) => project.redmine_id));
       const byId = new Map(projects.map((project) => [project.redmine_id, project]));
       const includedIds = new Set();
 
@@ -2526,7 +2564,12 @@ PAGE_HTML = """<!doctype html>
         }
       }
 
-      return projects.filter((project) => includedIds.has(project.redmine_id));
+      return projects
+        .filter((project) => includedIds.has(project.redmine_id))
+        .map((project) => ({
+          ...project,
+          _shown_as_ancestor_only: !directlyMatchedIds.has(project.redmine_id),
+        }));
     }
 
     function rerenderProjects() {
@@ -2666,7 +2709,14 @@ PAGE_HTML = """<!doctype html>
           const level = Math.max(Number(project?.hierarchy_level ?? 0) || 0, 0);
           const projectTreeClass = level > 0 ? "project-tree has-parent" : "project-tree";
           const row = document.createElement("tr");
-          row.className = project?.is_enabled ? "" : "project-row-disabled";
+          const rowClasses = [];
+          if (!project?.is_enabled) {
+            rowClasses.push("project-row-disabled");
+          }
+          if (project?._shown_as_ancestor_only) {
+            rowClasses.push("project-row-context-only");
+          }
+          row.className = rowClasses.join(" ");
           row.innerHTML = `
             <td class="checkbox-cell project-sticky-1"><input class="project-enabled-checkbox" type="checkbox" data-project-id="${redmineId}" ${project?.is_enabled ? "checked" : ""}></td>
             <td class="checkbox-cell"><input class="project-partial-checkbox" type="checkbox" data-project-id="${redmineId}" ${project?.partial_load ? "checked" : ""} ${project?.is_enabled ? "" : "disabled"}></td>
@@ -2676,7 +2726,7 @@ PAGE_HTML = """<!doctype html>
                 <button class="project-capture-button" type="button" data-project-id="${redmineId}" title="Получить срез по проекту" ${project?.is_enabled ? "" : "disabled"}>↓</button>
               </span>
             </td>
-            <td class="project-name-cell project-sticky-3"><span class="${projectTreeClass}" style="--tree-level:${level};"><span class="project-name-wrap"><a class="project-link" href="/projects/${encodeURIComponent(redmineId)}/burndown" target="_blank" rel="noreferrer">${project?.name ?? "\u2014"}</a><a class="project-planning-button" href="${planningProjectUrl}" target="_blank" rel="noreferrer" title="Открыть планирование проекта" aria-label="Открыть планирование проекта">i</a></span></span></td>
+            <td class="project-name-cell project-name-col project-sticky-3"><span class="${projectTreeClass}" style="--tree-level:${level};"><span class="project-name-wrap"><a class="project-link" href="/projects/${encodeURIComponent(redmineId)}/burndown" target="_blank" rel="noreferrer">${project?.name ?? "\u2014"}</a><a class="project-planning-button" href="${planningProjectUrl}" target="_blank" rel="noreferrer" title="Открыть планирование проекта" aria-label="Открыть планирование проекта">i</a></span></span></td>
             <td>${identifierHtml}</td>
             <td>${formatHours(project?.baseline_estimate_hours)}</td>
             <td>${formatHours(project?.development_estimate_hours)}</td>
@@ -2687,8 +2737,8 @@ PAGE_HTML = """<!doctype html>
             <td>${formatHours(project?.bug_spent_hours_year)}</td>
             <td>${project?.status ?? "—"}</td>
             <td class="mono">${project?.latest_snapshot_date ?? "—"}</td>
-            <td>${formatDate(project?.updated_on)}</td>
-            <td>${formatDate(project?.synced_at)}</td>
+            <td class="projects-datetime-col">${formatDate(project?.updated_on)}</td>
+            <td class="projects-datetime-col">${formatDate(project?.synced_at)}</td>
           `;
           row.innerHTML = row.innerHTML.replace('class="project-planning-button"', `class="${planningButtonClass}"`);
           projectsTableBody.appendChild(row);
