@@ -18,7 +18,9 @@ from src.redmine.db import (
     listRecentIssueSnapshotRuns,
     listProjectsWithoutSnapshotForDate,
     listStoredProjects,
+    readIssueSnapshotCaptureStatusRecord,
     storeMissingProjects,
+    writeIssueSnapshotCaptureStatusRecord,
 )
 from src.redmine.redmine_client import (
     applySpentHoursYearByIssue,
@@ -98,6 +100,15 @@ def _normalizeCaptureStatus(payload: dict[str, object] | None) -> dict[str, obje
 
 
 def _readCaptureStatusFromDisk() -> dict[str, object]:
+    config = loadConfig()
+    if config.databaseUrl:
+        try:
+            payload = readIssueSnapshotCaptureStatusRecord()
+        except Exception:
+            payload = None
+        if isinstance(payload, dict):
+            return _normalizeCaptureStatus(payload)
+
     if not CAPTURE_STATUS_PATH.exists():
         return _buildDefaultCaptureStatus()
 
@@ -116,6 +127,12 @@ def _writeCaptureStatusToDisk(status: dict[str, object]) -> None:
     _ensureCaptureStatusDir()
     normalized = _normalizeCaptureStatus(status)
     normalized["updated_at"] = _nowIso()
+    config = loadConfig()
+    if config.databaseUrl:
+        try:
+            writeIssueSnapshotCaptureStatusRecord(normalized)
+        except Exception:
+            pass
     temporaryPath = CAPTURE_STATUS_PATH.with_suffix(".tmp")
     temporaryPath.write_text(json.dumps(normalized, ensure_ascii=False), encoding="utf-8")
     temporaryPath.replace(CAPTURE_STATUS_PATH)

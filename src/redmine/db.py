@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+import json
 from threading import Lock
 
 from sqlalchemy import bindparam, create_engine, text
@@ -199,6 +200,18 @@ def ensureIssueSnapshotTables() -> None:
             connection.execute(
                 text(
                     """
+                    CREATE TABLE IF NOT EXISTS issue_snapshot_capture_status (
+                        status_key TEXT PRIMARY KEY,
+                        payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
                     ALTER TABLE issue_snapshot_runs
                     ADD COLUMN IF NOT EXISTS captured_for_date DATE NOT NULL DEFAULT CURRENT_DATE
                     """
@@ -313,6 +326,59 @@ def ensureIssueSnapshotTables() -> None:
             )
 
         _issueSnapshotTablesEnsured = True
+
+
+def readIssueSnapshotCaptureStatusRecord() -> dict[str, object] | None:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                """
+                SELECT payload
+                FROM issue_snapshot_capture_status
+                WHERE status_key = 'global'
+                """
+            )
+        ).scalar_one_or_none()
+
+    if row is None:
+        return None
+
+    if isinstance(row, dict):
+        return row
+
+    if isinstance(row, str):
+        try:
+            payload = json.loads(row)
+        except json.JSONDecodeError:
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    return None
+
+
+def writeIssueSnapshotCaptureStatusRecord(status: dict[str, object]) -> None:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+    payload = json.dumps(status, ensure_ascii=False)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO issue_snapshot_capture_status (status_key, payload, updated_at)
+                VALUES ('global', CAST(:payload AS JSONB), CURRENT_TIMESTAMP)
+                ON CONFLICT (status_key) DO UPDATE
+                SET payload = CAST(:payload AS JSONB),
+                    updated_at = CURRENT_TIMESTAMP
+                """
+            ),
+            {"payload": payload},
+        )
 
 
 def ensurePlanningProjectsTable() -> None:
