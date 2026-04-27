@@ -20,6 +20,8 @@ class Config:
     smtpFromName: str = os.getenv("SMTP_FROM_NAME", "Redmine Snapshot Viewer")
     smtpUseTls: bool = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {"1", "true", "yes", "on"}
     smtpUseSsl: bool = os.getenv("SMTP_USE_SSL", "false").strip().lower() in {"1", "true", "yes", "on"}
+    renderApiKey: str = os.getenv("RENDER_API_KEY", "")
+    renderServiceId: str = os.getenv("RENDER_SERVICE_ID", "")
 
 
 def loadConfig() -> Config:

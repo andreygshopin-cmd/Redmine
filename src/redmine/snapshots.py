@@ -7,6 +7,7 @@ import sys
 import tempfile
 from threading import Lock
 
+import requests
 from requests import HTTPError
 
 from src.redmine.config import loadConfig
@@ -33,6 +34,7 @@ CAPTURE_LOCK_PATH = CAPTURE_STATUS_DIR / "capture.lock"
 CAPTURE_WORKER_MODULE = "src.redmine.capture_snapshots"
 CAPTURE_WORKER_CWD = Path(__file__).resolve().parents[2]
 CAPTURE_STALE_GRACE_SECONDS = 10
+RENDER_API_BASE_URL = "https://api.render.com/v1"
 
 
 captureStatusLock = Lock()
@@ -60,6 +62,8 @@ def _buildDefaultCaptureStatus() -> dict[str, object]:
         "updated_at": None,
         "mode": None,
         "project_redmine_id": None,
+        "runner_kind": None,
+        "render_job_id": None,
     }
 
 
@@ -190,6 +194,7 @@ def _cleanupStaleCaptureArtifacts() -> None:
     statusStartedAt = _parseIso(status.get("started_at"))
     if (
         bool(status.get("is_running"))
+        and status.get("runner_kind") != "render_job"
         and not _pidIsAlive(int(status.get("worker_pid") or 0))
         and (
             statusStartedAt is None
@@ -215,6 +220,7 @@ def _writeInitialCaptureStatus(
     mode: str,
     totalProjects: int,
     projectRedmineId: int | None,
+    runnerKind: str,
 ) -> None:
     status = _buildDefaultCaptureStatus()
     status.update(
@@ -226,6 +232,7 @@ def _writeInitialCaptureStatus(
             "started_at": _nowIso(),
             "mode": mode,
             "project_redmine_id": projectRedmineId,
+            "runner_kind": runnerKind,
         }
     )
     _writeCaptureStatusToDisk(status)
@@ -263,6 +270,139 @@ def _buildCaptureWorkerCommand(mode: str, projectRedmineId: int | None) -> list[
     return command
 
 
+def _buildRenderCaptureWorkerCommand(mode: str, projectRedmineId: int | None) -> str:
+    command = ["python", "-m", CAPTURE_WORKER_MODULE, "--mode", mode]
+    if projectRedmineId is not None:
+        command.extend(["--project-redmine-id", str(projectRedmineId)])
+    return " ".join(command)
+
+
+def _getRenderAutomationConfig() -> tuple[str, str] | None:
+    config = loadConfig()
+    if config.renderApiKey and config.renderServiceId:
+        return config.renderApiKey, config.renderServiceId
+    return None
+
+
+def _isProductionEnvironment() -> bool:
+    return loadConfig().appEnv.strip().lower() == "production"
+
+
+def _setCaptureStartBlocked(message: str, mode: str, projectRedmineId: int | None, totalProjects: int) -> bool:
+    status = _buildDefaultCaptureStatus()
+    status.update(
+        {
+            "is_running": False,
+            "total_projects": totalProjects,
+            "remaining_projects": totalProjects,
+            "mode": mode,
+            "project_redmine_id": projectRedmineId,
+            "error_message": message,
+        }
+    )
+    _writeCaptureStatusToDisk(status)
+    return False
+
+
+def _requestRenderJobStatus(renderApiKey: str, renderServiceId: str, renderJobId: str) -> dict[str, object]:
+    response = requests.get(
+        f"{RENDER_API_BASE_URL}/services/{renderServiceId}/jobs/{renderJobId}",
+        headers={"Authorization": f"Bearer {renderApiKey}", "Accept": "application/json"},
+        timeout=10,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("Unexpected Render job status response")
+    return payload
+
+
+def _startCaptureRenderJob(mode: str, projectRedmineId: int | None, totalProjects: int) -> bool:
+    renderConfig = _getRenderAutomationConfig()
+    if renderConfig is None:
+        return False
+
+    renderApiKey, renderServiceId = renderConfig
+    with captureStatusLock:
+        currentStatus = _readCaptureStatusFromDisk()
+        currentRenderJobId = str(currentStatus.get("render_job_id") or "")
+        if currentStatus.get("runner_kind") == "render_job" and currentRenderJobId:
+            try:
+                payload = _requestRenderJobStatus(renderApiKey, renderServiceId, currentRenderJobId)
+            except Exception:
+                payload = None
+            if payload and str(payload.get("status") or "") not in {"succeeded", "canceled", "failed"}:
+                return False
+
+        _writeInitialCaptureStatus(
+            mode=mode,
+            totalProjects=totalProjects,
+            projectRedmineId=projectRedmineId,
+            runnerKind="render_job",
+        )
+
+        response = requests.post(
+            f"{RENDER_API_BASE_URL}/services/{renderServiceId}/jobs",
+            headers={
+                "Authorization": f"Bearer {renderApiKey}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            json={"startCommand": _buildRenderCaptureWorkerCommand(mode, projectRedmineId)},
+            timeout=15,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict) or not payload.get("id"):
+            raise RuntimeError("Render did not return a job identifier")
+
+        runningStatus = _readCaptureStatusFromDisk()
+        runningStatus.update(
+            {
+                "runner_kind": "render_job",
+                "render_job_id": str(payload.get("id")),
+                "worker_pid": None,
+                "mode": mode,
+                "project_redmine_id": projectRedmineId,
+            }
+        )
+        _writeCaptureStatusToDisk(runningStatus)
+        return True
+
+
+def _refreshCaptureStatusFromRenderJob(status: dict[str, object]) -> dict[str, object]:
+    renderJobId = str(status.get("render_job_id") or "")
+    renderConfig = _getRenderAutomationConfig()
+    if not renderJobId or renderConfig is None:
+        return status
+
+    renderApiKey, renderServiceId = renderConfig
+    try:
+        payload = _requestRenderJobStatus(renderApiKey, renderServiceId, renderJobId)
+    except Exception as error:
+        status["error_message"] = f"Не удалось получить статус фоновой загрузки: {error}"
+        _writeCaptureStatusToDisk(status)
+        return status
+
+    jobStatus = str(payload.get("status") or "")
+    status["render_job_id"] = renderJobId
+    status["runner_kind"] = "render_job"
+
+    if jobStatus in {"pending", "running"}:
+        status["is_running"] = True
+        status["error_message"] = None
+        _writeCaptureStatusToDisk(status)
+        return status
+
+    status["is_running"] = False
+    if jobStatus == "succeeded":
+        status["error_message"] = None
+    else:
+        status["error_message"] = f"Фоновая загрузка завершилась со статусом Render job: {jobStatus}."
+    _writeCaptureStatusToDisk(status)
+    return status
+
+
 def _startCaptureWorkerProcess(mode: str, projectRedmineId: int | None, totalProjects: int) -> bool:
     with captureStatusLock:
         _cleanupStaleCaptureArtifacts()
@@ -291,7 +431,12 @@ def _startCaptureWorkerProcess(mode: str, projectRedmineId: int | None, totalPro
                 ensure_ascii=False,
             )
 
-        _writeInitialCaptureStatus(mode=mode, totalProjects=totalProjects, projectRedmineId=projectRedmineId)
+        _writeInitialCaptureStatus(
+            mode=mode,
+            totalProjects=totalProjects,
+            projectRedmineId=projectRedmineId,
+            runnerKind="local_process",
+        )
 
         command = _buildCaptureWorkerCommand(mode, projectRedmineId)
         popenParameters: dict[str, object] = {
@@ -324,7 +469,15 @@ def _startCaptureWorkerProcess(mode: str, projectRedmineId: int | None, totalPro
             }
         )
         runningStatus = _readCaptureStatusFromDisk()
-        runningStatus.update({"worker_pid": process.pid, "mode": mode, "project_redmine_id": projectRedmineId})
+        runningStatus.update(
+            {
+                "worker_pid": process.pid,
+                "mode": mode,
+                "project_redmine_id": projectRedmineId,
+                "runner_kind": "local_process",
+                "render_job_id": None,
+            }
+        )
         _writeCaptureStatusToDisk(runningStatus)
         return True
 
@@ -355,7 +508,10 @@ def resetIssueSnapshotCaptureStatus() -> None:
 def getIssueSnapshotCaptureStatus() -> dict[str, object]:
     with captureStatusLock:
         _cleanupStaleCaptureArtifacts()
-        return _readCaptureStatusFromDisk()
+        status = _readCaptureStatusFromDisk()
+        if status.get("runner_kind") == "render_job":
+            status = _refreshCaptureStatusFromRenderJob(status)
+        return status
 
 
 def isIssueSnapshotCaptureRunning() -> bool:
@@ -363,10 +519,44 @@ def isIssueSnapshotCaptureRunning() -> bool:
 
 
 def startIssueSnapshotCaptureInBackground() -> bool:
+    try:
+        if _startCaptureRenderJob(mode="all", projectRedmineId=None, totalProjects=0):
+            return True
+    except Exception as error:
+        return _setCaptureStartBlocked(
+            f"Не удалось запустить безопасную фоновую загрузку: {error}",
+            mode="all",
+            projectRedmineId=None,
+            totalProjects=0,
+        )
+    if _isProductionEnvironment():
+        return _setCaptureStartBlocked(
+            "Безопасный отдельный исполнитель загрузки срезов не настроен. На текущем режиме ручная загрузка с web-сервера отключена, чтобы не останавливать сайт.",
+            mode="all",
+            projectRedmineId=None,
+            totalProjects=0,
+        )
     return _startCaptureWorkerProcess(mode="all", projectRedmineId=None, totalProjects=0)
 
 
 def startProjectIssueSnapshotCaptureInBackground(projectRedmineId: int) -> bool:
+    try:
+        if _startCaptureRenderJob(mode="project", projectRedmineId=projectRedmineId, totalProjects=1):
+            return True
+    except Exception as error:
+        return _setCaptureStartBlocked(
+            f"Не удалось запустить безопасную фоновую загрузку: {error}",
+            mode="project",
+            projectRedmineId=projectRedmineId,
+            totalProjects=1,
+        )
+    if _isProductionEnvironment():
+        return _setCaptureStartBlocked(
+            "Безопасный отдельный исполнитель загрузки срезов не настроен. На текущем режиме ручная загрузка с web-сервера отключена, чтобы не останавливать сайт.",
+            mode="project",
+            projectRedmineId=projectRedmineId,
+            totalProjects=1,
+        )
     return _startCaptureWorkerProcess(mode="project", projectRedmineId=projectRedmineId, totalProjects=1)
 
 
@@ -398,6 +588,7 @@ def runIssueSnapshotCaptureJob(
             "worker_pid": os.getpid(),
             "mode": mode,
             "project_redmine_id": projectRedmineId,
+            "runner_kind": runningStatus.get("runner_kind") or "local_process",
         }
     )
     if not runningStatus.get("started_at"):
