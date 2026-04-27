@@ -44,6 +44,7 @@ from src.redmine.db import (
     listPlanningProjectsByRedmineIdentifier,
     listFilteredSnapshotIssuesForProjectByDate,
     listLatestSnapshotIssuesWithParents,
+    listIssueSnapshotCaptureErrors,
     listPlanningProjects,
     listRecentIssueSnapshotRuns,
     listSnapshotDatesForProject,
@@ -1604,6 +1605,55 @@ PAGE_HTML = """<!doctype html>
       color: var(--blue-302);
     }
 
+    .status-history-link {
+      color: inherit;
+      text-decoration: underline dotted rgba(55, 93, 119, 0.5);
+      text-underline-offset: 3px;
+      text-decoration-thickness: 1px;
+      margin-left: 8px;
+      cursor: pointer;
+    }
+
+    .status-history-link:hover {
+      text-decoration-color: currentColor;
+    }
+
+    .status-history {
+      margin-top: 10px;
+      padding: 12px 14px;
+      border: 1px solid rgba(55, 93, 119, 0.16);
+      border-radius: 10px;
+      background: rgba(247, 250, 252, 0.92);
+      color: var(--text);
+    }
+
+    .status-history[hidden] {
+      display: none;
+    }
+
+    .status-history-title {
+      margin: 0 0 8px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--blue-302);
+    }
+
+    .status-history-list {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .status-history-list li {
+      line-height: 1.45;
+    }
+
+    .status-history-empty {
+      margin: 0;
+      color: var(--muted);
+    }
+
     .meta {
       font-size: 0.98rem;
       color: var(--muted);
@@ -1957,6 +2007,7 @@ PAGE_HTML = """<!doctype html>
           <button id="strangeIssuesPageButton" type="button">Вопросы по задачам</button>
         </div>
         <div class="status" id="captureStatus"></div>
+        <div class="status-history" id="captureStatusHistory" hidden></div>
       </article>
 
       <article class="panel" id="delete-snapshot">
@@ -2080,6 +2131,7 @@ PAGE_HTML = """<!doctype html>
   <script>
     const projectsStatus = document.getElementById("projectsStatus");
     const captureStatus = document.getElementById("captureStatus");
+    const captureStatusHistory = document.getElementById("captureStatusHistory");
     const deleteStatus = document.getElementById("deleteStatus");
     const projectsCount = document.getElementById("projectsCount");
     const snapshotRunsCount = document.getElementById("snapshotRunsCount");
@@ -2106,6 +2158,7 @@ PAGE_HTML = """<!doctype html>
     let allProjects = [];
     let planningProjectIdentifiers = new Set();
     let allSnapshotRuns = [];
+    let captureErrorsExpanded = false;
     const projectsNameFilterStorageKey = "redmine.projects.nameFilter";
     const projectsFactFilterStorageKey = "redmine.projects.factFilter.min";
     const showDisabledProjectsStorageKey = "redmine.projects.showDisabled";
@@ -2114,6 +2167,91 @@ PAGE_HTML = """<!doctype html>
     function setStatus(element, message, kind = "") {
       element.textContent = message;
       element.className = "status" + (kind ? " " + kind : "");
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function clearCaptureErrorHistory() {
+      captureErrorsExpanded = false;
+      captureStatusHistory.hidden = true;
+      captureStatusHistory.innerHTML = "";
+    }
+
+    function renderCaptureErrorStatus(message) {
+      captureStatus.className = "status error";
+      captureStatus.innerHTML = `${escapeHtml(message)} <a href="#" class="status-history-link" id="captureStatusHistoryLink">Показать все ошибки</a>`;
+      const historyLink = document.getElementById("captureStatusHistoryLink");
+      if (historyLink) {
+        historyLink.addEventListener("click", async (event) => {
+          event.preventDefault();
+          if (captureErrorsExpanded) {
+            clearCaptureErrorHistory();
+            captureStatus.className = "status error";
+            captureStatus.innerHTML = `${escapeHtml(message)} <a href="#" class="status-history-link" id="captureStatusHistoryLink">Показать все ошибки</a>`;
+            const resetLink = document.getElementById("captureStatusHistoryLink");
+            if (resetLink) {
+              resetLink.addEventListener("click", async (resetEvent) => {
+                resetEvent.preventDefault();
+                await loadCaptureErrorHistory(message);
+              });
+            }
+            return;
+          }
+          await loadCaptureErrorHistory(message);
+        });
+      }
+    }
+
+    async function loadCaptureErrorHistory(currentMessage = "") {
+      captureErrorsExpanded = true;
+      captureStatusHistory.hidden = false;
+      captureStatusHistory.innerHTML = '<p class="status-history-empty">Загружаем историю ошибок...</p>';
+
+      try {
+        const response = await fetch("/api/issues/snapshots/capture-errors");
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось загрузить историю ошибок.");
+        }
+
+        const errors = Array.isArray(payload.errors) ? payload.errors : [];
+        if (!errors.length) {
+          captureStatusHistory.innerHTML = '<p class="status-history-empty">Сохраненных ошибок пока нет.</p>';
+          return;
+        }
+
+        const itemsHtml = errors.map((item) => {
+          const createdAt = escapeHtml(formatDate(item.created_at));
+          const projectPart = item.project_name
+            ? ` • ${escapeHtml(item.project_name)}`
+            : item.project_redmine_id
+              ? ` • проект ${escapeHtml(item.project_redmine_id)}`
+              : "";
+          const modePart = item.mode ? ` • режим ${escapeHtml(item.mode)}` : "";
+          const runnerPart = item.runner_kind ? ` • ${escapeHtml(item.runner_kind)}` : "";
+          const datePart = item.captured_for_date ? ` • дата ${escapeHtml(item.captured_for_date)}` : "";
+          return `<li><span class="mono">${createdAt}</span>${projectPart}${modePart}${runnerPart}${datePart}<br>${escapeHtml(item.message || "")}</li>`;
+        }).join("");
+
+        captureStatusHistory.innerHTML = `
+          <p class="status-history-title">История ошибок загрузки срезов</p>
+          <ol class="status-history-list">${itemsHtml}</ol>
+        `;
+        renderCaptureErrorStatus(currentMessage || errors[0]?.message || "Ошибка загрузки срезов.");
+        const activeLink = document.getElementById("captureStatusHistoryLink");
+        if (activeLink) {
+          activeLink.textContent = "Скрыть ошибки";
+        }
+      } catch (error) {
+        captureStatusHistory.innerHTML = `<p class="status-history-empty">${escapeHtml(error.message || "Не удалось загрузить историю ошибок.")}</p>`;
+      }
     }
 
     function formatDate(value) {
@@ -2434,13 +2572,14 @@ PAGE_HTML = """<!doctype html>
           await loadSnapshotRuns();
 
           if (payload.error_message) {
-            setStatus(captureStatus, payload.error_message, "error");
+            renderCaptureErrorStatus(payload.error_message);
             captureSnapshotsButton.disabled = false;
             recaptureSnapshotsButton.disabled = false;
             return;
           }
 
           if (payload.created_runs || payload.captured_issues || payload.already_captured_projects) {
+            clearCaptureErrorHistory();
             setStatus(
               captureStatus,
               `\u0413\u043e\u0442\u043e\u0432\u043e: \u0441\u043e\u0437\u0434\u0430\u043d\u043e \u0441\u0440\u0435\u0437\u043e\u0432 ${payload.created_runs ?? 0}, \u0437\u0430\u0434\u0430\u0447 ${payload.captured_issues ?? 0}, \u0443\u0436\u0435 \u0431\u044b\u043b\u043e \u0441\u0440\u0435\u0437\u043e\u0432 \u043d\u0430 \u0441\u0435\u0433\u043e\u0434\u043d\u044f ${payload.already_captured_projects ?? 0}.`,
@@ -2471,6 +2610,7 @@ PAGE_HTML = """<!doctype html>
         }
 
         const pagesSuffix = pagesParts.length ? ` (${pagesParts.join(", ")})` : "";
+        clearCaptureErrorHistory();
         setStatus(
           captureStatus,
           `\u041f\u043e\u043b\u0443\u0447\u0430\u0435\u043c \u0441\u0440\u0435\u0437\u044b \u0437\u0430\u0434\u0430\u0447 \u043f\u043e \u043f\u0440\u043e\u0435\u043a\u0442\u0443 ${projectName}... ${processedProjects}/${totalProjects}${pagesSuffix}`
@@ -2652,6 +2792,7 @@ PAGE_HTML = """<!doctype html>
 
     async function captureSnapshotForProject(projectId) {
       captureSnapshotsButton.disabled = true;
+      clearCaptureErrorHistory();
       setStatus(captureStatus, `Запускаем получение среза по проекту ${projectId}...`);
 
       try {
@@ -2670,6 +2811,7 @@ PAGE_HTML = """<!doctype html>
         startCaptureProgressPolling();
       } catch (error) {
         stopCaptureProgressPolling();
+        clearCaptureErrorHistory();
         setStatus(captureStatus, error.message, "error");
         captureSnapshotsButton.disabled = false;
       }
@@ -2781,6 +2923,7 @@ PAGE_HTML = """<!doctype html>
     async function captureSnapshots() {
       captureSnapshotsButton.disabled = true;
       recaptureSnapshotsButton.disabled = true;
+      clearCaptureErrorHistory();
       setStatus(captureStatus, "Запускаем получение срезов...");
 
       try {
@@ -2799,6 +2942,7 @@ PAGE_HTML = """<!doctype html>
         startCaptureProgressPolling();
       } catch (error) {
         stopCaptureProgressPolling();
+        clearCaptureErrorHistory();
         setStatus(captureStatus, error.message, "error");
         captureSnapshotsButton.disabled = false;
         recaptureSnapshotsButton.disabled = false;
@@ -2808,6 +2952,7 @@ PAGE_HTML = """<!doctype html>
     async function recaptureSnapshots() {
       captureSnapshotsButton.disabled = true;
       recaptureSnapshotsButton.disabled = true;
+      clearCaptureErrorHistory();
       setStatus(captureStatus, "Запускаем обновление последних срезов...");
 
       try {
@@ -2826,6 +2971,7 @@ PAGE_HTML = """<!doctype html>
         startCaptureProgressPolling();
       } catch (error) {
         stopCaptureProgressPolling();
+        clearCaptureErrorHistory();
         setStatus(captureStatus, error.message, "error");
         captureSnapshotsButton.disabled = false;
         recaptureSnapshotsButton.disabled = false;
@@ -10778,6 +10924,12 @@ def recaptureIssueSnapshots() -> dict[str, object]:
 @app.get("/api/issues/snapshots/capture-status")
 def getIssueSnapshotCaptureProgress() -> dict[str, object]:
     return getIssueSnapshotCaptureStatus()
+
+
+@app.get("/api/issues/snapshots/capture-errors")
+def getIssueSnapshotCaptureErrors(limit: int = Query(50, ge=1, le=500)) -> dict[str, object]:
+    ensureIssueSnapshotTables()
+    return {"errors": listIssueSnapshotCaptureErrors(limit)}
 
 
 @app.get("/api/redmine/issues/{issue_redmine_id}/snapshot-diagnostics")

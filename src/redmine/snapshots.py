@@ -12,6 +12,7 @@ from requests import HTTPError
 
 from src.redmine.config import loadConfig
 from src.redmine.db import (
+    appendIssueSnapshotCaptureErrorRecord,
     createIssueSnapshotRun,
     ensureIssueSnapshotTables,
     ensureProjectsTable,
@@ -86,6 +87,66 @@ def _parseIso(value: object) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
+
+
+def _recordCaptureError(
+    message: str,
+    *,
+    status: dict[str, object] | None = None,
+    mode: str | None = None,
+    projectRedmineId: int | None = None,
+    projectName: str | None = None,
+    capturedForDate: str | None = None,
+    runnerKind: str | None = None,
+    renderJobId: str | None = None,
+    dedupeWithinStatus: bool = False,
+) -> None:
+    normalizedMessage = str(message or "").strip()
+    if not normalizedMessage:
+        return
+
+    payload = status if isinstance(status, dict) else None
+    effectiveMode = mode if mode is not None else (str(payload.get("mode") or "") or None if payload else None)
+    effectiveProjectRedmineId = projectRedmineId
+    if effectiveProjectRedmineId is None and payload is not None:
+        effectiveProjectRedmineId = int(payload.get("project_redmine_id") or 0) or None
+    effectiveProjectName = projectName
+    if effectiveProjectName is None and payload is not None:
+        effectiveProjectName = str(payload.get("current_project_name") or payload.get("last_completed_project_name") or "") or None
+    effectiveCapturedForDate = capturedForDate if capturedForDate is not None else (str(payload.get("captured_for_date") or "") or None if payload else None)
+    effectiveRunnerKind = runnerKind if runnerKind is not None else (str(payload.get("runner_kind") or "") or None if payload else None)
+    effectiveRenderJobId = renderJobId if renderJobId is not None else (str(payload.get("render_job_id") or "") or None if payload else None)
+    signature = json.dumps(
+        {
+            "message": normalizedMessage,
+            "mode": effectiveMode,
+            "project_redmine_id": effectiveProjectRedmineId,
+            "runner_kind": effectiveRunnerKind,
+            "render_job_id": effectiveRenderJobId,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+    if dedupeWithinStatus and payload is not None:
+        if str(payload.get("last_recorded_error_signature") or "") == signature:
+            return
+
+    try:
+        appendIssueSnapshotCaptureErrorRecord(
+            message=normalizedMessage,
+            mode=effectiveMode,
+            projectRedmineId=effectiveProjectRedmineId,
+            projectName=effectiveProjectName,
+            capturedForDate=effectiveCapturedForDate,
+            runnerKind=effectiveRunnerKind,
+            renderJobId=effectiveRenderJobId,
+        )
+    except Exception:
+        return
+
+    if payload is not None:
+        payload["last_recorded_error_signature"] = signature
 
 
 def _ensureCaptureStatusDir() -> None:
@@ -229,6 +290,7 @@ def _cleanupStaleCaptureArtifacts() -> None:
                 "error_message": str(status.get("error_message") or "Фоновая загрузка завершилась раньше времени."),
             }
         )
+        _recordCaptureError(str(status.get("error_message") or ""), status=status, dedupeWithinStatus=True)
         _writeCaptureStatusToDisk(status)
 
 
@@ -317,6 +379,7 @@ def _setCaptureStartBlocked(message: str, mode: str, projectRedmineId: int | Non
             "error_message": message,
         }
     )
+    _recordCaptureError(message, status=status, dedupeWithinStatus=False)
     _writeCaptureStatusToDisk(status)
     return False
 
@@ -398,6 +461,7 @@ def _refreshCaptureStatusFromRenderJob(status: dict[str, object]) -> dict[str, o
         payload = _requestRenderJobStatus(renderApiKey, renderServiceId, renderJobId)
     except Exception as error:
         status["error_message"] = f"Не удалось получить статус фоновой загрузки: {error}"
+        _recordCaptureError(status["error_message"], status=status, dedupeWithinStatus=True)
         _writeCaptureStatusToDisk(status)
         return status
 
@@ -418,6 +482,7 @@ def _refreshCaptureStatusFromRenderJob(status: dict[str, object]) -> dict[str, o
         existingError = str(status.get("error_message") or "").strip()
         if not existingError:
             status["error_message"] = f"Фоновая загрузка завершилась со статусом Render job: {jobStatus}."
+        _recordCaptureError(str(status.get("error_message") or ""), status=status, dedupeWithinStatus=True)
     _writeCaptureStatusToDisk(status)
     return status
 
@@ -476,6 +541,7 @@ def _startCaptureWorkerProcess(mode: str, projectRedmineId: int | None, totalPro
             _removeCaptureLock()
             failedStatus = _buildDefaultCaptureStatus()
             failedStatus["error_message"] = f"Не удалось запустить загрузку срезов: {error}"
+            _recordCaptureError(failedStatus["error_message"], status=failedStatus, dedupeWithinStatus=False)
             _writeCaptureStatusToDisk(failedStatus)
             raise
 
@@ -630,6 +696,9 @@ def runIssueSnapshotCaptureJob(
             current_project_time_pages_total=0,
             error_message=str(error),
         )
+        failedStatus = _readCaptureStatusFromDisk()
+        _recordCaptureError(str(error), status=failedStatus, dedupeWithinStatus=True)
+        _writeCaptureStatusToDisk(failedStatus)
         raise
     finally:
         _removeCaptureLock()

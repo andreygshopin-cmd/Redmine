@@ -212,6 +212,24 @@ def ensureIssueSnapshotTables() -> None:
             connection.execute(
                 text(
                     """
+                    CREATE TABLE IF NOT EXISTS issue_snapshot_capture_errors (
+                        id BIGSERIAL PRIMARY KEY,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        mode TEXT NULL,
+                        project_redmine_id INTEGER NULL,
+                        project_name TEXT NULL,
+                        captured_for_date DATE NULL,
+                        runner_kind TEXT NULL,
+                        render_job_id TEXT NULL,
+                        message TEXT NOT NULL
+                    )
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
                     ALTER TABLE issue_snapshot_runs
                     ADD COLUMN IF NOT EXISTS captured_for_date DATE NOT NULL DEFAULT CURRENT_DATE
                     """
@@ -379,6 +397,86 @@ def writeIssueSnapshotCaptureStatusRecord(status: dict[str, object]) -> None:
             ),
             {"payload": payload},
         )
+
+
+def appendIssueSnapshotCaptureErrorRecord(
+    *,
+    message: str,
+    mode: str | None = None,
+    projectRedmineId: int | None = None,
+    projectName: str | None = None,
+    capturedForDate: str | None = None,
+    runnerKind: str | None = None,
+    renderJobId: str | None = None,
+) -> None:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO issue_snapshot_capture_errors (
+                    mode,
+                    project_redmine_id,
+                    project_name,
+                    captured_for_date,
+                    runner_kind,
+                    render_job_id,
+                    message
+                ) VALUES (
+                    :mode,
+                    :project_redmine_id,
+                    :project_name,
+                    CAST(:captured_for_date AS DATE),
+                    :runner_kind,
+                    :render_job_id,
+                    :message
+                )
+                """
+            ),
+            {
+                "mode": mode,
+                "project_redmine_id": projectRedmineId,
+                "project_name": projectName,
+                "captured_for_date": capturedForDate,
+                "runner_kind": runnerKind,
+                "render_job_id": renderJobId,
+                "message": message,
+            },
+        )
+
+
+def listIssueSnapshotCaptureErrors(limit: int = 100) -> list[dict[str, object]]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+    safeLimit = max(1, min(int(limit or 100), 500))
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    created_at,
+                    mode,
+                    project_redmine_id,
+                    project_name,
+                    captured_for_date,
+                    runner_kind,
+                    render_job_id,
+                    message
+                FROM issue_snapshot_capture_errors
+                ORDER BY created_at DESC, id DESC
+                LIMIT :limit_value
+                """
+            ),
+            {"limit_value": safeLimit},
+        ).mappings().all()
+
+    return [dict(row) for row in rows]
 
 
 def ensurePlanningProjectsTable() -> None:
