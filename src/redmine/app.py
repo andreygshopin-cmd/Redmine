@@ -9625,7 +9625,7 @@ def buildProjectsSummaryPage() -> str:
       color: var(--muted);
     }}
     .table-wrap {{
-      overflow: auto;
+      overflow: visible;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #ffffff;
@@ -9650,9 +9650,7 @@ def buildProjectsSummaryPage() -> str:
       line-height: 1.2;
     }}
     thead {{
-      position: sticky;
-      top: 0;
-      z-index: 5;
+      position: static;
     }}
     thead tr:first-child th {{
       position: sticky;
