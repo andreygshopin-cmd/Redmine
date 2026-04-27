@@ -7375,6 +7375,7 @@ def buildProjectsSummaryPage() -> str:
     .table-wrap {{
       overflow: auto;
       position: relative;
+      height: calc(100vh - 260px);
       max-height: calc(100vh - 260px);
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -9648,10 +9649,15 @@ def buildProjectsSummaryPage() -> str:
       font-size: 0.78rem;
       line-height: 1.2;
     }}
+    thead {{
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }}
     thead tr:first-child th {{
       position: sticky;
       top: 0;
-      z-index: 4;
+      z-index: 6;
     }}
     .summary-filter-row th {{
       background: #f8fbfc;
@@ -9659,7 +9665,7 @@ def buildProjectsSummaryPage() -> str:
       padding-bottom: 8px;
       position: sticky;
       top: var(--projects-summary-header-height, 44px);
-      z-index: 3;
+      z-index: 5;
     }}
     .summary-filter-input {{
       width: 100%;
