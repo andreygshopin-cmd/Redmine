@@ -1701,9 +1701,16 @@ PAGE_HTML = """<!doctype html>
       white-space: nowrap;
     }
 
+    .project-enabled-col {
+      width: 11ch;
+      min-width: 11ch;
+      max-width: 11ch;
+    }
+
     .project-name-cell {
       white-space: nowrap;
       position: relative;
+      overflow: hidden;
     }
 
     .project-name-col {
@@ -1727,6 +1734,8 @@ PAGE_HTML = """<!doctype html>
       display: inline-flex;
       align-items: center;
       gap: 8px;
+      min-width: 0;
+      max-width: 100%;
     }
 
     .project-planning-button {
@@ -1770,6 +1779,8 @@ PAGE_HTML = """<!doctype html>
       align-items: center;
       position: relative;
       padding-left: calc(var(--tree-level, 0) * 18px);
+      min-width: 0;
+      max-width: 100%;
     }
 
     .project-tree::before {
@@ -1877,6 +1888,12 @@ PAGE_HTML = """<!doctype html>
       white-space: nowrap;
       font-weight: 400;
       border-bottom: 1px dashed currentColor;
+      display: block;
+      flex: 1 1 auto;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .project-link:hover {
@@ -2090,7 +2107,7 @@ PAGE_HTML = """<!doctype html>
         <table>
           <thead>
             <tr>
-              <th class="checkbox-cell project-sticky-1">
+              <th class="checkbox-cell project-enabled-col project-sticky-1">
                 <label>
                   <input id="enableVisibleProjectsCheckbox" type="checkbox">
                   Вкл.
@@ -2718,7 +2735,7 @@ PAGE_HTML = """<!doctype html>
           }
           row.className = rowClasses.join(" ");
           row.innerHTML = `
-            <td class="checkbox-cell project-sticky-1"><input class="project-enabled-checkbox" type="checkbox" data-project-id="${redmineId}" ${project?.is_enabled ? "checked" : ""}></td>
+            <td class="checkbox-cell project-enabled-col project-sticky-1"><input class="project-enabled-checkbox" type="checkbox" data-project-id="${redmineId}" ${project?.is_enabled ? "checked" : ""}></td>
             <td class="checkbox-cell"><input class="project-partial-checkbox" type="checkbox" data-project-id="${redmineId}" ${project?.partial_load ? "checked" : ""} ${project?.is_enabled ? "" : "disabled"}></td>
             <td class="mono project-sticky-2">
               <span class="project-id-actions">
