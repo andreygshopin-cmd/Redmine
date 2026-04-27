@@ -415,7 +415,9 @@ def _refreshCaptureStatusFromRenderJob(status: dict[str, object]) -> dict[str, o
     if jobStatus == "succeeded":
         status["error_message"] = None
     else:
-        status["error_message"] = f"Фоновая загрузка завершилась со статусом Render job: {jobStatus}."
+        existingError = str(status.get("error_message") or "").strip()
+        if not existingError:
+            status["error_message"] = f"Фоновая загрузка завершилась со статусом Render job: {jobStatus}."
     _writeCaptureStatusToDisk(status)
     return status
 
