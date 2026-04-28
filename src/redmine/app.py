@@ -5902,9 +5902,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       <input class="page-size-input" id="snapshotPageSizeInput" type="number" min="10" max="10000" step="10" value="{initialPageSize}">
       <button type="button" class="secondary-button" id="applySnapshotPageSizeButton">Показать</button>
       <button type="button" class="secondary-button" id="exportSnapshotCsvButton">Выгрузить CSV</button>
-      <button type="button" class="secondary-button" id="viewSnapshotTimeEntriesButton">Списание времени</button>
-      <button type="button" id="recaptureSnapshotButton">Загрузить/обновить последний срез</button>
       <button type="button" id="deleteSnapshotButton">Удалить выбранный срез</button>
+      <button type="button" id="recaptureSnapshotButton">Загрузить/обновить последний срез</button>
+      <button type="button" class="secondary-button" id="viewSnapshotTimeEntriesButton">Списание времени</button>
       </div>
       <div class="action-status" id="snapshotActionStatus"></div>
       <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Дата среза: {capturedForDate}. По фильтру: <span id="filteredIssuesCount">{initialFilteredIssues}</span> из {initialTotalIssues}. На странице: <span id="pageIssuesCount">{len(issues)}</span>.</p>
@@ -6829,6 +6829,77 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 </html>"""
 
 
+SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG = [
+    {"key": "id", "label": "ID", "type": "number", "sum": False, "mono": True},
+    {"key": "snapshot_run_id", "label": "ID среза", "type": "number", "sum": False, "mono": True},
+    {"key": "project_redmine_id", "label": "ID проекта Redmine", "type": "number", "sum": False, "mono": True},
+    {"key": "project_name", "label": "Проект", "type": "text", "sum": False, "mono": False},
+    {"key": "time_entry_redmine_id", "label": "ID списания", "type": "number", "sum": False, "mono": True},
+    {"key": "issue_redmine_id", "label": "ID задачи", "type": "number", "sum": False, "mono": True},
+    {"key": "issue_subject", "label": "Тема задачи", "type": "text", "sum": False, "mono": False},
+    {"key": "issue_tracker_name", "label": "Трекер задачи", "type": "text", "sum": False, "mono": False},
+    {"key": "issue_status_name", "label": "Статус задачи", "type": "text", "sum": False, "mono": False},
+    {"key": "user_id", "label": "ID пользователя", "type": "number", "sum": False, "mono": True},
+    {"key": "user_name", "label": "Пользователь", "type": "text", "sum": False, "mono": False},
+    {"key": "activity_id", "label": "ID активности", "type": "number", "sum": False, "mono": True},
+    {"key": "activity_name", "label": "Активность", "type": "text", "sum": False, "mono": False},
+    {"key": "hours", "label": "Часы", "type": "hours", "sum": True, "mono": False},
+    {"key": "comments", "label": "Комментарий", "type": "text", "sum": False, "mono": False},
+    {"key": "spent_on", "label": "Дата списания", "type": "date", "sum": False, "mono": False},
+    {"key": "created_on", "label": "Создано", "type": "datetime", "sum": False, "mono": False},
+    {"key": "updated_on", "label": "Обновлено", "type": "datetime", "sum": False, "mono": False},
+]
+
+
+def _normalizeSnapshotTimeEntriesDateValue(value: str | None, fallback: str) -> str:
+    rawValue = str(value or "").strip()
+    if not rawValue:
+        return fallback
+    try:
+        return date.fromisoformat(rawValue).isoformat()
+    except ValueError:
+        return fallback
+
+
+def _formatSnapshotTimeEntryCellValue(columnKey: str, value: object) -> str:
+    if value in (None, ""):
+        return "—"
+    if columnKey == "hours":
+        return formatPageHours(value)
+    if columnKey in {"created_on", "updated_on"}:
+        return formatSnapshotPageDateTime(value)
+    return str(value)
+
+
+def _applySnapshotTimeEntriesFilters(
+    timeEntries: list[dict[str, object]],
+    filters: dict[str, str] | None = None,
+) -> list[dict[str, object]]:
+    normalizedFilters = {
+        key: str(value or "").strip().lower()
+        for key, value in (filters or {}).items()
+        if str(value or "").strip()
+    }
+    if not normalizedFilters:
+        return list(timeEntries)
+
+    filteredEntries: list[dict[str, object]] = []
+    for entry in timeEntries:
+        matches = True
+        for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG:
+            filterValue = normalizedFilters.get(column["key"])
+            if not filterValue:
+                continue
+            renderedValue = _formatSnapshotTimeEntryCellValue(column["key"], entry.get(column["key"])).lower()
+            if filterValue not in renderedValue:
+                matches = False
+                break
+        if matches:
+            filteredEntries.append(entry)
+
+    return filteredEntries
+
+
 def buildSnapshotTimeEntriesPage(
     projectRedmineId: int,
     capturedForDate: str | None,
@@ -6839,19 +6910,11 @@ def buildSnapshotTimeEntriesPage(
     defaultCapturedForDate = today.isoformat()
     defaultDateFrom = date(today.year, 1, 1).isoformat()
     defaultDateTo = today.isoformat()
+    defaultPageSize = 1000
 
-    def normalizeDateValue(value: str | None, fallback: str) -> str:
-        rawValue = str(value or "").strip()
-        if not rawValue:
-            return fallback
-        try:
-            return date.fromisoformat(rawValue).isoformat()
-        except ValueError:
-            return fallback
-
-    selectedCapturedForDate = normalizeDateValue(capturedForDate, defaultCapturedForDate)
-    selectedDateFrom = normalizeDateValue(dateFrom, defaultDateFrom)
-    selectedDateTo = normalizeDateValue(dateTo, defaultDateTo)
+    selectedCapturedForDate = _normalizeSnapshotTimeEntriesDateValue(capturedForDate, defaultCapturedForDate)
+    selectedDateFrom = _normalizeSnapshotTimeEntriesDateValue(dateFrom, defaultDateFrom)
+    selectedDateTo = _normalizeSnapshotTimeEntriesDateValue(dateTo, defaultDateTo)
     if selectedDateFrom > selectedDateTo:
         selectedDateFrom, selectedDateTo = selectedDateTo, selectedDateFrom
 
@@ -6863,7 +6926,6 @@ def buildSnapshotTimeEntriesPage(
     )
     snapshotRun = snapshotPayload["snapshot_run"]
     timeEntries = list(snapshotPayload.get("time_entries") or [])
-    availableDates = [str(value) for value in snapshotPayload.get("available_dates") or []]
     storedProjects = listStoredProjects()
     storedProject = next(
         (item for item in storedProjects if int(item.get("redmine_id") or 0) == projectRedmineId),
@@ -6893,7 +6955,6 @@ def buildSnapshotTimeEntriesPage(
     {buildProjectContextNavCss()}
     h1 {{ margin: 18px 0 12px; font-size: clamp(1.85rem, 4vw, 2.65rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }}
     .meta {{ color: #64798d; margin: 0 0 24px; }}
-    .meta-strong {{ color: #33bdd8; font-weight: 400; }}
     .toolbar {{ display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin: 0 0 18px; }}
     .toolbar label {{ display: flex; flex-direction: column; gap: 6px; font-weight: 600; color: #16324a; }}
     .toolbar input {{ border: 1px solid #d9e5eb; border-radius: 6px; padding: 8px 10px; font: inherit; }}
@@ -6940,49 +7001,29 @@ def buildSnapshotTimeEntriesPage(
         compareUrl=comparePageUrl,
     )
 
-    totalHours = sum(float(entry.get("hours") or 0) for entry in timeEntries)
-    columnConfig = [
-        ("id", "ID"),
-        ("snapshot_run_id", "ID среза"),
-        ("project_redmine_id", "ID проекта Redmine"),
-        ("project_name", "Проект"),
-        ("time_entry_redmine_id", "ID списания"),
-        ("issue_redmine_id", "ID задачи"),
-        ("issue_subject", "Тема задачи"),
-        ("issue_tracker_name", "Трекер задачи"),
-        ("issue_status_name", "Статус задачи"),
-        ("user_id", "ID пользователя"),
-        ("user_name", "Пользователь"),
-        ("activity_id", "ID активности"),
-        ("activity_name", "Активность"),
-        ("hours", "Часы"),
-        ("comments", "Комментарий"),
-        ("spent_on", "Дата списания"),
-        ("created_on", "Создано"),
-        ("updated_on", "Обновлено"),
-    ]
+    filteredEntries = _applySnapshotTimeEntriesFilters(timeEntries)
+    totalHours = sum(float(entry.get("hours") or 0) for entry in filteredEntries)
+    timeEntriesJson = json.dumps(timeEntries, ensure_ascii=False, default=str)
+    columnConfigJson = json.dumps(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG, ensure_ascii=False)
+    exportUrlBase = f"/projects/{projectRedmineId}/time-entries/export.csv"
 
-    def formatTimeEntryValue(key: str, value: object) -> str:
-        if value in (None, ""):
-            return "—"
-        if key == "hours":
-            return formatPageHours(value)
-        if key in {"created_on", "updated_on"}:
-            return formatSnapshotPageDateTime(value)
-        return escape(str(value))
+    summaryCells = []
+    for index, column in enumerate(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG):
+        if index == 0:
+            summaryCells.append(f'<th class="summary-label">Итого: <span id="timeEntriesFilteredCount">{len(filteredEntries)}</span></th>')
+            continue
+        if column.get("sum"):
+            summaryCells.append(
+                f'<th class="summary-value" data-summary-key="{escape(str(column["key"]))}">{formatPageHours(totalHours)}</th>'
+            )
+        else:
+            summaryCells.append("<th></th>")
 
-    rowsHtml: list[str] = []
-    if timeEntries:
-        for entry in timeEntries:
-            cells = []
-            for key, _ in columnConfig:
-                valueClass = "mono" if key in {"time_entry_redmine_id", "issue_redmine_id", "user_id", "activity_id"} else ""
-                cells.append(f'<td class="{valueClass}">{formatTimeEntryValue(key, entry.get(key))}</td>')
-            rowsHtml.append(f"<tr>{''.join(cells)}</tr>")
-    else:
-        rowsHtml.append(f'<tr><td colspan="{len(columnConfig)}">За выбранный период списания времени не найдены.</td></tr>')
-
-    headerHtml = "".join(f"<th>{escape(label)}</th>" for _, label in columnConfig)
+    headerCells = "".join(f'<th data-column-key="{escape(str(column["key"]))}">{escape(str(column["label"]))}</th>' for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG)
+    filterCells = "".join(
+        f'<th><input class="filter-input-table" type="text" data-filter-key="{escape(str(column["key"]))}"></th>'
+        for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG
+    )
 
     return f"""<!doctype html>
 <html lang="ru">
@@ -7002,26 +7043,68 @@ def buildSnapshotTimeEntriesPage(
       --muted: #64798d;
       --panel: #ffffff;
       --header: #eef6f7;
+      --header-2: #f7fbfc;
       --brand: #33bdd8;
+      --summary-top: 0px;
+      --time-header-top: 48px;
+      --time-filter-top: 92px;
     }}
     * {{ box-sizing: border-box; }}
     body {{ margin: 0; font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
-    main {{ max-width: 1600px; margin: 0 auto; padding: 24px 20px 48px; }}
+    main {{ max-width: 1720px; margin: 0 auto; padding: 24px 20px 48px; }}
     {buildProjectContextNavCss()}
     h1 {{ margin: 18px 0 12px; font-size: clamp(1.85rem, 4vw, 2.65rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }}
-    .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
+    .meta {{ color: var(--muted); margin: 0 0 18px; font-size: 1rem; }}
     .meta-strong {{ color: var(--brand); font-weight: 400; }}
     .toolbar {{ display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin: 0 0 18px; }}
     .toolbar label {{ display: flex; flex-direction: column; gap: 6px; font-weight: 600; color: var(--text); }}
     .toolbar input {{ border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }}
     .toolbar button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #375d77; color: #ffffff; }}
-    .table-wrap {{ overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }}
-    table {{ width: 100%; border-collapse: separate; border-spacing: 0; min-width: 1800px; }}
+    .secondary {{ background: #eef2f5; color: #16324a; border: 1px solid var(--line); }}
+    .table-actions {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }}
+    .pagination-wrap {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 12px; flex-wrap: wrap; }}
+    .pagination-buttons {{ display: flex; gap: 8px; align-items: center; }}
+    .pagination-info, .summary-note {{ color: var(--muted); font-size: 0.94rem; }}
+    .page-size-label {{ color: var(--muted); }}
+    .page-size-input {{ width: 110px; }}
+    .table-wrap {{ position: relative; overflow-x: auto; overflow-y: visible; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }}
+    table {{ width: 100%; border-collapse: separate; border-spacing: 0; min-width: 2200px; background: var(--panel); }}
     th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }}
-    th {{ position: sticky; top: 0; z-index: 2; background: var(--header); color: #426179; text-transform: uppercase; font-size: 0.74rem; line-height: 1.15; }}
+    thead .summary-row th {{
+      position: sticky;
+      top: var(--summary-top);
+      z-index: 5;
+      background: #ffffff;
+      color: #173b5a;
+      text-transform: none;
+      font-size: 0.92rem;
+      box-shadow: inset 0 -1px 0 var(--line);
+    }}
+    thead .header-row th {{
+      position: sticky;
+      top: var(--time-header-top);
+      z-index: 4;
+      background: var(--header);
+      color: #426179;
+      text-transform: uppercase;
+      font-size: 0.74rem;
+      line-height: 1.15;
+    }}
+    thead .filter-row th {{
+      position: sticky;
+      top: var(--time-filter-top);
+      z-index: 3;
+      background: var(--header-2);
+      padding-top: 6px;
+      padding-bottom: 6px;
+      box-shadow: inset 0 1px 0 var(--line);
+    }}
     tr:last-child td {{ border-bottom: 0; }}
     .mono {{ font-family: Consolas, "Courier New", monospace; white-space: nowrap; }}
-    .summary {{ margin: 0 0 16px; color: var(--muted); }}
+    .filter-input-table {{ width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; font-size: 0.82rem; line-height: 1.2; background: #ffffff; color: var(--text); }}
+    .summary-label {{ font-weight: 700; white-space: nowrap; }}
+    .summary-value {{ font-weight: 700; white-space: nowrap; }}
+    .empty-state {{ padding: 18px 20px; border: 1px solid var(--line); border-radius: 8px; background: #f8fbfd; color: var(--muted); }}
   </style>
 </head>
 <body>
@@ -7029,7 +7112,7 @@ def buildSnapshotTimeEntriesPage(
     {navPanelHtml}
     <h1>Списание времени</h1>
     <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Дата среза: {escape(selectedSnapshotDateRaw or "—")}.</p>
-    <form class="toolbar" method="get">
+    <form class="toolbar" id="timeEntriesForm" method="get">
       <label>Дата среза
         <input type="date" name="captured_for_date" value="{escape(selectedSnapshotDateRaw or selectedCapturedForDate)}">
       </label>
@@ -7039,19 +7122,252 @@ def buildSnapshotTimeEntriesPage(
       <label>Дата до
         <input type="date" name="date_to" value="{escape(selectedDateTo)}">
       </label>
-      <button type="submit">Показать списания</button>
+      <label class="page-size-label" for="timeEntriesPageSizeInput">Записей на странице</label>
+      <input class="page-size-input" id="timeEntriesPageSizeInput" type="number" min="10" max="10000" step="10" value="{defaultPageSize}">
+      <div class="table-actions">
+        <button type="submit">Показать списания</button>
+        <button type="button" class="secondary" id="exportTimeEntriesCsvButton">Выгрузить CSV</button>
+        <button type="button" class="secondary" id="resetTimeEntryFiltersButton">Сбросить фильтр</button>
+      </div>
     </form>
-    <p class="summary">Найдено списаний: {len(timeEntries)}. Сумма часов: {formatPageHours(totalHours)}.</p>
+    <div class="pagination-wrap">
+      <div class="pagination-buttons">
+        <button type="button" class="secondary" id="timeEntriesPrevPageButton">← Назад</button>
+        <button type="button" class="secondary" id="timeEntriesNextPageButton">Вперед →</button>
+      </div>
+      <div class="pagination-info" id="timeEntriesPaginationInfo">Страница 1 из 1</div>
+    </div>
+    <p class="summary-note">По текущему диапазону найдено записей: <span id="timeEntriesVisibleCount">{len(filteredEntries)}</span>. Сумма часов: <span id="timeEntriesHoursSummary">{formatPageHours(totalHours)}</span>.</p>
     <div class="table-wrap">
-      <table>
+      <table id="snapshotTimeEntriesTable">
         <thead>
-          <tr>{headerHtml}</tr>
+          <tr class="summary-row">
+            {''.join(summaryCells)}
+          </tr>
+          <tr class="header-row">
+            {headerCells}
+          </tr>
+          <tr class="filter-row">
+            {filterCells}
+          </tr>
         </thead>
-        <tbody>
-          {''.join(rowsHtml)}
+        <tbody id="snapshotTimeEntriesTableBody">
+          <tr><td colspan="{len(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG)}">Загружаем списания...</td></tr>
         </tbody>
       </table>
     </div>
+    <script>
+      const timeEntryColumns = {columnConfigJson};
+      const allTimeEntries = {timeEntriesJson};
+      const timeEntriesTable = document.getElementById("snapshotTimeEntriesTable");
+      const timeEntriesTableBody = document.getElementById("snapshotTimeEntriesTableBody");
+      const timeEntriesVisibleCount = document.getElementById("timeEntriesVisibleCount");
+      const timeEntriesHoursSummary = document.getElementById("timeEntriesHoursSummary");
+      const timeEntriesPageSizeInput = document.getElementById("timeEntriesPageSizeInput");
+      const timeEntriesPrevPageButton = document.getElementById("timeEntriesPrevPageButton");
+      const timeEntriesNextPageButton = document.getElementById("timeEntriesNextPageButton");
+      const timeEntriesPaginationInfo = document.getElementById("timeEntriesPaginationInfo");
+      const exportTimeEntriesCsvButton = document.getElementById("exportTimeEntriesCsvButton");
+      const resetTimeEntryFiltersButton = document.getElementById("resetTimeEntryFiltersButton");
+      const timeEntriesFilterInputs = Array.from(document.querySelectorAll("[data-filter-key]"));
+      const timeEntriesPageSizeStorageKey = "snapshotTimeEntriesPageSize";
+      let currentTimeEntriesPage = 1;
+      let currentTimeEntriesTotalPages = 1;
+
+      function escapeHtml(value) {{
+        return String(value ?? "").replace(/[&<>"']/g, (char) => {{
+          return {{
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+          }}[char] || char;
+        }});
+      }}
+
+      function formatHours(value) {{
+        const parsed = Number(value ?? 0);
+        if (!Number.isFinite(parsed)) {{
+          return "0,0";
+        }}
+        return parsed.toFixed(1).replace(".", ",");
+      }}
+
+      function formatDateTime(value) {{
+        if (!value) {{
+          return "—";
+        }}
+        return String(value).replace("T", " ").replace("+00:00", " UTC");
+      }}
+
+      function renderTimeEntryCell(entry, column) {{
+        const value = entry?.[column.key];
+        if (value === null || value === undefined || value === "") {{
+          return "—";
+        }}
+        if (column.key === "hours") {{
+          return formatHours(value);
+        }}
+        if (column.key === "created_on" || column.key === "updated_on") {{
+          return formatDateTime(value);
+        }}
+        return String(value);
+      }}
+
+      function getCurrentTimeEntryFilters() {{
+        const filters = {{}};
+        for (const input of timeEntriesFilterInputs) {{
+          filters[input.dataset.filterKey] = String(input.value || "").trim().toLowerCase();
+        }}
+        return filters;
+      }}
+
+      function getFilteredTimeEntries() {{
+        const filters = getCurrentTimeEntryFilters();
+        const activeKeys = Object.keys(filters).filter((key) => filters[key]);
+        if (!activeKeys.length) {{
+          return allTimeEntries.slice();
+        }}
+        return allTimeEntries.filter((entry) => {{
+          return activeKeys.every((key) => renderTimeEntryCell(entry, timeEntryColumns.find((column) => column.key === key)).toLowerCase().includes(filters[key]));
+        }});
+      }}
+
+      function updateTimeEntriesStickyOffsets() {{
+        const summaryRow = timeEntriesTable?.querySelector("thead .summary-row");
+        const headerRow = timeEntriesTable?.querySelector("thead .header-row");
+        const filterRow = timeEntriesTable?.querySelector("thead .filter-row");
+        if (!summaryRow || !headerRow || !filterRow || !timeEntriesTable) {{
+          return;
+        }}
+        const summaryHeight = Math.ceil(summaryRow.getBoundingClientRect().height || 44);
+        const headerHeight = Math.ceil(headerRow.getBoundingClientRect().height || 44);
+        timeEntriesTable.style.setProperty("--summary-top", "0px");
+        timeEntriesTable.style.setProperty("--time-header-top", `${{summaryHeight}}px`);
+        timeEntriesTable.style.setProperty("--time-filter-top", `${{summaryHeight + headerHeight}}px`);
+      }}
+
+      function updateTimeEntrySummary(filteredEntries) {{
+        timeEntriesVisibleCount.textContent = String(filteredEntries.length);
+        const totalHours = filteredEntries.reduce((sum, entry) => sum + Number(entry?.hours || 0), 0);
+        timeEntriesHoursSummary.textContent = formatHours(totalHours);
+        const hoursSummaryCell = document.querySelector('[data-summary-key="hours"]');
+        if (hoursSummaryCell) {{
+          hoursSummaryCell.textContent = formatHours(totalHours);
+        }}
+        const countCell = document.getElementById("timeEntriesFilteredCount");
+        if (countCell) {{
+          countCell.textContent = String(filteredEntries.length);
+        }}
+      }}
+
+      function updateTimeEntriesPagination(filteredEntries) {{
+        const requestedPageSize = Number(timeEntriesPageSizeInput?.value || {defaultPageSize});
+        const safePageSize = Number.isFinite(requestedPageSize) ? Math.min(10000, Math.max(10, Math.floor(requestedPageSize))) : {defaultPageSize};
+        timeEntriesPageSizeInput.value = String(safePageSize);
+        window.localStorage.setItem(timeEntriesPageSizeStorageKey, String(safePageSize));
+
+        currentTimeEntriesTotalPages = Math.max(1, Math.ceil(filteredEntries.length / safePageSize));
+        currentTimeEntriesPage = Math.min(currentTimeEntriesPage, currentTimeEntriesTotalPages);
+        const startIndex = (currentTimeEntriesPage - 1) * safePageSize;
+        const pageEntries = filteredEntries.slice(startIndex, startIndex + safePageSize);
+
+        timeEntriesPaginationInfo.textContent = `Страница ${{currentTimeEntriesPage}} из ${{currentTimeEntriesTotalPages}}`;
+        timeEntriesPrevPageButton.disabled = currentTimeEntriesPage <= 1;
+        timeEntriesNextPageButton.disabled = currentTimeEntriesPage >= currentTimeEntriesTotalPages;
+        return pageEntries;
+      }}
+
+      function renderTimeEntriesRows(entries) {{
+        if (!entries.length) {{
+          timeEntriesTableBody.innerHTML = `<tr><td colspan="${{timeEntryColumns.length}}">За выбранный период списания времени не найдены.</td></tr>`;
+          return;
+        }}
+
+        timeEntriesTableBody.innerHTML = entries.map((entry) => {{
+          const cells = timeEntryColumns.map((column) => {{
+            const valueClass = column.mono ? "mono" : "";
+            return `<td class="${{valueClass}}">${{escapeHtml(renderTimeEntryCell(entry, column))}}</td>`;
+          }}).join("");
+          return `<tr>${{cells}}</tr>`;
+        }}).join("");
+      }}
+
+      function rerenderTimeEntries(resetPage = false) {{
+        const filteredEntries = getFilteredTimeEntries();
+        if (resetPage) {{
+          currentTimeEntriesPage = 1;
+        }}
+        updateTimeEntrySummary(filteredEntries);
+        const pageEntries = updateTimeEntriesPagination(filteredEntries);
+        renderTimeEntriesRows(pageEntries);
+        updateTimeEntriesStickyOffsets();
+      }}
+
+      function buildTimeEntriesExportParams() {{
+        const params = new URLSearchParams();
+        const capturedForDateInput = document.querySelector('[name="captured_for_date"]');
+        const dateFromInput = document.querySelector('[name="date_from"]');
+        const dateToInput = document.querySelector('[name="date_to"]');
+        if (capturedForDateInput?.value) {{
+          params.set("captured_for_date", capturedForDateInput.value);
+        }}
+        if (dateFromInput?.value) {{
+          params.set("date_from", dateFromInput.value);
+        }}
+        if (dateToInput?.value) {{
+          params.set("date_to", dateToInput.value);
+        }}
+        const filters = getCurrentTimeEntryFilters();
+        for (const [key, value] of Object.entries(filters)) {{
+          if (value) {{
+            params.set(key, value);
+          }}
+        }}
+        return params;
+      }}
+
+      timeEntriesFilterInputs.forEach((input) => {{
+        input.addEventListener("input", () => rerenderTimeEntries(true));
+      }});
+
+      timeEntriesPrevPageButton?.addEventListener("click", () => {{
+        if (currentTimeEntriesPage > 1) {{
+          currentTimeEntriesPage -= 1;
+          rerenderTimeEntries(false);
+        }}
+      }});
+
+      timeEntriesNextPageButton?.addEventListener("click", () => {{
+        if (currentTimeEntriesPage < currentTimeEntriesTotalPages) {{
+          currentTimeEntriesPage += 1;
+          rerenderTimeEntries(false);
+        }}
+      }});
+
+      timeEntriesPageSizeInput?.addEventListener("change", () => rerenderTimeEntries(true));
+      resetTimeEntryFiltersButton?.addEventListener("click", () => {{
+        timeEntriesFilterInputs.forEach((input) => {{
+          input.value = "";
+        }});
+        rerenderTimeEntries(true);
+      }});
+
+      exportTimeEntriesCsvButton?.addEventListener("click", () => {{
+        const params = buildTimeEntriesExportParams();
+        window.location.href = `{exportUrlBase}?${{params.toString()}}`;
+      }});
+
+      const storedTimeEntriesPageSize = Number(window.localStorage.getItem(timeEntriesPageSizeStorageKey) || 0);
+      if (Number.isFinite(storedTimeEntriesPageSize) && storedTimeEntriesPageSize >= 10 && storedTimeEntriesPageSize <= 10000) {{
+        timeEntriesPageSizeInput.value = String(Math.floor(storedTimeEntriesPageSize));
+      }}
+
+      rerenderTimeEntries(true);
+      window.addEventListener("resize", updateTimeEntriesStickyOffsets);
+      window.addEventListener("scroll", updateTimeEntriesStickyOffsets, {{ passive: true }});
+    </script>
   </main>
 </body>
 </html>"""
@@ -11116,6 +11432,96 @@ def getProjectSnapshotTimeEntriesPage(
             date_from,
             date_to,
         )
+    )
+
+
+@app.get("/projects/{project_redmine_id}/time-entries/export.csv")
+def exportProjectSnapshotTimeEntriesCsv(
+    request: Request,
+    project_redmine_id: int,
+    captured_for_date: str | None = Query(None, description="Дата среза в формате YYYY-MM-DD"),
+    date_from: str | None = Query(None, description="Дата начала периода в формате YYYY-MM-DD"),
+    date_to: str | None = Query(None, description="Дата конца периода в формате YYYY-MM-DD"),
+    id: str | None = Query(None),
+    snapshot_run_id: str | None = Query(None),
+    project_name: str | None = Query(None),
+    time_entry_redmine_id: str | None = Query(None),
+    issue_redmine_id: str | None = Query(None),
+    issue_subject: str | None = Query(None),
+    issue_tracker_name: str | None = Query(None),
+    issue_status_name: str | None = Query(None),
+    user_id: str | None = Query(None),
+    user_name: str | None = Query(None),
+    activity_id: str | None = Query(None),
+    activity_name: str | None = Query(None),
+    hours: str | None = Query(None),
+    comments: str | None = Query(None),
+    spent_on: str | None = Query(None),
+    created_on: str | None = Query(None),
+    updated_on: str | None = Query(None),
+) -> Response:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+    queryParams = request.query_params
+    filters = {
+        "id": id,
+        "snapshot_run_id": snapshot_run_id,
+        "project_redmine_id": queryParams.get("project_redmine_id"),
+        "project_name": project_name,
+        "time_entry_redmine_id": time_entry_redmine_id,
+        "issue_redmine_id": issue_redmine_id,
+        "issue_subject": issue_subject,
+        "issue_tracker_name": issue_tracker_name,
+        "issue_status_name": issue_status_name,
+        "user_id": user_id,
+        "user_name": user_name,
+        "activity_id": activity_id,
+        "activity_name": activity_name,
+        "hours": hours,
+        "comments": comments,
+        "spent_on": spent_on,
+        "created_on": created_on,
+        "updated_on": updated_on,
+    }
+    today = date.today()
+    selectedCapturedForDate = _normalizeSnapshotTimeEntriesDateValue(captured_for_date, today.isoformat())
+    selectedDateFrom = _normalizeSnapshotTimeEntriesDateValue(date_from, date(today.year, 1, 1).isoformat())
+    selectedDateTo = _normalizeSnapshotTimeEntriesDateValue(date_to, today.isoformat())
+    if selectedDateFrom > selectedDateTo:
+        selectedDateFrom, selectedDateTo = selectedDateTo, selectedDateFrom
+
+    payload = getSnapshotTimeEntriesForProjectByDateRange(
+        project_redmine_id,
+        selectedCapturedForDate,
+        selectedDateFrom,
+        selectedDateTo,
+    )
+    snapshotRun = payload.get("snapshot_run")
+    if snapshotRun is None:
+        raise HTTPException(status_code=404, detail="Срез проекта не найден")
+
+    exportEntries = _applySnapshotTimeEntriesFilters(list(payload.get("time_entries") or []), filters)
+
+    output = io.StringIO(newline="")
+    output.write("sep=;\n")
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow([str(column["label"]) for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG])
+    for entry in exportEntries:
+        writer.writerow([
+            _formatSnapshotTimeEntryCellValue(str(column["key"]), entry.get(column["key"]))
+            for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG
+        ])
+
+    fileIdentifier = str(snapshotRun.get("project_identifier") or f"project_{project_redmine_id}")
+    safeIdentifier = "".join(character if character.isalnum() or character in {"-", "_"} else "_" for character in fileIdentifier)
+    fileName = f"time_entries_{safeIdentifier}_{selectedCapturedForDate}_{selectedDateFrom}_{selectedDateTo}.csv"
+    csvBytes = output.getvalue().encode("cp1251", errors="replace")
+    return Response(
+        content=csvBytes,
+        media_type="text/csv; charset=windows-1251",
+        headers={"Content-Disposition": f'attachment; filename="{fileName}"'},
     )
 
 
