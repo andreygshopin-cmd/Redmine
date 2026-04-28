@@ -607,8 +607,9 @@ def ensurePlanningProjectsTable() -> None:
                         p2 DOUBLE PRECISION NULL,
                         estimate_doc_url TEXT,
                         bitrix_url TEXT,
-                        comment_text TEXT,
-                        is_closed BOOLEAN NOT NULL DEFAULT FALSE,
+                    comment_text TEXT,
+                    question_flag BOOLEAN NOT NULL DEFAULT FALSE,
+                    is_closed BOOLEAN NOT NULL DEFAULT FALSE,
                         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
@@ -718,6 +719,15 @@ def ensurePlanningProjectsTable() -> None:
                     """
                     ALTER TABLE planning_projects
                     ADD COLUMN IF NOT EXISTS direction TEXT
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE planning_projects
+                    ADD COLUMN IF NOT EXISTS question_flag BOOLEAN NOT NULL DEFAULT FALSE
                     """
                 )
             )
@@ -1209,6 +1219,7 @@ def listPlanningProjects(
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
+                    question_flag,
                     is_closed,
                     created_at,
                     updated_at
@@ -1291,7 +1302,8 @@ def listProjectPlanningSummary(reportDate: str, direction: str | None = None, is
                         hours_2,
                         year_3,
                         hours_3,
-                        is_closed
+                        is_closed,
+                        question_flag
                     FROM planning_projects
                     WHERE COALESCE(is_closed, FALSE) = :is_closed
                       AND (
@@ -1351,6 +1363,7 @@ def listProjectPlanningSummary(reportDate: str, direction: str | None = None, is
                         ELSE NULL
                     END AS report_year_hours,
                     COALESCE(lsm.development_spent_hours_year, 0) AS development_spent_hours_year,
+                    fp.question_flag,
                     fp.is_closed
                 FROM filtered_planning_projects fp
                 LEFT JOIN latest_snapshot_metrics lsm
@@ -1401,7 +1414,8 @@ def listProjectPlanningSummary(reportDate: str, direction: str | None = None, is
                         hours_2,
                         year_3,
                         hours_3,
-                        is_closed
+                        is_closed,
+                        question_flag
                     FROM planning_projects
                     WHERE COALESCE(is_closed, FALSE) = :is_closed
                       AND (
@@ -1465,6 +1479,7 @@ def listProjectPlanningSummary(reportDate: str, direction: str | None = None, is
                         ELSE NULL
                     END AS report_year_hours,
                     COALESCE(lsm.development_spent_hours_year, 0) AS development_spent_hours_year,
+                    fp.question_flag,
                     fp.is_closed
                 FROM filtered_planning_projects fp
                 LEFT JOIN latest_snapshot_metrics lsm
@@ -1523,6 +1538,7 @@ def getPlanningProjectByRedmineIdentifier(redmineIdentifier: str) -> dict[str, o
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
+                    question_flag,
                     is_closed,
                     created_at,
                     updated_at
@@ -1572,6 +1588,7 @@ def listPlanningProjectsByRedmineIdentifier(redmineIdentifier: str) -> list[dict
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
+                    question_flag,
                     is_closed,
                     created_at,
                     updated_at
@@ -2976,6 +2993,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
+                    question_flag,
                     is_closed,
                     updated_at
                 ) VALUES (
@@ -2999,6 +3017,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     :estimate_doc_url,
                     :bitrix_url,
                     :comment_text,
+                    :question_flag,
                     :is_closed,
                     CURRENT_TIMESTAMP
                 )
@@ -3024,6 +3043,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
+                    question_flag,
                     is_closed,
                     created_at,
                     updated_at
@@ -3064,6 +3084,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     estimate_doc_url = :estimate_doc_url,
                     bitrix_url = :bitrix_url,
                     comment_text = :comment_text,
+                    question_flag = :question_flag,
                     is_closed = :is_closed,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = :project_id
@@ -3089,6 +3110,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
+                    question_flag,
                     is_closed,
                     created_at,
                     updated_at

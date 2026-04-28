@@ -337,6 +337,7 @@ class PlanningProjectPayload(BaseModel):
     estimate_doc_url: str | None = None
     bitrix_url: str | None = None
     comment_text: str | None = None
+    question_flag: bool = False
     is_closed: bool = False
 
 
@@ -6892,20 +6893,20 @@ SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG = [
     {"key": "user_name", "label": "Пользователь", "type": "text", "sum": False, "mono": False},
     {"key": "activity_name", "label": "Активность", "type": "text", "sum": False, "mono": False},
     {"key": "hours", "label": "Часы", "type": "hours", "sum": True, "mono": False},
-    {"key": "snapshot_run_id", "label": "ID среза", "type": "number", "sum": False, "mono": True},
-    {"key": "project_redmine_id", "label": "ID проекта Redmine", "type": "number", "sum": False, "mono": True},
     {"key": "project_name", "label": "Проект", "type": "text", "sum": False, "mono": False},
-    {"key": "time_entry_redmine_id", "label": "ID списания", "type": "number", "sum": False, "mono": True},
-    {"key": "issue_redmine_id", "label": "ID задачи", "type": "number", "sum": False, "mono": True},
     {"key": "issue_subject", "label": "Тема задачи", "type": "text", "sum": False, "mono": False},
     {"key": "comments", "label": "Комментарий", "type": "text", "sum": False, "mono": False},
     {"key": "issue_tracker_name", "label": "Трекер задачи", "type": "text", "sum": False, "mono": False},
     {"key": "issue_status_name", "label": "Статус задачи", "type": "text", "sum": False, "mono": False},
-    {"key": "user_id", "label": "ID пользователя", "type": "number", "sum": False, "mono": True},
-    {"key": "activity_id", "label": "ID активности", "type": "number", "sum": False, "mono": True},
     {"key": "spent_on", "label": "Дата списания", "type": "date", "sum": False, "mono": False},
     {"key": "created_on", "label": "Создано", "type": "datetime", "sum": False, "mono": False},
     {"key": "updated_on", "label": "Обновлено", "type": "datetime", "sum": False, "mono": False},
+    {"key": "snapshot_run_id", "label": "ID среза", "type": "number", "sum": False, "mono": True},
+    {"key": "project_redmine_id", "label": "ID проекта Redmine", "type": "number", "sum": False, "mono": True},
+    {"key": "time_entry_redmine_id", "label": "ID списания", "type": "number", "sum": False, "mono": True},
+    {"key": "issue_redmine_id", "label": "ID задачи", "type": "number", "sum": False, "mono": True},
+    {"key": "user_id", "label": "ID пользователя", "type": "number", "sum": False, "mono": True},
+    {"key": "activity_id", "label": "ID активности", "type": "number", "sum": False, "mono": True},
 ]
 
 SNAPSHOT_TIME_ENTRY_MULTISELECT_KEYS = {
@@ -7977,6 +7978,7 @@ def normalizePlanningProjectPayload(payload: PlanningProjectPayload) -> dict[str
         "estimate_doc_url": _normalizePlanningProjectText(payload.estimate_doc_url),
         "bitrix_url": _normalizePlanningProjectText(payload.bitrix_url),
         "comment_text": _normalizePlanningProjectText(payload.comment_text),
+        "question_flag": bool(payload.question_flag),
         "is_closed": bool(payload.is_closed),
     }
 
@@ -8158,7 +8160,7 @@ def buildProjectsSummaryPage() -> str:
       padding: 11px 12px;
       border-bottom: 1px solid var(--line);
       text-align: left;
-      vertical-align: top;
+      vertical-align: middle;
     }}
     th {{
       background: #eef6f7;
@@ -8787,6 +8789,9 @@ def buildPlanningProjectsPage() -> str:
       gap: 14px 16px;
       align-items: end;
     }
+    .form-row.metrics-row {
+      grid-template-columns: minmax(180px, 1.15fr) auto minmax(180px, 1fr) minmax(170px, 1fr) minmax(220px, 1fr);
+    }
     .form-panels {
       display: grid;
       grid-template-columns: minmax(280px, 34%) minmax(0, 1fr);
@@ -9048,6 +9053,14 @@ def buildPlanningProjectsPage() -> str:
       border: 1px solid #f0c8c8;
       box-shadow: none;
     }
+    .planning-projects-table tbody tr.question-flag-row td:not(.actions-col) {
+      background: #fff4f4;
+      color: #c13b3b;
+    }
+    .planning-projects-table tbody tr.question-flag-row .link-cell a {
+      color: inherit;
+      border-bottom-color: currentColor;
+    }
     .empty-state {
       padding: 28px 20px;
       color: var(--muted);
@@ -9197,11 +9210,15 @@ def buildPlanningProjectsPage() -> str:
               <input id="planningProjectEndDate" type="date">
             </div>
           </div>
-          <div class="form-row">
+          <div class="form-row metrics-row">
             <div class="field">
               <label for="planningProjectDevelopmentHours">Часы разработки с багфиксом</label>
               <input id="planningProjectDevelopmentHours" type="number" step="0.1" inputmode="decimal">
             </div>
+            <label class="checkbox-field" for="planningProjectQuestionFlag">
+              <input id="planningProjectQuestionFlag" type="checkbox">
+              <span>?</span>
+            </label>
             <div class="field">
               <label for="planningProjectBaselineEstimate">Базовая оценка</label>
               <input id="planningProjectBaselineEstimate" type="number" step="0.1" inputmode="decimal">
@@ -9293,6 +9310,7 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectStartDate = document.getElementById("planningProjectStartDate");
     const planningProjectEndDate = document.getElementById("planningProjectEndDate");
     const planningProjectDevelopmentHours = document.getElementById("planningProjectDevelopmentHours");
+    const planningProjectQuestionFlag = document.getElementById("planningProjectQuestionFlag");
     const planningProjectBaselineEstimate = document.getElementById("planningProjectBaselineEstimate");
     const planningProjectP1 = document.getElementById("planningProjectP1");
     const planningProjectP2 = document.getElementById("planningProjectP2");
@@ -9522,6 +9540,7 @@ def buildPlanningProjectsPage() -> str:
     function resetPlanningProjectForm() {
       planningProjectId.value = "";
       planningProjectForm.reset();
+      planningProjectQuestionFlag.checked = false;
       planningFormTitle.textContent = "Новая запись";
       setPlanningProjectsStatus("");
     }
@@ -9544,6 +9563,7 @@ def buildPlanningProjectsPage() -> str:
       planningProjectStartDate.value = project.start_date ?? "";
       planningProjectEndDate.value = project.end_date ?? "";
       planningProjectDevelopmentHours.value = project.development_hours ?? "";
+      planningProjectQuestionFlag.checked = Boolean(project.question_flag);
       planningProjectYear1.value = project.year_1 ?? "";
       planningProjectHours1.value = project.hours_1 ?? "";
       planningProjectYear2.value = project.year_2 ?? "";
@@ -9615,7 +9635,7 @@ def buildPlanningProjectsPage() -> str:
       }
 
       planningProjectsTableBody.innerHTML = projects.map((project) => `
-        <tr>
+        <tr class="${project.question_flag ? "question-flag-row" : ""}">
           <td class="actions-col">
             <div class="row-actions">
               <button type="button" class="edit-button" data-action="edit" data-id="${project.id}" title="Изменить" aria-label="Изменить">
@@ -9693,6 +9713,7 @@ def buildPlanningProjectsPage() -> str:
         estimate_doc_url: planningProjectEstimateDoc.value.trim(),
         bitrix_url: planningProjectBitrix.value.trim(),
         comment_text: planningProjectComment.value.trim(),
+        question_flag: Boolean(planningProjectQuestionFlag.checked),
         is_closed: Boolean(planningProjectClosed.checked),
       };
     }
@@ -10101,6 +10122,7 @@ def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str,
                 "pm_name": row.get("pm_name"),
                 "report_year_hours": row.get("report_year_hours"),
                 "development_hours": row.get("development_hours"),
+                "question_flag": bool(row.get("question_flag")),
                 "link_project_name": row.get("link_project_name") or row.get("project_name"),
                 "is_missing_planning_project": bool(row.get("is_missing_planning_project")),
             }
@@ -10206,6 +10228,7 @@ def _listProjectsSummaryRows(
                     + float(project.get("development_process_spent_hours_year") or 0)
                     + float(project.get("bug_spent_hours_year") or 0)
                 ),
+                "question_flag": False,
                 "is_closed": None,
                 "link_project_name": project.get("name"),
                 "is_missing_planning_project": True,
@@ -10461,6 +10484,14 @@ def buildProjectsSummaryPage() -> str:
       background: #f7fbfc;
       font-weight: 600;
       vertical-align: middle;
+    }}
+    .summary-project-flagged {{
+      color: #c13b3b;
+      background: #fff6f6;
+    }}
+    .summary-project-flagged a {{
+      color: inherit !important;
+      border-bottom-color: currentColor !important;
     }}
     tfoot td {{
       position: sticky;
@@ -10963,13 +10994,13 @@ def buildProjectsSummaryPage() -> str:
           <tr>
             ${{index === 0 ? identifierCell : ""}}
             ${{index === 0 ? factCell : ""}}
-            <td>${{formatSummaryText(item.direction)}}</td>
-            <td>${{formatSummaryText(item.customer)}}</td>
-            <td>${{wrapSummaryLink(formatSummaryText(item.project_name), item.id, groupIdentifier, item.link_project_name)}}</td>
-            <td>${{formatSummaryText(item.pm_name)}}</td>
+            <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{formatSummaryText(item.direction)}}</td>
+            <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{formatSummaryText(item.customer)}}</td>
+            <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{wrapSummaryLink(formatSummaryText(item.project_name), item.id, groupIdentifier, item.link_project_name)}}</td>
+            <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{formatSummaryText(item.pm_name)}}</td>
             ${{index === 0 ? limitCell : ""}}
-            <td>${{hasSummaryValue(item.report_year_hours) ? wrapSummaryLink(formatSummaryHours(item.report_year_hours), item.id, groupIdentifier, item.link_project_name) : formatSummaryHours(item.report_year_hours)}}</td>
-            <td>${{hasSummaryValue(item.development_hours) ? wrapSummaryLink(formatSummaryHours(item.development_hours), item.id, groupIdentifier, item.link_project_name) : formatSummaryHours(item.development_hours)}}</td>
+            <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{hasSummaryValue(item.report_year_hours) ? wrapSummaryLink(formatSummaryHours(item.report_year_hours), item.id, groupIdentifier, item.link_project_name) : formatSummaryHours(item.report_year_hours)}}</td>
+            <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{hasSummaryValue(item.development_hours) ? wrapSummaryLink(formatSummaryHours(item.development_hours), item.id, groupIdentifier, item.link_project_name) : formatSummaryHours(item.development_hours)}}</td>
           </tr>
         `).join("");
       }}).join("");
