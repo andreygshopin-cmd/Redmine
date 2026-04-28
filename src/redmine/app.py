@@ -77,6 +77,7 @@ app = FastAPI(title="Redmine Snapshot Viewer")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 SESSION_SECRET = config.sessionSecret or secrets.token_hex(32)
+APP_BUILD_ID = "2026-04-28-verify-1"
 USER_ROLE = "User"
 FINANCE_ROLE = "Finance"
 ADMIN_ROLE = "Admin"
@@ -12086,6 +12087,7 @@ def getRedmineProjectCustomFieldDiagnostics(
 def health() -> dict[str, object]:
     return {
         "status": "ok",
+        "build_id": APP_BUILD_ID,
         "environment": config.appEnv,
         "database_configured": bool(config.databaseUrl),
         "redmine_configured": bool(config.redmineUrl and config.apiKey),
