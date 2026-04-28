@@ -5776,7 +5776,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         gap: 8px;
         flex-wrap: wrap;
       }}
-      .snapshot-date-warning {{ margin-top: 2px; font-size: 0.86rem; }}
+      .snapshot-date-warning {{ margin-top: 0; font-size: inherit; font-weight: inherit; }}
       .action-status {{ color: var(--muted); margin: 0 0 18px; min-height: 22px; }}
       .summary-block {{ margin: 0 0 20px; }}
       .summary-table {{ width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid var(--line); }}
@@ -5948,7 +5948,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       <div class="toolbar">
         <div class="toolbar-row primary">
           <form method="get">
-            <label for="capturedForDate"><span class="snapshot-date-label-text">Дата среза{f'<span class="meta-warning snapshot-date-warning">Более ранний срез</span>' if usedEarlierSnapshot and fallbackCapturedForDate else ''}</span></label>
+            <label for="capturedForDate"><span class="snapshot-date-label-text">Дата среза{f'<span class="meta-warning snapshot-date-warning">(Более ранний, чем запрошен)</span>' if usedEarlierSnapshot and fallbackCapturedForDate else ''}</span></label>
             <select id="capturedForDate" name="captured_for_date" onchange="this.form.submit()">
               {''.join(optionsHtml)}
             </select>
@@ -9054,7 +9054,6 @@ def buildPlanningProjectsPage() -> str:
       box-shadow: none;
     }
     .planning-projects-table tbody tr.question-flag-row td:not(.actions-col) {
-      background: #fff4f4;
       color: #c13b3b;
     }
     .planning-projects-table tbody tr.question-flag-row .link-cell a {
@@ -10487,7 +10486,6 @@ def buildProjectsSummaryPage() -> str:
     }}
     .summary-project-flagged {{
       color: #c13b3b;
-      background: #fff6f6;
     }}
     .summary-project-flagged a {{
       color: inherit !important;
