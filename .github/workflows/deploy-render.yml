@@ -1,0 +1,64 @@
+name: Deploy Render
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Commit SHA to deploy. Leave empty to deploy the workflow commit.
+        required: false
+        default: ""
+
+jobs:
+  deploy:
+    name: Trigger Render deploy and verify live SHA
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: ${{ secrets.RENDER_DEPLOY_HOOK_URL != '' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve target commit
+        id: target
+        shell: bash
+        run: |
+          TARGET_SHA="${GITHUB_SHA}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.commit_sha }}" ]; then
+            TARGET_SHA="${{ inputs.commit_sha }}"
+          fi
+          echo "target_sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger Render deploy hook
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          TARGET_SHA: ${{ steps.target.outputs.target_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_URL="${RENDER_DEPLOY_HOOK_URL}?ref=${TARGET_SHA}"
+          curl -fsSL -X POST "$DEPLOY_URL"
+
+      - name: Wait for expected SHA on health endpoint
+        env:
+          EXPECTED_COMMIT_SHA: ${{ steps.target.outputs.target_sha }}
+          HEALTH_URL: https://redmine-tdfp.onrender.com/health
+          TIMEOUT_SECONDS: "1200"
+          POLL_INTERVAL_SECONDS: "10"
+        run: python scripts/wait_for_render_deploy.py
+
+  deploy-not-configured:
+    name: Render deploy hook is not configured
+    runs-on: ubuntu-latest
+    if: ${{ secrets.RENDER_DEPLOY_HOOK_URL == '' }}
+    steps:
+      - name: Explain setup
+        run: |
+          echo "::warning::GitHub secret RENDER_DEPLOY_HOOK_URL is missing. Add the Render Deploy Hook URL in GitHub Secrets to enable deterministic deploys."

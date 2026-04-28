@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import io
 import json
+import os
 from email.message import EmailMessage
 from pathlib import Path
 import secrets
@@ -77,7 +78,7 @@ app = FastAPI(title="Redmine Snapshot Viewer")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 SESSION_SECRET = config.sessionSecret or secrets.token_hex(32)
-APP_BUILD_ID = "2026-04-28-verify-1"
+APP_BUILD_ID = os.getenv("APP_BUILD_ID", "2026-04-28-verify-1")
 USER_ROLE = "User"
 FINANCE_ROLE = "Finance"
 ADMIN_ROLE = "Admin"
@@ -12169,6 +12170,10 @@ def health() -> dict[str, object]:
         "environment": config.appEnv,
         "database_configured": bool(config.databaseUrl),
         "redmine_configured": bool(config.redmineUrl and config.apiKey),
+        "render_git_commit": os.getenv("RENDER_GIT_COMMIT", ""),
+        "render_git_branch": os.getenv("RENDER_GIT_BRANCH", ""),
+        "render_service_id": os.getenv("RENDER_SERVICE_ID", ""),
+        "render_service_name": os.getenv("RENDER_SERVICE_NAME", ""),
     }
 
 

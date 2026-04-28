@@ -71,3 +71,25 @@ REDMINE_API_KEY=your_api_key
 3. Создать Web Service.
 4. Убедиться, что переменная `DATABASE_URL` передаётся в сервис.
 5. Render запустит приложение командой из `render.yaml`.
+
+## Гарантированный деплой через GitHub Actions
+
+Чтобы сайт обновлялся предсказуемо, в репозиторий добавлен workflow
+`/.github/workflows/deploy-render.yml`.
+
+Он делает три шага:
+
+1. Берет SHA коммита из `main`
+2. Вызывает Render Deploy Hook именно для этого SHA
+3. Ждет, пока `/health` на сайте не начнет возвращать тот же `RENDER_GIT_COMMIT`
+
+Для включения нужно один раз добавить в GitHub Secret:
+
+- `RENDER_DEPLOY_HOOK_URL`
+
+Значение берется в Render:
+
+- `Service` -> `Settings` -> `Deploy Hook`
+
+После этого каждый push в `main` будет не просто "просить Render собрать сайт",
+а проверять, что сайт действительно поднялся на нужном коммите.
