@@ -5680,11 +5680,6 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     capturedForDateRaw = str(snapshotRun.get("captured_for_date") or "")
     capturedForDate = escape(capturedForDateRaw or "—")
     selectedDate = capturedForDateRaw
-    earlierSnapshotWarningHtml = ""
-    if usedEarlierSnapshot and fallbackCapturedForDate:
-        earlierSnapshotWarningHtml = (
-            f' <span class="meta-warning">Более ранний срез: {escape(fallbackCapturedForDate)}</span>'
-        )
     projectIdentifierRaw = str(
         snapshotRun.get("project_identifier")
         or (storedProject.get("identifier") if storedProject else "")
@@ -5764,6 +5759,16 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .secondary-button {{ background: #375d77; color: #ffffff; }}
       .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
       .meta-warning {{ color: #d54343; font-weight: 700; }}
+      .toolbar-row.primary form {{ display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }}
+      .page-size-label {{
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+        font-weight: 600;
+        color: var(--text);
+      }}
+      .snapshot-date-warning {{ margin-top: 2px; font-size: 0.86rem; }}
       .action-status {{ color: var(--muted); margin: 0 0 18px; min-height: 22px; }}
       .summary-block {{ margin: 0 0 20px; }}
       .summary-table {{ width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid var(--line); }}
@@ -5807,7 +5812,6 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }}
       .csv-export-button {{ background: #375d77; color: #ffffff; }}
       .filter-tip {{ color: var(--muted); font-size: 0.92rem; }}
-      .page-size-label {{ color: var(--muted); }}
       .page-size-input {{ width: 110px; }}
       .pagination-wrap {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 12px; flex-wrap: wrap; }}
       .pagination-buttons {{ display: flex; gap: 8px; align-items: center; }}
@@ -5940,9 +5944,11 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <select id="capturedForDate" name="captured_for_date" onchange="this.form.submit()">
               {''.join(optionsHtml)}
             </select>
+            {f'<div class="meta-warning snapshot-date-warning">Более ранний срез: {escape(fallbackCapturedForDate)}</div>' if usedEarlierSnapshot and fallbackCapturedForDate else ''}
           </form>
-          <label class="page-size-label" for="snapshotPageSizeInput">Задач на странице</label>
-          <input class="page-size-input" id="snapshotPageSizeInput" type="number" min="10" max="10000" step="10" value="{initialPageSize}">
+          <label class="page-size-label" for="snapshotPageSizeInput">Задач на странице
+            <input class="page-size-input" id="snapshotPageSizeInput" type="number" min="10" max="10000" step="10" value="{initialPageSize}">
+          </label>
           <button type="button" class="secondary-button" id="applySnapshotPageSizeButton">Показать</button>
           <button type="button" class="secondary-button" id="exportSnapshotCsvButton">Выгрузить CSV</button>
           <button type="button" class="secondary-button" id="viewSnapshotTimeEntriesButton">Списание времени</button>
@@ -5953,7 +5959,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         </div>
       </div>
       <div class="action-status" id="snapshotActionStatus"></div>
-      <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Дата среза: {capturedForDate}.{earlierSnapshotWarningHtml} По фильтру: <span id="filteredIssuesCount">{initialFilteredIssues}</span> из {initialTotalIssues}. На странице: <span id="pageIssuesCount">{len(issues)}</span>.</p>
+      <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Дата среза: {capturedForDate}. По фильтру: <span id="filteredIssuesCount">{initialFilteredIssues}</span> из {initialTotalIssues}. На странице: <span id="pageIssuesCount">{len(issues)}</span>.</p>
       <div class="summary-block">
         <table class="summary-table">
           <thead>
@@ -6903,8 +6909,22 @@ SNAPSHOT_TIME_ENTRY_MULTISELECT_KEYS = {
 }
 
 SNAPSHOT_TIME_ENTRY_FIXED_WIDTHS = {
+    "id": "8ch",
+    "snapshot_run_id": "10ch",
+    "project_redmine_id": "10ch",
+    "project_name": "22ch",
+    "time_entry_redmine_id": "10ch",
+    "issue_redmine_id": "10ch",
+    "issue_subject": "32ch",
     "issue_tracker_name": "15ch",
     "issue_status_name": "15ch",
+    "user_id": "10ch",
+    "user_name": "20ch",
+    "activity_id": "10ch",
+    "activity_name": "15ch",
+    "hours": "10ch",
+    "comments": "32ch",
+    "spent_on": "12ch",
     "created_on": "15ch",
     "updated_on": "15ch",
 }
@@ -7132,7 +7152,7 @@ def buildSnapshotTimeEntriesPage(
                 f'<th class="summary-label">Итого: <span id="timeEntriesFilteredCount">{len(filteredEntries)}</span></th>'
             )
             continue
-        if str(column.get("type") or "") in {"number", "hours"}:
+        if columnKey == "hours":
             footerCellsList.append(
                 f'<th class="summary-value" data-summary-key="{escape(columnKey)}"></th>'
             )
@@ -7181,7 +7201,7 @@ def buildSnapshotTimeEntriesPage(
     .page-size-label {{ color: var(--muted); }}
     .page-size-input {{ width: 110px; }}
     .table-wrap {{ position: relative; min-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }}
-    table {{ width: 100%; border-collapse: separate; border-spacing: 0; min-width: 2200px; background: var(--panel); }}
+    table {{ width: 100%; border-collapse: separate; border-spacing: 0; min-width: 2200px; table-layout: fixed; background: var(--panel); }}
     th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }}
     thead .header-row th {{
       position: sticky;
@@ -7313,14 +7333,6 @@ def buildSnapshotTimeEntriesPage(
         return parsed.toFixed(1).replace(".", ",");
       }}
 
-      function formatIntegerTotal(value) {{
-        const parsed = Number(value ?? 0);
-        if (!Number.isFinite(parsed)) {{
-          return "0";
-        }}
-        return Math.round(parsed).toLocaleString("ru-RU");
-      }}
-
       function formatDateTime(value) {{
         if (!value) {{
           return "—";
@@ -7419,19 +7431,9 @@ def buildSnapshotTimeEntriesPage(
         if (countCell) {{
           countCell.textContent = String(filteredEntries.length);
         }}
-        for (const column of timeEntryColumns) {{
-          if (!(column.type === "number" || column.type === "hours")) {{
-            continue;
-          }}
-          const totalValue = filteredEntries.reduce((sum, entry) => {{
-            const numericValue = Number(entry?.[column.key] ?? 0);
-            return Number.isFinite(numericValue) ? sum + numericValue : sum;
-          }}, 0);
-          const summaryCell = document.querySelector(`tfoot [data-summary-key="${{column.key}}"]`);
-          if (!summaryCell) {{
-            continue;
-          }}
-          summaryCell.textContent = column.type === "hours" ? formatHours(totalValue) : formatIntegerTotal(totalValue);
+        const hoursSummaryCell = document.querySelector('tfoot [data-summary-key="hours"]');
+        if (hoursSummaryCell) {{
+          hoursSummaryCell.textContent = formatHours(totalHours);
         }}
       }}
 
