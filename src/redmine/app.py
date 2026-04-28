@@ -5566,6 +5566,38 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     snapshotRun = snapshotPayload["snapshot_run"]
     issues = snapshotPayload["issues"]
     availableDates = [str(value) for value in snapshotPayload.get("available_dates") or []]
+    requestedCapturedForDate = str(capturedForDate or "").strip()
+    usedEarlierSnapshot = False
+    fallbackCapturedForDate = ""
+
+    if snapshotRun is None and requestedCapturedForDate and availableDates:
+        try:
+            requestedSnapshotDate = date.fromisoformat(requestedCapturedForDate)
+        except ValueError:
+            requestedSnapshotDate = None
+        if requestedSnapshotDate is not None:
+            earlierDates: list[str] = []
+            for dateValue in availableDates:
+                try:
+                    candidateDate = date.fromisoformat(dateValue)
+                except ValueError:
+                    continue
+                if candidateDate < requestedSnapshotDate:
+                    earlierDates.append(dateValue)
+            if earlierDates:
+                earlierDates.sort(reverse=True)
+                fallbackCapturedForDate = earlierDates[0]
+                snapshotPayload = getFilteredSnapshotIssuesForProjectByDate(
+                    projectRedmineId,
+                    fallbackCapturedForDate,
+                    page=1,
+                    pageSize=1000,
+                )
+                snapshotRun = snapshotPayload["snapshot_run"]
+                issues = snapshotPayload["issues"]
+                availableDates = [str(value) for value in snapshotPayload.get("available_dates") or []]
+                usedEarlierSnapshot = snapshotRun is not None
+
     storedProjects = listStoredProjects()
     storedProject = next(
         (item for item in storedProjects if int(item.get("redmine_id") or 0) == projectRedmineId),
@@ -5648,6 +5680,11 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     capturedForDateRaw = str(snapshotRun.get("captured_for_date") or "")
     capturedForDate = escape(capturedForDateRaw or "—")
     selectedDate = capturedForDateRaw
+    earlierSnapshotWarningHtml = ""
+    if usedEarlierSnapshot and fallbackCapturedForDate:
+        earlierSnapshotWarningHtml = (
+            f' <span class="meta-warning">Более ранний срез: {escape(fallbackCapturedForDate)}</span>'
+        )
     projectIdentifierRaw = str(
         snapshotRun.get("project_identifier")
         or (storedProject.get("identifier") if storedProject else "")
@@ -5704,7 +5741,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       body {{ margin: 0; font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
       main {{ max-width: 1440px; margin: 0 auto; padding: 24px 20px 48px; }}
       {buildProjectContextNavCss()}
-      .toolbar {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 0 0 16px; }}
+      .toolbar {{ display: flex; flex-direction: column; gap: 12px; align-items: stretch; margin: 0 0 16px; }}
+      .toolbar-row {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }}
+      .toolbar-row.primary {{ align-items: flex-end; }}
+      .toolbar-row.secondary {{ justify-content: flex-start; }}
       .toolbar button {{
         background: #eef2f5;
         color: var(--text);
@@ -5723,6 +5763,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #ff6c0e; color: #ffffff; }}
       .secondary-button {{ background: #375d77; color: #ffffff; }}
       .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
+      .meta-warning {{ color: #d54343; font-weight: 700; }}
       .action-status {{ color: var(--muted); margin: 0 0 18px; min-height: 22px; }}
       .summary-block {{ margin: 0 0 20px; }}
       .summary-table {{ width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid var(--line); }}
@@ -5893,22 +5934,26 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       {navPanelHtml}
       <h1>Задачи среза проекта</h1>
       <div class="toolbar">
-      <form method="get">
-        <label for="capturedForDate">Дата среза</label>
-        <select id="capturedForDate" name="captured_for_date" onchange="this.form.submit()">
-          {''.join(optionsHtml)}
-        </select>
-      </form>
-      <label class="page-size-label" for="snapshotPageSizeInput">Задач на странице</label>
-      <input class="page-size-input" id="snapshotPageSizeInput" type="number" min="10" max="10000" step="10" value="{initialPageSize}">
-      <button type="button" class="secondary-button" id="applySnapshotPageSizeButton">Показать</button>
-      <button type="button" class="secondary-button" id="exportSnapshotCsvButton">Выгрузить CSV</button>
-      <button type="button" id="deleteSnapshotButton">Удалить выбранный срез</button>
-      <button type="button" id="recaptureSnapshotButton">Загрузить/обновить последний срез</button>
-      <button type="button" class="secondary-button" id="viewSnapshotTimeEntriesButton">Списание времени</button>
+        <div class="toolbar-row primary">
+          <form method="get">
+            <label for="capturedForDate">Дата среза</label>
+            <select id="capturedForDate" name="captured_for_date" onchange="this.form.submit()">
+              {''.join(optionsHtml)}
+            </select>
+          </form>
+          <label class="page-size-label" for="snapshotPageSizeInput">Задач на странице</label>
+          <input class="page-size-input" id="snapshotPageSizeInput" type="number" min="10" max="10000" step="10" value="{initialPageSize}">
+          <button type="button" class="secondary-button" id="applySnapshotPageSizeButton">Показать</button>
+          <button type="button" class="secondary-button" id="exportSnapshotCsvButton">Выгрузить CSV</button>
+          <button type="button" class="secondary-button" id="viewSnapshotTimeEntriesButton">Списание времени</button>
+        </div>
+        <div class="toolbar-row secondary">
+          <button type="button" id="deleteSnapshotButton">Удалить выбранный срез</button>
+          <button type="button" id="recaptureSnapshotButton">Загрузить/обновить последний срез</button>
+        </div>
       </div>
       <div class="action-status" id="snapshotActionStatus"></div>
-      <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Дата среза: {capturedForDate}. По фильтру: <span id="filteredIssuesCount">{initialFilteredIssues}</span> из {initialTotalIssues}. На странице: <span id="pageIssuesCount">{len(issues)}</span>.</p>
+      <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Дата среза: {capturedForDate}.{earlierSnapshotWarningHtml} По фильтру: <span id="filteredIssuesCount">{initialFilteredIssues}</span> из {initialTotalIssues}. На странице: <span id="pageIssuesCount">{len(issues)}</span>.</p>
       <div class="summary-block">
         <table class="summary-table">
           <thead>
@@ -6858,6 +6903,8 @@ SNAPSHOT_TIME_ENTRY_MULTISELECT_KEYS = {
 }
 
 SNAPSHOT_TIME_ENTRY_FIXED_WIDTHS = {
+    "issue_tracker_name": "15ch",
+    "issue_status_name": "15ch",
     "created_on": "15ch",
     "updated_on": "15ch",
 }
@@ -7057,18 +7104,6 @@ def buildSnapshotTimeEntriesPage(
         for columnKey, columnWidth in SNAPSHOT_TIME_ENTRY_FIXED_WIDTHS.items()
     )
 
-    summaryCells = []
-    for index, column in enumerate(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG):
-        if index == 0:
-            summaryCells.append(f'<th class="summary-label">Итого: <span id="timeEntriesFilteredCount">{len(filteredEntries)}</span></th>')
-            continue
-        if column.get("sum"):
-            summaryCells.append(
-                f'<th class="summary-value" data-summary-key="{escape(str(column["key"]))}">{formatPageHours(totalHours)}</th>'
-            )
-        else:
-            summaryCells.append("<th></th>")
-
     headerCells = "".join(
         f'<th class="col-{escape(str(column["key"]))}" data-column-key="{escape(str(column["key"]))}">{escape(str(column["label"]))}</th>'
         for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG
@@ -7089,6 +7124,21 @@ def buildSnapshotTimeEntriesPage(
                 f'<th class="col-{escape(columnKey)}"><input class="filter-input-table" type="text" data-filter-key="{escape(columnKey)}"></th>'
             )
     filterCells = "".join(filterCellsList)
+    footerCellsList: list[str] = []
+    for index, column in enumerate(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG):
+        columnKey = str(column["key"])
+        if index == 0:
+            footerCellsList.append(
+                f'<th class="summary-label">Итого: <span id="timeEntriesFilteredCount">{len(filteredEntries)}</span></th>'
+            )
+            continue
+        if str(column.get("type") or "") in {"number", "hours"}:
+            footerCellsList.append(
+                f'<th class="summary-value" data-summary-key="{escape(columnKey)}"></th>'
+            )
+        else:
+            footerCellsList.append("<th></th>")
+    footerCells = "".join(footerCellsList)
 
     return f"""<!doctype html>
 <html lang="ru">
@@ -7110,9 +7160,7 @@ def buildSnapshotTimeEntriesPage(
       --header: #eef6f7;
       --header-2: #f7fbfc;
       --brand: #33bdd8;
-      --summary-top: 0px;
-      --time-header-top: 48px;
-      --time-filter-top: 92px;
+      --time-filter-top: 44px;
     }}
     * {{ box-sizing: border-box; }}
     body {{ margin: 0; font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
@@ -7132,22 +7180,12 @@ def buildSnapshotTimeEntriesPage(
     .pagination-info, .summary-note {{ color: var(--muted); font-size: 0.94rem; }}
     .page-size-label {{ color: var(--muted); }}
     .page-size-input {{ width: 110px; }}
-    .table-wrap {{ position: relative; overflow-x: auto; overflow-y: visible; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }}
+    .table-wrap {{ position: relative; min-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }}
     table {{ width: 100%; border-collapse: separate; border-spacing: 0; min-width: 2200px; background: var(--panel); }}
     th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }}
-    thead .summary-row th {{
-      position: sticky;
-      top: var(--summary-top);
-      z-index: 5;
-      background: #ffffff;
-      color: #173b5a;
-      text-transform: none;
-      font-size: 0.92rem;
-      box-shadow: inset 0 -1px 0 var(--line);
-    }}
     thead .header-row th {{
       position: sticky;
-      top: var(--time-header-top);
+      top: 0;
       z-index: 4;
       background: var(--header);
       color: #426179;
@@ -7162,6 +7200,16 @@ def buildSnapshotTimeEntriesPage(
       background: var(--header-2);
       padding-top: 6px;
       padding-bottom: 6px;
+      box-shadow: inset 0 1px 0 var(--line);
+    }}
+    tfoot .footer-row th {{
+      position: sticky;
+      bottom: 0;
+      z-index: 4;
+      background: #ffffff;
+      color: #173b5a;
+      text-transform: none;
+      font-size: 0.92rem;
       box-shadow: inset 0 1px 0 var(--line);
     }}
     tr:last-child td {{ border-bottom: 0; }}
@@ -7208,9 +7256,6 @@ def buildSnapshotTimeEntriesPage(
     <div class="table-wrap">
       <table id="snapshotTimeEntriesTable">
         <thead>
-          <tr class="summary-row">
-            {''.join(summaryCells)}
-          </tr>
           <tr class="header-row">
             {headerCells}
           </tr>
@@ -7221,6 +7266,11 @@ def buildSnapshotTimeEntriesPage(
         <tbody id="snapshotTimeEntriesTableBody">
           <tr><td colspan="{len(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG)}">Загружаем списания...</td></tr>
         </tbody>
+        <tfoot>
+          <tr class="footer-row">
+            {footerCells}
+          </tr>
+        </tfoot>
       </table>
     </div>
     <script>
@@ -7228,6 +7278,7 @@ def buildSnapshotTimeEntriesPage(
       const timeEntryFilterOptionsByKey = {filterOptionsByKeyJson};
       const allTimeEntries = {timeEntriesJson};
       const timeEntriesTable = document.getElementById("snapshotTimeEntriesTable");
+      const timeEntriesTableWrap = document.querySelector(".table-wrap");
       const timeEntriesTableBody = document.getElementById("snapshotTimeEntriesTableBody");
       const timeEntriesVisibleCount = document.getElementById("timeEntriesVisibleCount");
       const timeEntriesHoursSummary = document.getElementById("timeEntriesHoursSummary");
@@ -7260,6 +7311,14 @@ def buildSnapshotTimeEntriesPage(
           return "0,0";
         }}
         return parsed.toFixed(1).replace(".", ",");
+      }}
+
+      function formatIntegerTotal(value) {{
+        const parsed = Number(value ?? 0);
+        if (!Number.isFinite(parsed)) {{
+          return "0";
+        }}
+        return Math.round(parsed).toLocaleString("ru-RU");
       }}
 
       function formatDateTime(value) {{
@@ -7334,30 +7393,45 @@ def buildSnapshotTimeEntriesPage(
       }}
 
       function updateTimeEntriesStickyOffsets() {{
-        const summaryRow = timeEntriesTable?.querySelector("thead .summary-row");
         const headerRow = timeEntriesTable?.querySelector("thead .header-row");
         const filterRow = timeEntriesTable?.querySelector("thead .filter-row");
-        if (!summaryRow || !headerRow || !filterRow || !timeEntriesTable) {{
+        if (!headerRow || !filterRow || !timeEntriesTable) {{
           return;
         }}
-        const summaryHeight = Math.ceil(summaryRow.getBoundingClientRect().height || 44);
         const headerHeight = Math.ceil(headerRow.getBoundingClientRect().height || 44);
-        timeEntriesTable.style.setProperty("--summary-top", "0px");
-        timeEntriesTable.style.setProperty("--time-header-top", `${{summaryHeight}}px`);
-        timeEntriesTable.style.setProperty("--time-filter-top", `${{summaryHeight + headerHeight}}px`);
+        timeEntriesTable.style.setProperty("--time-filter-top", `${{headerHeight}}px`);
+      }}
+
+      function updateTimeEntriesTableViewportHeight() {{
+        if (!timeEntriesTableWrap) {{
+          return;
+        }}
+        const rect = timeEntriesTableWrap.getBoundingClientRect();
+        const availableHeight = Math.max(420, Math.floor(window.innerHeight - Math.max(rect.top, 0) - 12));
+        timeEntriesTableWrap.style.height = `${{availableHeight}}px`;
       }}
 
       function updateTimeEntrySummary(filteredEntries) {{
         timeEntriesVisibleCount.textContent = String(filteredEntries.length);
         const totalHours = filteredEntries.reduce((sum, entry) => sum + Number(entry?.hours || 0), 0);
         timeEntriesHoursSummary.textContent = formatHours(totalHours);
-        const hoursSummaryCell = document.querySelector('[data-summary-key="hours"]');
-        if (hoursSummaryCell) {{
-          hoursSummaryCell.textContent = formatHours(totalHours);
-        }}
         const countCell = document.getElementById("timeEntriesFilteredCount");
         if (countCell) {{
           countCell.textContent = String(filteredEntries.length);
+        }}
+        for (const column of timeEntryColumns) {{
+          if (!(column.type === "number" || column.type === "hours")) {{
+            continue;
+          }}
+          const totalValue = filteredEntries.reduce((sum, entry) => {{
+            const numericValue = Number(entry?.[column.key] ?? 0);
+            return Number.isFinite(numericValue) ? sum + numericValue : sum;
+          }}, 0);
+          const summaryCell = document.querySelector(`tfoot [data-summary-key="${{column.key}}"]`);
+          if (!summaryCell) {{
+            continue;
+          }}
+          summaryCell.textContent = column.type === "hours" ? formatHours(totalValue) : formatIntegerTotal(totalValue);
         }}
       }}
 
@@ -7405,6 +7479,7 @@ def buildSnapshotTimeEntriesPage(
         const pageEntries = updateTimeEntriesPagination(filteredEntries);
         renderTimeEntriesRows(pageEntries);
         updateTimeEntriesStickyOffsets();
+        updateTimeEntriesTableViewportHeight();
       }}
 
       function buildTimeEntriesExportParams() {{
@@ -7477,7 +7552,8 @@ def buildSnapshotTimeEntriesPage(
 
       rerenderTimeEntries(true);
       window.addEventListener("resize", updateTimeEntriesStickyOffsets);
-      window.addEventListener("scroll", updateTimeEntriesStickyOffsets, {{ passive: true }});
+      window.addEventListener("resize", updateTimeEntriesTableViewportHeight);
+      window.addEventListener("scroll", updateTimeEntriesTableViewportHeight, {{ passive: true }});
     </script>
   </main>
 </body>
