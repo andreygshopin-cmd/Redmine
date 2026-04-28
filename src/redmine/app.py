@@ -6836,6 +6836,7 @@ def buildSnapshotTimeEntriesPage(
     dateTo: str | None,
 ) -> str:
     today = date.today()
+    defaultCapturedForDate = today.isoformat()
     defaultDateFrom = date(today.year, 1, 1).isoformat()
     defaultDateTo = today.isoformat()
 
@@ -6848,6 +6849,7 @@ def buildSnapshotTimeEntriesPage(
         except ValueError:
             return fallback
 
+    selectedCapturedForDate = normalizeDateValue(capturedForDate, defaultCapturedForDate)
     selectedDateFrom = normalizeDateValue(dateFrom, defaultDateFrom)
     selectedDateTo = normalizeDateValue(dateTo, defaultDateTo)
     if selectedDateFrom > selectedDateTo:
@@ -6855,7 +6857,7 @@ def buildSnapshotTimeEntriesPage(
 
     snapshotPayload = getSnapshotTimeEntriesForProjectByDateRange(
         projectRedmineId,
-        capturedForDate,
+        selectedCapturedForDate,
         selectedDateFrom,
         selectedDateTo,
     )
@@ -6905,6 +6907,9 @@ def buildSnapshotTimeEntriesPage(
     <h1>Списание времени</h1>
     <p class="meta">Для проекта с ID {projectRedmineId} срезы пока не найдены.</p>
     <form class="toolbar" method="get">
+      <label>Дата среза
+        <input type="date" name="captured_for_date" value="{escape(selectedCapturedForDate)}">
+      </label>
       <label>Дата от
         <input type="date" name="date_from" value="{escape(selectedDateFrom)}">
       </label>
@@ -6913,7 +6918,7 @@ def buildSnapshotTimeEntriesPage(
       </label>
       <button type="submit">Показать списания</button>
     </form>
-    <div class="empty-state">Сначала нужно загрузить срез проекта, чтобы появились списания времени.</div>
+    <div class="empty-state">Для даты среза {escape(selectedCapturedForDate)} списания времени не найдены. Если срез за эту дату еще не получен, сначала загрузите его.</div>
   </main>
 </body>
 </html>"""
@@ -7025,7 +7030,9 @@ def buildSnapshotTimeEntriesPage(
     <h1>Списание времени</h1>
     <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Дата среза: {escape(selectedSnapshotDateRaw or "—")}.</p>
     <form class="toolbar" method="get">
-      <input type="hidden" name="captured_for_date" value="{escape(selectedSnapshotDateRaw)}">
+      <label>Дата среза
+        <input type="date" name="captured_for_date" value="{escape(selectedSnapshotDateRaw or selectedCapturedForDate)}">
+      </label>
       <label>Дата от
         <input type="date" name="date_from" value="{escape(selectedDateFrom)}">
       </label>
