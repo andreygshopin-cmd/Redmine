@@ -16,10 +16,19 @@ jobs:
     name: Trigger Render deploy and verify live SHA
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: ${{ secrets.RENDER_DEPLOY_HOOK_URL != '' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Ensure deploy hook secret is configured
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        shell: bash
+        run: |
+          if [ -z "${RENDER_DEPLOY_HOOK_URL}" ]; then
+            echo "::error::GitHub secret RENDER_DEPLOY_HOOK_URL is missing."
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -53,12 +62,3 @@ jobs:
           TIMEOUT_SECONDS: "1200"
           POLL_INTERVAL_SECONDS: "10"
         run: python scripts/wait_for_render_deploy.py
-
-  deploy-not-configured:
-    name: Render deploy hook is not configured
-    runs-on: ubuntu-latest
-    if: ${{ secrets.RENDER_DEPLOY_HOOK_URL == '' }}
-    steps:
-      - name: Explain setup
-        run: |
-          echo "::warning::GitHub secret RENDER_DEPLOY_HOOK_URL is missing. Add the Render Deploy Hook URL in GitHub Secrets to enable deterministic deploys."
