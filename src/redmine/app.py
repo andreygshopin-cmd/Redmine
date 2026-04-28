@@ -5769,6 +5769,12 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         font-weight: 600;
         color: var(--text);
       }}
+      .snapshot-date-label-text {{
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }}
       .snapshot-date-warning {{ margin-top: 2px; font-size: 0.86rem; }}
       .action-status {{ color: var(--muted); margin: 0 0 18px; min-height: 22px; }}
       .summary-block {{ margin: 0 0 20px; }}
@@ -5941,11 +5947,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       <div class="toolbar">
         <div class="toolbar-row primary">
           <form method="get">
-            <label for="capturedForDate">Дата среза</label>
+            <label for="capturedForDate"><span class="snapshot-date-label-text">Дата среза{f'<span class="meta-warning snapshot-date-warning">Более ранний срез</span>' if usedEarlierSnapshot and fallbackCapturedForDate else ''}</span></label>
             <select id="capturedForDate" name="captured_for_date" onchange="this.form.submit()">
               {''.join(optionsHtml)}
             </select>
-            {f'<div class="meta-warning snapshot-date-warning">Более ранний срез: {escape(fallbackCapturedForDate)}</div>' if usedEarlierSnapshot and fallbackCapturedForDate else ''}
           </form>
           <label class="page-size-label" for="snapshotPageSizeInput">Задач на странице
             <input class="page-size-input" id="snapshotPageSizeInput" type="number" min="10" max="10000" step="10" value="{initialPageSize}">
@@ -6893,11 +6898,11 @@ SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG = [
     {"key": "time_entry_redmine_id", "label": "ID списания", "type": "number", "sum": False, "mono": True},
     {"key": "issue_redmine_id", "label": "ID задачи", "type": "number", "sum": False, "mono": True},
     {"key": "issue_subject", "label": "Тема задачи", "type": "text", "sum": False, "mono": False},
+    {"key": "comments", "label": "Комментарий", "type": "text", "sum": False, "mono": False},
     {"key": "issue_tracker_name", "label": "Трекер задачи", "type": "text", "sum": False, "mono": False},
     {"key": "issue_status_name", "label": "Статус задачи", "type": "text", "sum": False, "mono": False},
     {"key": "user_id", "label": "ID пользователя", "type": "number", "sum": False, "mono": True},
     {"key": "activity_id", "label": "ID активности", "type": "number", "sum": False, "mono": True},
-    {"key": "comments", "label": "Комментарий", "type": "text", "sum": False, "mono": False},
     {"key": "spent_on", "label": "Дата списания", "type": "date", "sum": False, "mono": False},
     {"key": "created_on", "label": "Создано", "type": "datetime", "sum": False, "mono": False},
     {"key": "updated_on", "label": "Обновлено", "type": "datetime", "sum": False, "mono": False},
@@ -6911,7 +6916,7 @@ SNAPSHOT_TIME_ENTRY_MULTISELECT_KEYS = {
 
 SNAPSHOT_TIME_ENTRY_FIXED_WIDTHS = {
     "id": "8ch",
-    "user_name": "20ch",
+    "user_name": "16ch",
     "activity_name": "15ch",
     "hours": "10ch",
     "snapshot_run_id": "10ch",
@@ -6920,14 +6925,14 @@ SNAPSHOT_TIME_ENTRY_FIXED_WIDTHS = {
     "time_entry_redmine_id": "10ch",
     "issue_redmine_id": "10ch",
     "issue_subject": "64ch",
+    "comments": "32ch",
     "issue_tracker_name": "23ch",
     "issue_status_name": "23ch",
     "user_id": "10ch",
     "activity_id": "10ch",
-    "comments": "32ch",
-    "spent_on": "12ch",
-    "created_on": "15ch",
-    "updated_on": "15ch",
+    "spent_on": "18ch",
+    "created_on": "23ch",
+    "updated_on": "23ch",
 }
 
 
