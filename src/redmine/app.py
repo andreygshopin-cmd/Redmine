@@ -6850,6 +6850,17 @@ SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG = [
     {"key": "updated_on", "label": "Обновлено", "type": "datetime", "sum": False, "mono": False},
 ]
 
+SNAPSHOT_TIME_ENTRY_MULTISELECT_KEYS = {
+    "issue_tracker_name",
+    "issue_status_name",
+    "activity_name",
+}
+
+SNAPSHOT_TIME_ENTRY_FIXED_WIDTHS = {
+    "created_on": "15ch",
+    "updated_on": "15ch",
+}
+
 
 def _normalizeSnapshotTimeEntriesDateValue(value: str | None, fallback: str) -> str:
     rawValue = str(value or "").strip()
@@ -6873,25 +6884,45 @@ def _formatSnapshotTimeEntryCellValue(columnKey: str, value: object) -> str:
 
 def _applySnapshotTimeEntriesFilters(
     timeEntries: list[dict[str, object]],
-    filters: dict[str, str] | None = None,
+    filters: dict[str, object] | None = None,
 ) -> list[dict[str, object]]:
-    normalizedFilters = {
-        key: str(value or "").strip().lower()
-        for key, value in (filters or {}).items()
-        if str(value or "").strip()
-    }
-    if not normalizedFilters:
+    normalizedTextFilters: dict[str, str] = {}
+    normalizedMultiFilters: dict[str, list[str]] = {}
+
+    for key, rawValue in (filters or {}).items():
+        if key in SNAPSHOT_TIME_ENTRY_MULTISELECT_KEYS:
+            values = rawValue if isinstance(rawValue, (list, tuple, set)) else [rawValue]
+            normalizedValues: list[str] = []
+            for value in values:
+                normalizedValue = str(value or "").strip().lower()
+                if normalizedValue and normalizedValue not in normalizedValues:
+                    normalizedValues.append(normalizedValue)
+            if normalizedValues:
+                normalizedMultiFilters[key] = normalizedValues
+            continue
+
+        normalizedValue = str(rawValue or "").strip().lower()
+        if normalizedValue:
+            normalizedTextFilters[key] = normalizedValue
+
+    if not normalizedTextFilters and not normalizedMultiFilters:
         return list(timeEntries)
 
     filteredEntries: list[dict[str, object]] = []
     for entry in timeEntries:
         matches = True
         for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG:
-            filterValue = normalizedFilters.get(column["key"])
-            if not filterValue:
-                continue
             renderedValue = _formatSnapshotTimeEntryCellValue(column["key"], entry.get(column["key"])).lower()
-            if filterValue not in renderedValue:
+
+            multiFilterValues = normalizedMultiFilters.get(column["key"])
+            if multiFilterValues is not None:
+                if renderedValue not in multiFilterValues:
+                    matches = False
+                    break
+                continue
+
+            filterValue = normalizedTextFilters.get(column["key"])
+            if filterValue and filterValue not in renderedValue:
                 matches = False
                 break
         if matches:
@@ -7006,6 +7037,24 @@ def buildSnapshotTimeEntriesPage(
     timeEntriesJson = json.dumps(timeEntries, ensure_ascii=False, default=str)
     columnConfigJson = json.dumps(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG, ensure_ascii=False)
     exportUrlBase = f"/projects/{projectRedmineId}/time-entries/export.csv"
+    filterOptionsByKey: dict[str, list[str]] = {}
+    for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG:
+        columnKey = str(column["key"])
+        if columnKey not in SNAPSHOT_TIME_ENTRY_MULTISELECT_KEYS:
+            continue
+        optionValues = sorted(
+            {
+                _formatSnapshotTimeEntryCellValue(columnKey, entry.get(columnKey))
+                for entry in timeEntries
+            },
+            key=lambda value: str(value).lower(),
+        )
+        filterOptionsByKey[columnKey] = optionValues
+    filterOptionsByKeyJson = json.dumps(filterOptionsByKey, ensure_ascii=False)
+    columnWidthCss = "\n".join(
+        f'.col-{columnKey} {{ width: {columnWidth}; min-width: {columnWidth}; max-width: {columnWidth}; }}'
+        for columnKey, columnWidth in SNAPSHOT_TIME_ENTRY_FIXED_WIDTHS.items()
+    )
 
     summaryCells = []
     for index, column in enumerate(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG):
@@ -7019,11 +7068,26 @@ def buildSnapshotTimeEntriesPage(
         else:
             summaryCells.append("<th></th>")
 
-    headerCells = "".join(f'<th data-column-key="{escape(str(column["key"]))}">{escape(str(column["label"]))}</th>' for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG)
-    filterCells = "".join(
-        f'<th><input class="filter-input-table" type="text" data-filter-key="{escape(str(column["key"]))}"></th>'
+    headerCells = "".join(
+        f'<th class="col-{escape(str(column["key"]))}" data-column-key="{escape(str(column["key"]))}">{escape(str(column["label"]))}</th>'
         for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG
     )
+    filterCellsList: list[str] = []
+    for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG:
+        columnKey = str(column["key"])
+        if columnKey in SNAPSHOT_TIME_ENTRY_MULTISELECT_KEYS:
+            optionsHtml = "".join(
+                f'<option value="{escape(optionValue)}">{escape(optionValue)}</option>'
+                for optionValue in filterOptionsByKey.get(columnKey, [])
+            )
+            filterCellsList.append(
+                f'<th class="col-{escape(columnKey)}"><select class="filter-input-table filter-select-table" data-filter-key="{escape(columnKey)}" multiple size="3">{optionsHtml}</select></th>'
+            )
+        else:
+            filterCellsList.append(
+                f'<th class="col-{escape(columnKey)}"><input class="filter-input-table" type="text" data-filter-key="{escape(columnKey)}"></th>'
+            )
+    filterCells = "".join(filterCellsList)
 
     return f"""<!doctype html>
 <html lang="ru">
@@ -7102,6 +7166,8 @@ def buildSnapshotTimeEntriesPage(
     tr:last-child td {{ border-bottom: 0; }}
     .mono {{ font-family: Consolas, "Courier New", monospace; white-space: nowrap; }}
     .filter-input-table {{ width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; font-size: 0.82rem; line-height: 1.2; background: #ffffff; color: var(--text); }}
+    .filter-select-table {{ min-height: 78px; padding-top: 4px; padding-bottom: 4px; }}
+    {columnWidthCss}
     .summary-label {{ font-weight: 700; white-space: nowrap; }}
     .summary-value {{ font-weight: 700; white-space: nowrap; }}
     .empty-state {{ padding: 18px 20px; border: 1px solid var(--line); border-radius: 8px; background: #f8fbfd; color: var(--muted); }}
@@ -7158,6 +7224,7 @@ def buildSnapshotTimeEntriesPage(
     </div>
     <script>
       const timeEntryColumns = {columnConfigJson};
+      const timeEntryFilterOptionsByKey = {filterOptionsByKeyJson};
       const allTimeEntries = {timeEntriesJson};
       const timeEntriesTable = document.getElementById("snapshotTimeEntriesTable");
       const timeEntriesTableBody = document.getElementById("snapshotTimeEntriesTableBody");
@@ -7215,22 +7282,53 @@ def buildSnapshotTimeEntriesPage(
         return String(value);
       }}
 
+      function getTimeEntryColumn(key) {{
+        return timeEntryColumns.find((column) => column.key === key) || null;
+      }}
+
       function getCurrentTimeEntryFilters() {{
         const filters = {{}};
         for (const input of timeEntriesFilterInputs) {{
-          filters[input.dataset.filterKey] = String(input.value || "").trim().toLowerCase();
+          const filterKey = String(input.dataset.filterKey || "");
+          if (input instanceof HTMLSelectElement && input.multiple) {{
+            const selectedValues = Array.from(input.selectedOptions)
+              .map((option) => String(option.value || "").trim().toLowerCase())
+              .filter(Boolean);
+            if (selectedValues.length) {{
+              filters[filterKey] = selectedValues;
+            }}
+            continue;
+          }}
+          const filterValue = String(input.value || "").trim().toLowerCase();
+          if (filterValue) {{
+            filters[filterKey] = filterValue;
+          }}
         }}
         return filters;
       }}
 
       function getFilteredTimeEntries() {{
         const filters = getCurrentTimeEntryFilters();
-        const activeKeys = Object.keys(filters).filter((key) => filters[key]);
+        const activeKeys = Object.keys(filters).filter((key) => {{
+          const value = filters[key];
+          return Array.isArray(value) ? value.length > 0 : Boolean(value);
+        }});
         if (!activeKeys.length) {{
           return allTimeEntries.slice();
         }}
         return allTimeEntries.filter((entry) => {{
-          return activeKeys.every((key) => renderTimeEntryCell(entry, timeEntryColumns.find((column) => column.key === key)).toLowerCase().includes(filters[key]));
+          return activeKeys.every((key) => {{
+            const column = getTimeEntryColumn(key);
+            if (!column) {{
+              return true;
+            }}
+            const renderedValue = renderTimeEntryCell(entry, column).toLowerCase();
+            const filterValue = filters[key];
+            if (Array.isArray(filterValue)) {{
+              return filterValue.includes(renderedValue);
+            }}
+            return renderedValue.includes(filterValue);
+          }});
         }});
       }}
 
@@ -7287,8 +7385,11 @@ def buildSnapshotTimeEntriesPage(
 
         timeEntriesTableBody.innerHTML = entries.map((entry) => {{
           const cells = timeEntryColumns.map((column) => {{
-            const valueClass = column.mono ? "mono" : "";
-            return `<td class="${{valueClass}}">${{escapeHtml(renderTimeEntryCell(entry, column))}}</td>`;
+            const valueClasses = [`col-${{column.key}}`];
+            if (column.mono) {{
+              valueClasses.push("mono");
+            }}
+            return `<td class="${{valueClasses.join(" ")}}">${{escapeHtml(renderTimeEntryCell(entry, column))}}</td>`;
           }}).join("");
           return `<tr>${{cells}}</tr>`;
         }}).join("");
@@ -7321,7 +7422,9 @@ def buildSnapshotTimeEntriesPage(
         }}
         const filters = getCurrentTimeEntryFilters();
         for (const [key, value] of Object.entries(filters)) {{
-          if (value) {{
+          if (Array.isArray(value)) {{
+            value.forEach((item) => params.append(key, item));
+          }} else if (value) {{
             params.set(key, value);
           }}
         }}
@@ -7329,7 +7432,8 @@ def buildSnapshotTimeEntriesPage(
       }}
 
       timeEntriesFilterInputs.forEach((input) => {{
-        input.addEventListener("input", () => rerenderTimeEntries(true));
+        const eventName = input instanceof HTMLSelectElement ? "change" : "input";
+        input.addEventListener(eventName, () => rerenderTimeEntries(true));
       }});
 
       timeEntriesPrevPageButton?.addEventListener("click", () => {{
@@ -7349,6 +7453,12 @@ def buildSnapshotTimeEntriesPage(
       timeEntriesPageSizeInput?.addEventListener("change", () => rerenderTimeEntries(true));
       resetTimeEntryFiltersButton?.addEventListener("click", () => {{
         timeEntriesFilterInputs.forEach((input) => {{
+          if (input instanceof HTMLSelectElement && input.multiple) {{
+            Array.from(input.options).forEach((option) => {{
+              option.selected = false;
+            }});
+            return;
+          }}
           input.value = "";
         }});
         rerenderTimeEntries(true);
@@ -9990,7 +10100,11 @@ def _listProjectsSummaryRows(
                 "pm_name": None,
                 "development_hours": None,
                 "report_year_hours": None,
-                "development_spent_hours_year": project.get("development_spent_hours_year"),
+                "development_spent_hours_year": (
+                    float(project.get("development_spent_hours_year") or 0)
+                    + float(project.get("development_process_spent_hours_year") or 0)
+                    + float(project.get("bug_spent_hours_year") or 0)
+                ),
                 "is_closed": None,
                 "link_project_name": project.get("name"),
                 "is_missing_planning_project": True,
@@ -10383,6 +10497,7 @@ def buildProjectsSummaryPage() -> str:
       noRows: "\\u041f\\u043e \\u0432\\u044b\\u0431\\u0440\\u0430\\u043d\\u043d\\u044b\\u043c \\u0443\\u0441\\u043b\\u043e\\u0432\\u0438\\u044f\\u043c \\u0437\\u0430\\u043f\\u0438\\u0441\\u0435\\u0439 \\u043d\\u0435 \\u043d\\u0430\\u0439\\u0434\\u0435\\u043d\\u043e.",
       factFiltered: "\\u0441\\u043e\\u0434\\u0435\\u0440\\u0436\\u0438\\u0442 \\u0437\\u0430\\u0442\\u0440\\u0430\\u0442\\u044b \\u043f\\u0440\\u043e\\u0435\\u043a\\u0442\\u043e\\u0432, \\u043d\\u0435 \\u043f\\u043e\\u043f\\u0430\\u0432\\u0448\\u0438\\u0445 \\u043f\\u043e\\u0434 \\u043a\\u0440\\u0438\\u0442\\u0435\\u0440\\u0438\\u0438 \\u0444\\u0438\\u043b\\u044c\\u0442\\u0440\\u0430",
     }};
+    const projectsSummaryFactYearLabel = "\\u0420\\u0430\\u0437\\u0440\\u0430\\u0431\\u043e\\u0442\\u043a\\u0430 c \\u0431\\u0430\\u0433\\u0430\\u043c\\u0438 \\u0438 \\u043f\\u0440\\u043e\\u0446\\u0435\\u0441\\u0441\\u0430\\u043c\\u0438 \\u0437\\u0430 \\u0433\\u043e\\u0434, \\u0447";
     const projectsSummaryColumnKeys = [
       "redmine_identifier",
       "development_spent_hours_year_average",
@@ -10410,6 +10525,9 @@ def buildProjectsSummaryPage() -> str:
       "development_hours",
     ]);
     const projectsSummaryHeaderCells = Array.from(document.querySelectorAll("table thead tr:first-child th"));
+    if (projectsSummaryHeaderCells[1]) {{
+      projectsSummaryHeaderCells[1].textContent = projectsSummaryFactYearLabel;
+    }}
     const projectsSummaryDirectionFilterCell = document.querySelector('.summary-filter-row [data-filter-key="direction"]')?.parentElement;
     if (projectsSummaryDirectionFilterCell) {{
       projectsSummaryDirectionFilterCell.innerHTML = `<select class="summary-filter-input summary-filter-select" data-filter-key="direction"><option value="">${{projectsSummaryStrings.all}}</option></select>`;
@@ -11473,12 +11591,12 @@ def exportProjectSnapshotTimeEntriesCsv(
         "time_entry_redmine_id": time_entry_redmine_id,
         "issue_redmine_id": issue_redmine_id,
         "issue_subject": issue_subject,
-        "issue_tracker_name": issue_tracker_name,
-        "issue_status_name": issue_status_name,
+        "issue_tracker_name": queryParams.getlist("issue_tracker_name") or issue_tracker_name,
+        "issue_status_name": queryParams.getlist("issue_status_name") or issue_status_name,
         "user_id": user_id,
         "user_name": user_name,
         "activity_id": activity_id,
-        "activity_name": activity_name,
+        "activity_name": queryParams.getlist("activity_name") or activity_name,
         "hours": hours,
         "comments": comments,
         "spent_on": spent_on,

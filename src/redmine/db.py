@@ -1375,6 +1375,120 @@ def listProjectPlanningSummary(reportDate: str, direction: str | None = None, is
     return [dict(row) for row in rows]
 
 
+def listProjectPlanningSummary(reportDate: str, direction: str | None = None, isClosed: bool = False) -> list[dict[str, object]]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    normalizedDirection = str(direction or "").strip()
+    reportYear = int(str(reportDate)[:4])
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                WITH filtered_planning_projects AS (
+                    SELECT
+                        id,
+                        direction,
+                        customer,
+                        project_name,
+                        redmine_identifier,
+                        pm_name,
+                        development_hours,
+                        year_1,
+                        hours_1,
+                        year_2,
+                        hours_2,
+                        year_3,
+                        hours_3,
+                        is_closed
+                    FROM planning_projects
+                    WHERE COALESCE(is_closed, FALSE) = :is_closed
+                      AND (
+                        :direction = ''
+                        OR LOWER(TRIM(COALESCE(direction, ''))) = LOWER(TRIM(:direction))
+                      )
+                ),
+                project_identifier_map AS (
+                    SELECT DISTINCT ON (LOWER(TRIM(COALESCE(identifier, ''))))
+                        LOWER(TRIM(COALESCE(identifier, ''))) AS normalized_identifier,
+                        redmine_id
+                    FROM projects
+                    WHERE TRIM(COALESCE(identifier, '')) <> ''
+                    ORDER BY LOWER(TRIM(COALESCE(identifier, ''))), redmine_id
+                ),
+                latest_snapshot_runs AS (
+                    SELECT DISTINCT ON (r.project_redmine_id)
+                        r.id,
+                        LOWER(TRIM(COALESCE(p.identifier, r.project_identifier, ''))) AS normalized_identifier
+                    FROM issue_snapshot_runs r
+                    LEFT JOIN projects p
+                        ON p.redmine_id = r.project_redmine_id
+                    WHERE r.captured_for_date <= :report_date
+                    ORDER BY r.project_redmine_id, r.captured_for_date DESC, r.captured_at DESC, r.id DESC
+                ),
+                latest_snapshot_metrics AS (
+                    SELECT
+                        lr.normalized_identifier,
+                        COALESCE(
+                            SUM(
+                                CASE
+                                    WHEN LOWER(TRIM(COALESCE(i.tracker_name, ''))) IN (
+                                        LOWER('Разработка'),
+                                        LOWER('Процессы разработки'),
+                                        LOWER('Ошибка')
+                                    )
+                                    THEN COALESCE(i.spent_hours_year, 0)
+                                    ELSE 0
+                                END
+                            ),
+                            0
+                        ) AS development_spent_hours_year
+                    FROM latest_snapshot_runs lr
+                    LEFT JOIN issue_snapshot_items i
+                        ON i.snapshot_run_id = lr.id
+                    GROUP BY lr.normalized_identifier
+                )
+                SELECT
+                    fp.id,
+                    fp.direction,
+                    fp.customer,
+                    fp.project_name,
+                    fp.redmine_identifier,
+                    pim.redmine_id AS project_redmine_id,
+                    fp.pm_name,
+                    fp.development_hours,
+                    CASE
+                        WHEN :report_year = fp.year_1 THEN fp.hours_1
+                        WHEN :report_year = fp.year_2 THEN fp.hours_2
+                        WHEN :report_year = fp.year_3 THEN fp.hours_3
+                        ELSE NULL
+                    END AS report_year_hours,
+                    COALESCE(lsm.development_spent_hours_year, 0) AS development_spent_hours_year,
+                    fp.is_closed
+                FROM filtered_planning_projects fp
+                LEFT JOIN latest_snapshot_metrics lsm
+                    ON lsm.normalized_identifier = LOWER(TRIM(COALESCE(fp.redmine_identifier, '')))
+                LEFT JOIN project_identifier_map pim
+                    ON pim.normalized_identifier = LOWER(TRIM(COALESCE(fp.redmine_identifier, '')))
+                ORDER BY
+                    LOWER(COALESCE(fp.direction, '')),
+                    LOWER(COALESCE(fp.customer, '')),
+                    LOWER(COALESCE(fp.project_name, '')),
+                    fp.id
+                """
+            ),
+            {
+                "report_date": str(reportDate),
+                "report_year": reportYear,
+                "direction": normalizedDirection,
+                "is_closed": bool(isClosed),
+            },
+        ).mappings().all()
+
+    return [dict(row) for row in rows]
+
+
 def getPlanningProjectByRedmineIdentifier(redmineIdentifier: str) -> dict[str, object] | None:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
