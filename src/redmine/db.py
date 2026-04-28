@@ -1,8 +1,9 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 import json
 from threading import Lock
 
 from sqlalchemy import bindparam, create_engine, text
+from sqlalchemy.engine import Connection
 from sqlalchemy.orm import sessionmaker
 
 from src.redmine.config import loadConfig
@@ -607,11 +608,50 @@ def ensurePlanningProjectsTable() -> None:
                         p2 DOUBLE PRECISION NULL,
                         estimate_doc_url TEXT,
                         bitrix_url TEXT,
-                    comment_text TEXT,
-                    question_flag BOOLEAN NOT NULL DEFAULT FALSE,
-                    is_closed BOOLEAN NOT NULL DEFAULT FALSE,
+                        comment_text TEXT,
+                        question_flag BOOLEAN NOT NULL DEFAULT FALSE,
+                        is_closed BOOLEAN NOT NULL DEFAULT FALSE,
                         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        deleted_at TIMESTAMPTZ NULL
+                    )
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS planning_project_versions (
+                        id SERIAL PRIMARY KEY,
+                        planning_project_id INTEGER NOT NULL,
+                        operation TEXT NOT NULL,
+                        changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        direction TEXT,
+                        project_name TEXT NOT NULL,
+                        redmine_identifier TEXT,
+                        pm_name TEXT,
+                        customer TEXT,
+                        start_date DATE NULL,
+                        end_date DATE NULL,
+                        development_hours DOUBLE PRECISION NULL,
+                        year_1 INTEGER NULL,
+                        hours_1 DOUBLE PRECISION NULL,
+                        year_2 INTEGER NULL,
+                        hours_2 DOUBLE PRECISION NULL,
+                        year_3 INTEGER NULL,
+                        hours_3 DOUBLE PRECISION NULL,
+                        baseline_estimate_hours DOUBLE PRECISION NULL,
+                        p1 DOUBLE PRECISION NULL,
+                        p2 DOUBLE PRECISION NULL,
+                        estimate_doc_url TEXT,
+                        bitrix_url TEXT,
+                        comment_text TEXT,
+                        question_flag BOOLEAN NOT NULL DEFAULT FALSE,
+                        is_closed BOOLEAN NOT NULL DEFAULT FALSE,
+                        created_at TIMESTAMPTZ NULL,
+                        updated_at TIMESTAMPTZ NULL,
+                        deleted_at TIMESTAMPTZ NULL
                     )
                     """
                 )
@@ -744,13 +784,227 @@ def ensurePlanningProjectsTable() -> None:
             connection.execute(
                 text(
                     """
+                    ALTER TABLE planning_projects
+                    ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_planning_projects_deleted_at
+                    ON planning_projects(deleted_at)
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_planning_project_versions_project_changed
+                    ON planning_project_versions(planning_project_id, changed_at DESC, id DESC)
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_planning_project_versions_identifier_changed
+                    ON planning_project_versions(LOWER(COALESCE(redmine_identifier, '')), changed_at DESC, id DESC)
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
                     CREATE INDEX IF NOT EXISTS idx_planning_projects_name
                     ON planning_projects(LOWER(project_name))
                     """
                 )
             )
 
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO planning_project_versions (
+                        planning_project_id,
+                        operation,
+                        changed_at,
+                        direction,
+                        project_name,
+                        redmine_identifier,
+                        pm_name,
+                        customer,
+                        start_date,
+                        end_date,
+                        development_hours,
+                        year_1,
+                        hours_1,
+                        year_2,
+                        hours_2,
+                        year_3,
+                        hours_3,
+                        baseline_estimate_hours,
+                        p1,
+                        p2,
+                        estimate_doc_url,
+                        bitrix_url,
+                        comment_text,
+                        question_flag,
+                        is_closed,
+                        created_at,
+                        updated_at,
+                        deleted_at
+                    )
+                    SELECT
+                        p.id,
+                        CASE WHEN p.deleted_at IS NULL THEN 'create' ELSE 'delete' END,
+                        COALESCE(p.deleted_at, p.updated_at, p.created_at, CURRENT_TIMESTAMP),
+                        p.direction,
+                        p.project_name,
+                        p.redmine_identifier,
+                        p.pm_name,
+                        p.customer,
+                        p.start_date,
+                        p.end_date,
+                        p.development_hours,
+                        p.year_1,
+                        p.hours_1,
+                        p.year_2,
+                        p.hours_2,
+                        p.year_3,
+                        p.hours_3,
+                        p.baseline_estimate_hours,
+                        p.p1,
+                        p.p2,
+                        p.estimate_doc_url,
+                        p.bitrix_url,
+                        p.comment_text,
+                        p.question_flag,
+                        p.is_closed,
+                        p.created_at,
+                        p.updated_at,
+                        p.deleted_at
+                    FROM planning_projects p
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM planning_project_versions v
+                        WHERE v.planning_project_id = p.id
+                    )
+                    """
+                )
+            )
+
         _planningProjectsTableEnsured = True
+
+
+def _buildPlanningProjectVersionPayload(
+    projectRow: Mapping[str, object],
+    operation: str,
+    changedAt: object | None = None,
+) -> dict[str, object]:
+    return {
+        "planning_project_id": projectRow.get("id"),
+        "operation": str(operation),
+        "changed_at": changedAt or projectRow.get("deleted_at") or projectRow.get("updated_at") or projectRow.get("created_at"),
+        "direction": projectRow.get("direction"),
+        "project_name": projectRow.get("project_name"),
+        "redmine_identifier": projectRow.get("redmine_identifier"),
+        "pm_name": projectRow.get("pm_name"),
+        "customer": projectRow.get("customer"),
+        "start_date": projectRow.get("start_date"),
+        "end_date": projectRow.get("end_date"),
+        "development_hours": projectRow.get("development_hours"),
+        "year_1": projectRow.get("year_1"),
+        "hours_1": projectRow.get("hours_1"),
+        "year_2": projectRow.get("year_2"),
+        "hours_2": projectRow.get("hours_2"),
+        "year_3": projectRow.get("year_3"),
+        "hours_3": projectRow.get("hours_3"),
+        "baseline_estimate_hours": projectRow.get("baseline_estimate_hours"),
+        "p1": projectRow.get("p1"),
+        "p2": projectRow.get("p2"),
+        "estimate_doc_url": projectRow.get("estimate_doc_url"),
+        "bitrix_url": projectRow.get("bitrix_url"),
+        "comment_text": projectRow.get("comment_text"),
+        "question_flag": bool(projectRow.get("question_flag")),
+        "is_closed": bool(projectRow.get("is_closed")),
+        "created_at": projectRow.get("created_at"),
+        "updated_at": projectRow.get("updated_at"),
+        "deleted_at": projectRow.get("deleted_at"),
+    }
+
+
+def _insertPlanningProjectVersion(connection: Connection, projectRow: Mapping[str, object], operation: str) -> None:
+    connection.execute(
+        text(
+            """
+            INSERT INTO planning_project_versions (
+                planning_project_id,
+                operation,
+                changed_at,
+                direction,
+                project_name,
+                redmine_identifier,
+                pm_name,
+                customer,
+                start_date,
+                end_date,
+                development_hours,
+                year_1,
+                hours_1,
+                year_2,
+                hours_2,
+                year_3,
+                hours_3,
+                baseline_estimate_hours,
+                p1,
+                p2,
+                estimate_doc_url,
+                bitrix_url,
+                comment_text,
+                question_flag,
+                is_closed,
+                created_at,
+                updated_at,
+                deleted_at
+            ) VALUES (
+                :planning_project_id,
+                :operation,
+                COALESCE(:changed_at, CURRENT_TIMESTAMP),
+                :direction,
+                :project_name,
+                :redmine_identifier,
+                :pm_name,
+                :customer,
+                :start_date,
+                :end_date,
+                :development_hours,
+                :year_1,
+                :hours_1,
+                :year_2,
+                :hours_2,
+                :year_3,
+                :hours_3,
+                :baseline_estimate_hours,
+                :p1,
+                :p2,
+                :estimate_doc_url,
+                :bitrix_url,
+                :comment_text,
+                :question_flag,
+                :is_closed,
+                :created_at,
+                :updated_at,
+                :deleted_at
+            )
+            """
+        ),
+        _buildPlanningProjectVersionPayload(projectRow, operation),
+    )
 
 
 def ensureUsersTable() -> None:
@@ -1163,7 +1417,8 @@ def countPlanningProjects(searchText: str | None = None, includeClosed: bool = F
                 """
                 SELECT COUNT(*)
                 FROM planning_projects
-                WHERE (:include_closed = TRUE OR COALESCE(is_closed, FALSE) = FALSE)
+                WHERE deleted_at IS NULL
+                  AND (:include_closed = TRUE OR COALESCE(is_closed, FALSE) = FALSE)
                   AND (
                     :search_pattern = ''
                     OR LOWER(COALESCE(direction, '')) LIKE :search_pattern
@@ -1224,7 +1479,8 @@ def listPlanningProjects(
                     created_at,
                     updated_at
                 FROM planning_projects
-                WHERE (:include_closed = TRUE OR COALESCE(is_closed, FALSE) = FALSE)
+                WHERE deleted_at IS NULL
+                  AND (:include_closed = TRUE OR COALESCE(is_closed, FALSE) = FALSE)
                   AND (
                     :search_pattern = ''
                     OR LOWER(COALESCE(direction, '')) LIKE :search_pattern
@@ -1266,7 +1522,8 @@ def listPlanningDirections() -> list[str]:
                 FROM (
                     SELECT DISTINCT TRIM(direction) AS direction
                     FROM planning_projects
-                    WHERE TRIM(COALESCE(direction, '')) <> ''
+                    WHERE deleted_at IS NULL
+                      AND TRIM(COALESCE(direction, '')) <> ''
                 ) directions
                 ORDER BY LOWER(direction)
                 """
@@ -1274,6 +1531,183 @@ def listPlanningDirections() -> list[str]:
         ).fetchall()
 
     return [str(row.direction) for row in rows if str(row.direction or "").strip()]
+
+
+def _listProjectPlanningSummaryInternal(
+    reportDate: str,
+    direction: str | None = None,
+    isClosed: bool = False,
+    versioned: bool = False,
+) -> list[dict[str, object]]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    normalizedDirection = str(direction or "").strip()
+    reportYear = int(str(reportDate)[:4])
+
+    if versioned:
+        planningProjectsCte = """
+                effective_planning_projects AS (
+                    SELECT
+                        latest_versions.id,
+                        latest_versions.direction,
+                        latest_versions.customer,
+                        latest_versions.project_name,
+                        latest_versions.redmine_identifier,
+                        latest_versions.pm_name,
+                        latest_versions.development_hours,
+                        latest_versions.year_1,
+                        latest_versions.hours_1,
+                        latest_versions.year_2,
+                        latest_versions.hours_2,
+                        latest_versions.year_3,
+                        latest_versions.hours_3,
+                        latest_versions.is_closed,
+                        latest_versions.question_flag
+                    FROM (
+                        SELECT DISTINCT ON (v.planning_project_id)
+                            v.planning_project_id AS id,
+                            v.direction,
+                            v.customer,
+                            v.project_name,
+                            v.redmine_identifier,
+                            v.pm_name,
+                            v.development_hours,
+                            v.year_1,
+                            v.hours_1,
+                            v.year_2,
+                            v.hours_2,
+                            v.year_3,
+                            v.hours_3,
+                            v.is_closed,
+                            v.question_flag,
+                            v.operation
+                        FROM planning_project_versions v
+                        WHERE v.changed_at < (CAST(:report_date AS DATE) + INTERVAL '1 day')
+                        ORDER BY v.planning_project_id, v.changed_at DESC, v.id DESC
+                    ) latest_versions
+                    WHERE latest_versions.operation <> 'delete'
+                      AND COALESCE(latest_versions.is_closed, FALSE) = :is_closed
+                      AND (
+                        :direction = ''
+                        OR LOWER(TRIM(COALESCE(latest_versions.direction, ''))) = LOWER(TRIM(:direction))
+                      )
+                ),
+        """
+    else:
+        planningProjectsCte = """
+                effective_planning_projects AS (
+                    SELECT
+                        id,
+                        direction,
+                        customer,
+                        project_name,
+                        redmine_identifier,
+                        pm_name,
+                        development_hours,
+                        year_1,
+                        hours_1,
+                        year_2,
+                        hours_2,
+                        year_3,
+                        hours_3,
+                        is_closed,
+                        question_flag
+                    FROM planning_projects
+                    WHERE deleted_at IS NULL
+                      AND COALESCE(is_closed, FALSE) = :is_closed
+                      AND (
+                        :direction = ''
+                        OR LOWER(TRIM(COALESCE(direction, ''))) = LOWER(TRIM(:direction))
+                      )
+                ),
+        """
+
+    queryText = f"""
+                WITH
+                {planningProjectsCte}
+                project_identifier_map AS (
+                    SELECT DISTINCT ON (LOWER(TRIM(COALESCE(identifier, ''))))
+                        LOWER(TRIM(COALESCE(identifier, ''))) AS normalized_identifier,
+                        redmine_id
+                    FROM projects
+                    WHERE TRIM(COALESCE(identifier, '')) <> ''
+                    ORDER BY LOWER(TRIM(COALESCE(identifier, ''))), redmine_id
+                ),
+                latest_snapshot_runs AS (
+                    SELECT DISTINCT ON (r.project_redmine_id)
+                        r.id,
+                        LOWER(TRIM(COALESCE(p.identifier, r.project_identifier, ''))) AS normalized_identifier
+                    FROM issue_snapshot_runs r
+                    LEFT JOIN projects p
+                        ON p.redmine_id = r.project_redmine_id
+                    WHERE r.captured_for_date <= :report_date
+                    ORDER BY r.project_redmine_id, r.captured_for_date DESC, r.captured_at DESC, r.id DESC
+                ),
+                latest_snapshot_metrics AS (
+                    SELECT
+                        lr.normalized_identifier,
+                        COALESCE(
+                            SUM(
+                                CASE
+                                    WHEN LOWER(TRIM(COALESCE(i.tracker_name, ''))) IN (
+                                        LOWER('Разработка'),
+                                        LOWER('Процессы разработки'),
+                                        LOWER('Ошибка')
+                                    )
+                                    THEN COALESCE(i.spent_hours_year, 0)
+                                    ELSE 0
+                                END
+                            ),
+                            0
+                        ) AS development_spent_hours_year
+                    FROM latest_snapshot_runs lr
+                    LEFT JOIN issue_snapshot_items i
+                        ON i.snapshot_run_id = lr.id
+                    GROUP BY lr.normalized_identifier
+                )
+                SELECT
+                    fp.id,
+                    fp.direction,
+                    fp.customer,
+                    fp.project_name,
+                    fp.redmine_identifier,
+                    pim.redmine_id AS project_redmine_id,
+                    fp.pm_name,
+                    fp.development_hours,
+                    CASE
+                        WHEN :report_year = fp.year_1 THEN fp.hours_1
+                        WHEN :report_year = fp.year_2 THEN fp.hours_2
+                        WHEN :report_year = fp.year_3 THEN fp.hours_3
+                        ELSE NULL
+                    END AS report_year_hours,
+                    COALESCE(lsm.development_spent_hours_year, 0) AS development_spent_hours_year,
+                    fp.question_flag,
+                    fp.is_closed
+                FROM effective_planning_projects fp
+                LEFT JOIN latest_snapshot_metrics lsm
+                    ON lsm.normalized_identifier = LOWER(TRIM(COALESCE(fp.redmine_identifier, '')))
+                LEFT JOIN project_identifier_map pim
+                    ON pim.normalized_identifier = LOWER(TRIM(COALESCE(fp.redmine_identifier, '')))
+                ORDER BY
+                    LOWER(COALESCE(fp.direction, '')),
+                    LOWER(COALESCE(fp.customer, '')),
+                    LOWER(COALESCE(fp.project_name, '')),
+                    fp.id
+    """
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(queryText),
+            {
+                "report_date": str(reportDate),
+                "report_year": reportYear,
+                "direction": normalizedDirection,
+                "is_closed": bool(isClosed),
+            },
+        ).mappings().all()
+
+    return [dict(row) for row in rows]
 
 
 def listProjectPlanningSummary(reportDate: str, direction: str | None = None, isClosed: bool = False) -> list[dict[str, object]]:
@@ -1504,6 +1938,32 @@ def listProjectPlanningSummary(reportDate: str, direction: str | None = None, is
     return [dict(row) for row in rows]
 
 
+def listProjectPlanningSummary(
+    reportDate: str,
+    direction: str | None = None,
+    isClosed: bool = False,
+) -> list[dict[str, object]]:
+    return _listProjectPlanningSummaryInternal(
+        reportDate=reportDate,
+        direction=direction,
+        isClosed=isClosed,
+        versioned=False,
+    )
+
+
+def listProjectPlanningSummaryVersioned(
+    reportDate: str,
+    direction: str | None = None,
+    isClosed: bool = False,
+) -> list[dict[str, object]]:
+    return _listProjectPlanningSummaryInternal(
+        reportDate=reportDate,
+        direction=direction,
+        isClosed=isClosed,
+        versioned=True,
+    )
+
+
 def getPlanningProjectByRedmineIdentifier(redmineIdentifier: str) -> dict[str, object] | None:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
@@ -1544,6 +2004,7 @@ def getPlanningProjectByRedmineIdentifier(redmineIdentifier: str) -> dict[str, o
                     updated_at
                 FROM planning_projects
                 WHERE lower(trim(COALESCE(redmine_identifier, ''))) = lower(trim(:redmine_identifier))
+                  AND deleted_at IS NULL
                 ORDER BY id DESC
                 LIMIT 1
                 """
@@ -1594,6 +2055,7 @@ def listPlanningProjectsByRedmineIdentifier(redmineIdentifier: str) -> list[dict
                     updated_at
                 FROM planning_projects
                 WHERE lower(trim(COALESCE(redmine_identifier, ''))) = lower(trim(:redmine_identifier))
+                  AND deleted_at IS NULL
                 ORDER BY lower(project_name), id
                 """
             ),
@@ -1613,7 +2075,8 @@ def listPlanningProjectIdentifiers() -> list[str]:
                 """
                 SELECT DISTINCT lower(trim(COALESCE(redmine_identifier, ''))) AS redmine_identifier
                 FROM planning_projects
-                WHERE trim(COALESCE(redmine_identifier, '')) <> ''
+                WHERE deleted_at IS NULL
+                  AND trim(COALESCE(redmine_identifier, '')) <> ''
                 ORDER BY lower(trim(COALESCE(redmine_identifier, '')))
                 """
             )
@@ -3051,7 +3514,9 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
             ),
             project,
         ).mappings().one()
-        return dict(row)
+        rowDict = dict(row)
+        _insertPlanningProjectVersion(connection, rowDict, "create")
+        return rowDict
 
 
 def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[str, object] | None:
@@ -3088,6 +3553,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     is_closed = :is_closed,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = :project_id
+                  AND deleted_at IS NULL
                 RETURNING
                     id,
                     direction,
@@ -3113,7 +3579,8 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     question_flag,
                     is_closed,
                     created_at,
-                    updated_at
+                    updated_at,
+                    deleted_at
                 """
             ),
             {
@@ -3121,7 +3588,11 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                 "project_id": projectId,
             },
         ).mappings().first()
-        return dict(row) if row else None
+        if not row:
+            return None
+        rowDict = dict(row)
+        _insertPlanningProjectVersion(connection, rowDict, "update")
+        return rowDict
 
 
 def deletePlanningProject(projectId: int) -> bool:
@@ -3129,16 +3600,50 @@ def deletePlanningProject(projectId: int) -> bool:
         raise RuntimeError("DATABASE_URL is not set")
 
     with engine.begin() as connection:
-        result = connection.execute(
+        row = connection.execute(
             text(
                 """
-                DELETE FROM planning_projects
+                UPDATE planning_projects
+                SET
+                    deleted_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE id = :project_id
+                  AND deleted_at IS NULL
+                RETURNING
+                    id,
+                    direction,
+                    project_name,
+                    redmine_identifier,
+                    pm_name,
+                    customer,
+                    start_date,
+                    end_date,
+                    development_hours,
+                    year_1,
+                    hours_1,
+                    year_2,
+                    hours_2,
+                    year_3,
+                    hours_3,
+                    baseline_estimate_hours,
+                    p1,
+                    p2,
+                    estimate_doc_url,
+                    bitrix_url,
+                    comment_text,
+                    question_flag,
+                    is_closed,
+                    created_at,
+                    updated_at,
+                    deleted_at
                 """
             ),
             {"project_id": projectId},
-        )
-        return bool(result.rowcount)
+        ).mappings().first()
+        if not row:
+            return False
+        _insertPlanningProjectVersion(connection, dict(row), "delete")
+        return True
 
 
 def createUser(user: dict[str, object]) -> dict[str, object]:

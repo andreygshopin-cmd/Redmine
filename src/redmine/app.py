@@ -63,6 +63,7 @@ from src.redmine.db import (
     updateProjectLoadSettings,
     listPlanningDirections,
     listProjectPlanningSummary,
+    listProjectPlanningSummaryVersioned,
 )
 from src.redmine.redmine_client import fetchAllProjectsFromRedmine
 from src.redmine.snapshots import (
@@ -5740,7 +5741,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       {buildProjectContextNavCss()}
       .toolbar {{ display: flex; flex-direction: column; gap: 12px; align-items: stretch; margin: 0 0 16px; }}
       .toolbar-row {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }}
-      .toolbar-row.primary {{ align-items: flex-end; }}
+      .toolbar-row.primary {{ align-items: flex-start; }}
       .toolbar-row.secondary {{ justify-content: flex-start; }}
       .toolbar button {{
         background: #eef2f5;
@@ -5762,6 +5763,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
       .meta-warning {{ color: #d54343; font-weight: 700; }}
       .toolbar-row.primary form {{ display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }}
+      .toolbar-row.primary > button {{ align-self: flex-end; }}
       .page-size-label {{
         display: flex;
         flex-direction: column;
@@ -9055,6 +9057,7 @@ def buildPlanningProjectsPage() -> str:
     }
     .planning-projects-table tbody tr.question-flag-row td:not(.actions-col) {
       color: #c13b3b;
+      font-weight: 700;
     }
     .planning-projects-table tbody tr.question-flag-row .link-cell a {
       color: inherit;
@@ -10159,6 +10162,7 @@ def _listProjectsSummaryRows(
     direction: str | None = None,
     isClosed: bool | None = None,
     enabledOnly: bool = True,
+    versionedOnReportDate: bool = False,
 ) -> list[dict[str, object]]:
     storedProjects = listStoredProjects()
     storedProjectsByIdentifier = {
@@ -10172,19 +10176,24 @@ def _listProjectsSummaryRows(
         if project.get("is_enabled") and str(project.get("identifier") or "").strip()
     }
 
+    summaryFetcher = listProjectPlanningSummaryVersioned if versionedOnReportDate else listProjectPlanningSummary
     if isClosed is None:
         planningRows = [
-            *listProjectPlanningSummary(reportDate=reportDate.isoformat(), direction=direction, isClosed=False),
-            *listProjectPlanningSummary(reportDate=reportDate.isoformat(), direction=direction, isClosed=True),
+            *summaryFetcher(reportDate=reportDate.isoformat(), direction=direction, isClosed=False),
+            *summaryFetcher(reportDate=reportDate.isoformat(), direction=direction, isClosed=True),
         ]
     else:
-        planningRows = listProjectPlanningSummary(
+        planningRows = summaryFetcher(
             reportDate=reportDate.isoformat(),
             direction=direction,
             isClosed=isClosed,
         )
 
-    planningIdentifiers = set(listPlanningProjectIdentifiers())
+    planningIdentifiers = {
+        str(row.get("redmine_identifier") or "").strip().lower()
+        for row in planningRows
+        if str(row.get("redmine_identifier") or "").strip()
+    }
     summaryRows = []
     for row in planningRows:
         identifier = str(row.get("redmine_identifier") or "").strip().lower()
@@ -10486,6 +10495,7 @@ def buildProjectsSummaryPage() -> str:
     }}
     .summary-project-flagged {{
       color: #c13b3b;
+      font-weight: 700;
     }}
     .summary-project-flagged a {{
       color: inherit !important;
@@ -10562,6 +10572,12 @@ def buildProjectsSummaryPage() -> str:
           </label>
           <p class="checkbox-hint">Проекты включаются в таблице "Проекты Redmine".</p>
         </div>
+        <div class="field">
+          <label class="checkbox-field" for="projectsSummaryVersionedCheckbox">
+            <input id="projectsSummaryVersionedCheckbox" type="checkbox">
+            <span>Лимиты по проектам на дату отчета</span>
+          </label>
+        </div>
         <div class="control-actions">
           <button type="button" id="projectsSummaryRefreshButton">Показать сводку</button>
           <button type="button" id="exportProjectsSummaryButton">Выгрузить в Excel</button>
@@ -10610,6 +10626,7 @@ def buildProjectsSummaryPage() -> str:
   <script>
     const projectsSummaryDateInput = document.getElementById("projectsSummaryDateInput");
     const projectsSummaryEnabledOnlyCheckbox = document.getElementById("projectsSummaryEnabledOnlyCheckbox");
+    const projectsSummaryVersionedCheckbox = document.getElementById("projectsSummaryVersionedCheckbox");
     const projectsSummaryRefreshButton = document.getElementById("projectsSummaryRefreshButton");
     const exportProjectsSummaryButton = document.getElementById("exportProjectsSummaryButton");
     const resetProjectsSummaryFiltersButton = document.getElementById("resetProjectsSummaryFiltersButton");
@@ -11066,6 +11083,7 @@ def buildProjectsSummaryPage() -> str:
       const params = new URLSearchParams();
       params.set("report_date", String(projectsSummaryDateInput.value || "{todayIso}"));
       params.set("enabled_only", projectsSummaryEnabledOnlyCheckbox?.checked ? "true" : "false");
+      params.set("versioned_on_report_date", projectsSummaryVersionedCheckbox?.checked ? "true" : "false");
       return params;
     }}
 
@@ -11101,6 +11119,7 @@ def buildProjectsSummaryPage() -> str:
     projectsSummaryRefreshButton?.addEventListener("click", loadProjectsSummary);
     projectsSummaryDateInput?.addEventListener("change", loadProjectsSummary);
     projectsSummaryEnabledOnlyCheckbox?.addEventListener("change", loadProjectsSummary);
+    projectsSummaryVersionedCheckbox?.addEventListener("change", loadProjectsSummary);
     exportProjectsSummaryButton?.addEventListener("click", () => {{
       const params = buildProjectsSummaryParams();
       window.location.href = `/api/projects-summary/export.csv?${{params.toString()}}`;
@@ -11110,6 +11129,7 @@ def buildProjectsSummaryPage() -> str:
       projectsSummarySortKey = "";
       projectsSummarySortDirection = "asc";
       projectsSummaryEnabledOnlyCheckbox.checked = true;
+      projectsSummaryVersionedCheckbox.checked = false;
       projectsSummaryFilterInputs.forEach((input) => {{
         input.value = "";
       }});
@@ -11269,6 +11289,7 @@ def getProjectsSummaryApiV2(
     direction: str | None = Query(None),
     is_closed: bool | None = Query(None),
     enabled_only: bool = Query(True),
+    versioned_on_report_date: bool = Query(False),
 ) -> dict[str, object]:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
@@ -11287,6 +11308,7 @@ def getProjectsSummaryApiV2(
         direction=direction,
         isClosed=is_closed,
         enabledOnly=enabled_only,
+        versionedOnReportDate=versioned_on_report_date,
     )
     groups = _buildProjectsSummaryGroups(projects)
     return {
@@ -11297,6 +11319,7 @@ def getProjectsSummaryApiV2(
         "direction": str(direction or "").strip(),
         "is_closed": None if is_closed is None else bool(is_closed),
         "enabled_only": bool(enabled_only),
+        "versioned_on_report_date": bool(versioned_on_report_date),
     }
 
 
@@ -11306,6 +11329,7 @@ def exportProjectsSummaryCsv(
     direction: str | None = Query(None),
     is_closed: bool | None = Query(None),
     enabled_only: bool = Query(True),
+    versioned_on_report_date: bool = Query(False),
 ) -> Response:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
@@ -11324,6 +11348,7 @@ def exportProjectsSummaryCsv(
         direction=direction,
         isClosed=is_closed,
         enabledOnly=enabled_only,
+        versionedOnReportDate=versioned_on_report_date,
     )
     groups = _buildProjectsSummaryGroups(projects)
 
