@@ -4049,6 +4049,7 @@ def buildSnapshotComparisonPage(
       .compare-compare-stack {{ min-width: 0; }}
     }}
     button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; background: var(--orange); color: #ffffff; }}
+    .compare-submit-button {{ background: #eceff3; color: var(--text); border: 1px solid var(--line); }}
     .summary-note {{ color: var(--muted); margin: 0 0 14px; }}
     .table-wrap {{ position: relative; overflow: auto; border: 1px solid var(--line); border-radius: 8px; max-height: calc(100vh - 250px); }}
     table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: #ffffff; min-width: 1080px; }}
@@ -4141,7 +4142,7 @@ def buildSnapshotComparisonPage(
             </div>
           </div>
         </div>
-        <p><button type="submit">Сравнить</button></p>
+        <p><button type="submit" class="compare-submit-button">Сравнить</button></p>
       </form>
     </section>
     <p class="summary-note">Поля сравнения: {", ".join(selectedFieldLabels)}. Изменившихся задач: {len(comparisonRows)}. {compareSummaryHtml}</p>
@@ -4376,7 +4377,14 @@ def buildBurndownDateLabels(dateFrom: date, dateTo: date) -> list[str]:
     return labels
 
 
-def buildBurndownPage(projectRedmineId: int) -> str:
+def buildBurndownPage(
+    projectRedmineId: int,
+    startDateValue: str | None = None,
+    endDateValue: str | None = None,
+    p1Value: str | None = None,
+    p2Value: str | None = None,
+    useRiskPlan: bool = False,
+) -> str:
     ensurePlanningProjectsTable()
     storedProjects = listStoredProjects()
     storedProject = next(
@@ -4412,10 +4420,24 @@ def buildBurndownPage(projectRedmineId: int) -> str:
             continue
 
     todayLocal = datetime.now().date()
-    chartStartDate = min(planningStartDates) if planningStartDates else addMonths(todayLocal, -1)
-    chartEndDate = addMonths(todayLocal, 1)
+    defaultChartStartDate = min(planningStartDates) if planningStartDates else addMonths(todayLocal, -1)
+    defaultChartEndDate = addMonths(todayLocal, 1)
+    if defaultChartStartDate > defaultChartEndDate:
+        defaultChartStartDate = defaultChartEndDate
+
+    def normalizeBurndownPageDate(rawValue: str | None, fallbackDate: date) -> date:
+        normalized = str(rawValue or "").strip()
+        if not normalized:
+            return fallbackDate
+        try:
+            return date.fromisoformat(normalized)
+        except ValueError:
+            return fallbackDate
+
+    chartStartDate = normalizeBurndownPageDate(startDateValue, defaultChartStartDate)
+    chartEndDate = normalizeBurndownPageDate(endDateValue, defaultChartEndDate)
     if chartStartDate > chartEndDate:
-        chartStartDate = chartEndDate
+        chartStartDate, chartEndDate = chartEndDate, chartStartDate
 
     burndownPayload = getSnapshotRunsWithIssuesForProjectDateRange(
         projectRedmineId,
@@ -4475,8 +4497,10 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     totalPlanningDevelopmentHours = sum(float(project.get("development_hours") or 0) for project in planningProjects)
     planningBaselineText = escape(formatPlanningMetric(totalPlanningBaseline))
     planningDevelopmentHoursText = escape(formatPlanningMetric(totalPlanningDevelopmentHours))
-    planningP1Value = escape(formatPageHours(planningP1Percent))
-    planningP2Value = escape(formatPageHours(planningP2Percent))
+    selectedP1Raw = str(p1Value or formatPageHours(planningP1Percent)).strip() or formatPageHours(planningP1Percent)
+    selectedP2Raw = str(p2Value or formatPageHours(planningP2Percent)).strip() or formatPageHours(planningP2Percent)
+    planningP1Value = escape(selectedP1Raw)
+    planningP2Value = escape(selectedP2Raw)
     planningP1InputClass = " planning-input-warning" if planningP1Mixed else ""
     planningP2InputClass = " planning-input-warning" if planningP2Mixed else ""
     planningProjectLinesHtml = "".join(
@@ -4618,6 +4642,11 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       justify-content: flex-end;
     }}
 
+    .field-actions {{
+      min-width: auto;
+      justify-content: flex-end;
+    }}
+
     .field-checkbox-label {{
       display: inline-flex;
       align-items: center;
@@ -4630,6 +4659,14 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       border-color: #d9534f !important;
       color: #d9534f !important;
       font-weight: 700;
+    }}
+
+    .burndown-show-button {{
+      border: 1px solid var(--line);
+      background: #eceff3;
+      color: var(--text);
+      box-shadow: none;
+      min-height: 44px;
     }}
 
     .field input {{
@@ -4815,16 +4852,24 @@ def buildBurndownPage(projectRedmineId: int) -> str:
     <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Период диаграммы: {chartStartDate.strftime("%d.%m.%Y")} — {chartEndDate.strftime("%d.%m.%Y")}. Срезов в диапазоне: {len(chartSeeds)}.</p>
     {planningProjectsTextHtml}
 
-    <section class="controls-panel">
+    <form class="controls-panel" method="get">
+      <div class="field">
+        <label for="burndownStartDateInput">Начало интервала</label>
+        <input id="burndownStartDateInput" type="date" name="start_date" value="{chartStartDate.isoformat()}">
+      </div>
+      <div class="field">
+        <label for="burndownEndDateInput">Конец интервала</label>
+        <input id="burndownEndDateInput" type="date" name="end_date" value="{chartEndDate.isoformat()}">
+      </div>
       <div class="field">
         <label for="p1Input">P1 = факт / база, %</label>
-        <input id="p1Input" class="{planningP1InputClass.strip()}" type="text" inputmode="decimal" value="{planningP1Value}">
+        <input id="p1Input" class="{planningP1InputClass.strip()}" type="text" inputmode="decimal" name="p1" value="{planningP1Value}">
         <div class="field-note">Используется в расчете бюджета и прогнозного объема.</div>
       </div>
       <div class="field">
         <label for="p2Input">P2 = факт с багами / факт, %</label>
-        <input id="p2Input" class="{planningP2InputClass.strip()}" type="text" inputmode="decimal" value="{planningP2Value}">
-        <div class="field-note">Изменения пересчитываются сразу после ввода без перезагрузки страницы.</div>
+        <input id="p2Input" class="{planningP2InputClass.strip()}" type="text" inputmode="decimal" name="p2" value="{planningP2Value}">
+        <div class="field-note">Изменения применяются после нажатия кнопки «Показать».</div>
       </div>
       <div class="field">
         <label>Базовая оценка</label>
@@ -4838,11 +4883,14 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       </div>
       <div class="field field-checkbox">
         <label class="field-checkbox-label" for="useRiskPlanCheckbox">
-          <input id="useRiskPlanCheckbox" type="checkbox">
+          <input id="useRiskPlanCheckbox" type="checkbox" name="use_risk_plan" value="1"{" checked" if useRiskPlan else ""}>
           <span>Использовать План с рисками</span>
         </label>
       </div>
-    </section>
+      <div class="field field-actions">
+        <button type="submit" class="burndown-show-button">Показать</button>
+      </div>
+    </form>
 
     <section class="chart-panel">
       <div class="chart-head">
@@ -5329,19 +5377,6 @@ def buildBurndownPage(projectRedmineId: int) -> str:
       burndownChart = new Chart(chartCanvas, chartConfig);
     }}
 
-    let rerenderTimer = null;
-
-    function scheduleBurndownRender() {{
-      if (rerenderTimer) {{
-        window.clearTimeout(rerenderTimer);
-      }}
-      rerenderTimer = window.setTimeout(renderBurndownChart, 180);
-    }}
-
-    p1Input.addEventListener("input", scheduleBurndownRender);
-    p2Input.addEventListener("input", scheduleBurndownRender);
-    useRiskPlanCheckbox?.addEventListener("change", scheduleBurndownRender);
-
     renderBurndownChart();
   </script>
 </body>
@@ -5609,9 +5644,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     storedProjectIdentifierRaw = str((storedProject or {}).get("identifier") or "").strip()
 
     if snapshotRun is None:
-        optionsHtml = "".join(
-            f'<option value="{escape(dateValue)}">{escape(dateValue)}</option>' for dateValue in availableDates
-        )
+        optionsHtml = ['<option value="">Последний срез</option>']
+        for dateValue in availableDates:
+            selectedAttr = " selected" if dateValue == requestedCapturedForDate else ""
+            optionsHtml.append(f'<option value="{escape(dateValue)}"{selectedAttr}>{escape(dateValue)}</option>')
         navPanelHtml = buildProjectContextNavPanel(
             projectRedmineId,
             storedProjectIdentifierRaw,
@@ -5634,18 +5670,23 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     h1 {{ margin: 18px 0 12px; font-size: clamp(1.85rem, 4vw, 2.5rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }}
     .meta {{ color: #64798d; margin: 0 0 24px; }}
     .meta-strong {{ color: #52cee6; font-weight: 800; }}
+    .toolbar {{ display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin: 0 0 24px; }}
+    .toolbar label {{ display: flex; flex-direction: column; gap: 6px; font-weight: 600; color: #16324a; }}
+    .toolbar select {{ min-width: 220px; border: 1px solid #d9e5eb; border-radius: 6px; padding: 10px 12px; font: inherit; }}
+    .toolbar button {{ border: 1px solid #d9e5eb; border-radius: 6px; padding: 10px 16px; font: inherit; font-weight: 600; cursor: pointer; background: #eef2f5; color: #16324a; }}
   </style>
 </head>
 <body>
     <main>
       {navPanelHtml}
       <h1>Задачи среза проекта</h1>
-      <form method="get">
+      <form method="get" class="toolbar">
         <label for="capturedForDate">Дата среза</label>
-        <select id="capturedForDate" name="captured_for_date" onchange="this.form.submit()">
+        <select id="capturedForDate" name="captured_for_date">
           <option value="">Последний срез</option>
           {optionsHtml}
         </select>
+        <button type="submit">Показать</button>
       </form>
       <p class="meta">Для проекта с ID {projectRedmineId} срезы пока не найдены.</p>
     </main>
@@ -5748,6 +5789,11 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         color: var(--text);
         border: 1px solid var(--line);
         box-shadow: none;
+      }}
+      .snapshot-time-entries-button {{
+        background: var(--yellow-109) !important;
+        color: #16324a !important;
+        border-color: rgba(255, 198, 0, 0.95) !important;
       }}
       .toolbar button:hover {{
         background: #e4eaef;
@@ -5951,7 +5997,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         <div class="toolbar-row primary">
           <form method="get">
             <label for="capturedForDate"><span class="snapshot-date-label-text">Дата среза{f'<span class="meta-warning snapshot-date-warning">(Более ранний, чем запрошен)</span>' if usedEarlierSnapshot and fallbackCapturedForDate else ''}</span></label>
-            <select id="capturedForDate" name="captured_for_date" onchange="this.form.submit()">
+            <select id="capturedForDate" name="captured_for_date">
               {''.join(optionsHtml)}
             </select>
           </form>
@@ -5960,7 +6006,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           </label>
           <button type="button" class="secondary-button" id="applySnapshotPageSizeButton">Показать</button>
           <button type="button" class="secondary-button" id="exportSnapshotCsvButton">Выгрузить CSV</button>
-          <button type="button" class="secondary-button" id="viewSnapshotTimeEntriesButton">Списание времени</button>
+          <button type="button" class="secondary-button snapshot-time-entries-button" id="viewSnapshotTimeEntriesButton">Списание времени</button>
         </div>
         <div class="toolbar-row secondary">
           <button type="button" id="deleteSnapshotButton">Удалить выбранный срез</button>
@@ -6133,6 +6179,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       let currentSnapshotTotalIssues = {initialTotalIssues};
       let currentSnapshotPageSize = {initialPageSize};
       let snapshotReloadTimer = null;
+
+      function getSelectedSnapshotDate() {{
+        return String(capturedForDateSelect?.value || selectedSnapshotDate || "").trim();
+      }}
       const summaryBaselineEstimate = document.getElementById("summaryBaselineEstimate");
       const summaryRiskEstimate = document.getElementById("summaryRiskEstimate");
       const summaryFeatureBaselineEstimate = document.getElementById("summaryFeatureBaselineEstimate");
@@ -6627,7 +6677,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       function buildSnapshotQueryParams(page, includePagination = true) {{
         const filters = normalizeSnapshotFilters(collectSnapshotFilters());
         const params = new URLSearchParams();
-        if (selectedSnapshotDate) params.set("captured_for_date", selectedSnapshotDate);
+        const selectedDateValue = getSelectedSnapshotDate();
+        if (selectedDateValue) params.set("captured_for_date", selectedDateValue);
         if (includePagination) {{
           const pageSize = readSnapshotPageSize();
           params.set("page", String(page));
@@ -6791,7 +6842,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           return;
         }}
 
-        const selectedDateForDelete = String(capturedForDateSelect?.value || "{capturedForDate}");
+        const selectedDateForDelete = getSelectedSnapshotDate() || "{capturedForDate}";
         const response = await fetch(`/api/issues/snapshots/project/{projectRedmineId}/by-date?captured_for_date=${{encodeURIComponent(selectedDateForDelete)}}`, {{
           method: "DELETE"
         }});
@@ -6880,9 +6931,6 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const storedSnapshotPageSize = Number(window.localStorage.getItem(snapshotPageSizeStorageKey) || 0);
       if (Number.isFinite(storedSnapshotPageSize) && storedSnapshotPageSize >= 10 && storedSnapshotPageSize <= 10000) {{
         snapshotPageSizeInput.value = String(Math.floor(storedSnapshotPageSize));
-        if (storedSnapshotPageSize !== currentSnapshotPageSize) {{
-          loadSnapshotIssues(1);
-        }}
       }}
     </script>
   </main>
@@ -7059,15 +7107,47 @@ def buildSnapshotTimeEntriesPage(
   <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     body {{ margin: 0; font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
-    main {{ max-width: 1400px; margin: 0 auto; padding: 24px 20px 48px; }}
+    main {{ max-width: 1400px; margin: 0 auto; padding: 24px 20px 48px; position: relative; }}
     {buildProjectContextNavCss()}
     h1 {{ margin: 18px 0 12px; font-size: clamp(1.85rem, 4vw, 2.65rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }}
     .meta {{ color: #64798d; margin: 0 0 24px; }}
     .toolbar {{ display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin: 0 0 18px; }}
     .toolbar label {{ display: flex; flex-direction: column; gap: 6px; font-weight: 600; color: #16324a; }}
     .toolbar input {{ border: 1px solid #d9e5eb; border-radius: 6px; padding: 8px 10px; font: inherit; }}
-    .toolbar button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #375d77; color: #ffffff; }}
+    .toolbar button {{ border: 1px solid #d9e5eb; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #eef2f5; color: #16324a; }}
     .empty-state {{ padding: 18px 20px; border: 1px solid #d9e5eb; border-radius: 8px; background: #f8fbfd; color: #64798d; }}
+    .time-entries-loading-overlay {{
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      background: rgba(22, 50, 74, 0.22);
+      backdrop-filter: blur(1px);
+      z-index: 1000;
+    }}
+    .time-entries-loading-overlay.is-visible {{ display: flex; }}
+    .time-entries-loading-spinner {{
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      border: 4px solid rgba(255,255,255,0.5);
+      border-top-color: #375d77;
+      animation: time-entries-spin 0.9s linear infinite;
+    }}
+    .time-entries-loading-text {{
+      padding: 12px 16px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.96);
+      color: #16324a;
+      font-weight: 700;
+      box-shadow: 0 18px 42px rgba(22, 50, 74, 0.18);
+    }}
+    @keyframes time-entries-spin {{
+      from {{ transform: rotate(0deg); }}
+      to {{ transform: rotate(360deg); }}
+    }}
   </style>
 </head>
 <body>
@@ -7075,7 +7155,7 @@ def buildSnapshotTimeEntriesPage(
     {navPanelHtml}
     <h1>Списание времени</h1>
     <p class="meta">Для проекта с ID {projectRedmineId} срезы пока не найдены.</p>
-    <form class="toolbar" method="get">
+    <form class="toolbar" method="get" id="timeEntriesForm">
       <label>Дата среза
         <input type="date" name="captured_for_date" value="{escape(selectedCapturedForDate)}">
       </label>
@@ -7085,10 +7165,28 @@ def buildSnapshotTimeEntriesPage(
       <label>Дата до
         <input type="date" name="date_to" value="{escape(selectedDateTo)}">
       </label>
-      <button type="submit">Показать списания</button>
+      <button type="submit">Показать</button>
     </form>
     <div class="empty-state">Для даты среза {escape(selectedCapturedForDate)} списания времени не найдены. Если срез за эту дату еще не получен, сначала загрузите его.</div>
+    <div class="time-entries-loading-overlay" id="timeEntriesLoadingOverlay" aria-hidden="true">
+      <span class="time-entries-loading-spinner" aria-hidden="true"></span>
+      <span class="time-entries-loading-text">Загружаем списания...</span>
+    </div>
   </main>
+  <script>
+    const timeEntriesForm = document.getElementById("timeEntriesForm");
+    const timeEntriesLoadingOverlay = document.getElementById("timeEntriesLoadingOverlay");
+    function setTimeEntriesLoading(isLoading) {{
+      if (!(timeEntriesLoadingOverlay instanceof HTMLElement)) {{
+        return;
+      }}
+      timeEntriesLoadingOverlay.classList.toggle("is-visible", Boolean(isLoading));
+      timeEntriesLoadingOverlay.setAttribute("aria-hidden", isLoading ? "false" : "true");
+    }}
+    timeEntriesForm?.addEventListener("submit", () => {{
+      setTimeEntriesLoading(true);
+    }});
+  </script>
 </body>
 </html>"""
 
@@ -7201,7 +7299,7 @@ def buildSnapshotTimeEntriesPage(
     .toolbar {{ display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin: 0 0 18px; }}
     .toolbar label {{ display: flex; flex-direction: column; gap: 6px; font-weight: 600; color: var(--text); }}
     .toolbar input {{ border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }}
-    .toolbar button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #375d77; color: #ffffff; }}
+    .toolbar button {{ border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #eef2f5; color: #16324a; }}
     .secondary {{ background: #eef2f5; color: #16324a; border: 1px solid var(--line); }}
     .table-actions {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }}
     .pagination-wrap {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 12px; flex-wrap: wrap; }}
@@ -7211,6 +7309,32 @@ def buildSnapshotTimeEntriesPage(
     .page-size-hint {{ color: var(--muted); font-weight: 600; }}
     .page-size-input {{ width: 110px; }}
     .table-wrap {{ position: relative; min-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }}
+    .time-entries-loading-overlay {{
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+      background: rgba(255, 255, 255, 0.78);
+      backdrop-filter: blur(1px);
+      z-index: 9999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 140ms ease;
+    }}
+    .time-entries-loading-overlay.is-visible {{ opacity: 1; pointer-events: auto; }}
+    .time-entries-loading-spinner {{
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 3px solid rgba(82, 206, 230, 0.24);
+      border-top-color: #52cee6;
+      animation: time-entries-spin 0.8s linear infinite;
+    }}
+    .time-entries-loading-text {{ font-weight: 700; color: #375d77; }}
+    @keyframes time-entries-spin {{ to {{ transform: rotate(360deg); }} }}
     table {{ width: 100%; border-collapse: separate; border-spacing: 0; min-width: 2200px; table-layout: fixed; background: var(--panel); }}
     th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }}
     thead .header-row th {{
@@ -7270,7 +7394,7 @@ def buildSnapshotTimeEntriesPage(
       <label class="page-size-label" for="timeEntriesPageSizeInput">Записей на странице</label>
       <input class="page-size-input" id="timeEntriesPageSizeInput" type="number" min="10" max="10000" step="10" value="{defaultPageSize}">
       <div class="table-actions">
-        <button type="submit">Показать списания</button>
+        <button type="submit">Показать</button>
         <button type="button" class="secondary" id="exportTimeEntriesCsvButton">Выгрузить CSV</button>
         <button type="button" class="secondary" id="resetTimeEntryFiltersButton">Сбросить фильтр</button>
       </div>
@@ -7303,7 +7427,12 @@ def buildSnapshotTimeEntriesPage(
         </tfoot>
       </table>
     </div>
+    <div class="time-entries-loading-overlay" id="timeEntriesLoadingOverlay" aria-hidden="true">
+      <span class="time-entries-loading-spinner" aria-hidden="true"></span>
+      <span class="time-entries-loading-text">Загружаем списания...</span>
+    </div>
     <script>
+      const timeEntriesForm = document.getElementById("timeEntriesForm");
       const timeEntryColumns = {columnConfigJson};
       const timeEntryFilterOptionsByKey = {filterOptionsByKeyJson};
       const allTimeEntries = {timeEntriesJson};
@@ -7314,6 +7443,7 @@ def buildSnapshotTimeEntriesPage(
       const timeEntriesHoursSummary = document.getElementById("timeEntriesHoursSummary");
       const timeEntriesPageSizeInput = document.getElementById("timeEntriesPageSizeInput");
       const timeEntriesPageSizeLabel = document.querySelector('label[for="timeEntriesPageSizeInput"]');
+      const timeEntriesLoadingOverlay = document.getElementById("timeEntriesLoadingOverlay");
       const timeEntriesPrevPageButton = document.getElementById("timeEntriesPrevPageButton");
       const timeEntriesNextPageButton = document.getElementById("timeEntriesNextPageButton");
       const timeEntriesPaginationInfo = document.getElementById("timeEntriesPaginationInfo");
@@ -7336,6 +7466,14 @@ def buildSnapshotTimeEntriesPage(
         pageSizeHint.textContent = "Записей на странице";
         timeEntriesPageSizeLabel.appendChild(pageSizeHint);
         timeEntriesPageSizeLabel.appendChild(timeEntriesPageSizeInput);
+      }}
+
+      function setTimeEntriesLoading(isLoading) {{
+        if (!timeEntriesLoadingOverlay) {{
+          return;
+        }}
+        timeEntriesLoadingOverlay.classList.toggle("is-visible", Boolean(isLoading));
+        timeEntriesLoadingOverlay.setAttribute("aria-hidden", isLoading ? "false" : "true");
       }}
 
       function escapeHtml(value) {{
@@ -7570,6 +7708,10 @@ def buildSnapshotTimeEntriesPage(
       exportTimeEntriesCsvButton?.addEventListener("click", () => {{
         const params = buildTimeEntriesExportParams();
         window.location.href = `{exportUrlBase}?${{params.toString()}}`;
+      }});
+
+      timeEntriesForm?.addEventListener("submit", () => {{
+        setTimeEntriesLoading(true);
       }});
 
       const storedTimeEntriesPageSize = Number(window.localStorage.getItem(timeEntriesPageSizeStorageKey) || 0);
@@ -8046,29 +8188,7 @@ def buildProjectsSummaryPage() -> str:
       display: block;
     }}
     .head-actions {{
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }}
-    .head-actions a {{
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 42px;
-      padding: 10px 14px;
-      border-radius: 6px;
-      text-decoration: none;
-      font-weight: 700;
-      box-shadow: var(--shadow-soft);
-    }}
-    .head-actions a.home-link {{
-      background: var(--yellow-109);
-      color: #16324a;
-    }}
-    .head-actions a.planning-link {{
-      background: var(--blue-302);
-      color: #ffffff;
+      display: none;
     }}
     h1 {{
       margin: 0 0 10px;
@@ -8203,10 +8323,6 @@ def buildProjectsSummaryPage() -> str:
       <a class="brand" href="/" aria-label="На главную">
         <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
       </a>
-      <div class="head-actions">
-        <a class="home-link" href="/">Главная</a>
-        <a class="planning-link" href="/planning-projects">Планирование проектов</a>
-      </div>
     </div>
 
     <h1>Сводка по проектам</h1>
@@ -10414,8 +10530,8 @@ def buildProjectsSummaryPage() -> str:
       box-shadow: var(--shadow-soft);
     }}
     #projectsSummaryRefreshButton {{
-      background: var(--orange-1585);
-      color: #ffffff;
+      background: #eceff3;
+      color: var(--text);
     }}
     #exportProjectsSummaryButton {{
       background: #eceff3;
@@ -10432,6 +10548,32 @@ def buildProjectsSummaryPage() -> str:
       border-radius: 8px;
       background: #ffffff;
     }}
+    .projects-summary-loading-overlay {{
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+      background: rgba(255, 255, 255, 0.78);
+      backdrop-filter: blur(1px);
+      z-index: 9999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 140ms ease;
+    }}
+    .projects-summary-loading-overlay.is-visible {{ opacity: 1; pointer-events: auto; }}
+    .projects-summary-loading-spinner {{
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 3px solid rgba(82, 206, 230, 0.24);
+      border-top-color: #52cee6;
+      animation: projects-summary-spin 0.8s linear infinite;
+    }}
+    .projects-summary-loading-text {{ font-weight: 700; color: #375d77; }}
+    @keyframes projects-summary-spin {{ to {{ transform: rotate(360deg); }} }}
     table {{
       width: 100%;
       min-width: 1180px;
@@ -10579,7 +10721,7 @@ def buildProjectsSummaryPage() -> str:
           </label>
         </div>
         <div class="control-actions">
-          <button type="button" id="projectsSummaryRefreshButton">Показать сводку</button>
+          <button type="button" id="projectsSummaryRefreshButton">Показать</button>
           <button type="button" id="exportProjectsSummaryButton">Выгрузить в Excel</button>
           <button type="button" id="resetProjectsSummaryFiltersButton">Сбросить фильтр</button>
         </div>
@@ -10621,6 +10763,10 @@ def buildProjectsSummaryPage() -> str:
         </table>
       </div>
     </section>
+    <div class="projects-summary-loading-overlay" id="projectsSummaryLoadingOverlay" aria-hidden="true">
+      <span class="projects-summary-loading-spinner" aria-hidden="true"></span>
+      <span class="projects-summary-loading-text">Загружаем сводку...</span>
+    </div>
   </main>
 
   <script>
@@ -10634,6 +10780,7 @@ def buildProjectsSummaryPage() -> str:
     const projectsSummaryTableBody = document.getElementById("projectsSummaryTableBody");
     const projectsSummaryTableFoot = document.getElementById("projectsSummaryTableFoot");
     const projectsSummaryTableWrap = document.querySelector(".table-wrap");
+    const projectsSummaryLoadingOverlay = document.getElementById("projectsSummaryLoadingOverlay");
     const projectsSummaryStrings = {{
       all: "\\u0412\\u0441\\u0435",
       empty: "\\u041f\\u0443\\u0441\\u0442\\u043e",
@@ -10686,6 +10833,14 @@ def buildProjectsSummaryPage() -> str:
     let projectsSummarySortDirection = "asc";
     let currentProjectsSummaryReportDate = String(projectsSummaryDateInput?.value || "{todayIso}");
     let currentProjectsSummaryReportYear = String(currentProjectsSummaryReportDate).slice(0, 4);
+
+    function setProjectsSummaryLoading(isLoading) {{
+      if (!(projectsSummaryLoadingOverlay instanceof HTMLElement)) {{
+        return;
+      }}
+      projectsSummaryLoadingOverlay.classList.toggle("is-visible", Boolean(isLoading));
+      projectsSummaryLoadingOverlay.setAttribute("aria-hidden", isLoading ? "false" : "true");
+    }}
 
     function formatSummaryHours(value) {{
       if (value === null || value === undefined || value === "") {{
@@ -11087,7 +11242,10 @@ def buildProjectsSummaryPage() -> str:
       return params;
     }}
 
-    async function loadProjectsSummary() {{
+    async function loadProjectsSummary(showOverlay = false) {{
+      if (showOverlay) {{
+        setProjectsSummaryLoading(true);
+      }}
       projectsSummaryMeta.textContent = projectsSummaryStrings.loading;
       projectsSummaryTableBody.innerHTML = `<tr><td colspan="9" class="empty-state">${{projectsSummaryStrings.loading}}</td></tr>`;
       if (projectsSummaryTableFoot) {{
@@ -11113,13 +11271,14 @@ def buildProjectsSummaryPage() -> str:
         if (projectsSummaryTableFoot) {{
           projectsSummaryTableFoot.innerHTML = "";
         }}
+      }} finally {{
+        if (showOverlay) {{
+          setProjectsSummaryLoading(false);
+        }}
       }}
     }}
 
-    projectsSummaryRefreshButton?.addEventListener("click", loadProjectsSummary);
-    projectsSummaryDateInput?.addEventListener("change", loadProjectsSummary);
-    projectsSummaryEnabledOnlyCheckbox?.addEventListener("change", loadProjectsSummary);
-    projectsSummaryVersionedCheckbox?.addEventListener("change", loadProjectsSummary);
+    projectsSummaryRefreshButton?.addEventListener("click", () => loadProjectsSummary(true));
     exportProjectsSummaryButton?.addEventListener("click", () => {{
       const params = buildProjectsSummaryParams();
       window.location.href = `/api/projects-summary/export.csv?${{params.toString()}}`;
@@ -11133,7 +11292,7 @@ def buildProjectsSummaryPage() -> str:
       projectsSummaryFilterInputs.forEach((input) => {{
         input.value = "";
       }});
-      loadProjectsSummary();
+      loadProjectsSummary(true);
     }});
     projectsSummaryFilterInputs.forEach((input) => {{
       const key = String(input.dataset.filterKey || "");
@@ -11823,13 +11982,29 @@ def getProjectSnapshotComparePage(
 
 
 @app.get("/projects/{project_redmine_id}/burndown", response_class=HTMLResponse)
-def getProjectBurndownPage(project_redmine_id: int) -> HTMLResponse:
+def getProjectBurndownPage(
+    project_redmine_id: int,
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    p1: str | None = Query(None),
+    p2: str | None = Query(None),
+    use_risk_plan: int = Query(0),
+) -> HTMLResponse:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureProjectsTable()
     ensureIssueSnapshotTables()
-    return _renderHtmlPage(buildBurndownPage(project_redmine_id))
+    return _renderHtmlPage(
+        buildBurndownPage(
+            project_redmine_id,
+            start_date,
+            end_date,
+            p1,
+            p2,
+            bool(use_risk_plan),
+        )
+    )
 
 
 @app.post("/api/projects/refresh")
