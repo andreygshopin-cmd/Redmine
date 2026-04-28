@@ -48,12 +48,10 @@ jobs:
       - name: Trigger Render deploy hook
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
-          TARGET_SHA: ${{ steps.target.outputs.target_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          DEPLOY_URL="${RENDER_DEPLOY_HOOK_URL}?ref=${TARGET_SHA}"
-          curl -fsSL -X POST "$DEPLOY_URL"
+          curl -fsSL -X POST "${RENDER_DEPLOY_HOOK_URL}"
 
       - name: Wait for expected SHA on health endpoint
         env:
