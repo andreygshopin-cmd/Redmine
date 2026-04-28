@@ -38,6 +38,7 @@ from src.redmine.db import (
     getSnapshotRunsWithIssuesForProjectYear,
     getSnapshotRunsWithIssuesForProjectDateRange,
     getSnapshotIssuesForProjectByDate,
+    getSnapshotTimeEntriesForProjectByDateRange,
     getUserByPasswordResetToken,
     getUserByLogin,
     listPlanningProjectIdentifiers,
@@ -5901,6 +5902,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       <input class="page-size-input" id="snapshotPageSizeInput" type="number" min="10" max="10000" step="10" value="{initialPageSize}">
       <button type="button" class="secondary-button" id="applySnapshotPageSizeButton">Показать</button>
       <button type="button" class="secondary-button" id="exportSnapshotCsvButton">Выгрузить CSV</button>
+      <button type="button" class="secondary-button" id="viewSnapshotTimeEntriesButton">Списание времени</button>
       <button type="button" id="recaptureSnapshotButton">Загрузить/обновить последний срез</button>
       <button type="button" id="deleteSnapshotButton">Удалить выбранный срез</button>
       </div>
@@ -6051,6 +6053,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const snapshotPageSizeInput = document.getElementById("snapshotPageSizeInput");
       const applySnapshotPageSizeButton = document.getElementById("applySnapshotPageSizeButton");
       const exportSnapshotCsvButton = document.getElementById("exportSnapshotCsvButton");
+      const viewSnapshotTimeEntriesButton = document.getElementById("viewSnapshotTimeEntriesButton");
       const snapshotPrevPageButton = document.getElementById("snapshotPrevPageButton");
       const snapshotNextPageButton = document.getElementById("snapshotNextPageButton");
       const snapshotPaginationInfo = document.getElementById("snapshotPaginationInfo");
@@ -6755,6 +6758,15 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         window.location.href = `/projects/{projectRedmineId}/latest-snapshot-issues/export.csv?${{params.toString()}}`;
       }});
 
+      viewSnapshotTimeEntriesButton?.addEventListener("click", () => {{
+        const selectedTimeEntriesDate = String(capturedForDateSelect?.value || "{capturedForDate}" || "");
+        const params = new URLSearchParams();
+        if (selectedTimeEntriesDate) {{
+          params.set("captured_for_date", selectedTimeEntriesDate);
+        }}
+        window.location.href = `/projects/{projectRedmineId}/time-entries?${{params.toString()}}`;
+      }});
+
       snapshotPrevPageButton?.addEventListener("click", () => {{
         if (currentSnapshotPage > 1) {{
           loadSnapshotIssues(currentSnapshotPage - 1);
@@ -6812,6 +6824,227 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         }}
       }}
     </script>
+  </main>
+</body>
+</html>"""
+
+
+def buildSnapshotTimeEntriesPage(
+    projectRedmineId: int,
+    capturedForDate: str | None,
+    dateFrom: str | None,
+    dateTo: str | None,
+) -> str:
+    today = date.today()
+    defaultDateFrom = date(today.year, 1, 1).isoformat()
+    defaultDateTo = today.isoformat()
+
+    def normalizeDateValue(value: str | None, fallback: str) -> str:
+        rawValue = str(value or "").strip()
+        if not rawValue:
+            return fallback
+        try:
+            return date.fromisoformat(rawValue).isoformat()
+        except ValueError:
+            return fallback
+
+    selectedDateFrom = normalizeDateValue(dateFrom, defaultDateFrom)
+    selectedDateTo = normalizeDateValue(dateTo, defaultDateTo)
+    if selectedDateFrom > selectedDateTo:
+        selectedDateFrom, selectedDateTo = selectedDateTo, selectedDateFrom
+
+    snapshotPayload = getSnapshotTimeEntriesForProjectByDateRange(
+        projectRedmineId,
+        capturedForDate,
+        selectedDateFrom,
+        selectedDateTo,
+    )
+    snapshotRun = snapshotPayload["snapshot_run"]
+    timeEntries = list(snapshotPayload.get("time_entries") or [])
+    availableDates = [str(value) for value in snapshotPayload.get("available_dates") or []]
+    storedProjects = listStoredProjects()
+    storedProject = next(
+        (item for item in storedProjects if int(item.get("redmine_id") or 0) == projectRedmineId),
+        None,
+    )
+    storedProjectIdentifierRaw = str((storedProject or {}).get("identifier") or "").strip()
+
+    if snapshotRun is None:
+        navPanelHtml = buildProjectContextNavPanel(
+            projectRedmineId,
+            storedProjectIdentifierRaw,
+            currentPage="time_entries",
+        )
+        return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Списание времени</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body {{ margin: 0; font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: #16324a; }}
+    main {{ max-width: 1400px; margin: 0 auto; padding: 24px 20px 48px; }}
+    {buildProjectContextNavCss()}
+    h1 {{ margin: 18px 0 12px; font-size: clamp(1.85rem, 4vw, 2.65rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }}
+    .meta {{ color: #64798d; margin: 0 0 24px; }}
+    .meta-strong {{ color: #33bdd8; font-weight: 400; }}
+    .toolbar {{ display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin: 0 0 18px; }}
+    .toolbar label {{ display: flex; flex-direction: column; gap: 6px; font-weight: 600; color: #16324a; }}
+    .toolbar input {{ border: 1px solid #d9e5eb; border-radius: 6px; padding: 8px 10px; font: inherit; }}
+    .toolbar button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #375d77; color: #ffffff; }}
+    .empty-state {{ padding: 18px 20px; border: 1px solid #d9e5eb; border-radius: 8px; background: #f8fbfd; color: #64798d; }}
+  </style>
+</head>
+<body>
+  <main>
+    {navPanelHtml}
+    <h1>Списание времени</h1>
+    <p class="meta">Для проекта с ID {projectRedmineId} срезы пока не найдены.</p>
+    <form class="toolbar" method="get">
+      <label>Дата от
+        <input type="date" name="date_from" value="{escape(selectedDateFrom)}">
+      </label>
+      <label>Дата до
+        <input type="date" name="date_to" value="{escape(selectedDateTo)}">
+      </label>
+      <button type="submit">Показать списания</button>
+    </form>
+    <div class="empty-state">Сначала нужно загрузить срез проекта, чтобы появились списания времени.</div>
+  </main>
+</body>
+</html>"""
+
+    selectedSnapshotDateRaw = str(snapshotRun.get("captured_for_date") or "")
+    projectName = escape(str(snapshotRun.get("project_name") or "—"))
+    projectIdentifierRaw = str(snapshotRun.get("project_identifier") or storedProjectIdentifierRaw).strip()
+    projectIdentifier = escape(projectIdentifierRaw or "—")
+    snapshotPageUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
+    comparePageUrl = f"/projects/{projectRedmineId}/compare-snapshots"
+    if selectedSnapshotDateRaw:
+        snapshotPageUrl += f"?captured_for_date={quote(selectedSnapshotDateRaw)}"
+        comparePageUrl += f"?right_date={quote(selectedSnapshotDateRaw)}"
+    navPanelHtml = buildProjectContextNavPanel(
+        projectRedmineId,
+        projectIdentifierRaw,
+        currentPage="time_entries",
+        snapshotUrl=snapshotPageUrl,
+        compareUrl=comparePageUrl,
+    )
+
+    totalHours = sum(float(entry.get("hours") or 0) for entry in timeEntries)
+    columnConfig = [
+        ("id", "ID"),
+        ("snapshot_run_id", "ID среза"),
+        ("project_redmine_id", "ID проекта Redmine"),
+        ("project_name", "Проект"),
+        ("time_entry_redmine_id", "ID списания"),
+        ("issue_redmine_id", "ID задачи"),
+        ("issue_subject", "Тема задачи"),
+        ("issue_tracker_name", "Трекер задачи"),
+        ("issue_status_name", "Статус задачи"),
+        ("user_id", "ID пользователя"),
+        ("user_name", "Пользователь"),
+        ("activity_id", "ID активности"),
+        ("activity_name", "Активность"),
+        ("hours", "Часы"),
+        ("comments", "Комментарий"),
+        ("spent_on", "Дата списания"),
+        ("created_on", "Создано"),
+        ("updated_on", "Обновлено"),
+    ]
+
+    def formatTimeEntryValue(key: str, value: object) -> str:
+        if value in (None, ""):
+            return "—"
+        if key == "hours":
+            return formatPageHours(value)
+        if key in {"created_on", "updated_on"}:
+            return formatSnapshotPageDateTime(value)
+        return escape(str(value))
+
+    rowsHtml: list[str] = []
+    if timeEntries:
+        for entry in timeEntries:
+            cells = []
+            for key, _ in columnConfig:
+                valueClass = "mono" if key in {"time_entry_redmine_id", "issue_redmine_id", "user_id", "activity_id"} else ""
+                cells.append(f'<td class="{valueClass}">{formatTimeEntryValue(key, entry.get(key))}</td>')
+            rowsHtml.append(f"<tr>{''.join(cells)}</tr>")
+    else:
+        rowsHtml.append(f'<tr><td colspan="{len(columnConfig)}">За выбранный период списания времени не найдены.</td></tr>')
+
+    headerHtml = "".join(f"<th>{escape(label)}</th>" for _, label in columnConfig)
+
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Списание времени</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {{
+      --bg: #ffffff;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --panel: #ffffff;
+      --header: #eef6f7;
+      --brand: #33bdd8;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
+    main {{ max-width: 1600px; margin: 0 auto; padding: 24px 20px 48px; }}
+    {buildProjectContextNavCss()}
+    h1 {{ margin: 18px 0 12px; font-size: clamp(1.85rem, 4vw, 2.65rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }}
+    .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
+    .meta-strong {{ color: var(--brand); font-weight: 400; }}
+    .toolbar {{ display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin: 0 0 18px; }}
+    .toolbar label {{ display: flex; flex-direction: column; gap: 6px; font-weight: 600; color: var(--text); }}
+    .toolbar input {{ border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }}
+    .toolbar button {{ border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #375d77; color: #ffffff; }}
+    .table-wrap {{ overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }}
+    table {{ width: 100%; border-collapse: separate; border-spacing: 0; min-width: 1800px; }}
+    th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }}
+    th {{ position: sticky; top: 0; z-index: 2; background: var(--header); color: #426179; text-transform: uppercase; font-size: 0.74rem; line-height: 1.15; }}
+    tr:last-child td {{ border-bottom: 0; }}
+    .mono {{ font-family: Consolas, "Courier New", monospace; white-space: nowrap; }}
+    .summary {{ margin: 0 0 16px; color: var(--muted); }}
+  </style>
+</head>
+<body>
+  <main>
+    {navPanelHtml}
+    <h1>Списание времени</h1>
+    <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Дата среза: {escape(selectedSnapshotDateRaw or "—")}.</p>
+    <form class="toolbar" method="get">
+      <input type="hidden" name="captured_for_date" value="{escape(selectedSnapshotDateRaw)}">
+      <label>Дата от
+        <input type="date" name="date_from" value="{escape(selectedDateFrom)}">
+      </label>
+      <label>Дата до
+        <input type="date" name="date_to" value="{escape(selectedDateTo)}">
+      </label>
+      <button type="submit">Показать списания</button>
+    </form>
+    <p class="summary">Найдено списаний: {len(timeEntries)}. Сумма часов: {formatPageHours(totalHours)}.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>{headerHtml}</tr>
+        </thead>
+        <tbody>
+          {''.join(rowsHtml)}
+        </tbody>
+      </table>
+    </div>
   </main>
 </body>
 </html>"""
@@ -10854,6 +11087,28 @@ def exportProjectLatestSnapshotIssuesCsv(
         content=csvBytes,
         media_type="text/csv; charset=windows-1251",
         headers={"Content-Disposition": f'attachment; filename="{fileName}"'},
+    )
+
+
+@app.get("/projects/{project_redmine_id}/time-entries", response_class=HTMLResponse)
+def getProjectSnapshotTimeEntriesPage(
+    project_redmine_id: int,
+    captured_for_date: str | None = Query(None, description="Дата среза в формате YYYY-MM-DD"),
+    date_from: str | None = Query(None, description="Дата начала периода в формате YYYY-MM-DD"),
+    date_to: str | None = Query(None, description="Дата конца периода в формате YYYY-MM-DD"),
+) -> HTMLResponse:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+    ensureProjectsTable()
+    return _renderHtmlPage(
+        buildSnapshotTimeEntriesPage(
+            project_redmine_id,
+            captured_for_date,
+            date_from,
+            date_to,
+        )
     )
 
 

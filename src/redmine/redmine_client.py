@@ -107,6 +107,29 @@ def normalizeIssue(issue: dict[str, object], projectRedmineId: int) -> dict[str,
     }
 
 
+def normalizeTimeEntry(entry: dict[str, object], projectRedmineId: int) -> dict[str, object]:
+    project = entry.get("project") or {}
+    issue = entry.get("issue") or {}
+    user = entry.get("user") or {}
+    activity = entry.get("activity") or {}
+
+    return {
+        "project_redmine_id": projectRedmineId,
+        "project_name": project.get("name"),
+        "time_entry_redmine_id": entry["id"],
+        "issue_redmine_id": issue.get("id"),
+        "user_id": user.get("id"),
+        "user_name": user.get("name"),
+        "activity_id": activity.get("id"),
+        "activity_name": activity.get("name"),
+        "hours": float(entry.get("hours") or 0.0),
+        "comments": entry.get("comments"),
+        "spent_on": entry.get("spent_on"),
+        "created_on": parseRedmineDate(entry.get("created_on")),
+        "updated_on": parseRedmineDate(entry.get("updated_on")),
+    }
+
+
 def applySpentHoursYearByIssue(
     issues: list[dict[str, object]],
     spentHoursByIssue: dict[int, float],
@@ -115,6 +138,27 @@ def applySpentHoursYearByIssue(
         issue["spent_hours_year"] = spentHoursByIssue.get(int(issue["issue_redmine_id"]), 0.0)
 
     return issues
+
+
+def buildSpentHoursByIssueForYear(
+    timeEntries: list[dict[str, object]],
+    year: int,
+) -> dict[int, float]:
+    spentHoursByIssue: dict[int, float] = {}
+    yearPrefix = f"{int(year)}-"
+
+    for entry in timeEntries:
+        spentOn = str(entry.get("spent_on") or "")
+        issueId = entry.get("issue_redmine_id")
+        if not spentOn.startswith(yearPrefix) or issueId is None:
+            continue
+
+        normalizedIssueId = int(issueId)
+        spentHoursByIssue[normalizedIssueId] = spentHoursByIssue.get(normalizedIssueId, 0.0) + float(
+            entry.get("hours") or 0.0
+        )
+
+    return spentHoursByIssue
 
 
 def buildSession(apiKey: str) -> requests.Session:
@@ -303,3 +347,60 @@ def fetchSpentHoursByIssueForProjectYear(
             break
 
     return spentHoursByIssue
+
+
+def fetchAllTimeEntriesForProject(
+    redmineUrl: str,
+    apiKey: str,
+    projectIdentifier: str,
+    projectRedmineId: int,
+    *,
+    fromDate: str | None = None,
+    toDate: str | None = None,
+    progressCallback: ProgressCallback | None = None,
+) -> list[dict[str, object]]:
+    timeEntries: list[dict[str, object]] = []
+    offset = 0
+    limit = REDMINE_TIME_ENTRIES_PAGE_SIZE
+    session = buildSession(apiKey)
+
+    while True:
+        params: dict[str, object] = {
+            "project_id": projectIdentifier,
+            "subproject_id": "!*",
+            "offset": offset,
+            "limit": limit,
+        }
+        if fromDate:
+            params["from"] = fromDate
+        if toDate:
+            params["to"] = toDate
+
+        response = session.get(
+            f"{redmineUrl.rstrip('/')}/time_entries.json",
+            params=params,
+            timeout=120,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        rawEntries = payload.get("time_entries", [])
+        effectiveLimit = max(int(payload.get("limit") or len(rawEntries) or limit), 1)
+        totalCount = int(payload.get("total_count") or (offset + len(rawEntries)))
+        totalPages = max((totalCount + effectiveLimit - 1) // effectiveLimit, 1) if totalCount or rawEntries else 0
+
+        timeEntries.extend(normalizeTimeEntry(entry, projectRedmineId) for entry in rawEntries)
+
+        offset += len(rawEntries)
+        loadedPages = min((offset + effectiveLimit - 1) // effectiveLimit, totalPages) if rawEntries else totalPages
+        if progressCallback is not None:
+            progressCallback(loadedPages, totalPages, offset, totalCount)
+        if offset >= totalCount or not rawEntries:
+            break
+
+    timeEntries.sort(
+        key=lambda entry: (
+            str(entry.get("spent_on") or ""),
+            int(entry.get("time_entry_redmine_id") or 0),
+        )
+    )
+    return timeEntries

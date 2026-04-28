@@ -25,9 +25,10 @@ from src.redmine.db import (
 )
 from src.redmine.redmine_client import (
     applySpentHoursYearByIssue,
+    buildSpentHoursByIssueForYear,
     fetchAllIssuesForProject,
     fetchAllProjectsFromRedmine,
-    fetchSpentHoursByIssueForProjectYear,
+    fetchAllTimeEntriesForProject,
 )
 
 
@@ -801,13 +802,15 @@ def captureAllIssueSnapshots() -> dict[str, object]:
                     partialLoad=bool(project.get("partial_load")),
                     closedOnOrAfter=closedOnCutoff,
                 )
-                spentHoursByIssue = fetchSpentHoursByIssueForProjectYear(
+                timeEntries = fetchAllTimeEntriesForProject(
                     config.redmineUrl,
                     config.apiKey,
                     str(identifier),
-                    captureYear,
+                    int(project["redmine_id"]),
+                    toDate=capturedForDate,
                     progressCallback=updateTimeProgress,
                 )
+                spentHoursByIssue = buildSpentHoursByIssueForYear(timeEntries, captureYear)
             except HTTPError as error:
                 skippedProjects.append(
                     {
@@ -828,7 +831,7 @@ def captureAllIssueSnapshots() -> dict[str, object]:
                 continue
 
             applySpentHoursYearByIssue(issues, spentHoursByIssue)
-            snapshotRunId = createIssueSnapshotRun(capturedForDate, project, issues)
+            snapshotRunId = createIssueSnapshotRun(capturedForDate, project, issues, timeEntries=timeEntries)
             if snapshotRunId is None:
                 updateIssueSnapshotCaptureStatus(
                     processed_projects=createdRuns + len(skippedProjects),
@@ -957,15 +960,17 @@ def captureIssueSnapshotForProject(projectRedmineId: int) -> dict[str, object]:
             current_project_time_pages_loaded=0,
             current_project_time_pages_total=0,
         )
-        spentHoursByIssue = fetchSpentHoursByIssueForProjectYear(
+        timeEntries = fetchAllTimeEntriesForProject(
             config.redmineUrl,
             config.apiKey,
             str(identifier),
-            captureYear,
+            int(project["redmine_id"]),
+            toDate=capturedForDate,
             progressCallback=updateTimeProgress,
         )
+        spentHoursByIssue = buildSpentHoursByIssueForYear(timeEntries, captureYear)
         applySpentHoursYearByIssue(issues, spentHoursByIssue)
-        snapshotRunId = createIssueSnapshotRun(capturedForDate, project, issues)
+        snapshotRunId = createIssueSnapshotRun(capturedForDate, project, issues, timeEntries=timeEntries)
 
         createdRuns = 1 if snapshotRunId is not None else 0
         alreadyCaptured = 0 if snapshotRunId is not None else 1

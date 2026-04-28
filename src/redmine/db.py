@@ -230,6 +230,33 @@ def ensureIssueSnapshotTables() -> None:
             connection.execute(
                 text(
                     """
+                    CREATE TABLE IF NOT EXISTS issue_snapshot_time_entries (
+                        id BIGSERIAL PRIMARY KEY,
+                        snapshot_run_id BIGINT NOT NULL REFERENCES issue_snapshot_runs(id) ON DELETE CASCADE,
+                        project_redmine_id INTEGER NOT NULL,
+                        project_name TEXT NULL,
+                        time_entry_redmine_id INTEGER NOT NULL,
+                        issue_redmine_id INTEGER NULL,
+                        issue_subject TEXT NULL,
+                        issue_tracker_name TEXT NULL,
+                        issue_status_name TEXT NULL,
+                        user_id INTEGER NULL,
+                        user_name TEXT NULL,
+                        activity_id INTEGER NULL,
+                        activity_name TEXT NULL,
+                        hours DOUBLE PRECISION NOT NULL DEFAULT 0,
+                        comments TEXT NULL,
+                        spent_on DATE NOT NULL,
+                        created_on TIMESTAMPTZ NULL,
+                        updated_on TIMESTAMPTZ NULL
+                    )
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
                     ALTER TABLE issue_snapshot_runs
                     ADD COLUMN IF NOT EXISTS captured_for_date DATE NOT NULL DEFAULT CURRENT_DATE
                     """
@@ -277,6 +304,42 @@ def ensureIssueSnapshotTables() -> None:
                     """
                     ALTER TABLE issue_snapshot_items
                     ADD COLUMN IF NOT EXISTS spent_hours_year DOUBLE PRECISION
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE issue_snapshot_time_entries
+                    ADD COLUMN IF NOT EXISTS project_name TEXT
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE issue_snapshot_time_entries
+                    ADD COLUMN IF NOT EXISTS issue_subject TEXT
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE issue_snapshot_time_entries
+                    ADD COLUMN IF NOT EXISTS issue_tracker_name TEXT
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE issue_snapshot_time_entries
+                    ADD COLUMN IF NOT EXISTS issue_status_name TEXT
                     """
                 )
             )
@@ -339,6 +402,33 @@ def ensureIssueSnapshotTables() -> None:
                     """
                     CREATE INDEX IF NOT EXISTS idx_issue_snapshot_items_issue
                     ON issue_snapshot_items(project_redmine_id, issue_redmine_id)
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_issue_snapshot_time_entries_run_entry_unique
+                    ON issue_snapshot_time_entries(snapshot_run_id, time_entry_redmine_id)
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_issue_snapshot_time_entries_run
+                    ON issue_snapshot_time_entries(snapshot_run_id)
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_issue_snapshot_time_entries_spent_on
+                    ON issue_snapshot_time_entries(snapshot_run_id, spent_on)
                     """
                 )
             )
@@ -2193,6 +2283,67 @@ def listFilteredSnapshotIssuesForProjectByDate(
         }
 
 
+def getSnapshotTimeEntriesForProjectByDateRange(
+    projectRedmineId: int,
+    capturedForDate: str | None,
+    dateFrom: str,
+    dateTo: str,
+) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        latestRun = _getSnapshotRunWithConnection(connection, projectRedmineId, capturedForDate)
+        availableDates = _listSnapshotDatesForProjectWithConnection(connection, projectRedmineId)
+        if latestRun is None:
+            return {
+                "snapshot_run": None,
+                "time_entries": [],
+                "available_dates": availableDates,
+            }
+
+        timeEntryRows = connection.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    snapshot_run_id,
+                    project_redmine_id,
+                    project_name,
+                    time_entry_redmine_id,
+                    issue_redmine_id,
+                    issue_subject,
+                    issue_tracker_name,
+                    issue_status_name,
+                    user_id,
+                    user_name,
+                    activity_id,
+                    activity_name,
+                    hours,
+                    comments,
+                    spent_on,
+                    created_on,
+                    updated_on
+                FROM issue_snapshot_time_entries
+                WHERE snapshot_run_id = :snapshot_run_id
+                  AND spent_on BETWEEN :date_from AND :date_to
+                ORDER BY spent_on DESC, time_entry_redmine_id DESC
+                """
+            ),
+            {
+                "snapshot_run_id": latestRun["id"],
+                "date_from": dateFrom,
+                "date_to": dateTo,
+            },
+        ).mappings().all()
+
+        return {
+            "snapshot_run": latestRun,
+            "time_entries": [dict(row) for row in timeEntryRows],
+            "available_dates": availableDates,
+        }
+
+
 def getSnapshotRunsWithIssuesForProjectYear(projectRedmineId: int, year: int) -> dict[str, object]:
     return getSnapshotRunsWithIssuesForProjectDateRange(
         projectRedmineId,
@@ -3089,6 +3240,7 @@ def createIssueSnapshotRun(
     capturedForDate: str,
     project: dict[str, object],
     issues: Sequence[dict[str, object]],
+    timeEntries: Sequence[dict[str, object]] | None = None,
 ) -> int | None:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
@@ -3220,5 +3372,74 @@ def createIssueSnapshotRun(
 
             for payloadChunk in chunkSequence(payload, SNAPSHOT_INSERT_BATCH_SIZE):
                 connection.execute(insertStatement, payloadChunk)
+
+        if timeEntries:
+            issueMetaById: dict[int, dict[str, object]] = {}
+            for issue in issues:
+                issueRedmineId = int(issue.get("issue_redmine_id") or 0)
+                if issueRedmineId <= 0:
+                    continue
+                issueMetaById[issueRedmineId] = {
+                    "issue_subject": issue.get("subject"),
+                    "issue_tracker_name": issue.get("tracker_name"),
+                    "issue_status_name": issue.get("status_name"),
+                }
+
+            timeEntryInsertStatement = text(
+                """
+                INSERT INTO issue_snapshot_time_entries (
+                    snapshot_run_id,
+                    project_redmine_id,
+                    project_name,
+                    time_entry_redmine_id,
+                    issue_redmine_id,
+                    issue_subject,
+                    issue_tracker_name,
+                    issue_status_name,
+                    user_id,
+                    user_name,
+                    activity_id,
+                    activity_name,
+                    hours,
+                    comments,
+                    spent_on,
+                    created_on,
+                    updated_on
+                ) VALUES (
+                    :snapshot_run_id,
+                    :project_redmine_id,
+                    :project_name,
+                    :time_entry_redmine_id,
+                    :issue_redmine_id,
+                    :issue_subject,
+                    :issue_tracker_name,
+                    :issue_status_name,
+                    :user_id,
+                    :user_name,
+                    :activity_id,
+                    :activity_name,
+                    :hours,
+                    :comments,
+                    :spent_on,
+                    :created_on,
+                    :updated_on
+                )
+                """
+            )
+
+            timeEntryPayload: list[dict[str, object]] = []
+            for timeEntry in timeEntries:
+                item = dict(timeEntry)
+                item["snapshot_run_id"] = snapshotRunId
+                issueRedmineId = int(item.get("issue_redmine_id") or 0)
+                issueMeta = issueMetaById.get(issueRedmineId, {})
+                item["project_name"] = item.get("project_name") or project.get("name")
+                item["issue_subject"] = issueMeta.get("issue_subject")
+                item["issue_tracker_name"] = issueMeta.get("issue_tracker_name")
+                item["issue_status_name"] = issueMeta.get("issue_status_name")
+                timeEntryPayload.append(item)
+
+            for payloadChunk in chunkSequence(timeEntryPayload, SNAPSHOT_INSERT_BATCH_SIZE):
+                connection.execute(timeEntryInsertStatement, payloadChunk)
 
     return snapshotRunId
