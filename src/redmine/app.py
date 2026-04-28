@@ -6884,6 +6884,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 
 SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG = [
     {"key": "id", "label": "ID", "type": "number", "sum": False, "mono": True},
+    {"key": "user_name", "label": "Пользователь", "type": "text", "sum": False, "mono": False},
+    {"key": "activity_name", "label": "Активность", "type": "text", "sum": False, "mono": False},
+    {"key": "hours", "label": "Часы", "type": "hours", "sum": True, "mono": False},
     {"key": "snapshot_run_id", "label": "ID среза", "type": "number", "sum": False, "mono": True},
     {"key": "project_redmine_id", "label": "ID проекта Redmine", "type": "number", "sum": False, "mono": True},
     {"key": "project_name", "label": "Проект", "type": "text", "sum": False, "mono": False},
@@ -6893,10 +6896,7 @@ SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG = [
     {"key": "issue_tracker_name", "label": "Трекер задачи", "type": "text", "sum": False, "mono": False},
     {"key": "issue_status_name", "label": "Статус задачи", "type": "text", "sum": False, "mono": False},
     {"key": "user_id", "label": "ID пользователя", "type": "number", "sum": False, "mono": True},
-    {"key": "user_name", "label": "Пользователь", "type": "text", "sum": False, "mono": False},
     {"key": "activity_id", "label": "ID активности", "type": "number", "sum": False, "mono": True},
-    {"key": "activity_name", "label": "Активность", "type": "text", "sum": False, "mono": False},
-    {"key": "hours", "label": "Часы", "type": "hours", "sum": True, "mono": False},
     {"key": "comments", "label": "Комментарий", "type": "text", "sum": False, "mono": False},
     {"key": "spent_on", "label": "Дата списания", "type": "date", "sum": False, "mono": False},
     {"key": "created_on", "label": "Создано", "type": "datetime", "sum": False, "mono": False},
@@ -6911,19 +6911,19 @@ SNAPSHOT_TIME_ENTRY_MULTISELECT_KEYS = {
 
 SNAPSHOT_TIME_ENTRY_FIXED_WIDTHS = {
     "id": "8ch",
+    "user_name": "20ch",
+    "activity_name": "15ch",
+    "hours": "10ch",
     "snapshot_run_id": "10ch",
     "project_redmine_id": "10ch",
     "project_name": "22ch",
     "time_entry_redmine_id": "10ch",
     "issue_redmine_id": "10ch",
-    "issue_subject": "32ch",
-    "issue_tracker_name": "15ch",
-    "issue_status_name": "15ch",
+    "issue_subject": "64ch",
+    "issue_tracker_name": "23ch",
+    "issue_status_name": "23ch",
     "user_id": "10ch",
-    "user_name": "20ch",
     "activity_id": "10ch",
-    "activity_name": "15ch",
-    "hours": "10ch",
     "comments": "32ch",
     "spent_on": "12ch",
     "created_on": "15ch",
@@ -7199,7 +7199,8 @@ def buildSnapshotTimeEntriesPage(
     .pagination-wrap {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 12px; flex-wrap: wrap; }}
     .pagination-buttons {{ display: flex; gap: 8px; align-items: center; }}
     .pagination-info, .summary-note {{ color: var(--muted); font-size: 0.94rem; }}
-    .page-size-label {{ color: var(--muted); }}
+    .page-size-label {{ display: flex; flex-direction: column; gap: 6px; color: var(--text); font-weight: 600; }}
+    .page-size-hint {{ color: var(--muted); font-weight: 600; }}
     .page-size-input {{ width: 110px; }}
     .table-wrap {{ position: relative; min-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }}
     table {{ width: 100%; border-collapse: separate; border-spacing: 0; min-width: 2200px; table-layout: fixed; background: var(--panel); }}
@@ -7304,15 +7305,30 @@ def buildSnapshotTimeEntriesPage(
       const timeEntriesVisibleCount = document.getElementById("timeEntriesVisibleCount");
       const timeEntriesHoursSummary = document.getElementById("timeEntriesHoursSummary");
       const timeEntriesPageSizeInput = document.getElementById("timeEntriesPageSizeInput");
+      const timeEntriesPageSizeLabel = document.querySelector('label[for="timeEntriesPageSizeInput"]');
       const timeEntriesPrevPageButton = document.getElementById("timeEntriesPrevPageButton");
       const timeEntriesNextPageButton = document.getElementById("timeEntriesNextPageButton");
       const timeEntriesPaginationInfo = document.getElementById("timeEntriesPaginationInfo");
       const exportTimeEntriesCsvButton = document.getElementById("exportTimeEntriesCsvButton");
       const resetTimeEntryFiltersButton = document.getElementById("resetTimeEntryFiltersButton");
+      const timeEntriesSummaryLabelCell = document.querySelector("tfoot .summary-label");
       const timeEntriesFilterInputs = Array.from(document.querySelectorAll("[data-filter-key]"));
       const timeEntriesPageSizeStorageKey = "snapshotTimeEntriesPageSize";
       let currentTimeEntriesPage = 1;
       let currentTimeEntriesTotalPages = 1;
+
+      if (timeEntriesSummaryLabelCell) {{
+        timeEntriesSummaryLabelCell.textContent = "Итого";
+      }}
+
+      if (timeEntriesPageSizeLabel && timeEntriesPageSizeInput) {{
+        timeEntriesPageSizeLabel.textContent = "";
+        const pageSizeHint = document.createElement("span");
+        pageSizeHint.className = "page-size-hint";
+        pageSizeHint.textContent = "Записей на странице";
+        timeEntriesPageSizeLabel.appendChild(pageSizeHint);
+        timeEntriesPageSizeLabel.appendChild(timeEntriesPageSizeInput);
+      }}
 
       function escapeHtml(value) {{
         return String(value ?? "").replace(/[&<>"']/g, (char) => {{
