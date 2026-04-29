@@ -4663,10 +4663,52 @@ def buildBurndownPage(
 
     .burndown-show-button {{
       border: 1px solid var(--line);
-      background: #eceff3;
-      color: var(--text);
+      background: #eef2f5;
+      color: #16324a;
       box-shadow: none;
       min-height: 44px;
+    }}
+
+    .burndown-loading-overlay {{
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      background: rgba(22, 50, 74, 0.22);
+      backdrop-filter: blur(1px);
+      z-index: 9999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 140ms ease;
+    }}
+
+    .burndown-loading-overlay.is-visible {{
+      opacity: 1;
+      pointer-events: auto;
+    }}
+
+    .burndown-loading-spinner {{
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 4px solid rgba(255, 255, 255, 0.5);
+      border-top-color: #52cee6;
+      animation: burndown-spin 0.8s linear infinite;
+    }}
+
+    .burndown-loading-text {{
+      padding: 12px 16px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.96);
+      color: #16324a;
+      font-weight: 700;
+      box-shadow: 0 18px 42px rgba(22, 50, 74, 0.18);
+    }}
+
+    @keyframes burndown-spin {{
+      to {{ transform: rotate(360deg); }}
     }}
 
     .field input {{
@@ -4852,7 +4894,7 @@ def buildBurndownPage(
     <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Период диаграммы: {chartStartDate.strftime("%d.%m.%Y")} — {chartEndDate.strftime("%d.%m.%Y")}. Срезов в диапазоне: {len(chartSeeds)}.</p>
     {planningProjectsTextHtml}
 
-    <form class="controls-panel" method="get">
+    <form class="controls-panel" method="get" id="burndownForm">
       <div class="field">
         <label for="burndownStartDateInput">Начало интервала</label>
         <input id="burndownStartDateInput" type="date" name="start_date" value="{chartStartDate.isoformat()}">
@@ -5003,9 +5045,15 @@ def buildBurndownPage(
         </div>
       </div>
     </section>
+    <div class="burndown-loading-overlay" id="burndownLoadingOverlay" aria-hidden="true">
+      <span class="burndown-loading-spinner" aria-hidden="true"></span>
+      <span class="burndown-loading-text">Загружаем диаграмму...</span>
+    </div>
   </main>
 
   <script>
+    const burndownForm = document.getElementById("burndownForm");
+    const burndownLoadingOverlay = document.getElementById("burndownLoadingOverlay");
     const burndownDateLabels = {chartDatesJson};
     const burndownSnapshots = {chartSeedsJson};
     const planningDevelopmentHoursTotal = {json.dumps(totalPlanningDevelopmentHours, ensure_ascii=False)};
@@ -5016,6 +5064,14 @@ def buildBurndownPage(
     const statusNode = document.getElementById("burndownStatus");
     const chartCanvas = document.getElementById("burndownChart");
     const emptyState = document.getElementById("burndownEmptyState");
+
+    function setBurndownLoading(isLoading) {{
+      if (!(burndownLoadingOverlay instanceof HTMLElement)) {{
+        return;
+      }}
+      burndownLoadingOverlay.classList.toggle("is-visible", Boolean(isLoading));
+      burndownLoadingOverlay.setAttribute("aria-hidden", isLoading ? "false" : "true");
+    }}
 
     function parsePercentValue(rawValue, fallbackPercent) {{
       const normalized = String(rawValue ?? "").trim().replace(",", ".");
@@ -5376,6 +5432,10 @@ def buildBurndownPage(
 
       burndownChart = new Chart(chartCanvas, chartConfig);
     }}
+
+    burndownForm?.addEventListener("submit", () => {{
+      setBurndownLoading(true);
+    }});
 
     renderBurndownChart();
   </script>
@@ -5791,9 +5851,12 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         box-shadow: none;
       }}
       .snapshot-time-entries-button {{
-        background: var(--yellow-109) !important;
+        background: #ffc600 !important;
         color: #16324a !important;
-        border-color: rgba(255, 198, 0, 0.95) !important;
+        border-color: #e0ad00 !important;
+      }}
+      .snapshot-time-entries-button:hover {{
+        background: #f0bb00 !important;
       }}
       .toolbar button:hover {{
         background: #e4eaef;
@@ -5874,35 +5937,38 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .pagination-info {{ color: var(--muted); font-size: 0.94rem; }}
       .table-wrap {{ position: relative; min-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }}
       .snapshot-loading-overlay {{
-        position: absolute;
+        position: fixed;
         inset: 0;
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 12px;
-        background: rgba(255, 255, 255, 0.76);
+        gap: 14px;
+        background: rgba(22, 50, 74, 0.22);
         backdrop-filter: blur(1px);
-        z-index: 6;
+        z-index: 9999;
         opacity: 0;
         pointer-events: none;
         transition: opacity 140ms ease;
-        border-radius: inherit;
       }}
       .snapshot-loading-overlay.is-visible {{
         opacity: 1;
         pointer-events: auto;
       }}
       .snapshot-loading-spinner {{
-        width: 34px;
-        height: 34px;
+        width: 40px;
+        height: 40px;
         border-radius: 50%;
-        border: 3px solid rgba(82, 206, 230, 0.25);
+        border: 4px solid rgba(255, 255, 255, 0.5);
         border-top-color: #52cee6;
         animation: snapshot-spin 0.8s linear infinite;
       }}
       .snapshot-loading-text {{
+        padding: 12px 16px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.96);
+        color: #16324a;
         font-weight: 700;
-        color: #375d77;
+        box-shadow: 0 18px 42px rgba(22, 50, 74, 0.18);
       }}
       @keyframes snapshot-spin {{
         to {{ transform: rotate(360deg); }}
@@ -10423,10 +10489,7 @@ def buildProjectsSummaryPage() -> str:
       display: block;
     }}
     .head-actions {{
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
+      display: none;
     }}
     .head-actions a {{
       display: inline-flex;
