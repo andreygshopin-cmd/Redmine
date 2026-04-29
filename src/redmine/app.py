@@ -4613,18 +4613,37 @@ def buildBurndownPage(
 
     .controls-panel {{
       display: flex;
-      gap: 16px;
-      align-items: end;
-      flex-wrap: wrap;
+      flex-direction: column;
+      gap: 14px;
+      align-items: stretch;
       padding: 18px 20px;
       margin: 0 0 18px;
+    }}
+
+    .controls-row {{
+      display: flex;
+      gap: 16px;
+      align-items: flex-end;
+      flex-wrap: wrap;
     }}
 
     .field {{
       display: flex;
       flex-direction: column;
       gap: 6px;
-      min-width: 240px;
+      min-width: auto;
+    }}
+
+    .field-date input {{
+      width: 170px;
+    }}
+
+    .field-percent input {{
+      width: 88px;
+    }}
+
+    .field-value input {{
+      width: 120px;
     }}
 
     .field label {{
@@ -4637,8 +4656,12 @@ def buildBurndownPage(
       line-height: 1.4;
     }}
 
+    .controls-panel .field-note {{
+      display: none;
+    }}
+
     .field-checkbox {{
-      min-width: 280px;
+      min-width: auto;
       justify-content: flex-end;
     }}
 
@@ -4667,6 +4690,13 @@ def buildBurndownPage(
       color: #16324a;
       box-shadow: none;
       min-height: 44px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-weight: 600;
+    }}
+
+    .burndown-show-button:hover {{
+      background: #e4eaef;
     }}
 
     .burndown-loading-overlay {{
@@ -4895,34 +4925,39 @@ def buildBurndownPage(
     {planningProjectsTextHtml}
 
     <form class="controls-panel" method="get" id="burndownForm">
-      <div class="field">
+      <div class="controls-row">
+      <div class="field field-date">
         <label for="burndownStartDateInput">Начало интервала</label>
         <input id="burndownStartDateInput" type="date" name="start_date" value="{chartStartDate.isoformat()}">
       </div>
-      <div class="field">
+      <div class="field field-date">
         <label for="burndownEndDateInput">Конец интервала</label>
         <input id="burndownEndDateInput" type="date" name="end_date" value="{chartEndDate.isoformat()}">
       </div>
-      <div class="field">
+      </div>
+      <div class="controls-row">
+      <div class="field field-percent">
         <label for="p1Input">P1 = факт / база, %</label>
         <input id="p1Input" class="{planningP1InputClass.strip()}" type="text" inputmode="decimal" name="p1" value="{planningP1Value}">
         <div class="field-note">Используется в расчете бюджета и прогнозного объема.</div>
       </div>
-      <div class="field">
+      <div class="field field-percent">
         <label for="p2Input">P2 = факт с багами / факт, %</label>
         <input id="p2Input" class="{planningP2InputClass.strip()}" type="text" inputmode="decimal" name="p2" value="{planningP2Value}">
         <div class="field-note">Изменения применяются после нажатия кнопки «Показать».</div>
       </div>
-      <div class="field">
+      <div class="field field-value">
         <label>Базовая оценка</label>
         <input type="text" value="{planningBaselineText}" readonly>
         <div class="field-note">Значение подтянуто из формы «Планирование проектов».</div>
       </div>
-      <div class="field">
+      <div class="field field-value">
         <label>Лимит разработки с багфиксом</label>
         <input type="text" value="{planningDevelopmentHoursText}" readonly>
         <div class="field-note">Значение подтянуто из формы «Планирование проектов».</div>
       </div>
+      </div>
+      <div class="controls-row">
       <div class="field field-checkbox">
         <label class="field-checkbox-label" for="useRiskPlanCheckbox">
           <input id="useRiskPlanCheckbox" type="checkbox" name="use_risk_plan" value="1"{" checked" if useRiskPlan else ""}>
@@ -4931,6 +4966,7 @@ def buildBurndownPage(
       </div>
       <div class="field field-actions">
         <button type="submit" class="burndown-show-button">Показать</button>
+      </div>
       </div>
     </form>
 
