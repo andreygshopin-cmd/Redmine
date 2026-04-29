@@ -4692,7 +4692,9 @@ def buildBurndownPage(
       min-height: 44px;
       padding: 10px 14px;
       border-radius: 6px;
-      font-weight: 600;
+      font-size: 1rem;
+      line-height: 1.2;
+      font-weight: 700;
     }}
 
     .burndown-show-button:hover {{
