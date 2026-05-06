@@ -8764,7 +8764,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
                     entity: entity.key,
                     start: nextStart,
                   }),
-                }, 120000);
+                }, 600000);
                 pagePayload = await pageResponse.json();
                 if (!pageResponse.ok) {
                   throw new Error(pagePayload.detail || `Не удалось скачать ${entity.label}.`);
@@ -8802,7 +8802,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
         await loadBitrixDealSnapshotItems();
       } catch (error) {
         const message = error?.name === "AbortError"
-          ? "Пакет Bitrix не ответил за 120 секунд. Запустите получение еще раз; уже видно, на какой сущности и позиции остановилось."
+          ? "Пакет Bitrix не ответил за 10 минут. Попробуйте запустить получение еще раз; если снова остановится на той же позиции, уменьшим пакет или исключим проблемную сущность."
           : String(error.message || error);
         setSnapshotStatus(message, true);
       } finally {
@@ -12856,7 +12856,20 @@ def captureBitrixSnapshotPage(payload: BitrixCapturePagePayload) -> dict[str, ob
         raise HTTPException(status_code=500, detail="Bitrix capture session is corrupted")
 
     pageItems = [item for item in pagePayload.get("items", []) if isinstance(item, dict)]
-    entityItems.extend(pageItems)
+    existingItemIds = {
+        str(item.get("id") or item.get("ID") or "")
+        for item in entityItems
+        if isinstance(item, dict)
+    }
+    newPageItems: list[dict[str, object]] = []
+    for item in pageItems:
+        itemId = str(item.get("id") or item.get("ID") or "")
+        if itemId and itemId in existingItemIds:
+            continue
+        if itemId:
+            existingItemIds.add(itemId)
+        newPageItems.append(item)
+    entityItems.extend(newPageItems)
     total = int(pagePayload.get("total") or len(entityItems))
     nextStart = pagePayload.get("next")
     done = nextStart is None or not pageItems
@@ -12876,7 +12889,7 @@ def captureBitrixSnapshotPage(payload: BitrixCapturePagePayload) -> dict[str, ob
         "entity": entity,
         "captured_for_date": session["captured_for_date"],
         "fetched": len(entityItems),
-        "page_count": len(pageItems),
+        "page_count": len(newPageItems),
         "total": total,
         "remaining": remaining,
         "next": nextStart,
