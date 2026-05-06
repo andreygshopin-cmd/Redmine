@@ -11,6 +11,7 @@ from pathlib import Path
 import secrets
 import smtplib
 import requests
+import uuid
 from datetime import date, timedelta
 from urllib.parse import quote
 
@@ -27,7 +28,10 @@ from src.redmine.bitrix_client import (
     fetchBitrixCompanyNames,
     fetchBitrixCrmItemDictionaries,
     fetchBitrixDealDictionaries,
+    fetchBitrixDealsPage,
     fetchBitrixDeals,
+    fetchBitrixInvoicesPage,
+    fetchBitrixLeadsPage,
     fetchBitrixProfile,
     fetchBitrixUserNames,
 )
@@ -95,6 +99,7 @@ from src.redmine.snapshots import (
 
 config = loadConfig()
 app = FastAPI(title="Redmine Snapshot Viewer")
+_bitrixCaptureSessions: dict[str, dict[str, object]] = {}
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 SESSION_SECRET = config.sessionSecret or secrets.token_hex(32)
@@ -359,6 +364,12 @@ class PlanningProjectPayload(BaseModel):
     comment_text: str | None = None
     question_flag: bool = False
     is_closed: bool = False
+
+
+class BitrixCapturePagePayload(BaseModel):
+    session_id: str
+    entity: str
+    start: int = 0
 
 
 class LoginPayload(BaseModel):
@@ -8718,16 +8729,53 @@ BITRIX_PAGE_HTML = """<!doctype html>
     async function captureBitrixDealSnapshot() {
       captureBitrixDealSnapshotButton.disabled = true;
       deleteBitrixDealSnapshotButton.disabled = true;
-      setSnapshotStatus("Скачиваю все сделки из Bitrix24 и сохраняю срез...");
+      setSnapshotStatus("Готовлю новый срез: сделки, лиды, счета/оплаты...");
       try {
-        const response = await fetch("/api/bitrix/deal-snapshots/capture", { method: "POST" });
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.detail || "Не удалось сохранить срез сделок.");
+        const startResponse = await fetch("/api/bitrix/snapshots/capture/start", { method: "POST" });
+        const startPayload = await startResponse.json();
+        if (!startResponse.ok) {
+          throw new Error(startPayload.detail || "Не удалось начать получение среза.");
         }
+
+        const entityResults = [];
+        for (const entity of startPayload.entities || []) {
+          let nextStart = 0;
+          let done = false;
+          while (!done) {
+            setSnapshotStatus(`Скачиваю ${entity.label}: запрашиваю пакет с позиции ${nextStart}...`);
+            const pageResponse = await fetch("/api/bitrix/snapshots/capture/page", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                session_id: startPayload.session_id,
+                entity: entity.key,
+                start: nextStart,
+              }),
+            });
+            const pagePayload = await pageResponse.json();
+            if (!pageResponse.ok) {
+              throw new Error(pagePayload.detail || `Не удалось скачать ${entity.label}.`);
+            }
+            const total = Number(pagePayload.total || 0);
+            const fetched = Number(pagePayload.fetched || 0);
+            const remaining = Number(pagePayload.remaining || 0);
+            const progressText = total ? `${fetched} из ${total}, осталось ${remaining}` : `${fetched} строк`;
+            setSnapshotStatus(`Скачиваю ${entity.label}: ${progressText}.`);
+            done = Boolean(pagePayload.done);
+            nextStart = pagePayload.next;
+            if (done) {
+              entityResults.push({ label: entity.label, payload: pagePayload });
+              setSnapshotStatus(`Сохранен срез: ${entity.label}, строк ${fetched}.`);
+            }
+          }
+        }
+
         bitrixDealSnapshotPage = 1;
-        bitrixDealSnapshotDateSelect.value = payload.captured_for_date || "";
-        setSnapshotStatus(payload.detail || "Срез сделок сохранен.");
+        bitrixDealSnapshotDateSelect.value = startPayload.captured_for_date || "";
+        const summaryText = entityResults
+          .map((result) => `${result.label}: ${result.payload.fetched || 0}`)
+          .join(", ");
+        setSnapshotStatus(`Срез сохранен. ${summaryText}.`);
         await loadBitrixDealSnapshotItems();
       } catch (error) {
         setSnapshotStatus(String(error.message || error), true);
@@ -12671,6 +12719,144 @@ def getBitrixProfile() -> dict[str, object]:
         raise HTTPException(status_code=502, detail=detail) from error
     except RuntimeError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
+
+
+def collectBitrixIntegerField(items: list[dict[str, object]], fieldName: str) -> list[int]:
+    values: list[int] = []
+    for item in items:
+        try:
+            value = int(item.get(fieldName) or 0)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            values.append(value)
+    return values
+
+
+def finalizeBitrixCaptureEntity(session: dict[str, object], entity: str) -> dict[str, object]:
+    capturedForDate = str(session["captured_for_date"])
+    itemsByEntity = session.setdefault("items", {})
+    if not isinstance(itemsByEntity, dict):
+        raise RuntimeError("Bitrix capture session is corrupted")
+    items = [item for item in itemsByEntity.get(entity, []) if isinstance(item, dict)]
+
+    if entity == "deal":
+        categoryIds = collectBitrixIntegerField(items, "categoryId")
+        assignedByIds = collectBitrixIntegerField(items, "assignedById")
+        companyIds = collectBitrixIntegerField(items, "companyId")
+        dictionaries = fetchBitrixDealDictionaries(
+            portalUrl=config.bitrixPortalUrl,
+            credential=config.bitrixCredential,
+            categoryIds=categoryIds,
+            assignedByIds=assignedByIds,
+            companyIds=companyIds,
+        )
+        return createBitrixDealSnapshot(items, capturedForDate, dictionaries)
+
+    assignedByIds = collectBitrixIntegerField(items, "assignedById")
+    companyIds = collectBitrixIntegerField(items, "companyId")
+    dictionaries = fetchBitrixCrmItemDictionaries(
+        portalUrl=config.bitrixPortalUrl,
+        credential=config.bitrixCredential,
+        assignedByIds=assignedByIds,
+        companyIds=companyIds,
+        statusEntityIds=["STATUS"] if entity == "lead" else ["SMART_INVOICE_STAGE"],
+    )
+    return createBitrixCrmSnapshot(entity, items, capturedForDate, dictionaries)
+
+
+@app.post("/api/bitrix/snapshots/capture/start")
+def startBitrixSnapshotCapture() -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+    requireBitrixConfig()
+
+    capturedForDate = datetime.now(UTC).date().isoformat()
+    deleteBitrixDealSnapshotForDate(capturedForDate)
+    deleteBitrixCrmSnapshotForDate("lead", capturedForDate)
+    deleteBitrixCrmSnapshotForDate("invoice", capturedForDate)
+
+    sessionId = uuid.uuid4().hex
+    _bitrixCaptureSessions[sessionId] = {
+        "captured_for_date": capturedForDate,
+        "items": {"deal": [], "lead": [], "invoice": []},
+        "snapshots": {},
+    }
+    return {
+        "session_id": sessionId,
+        "captured_for_date": capturedForDate,
+        "entities": [
+            {"key": "deal", "label": "сделки"},
+            {"key": "lead", "label": "лиды"},
+            {"key": "invoice", "label": "счета/оплаты"},
+        ],
+    }
+
+
+@app.post("/api/bitrix/snapshots/capture/page")
+def captureBitrixSnapshotPage(payload: BitrixCapturePagePayload) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+    requireBitrixConfig()
+
+    session = _bitrixCaptureSessions.get(payload.session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Bitrix capture session was not found")
+
+    entity = str(payload.entity or "").strip()
+    if entity not in {"deal", "lead", "invoice"}:
+        raise HTTPException(status_code=400, detail="Unknown Bitrix capture entity")
+
+    try:
+        if entity == "deal":
+            pagePayload = fetchBitrixDealsPage(config.bitrixPortalUrl, config.bitrixCredential, start=payload.start)
+        elif entity == "lead":
+            pagePayload = fetchBitrixLeadsPage(config.bitrixPortalUrl, config.bitrixCredential, start=payload.start)
+        else:
+            pagePayload = fetchBitrixInvoicesPage(config.bitrixPortalUrl, config.bitrixCredential, start=payload.start)
+    except requests.HTTPError as error:
+        detail = f"Bitrix24 {entity} snapshot request failed."
+        if error.response is not None:
+            detail = f"{detail} HTTP {error.response.status_code}."
+        raise HTTPException(status_code=502, detail=detail) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+    itemsByEntity = session.setdefault("items", {})
+    if not isinstance(itemsByEntity, dict):
+        raise HTTPException(status_code=500, detail="Bitrix capture session is corrupted")
+    entityItems = itemsByEntity.setdefault(entity, [])
+    if not isinstance(entityItems, list):
+        raise HTTPException(status_code=500, detail="Bitrix capture session is corrupted")
+
+    pageItems = [item for item in pagePayload.get("items", []) if isinstance(item, dict)]
+    entityItems.extend(pageItems)
+    total = int(pagePayload.get("total") or len(entityItems))
+    nextStart = pagePayload.get("next")
+    done = nextStart is None or not pageItems
+    snapshot = None
+    if done:
+        try:
+            snapshot = finalizeBitrixCaptureEntity(session, entity)
+        except RuntimeError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+        snapshots = session.setdefault("snapshots", {})
+        if isinstance(snapshots, dict):
+            snapshots[entity] = snapshot
+
+    remaining = max(0, total - len(entityItems))
+    return {
+        "session_id": payload.session_id,
+        "entity": entity,
+        "captured_for_date": session["captured_for_date"],
+        "fetched": len(entityItems),
+        "page_count": len(pageItems),
+        "total": total,
+        "remaining": remaining,
+        "next": nextStart,
+        "done": done,
+        "snapshot": snapshot,
+    }
 
 
 @app.post("/api/bitrix/deal-snapshots/capture")

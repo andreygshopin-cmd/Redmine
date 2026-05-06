@@ -40,6 +40,9 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert "Получить срез по сделкам, лидам, счетам" in body
     assert "Удалить выбранный срез" in body
     assert "Выгрузить в Excel" in body
+    assert "/api/bitrix/snapshots/capture/start" in body
+    assert "/api/bitrix/snapshots/capture/page" in body
+    assert "Скачиваю все сделки из Bitrix24" not in body
     assert 'href="/Bitrix/leads"' in body
     assert 'href="/Bitrix/invoices"' in body
     assert 'data-bitrix-filter="company_name"' in body

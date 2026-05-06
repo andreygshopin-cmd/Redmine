@@ -265,6 +265,72 @@ def fetchAllBitrixCrmItems(
     }
 
 
+def fetchBitrixCrmItemsPage(
+    portalUrl: str,
+    credential: str,
+    *,
+    entityTypeId: int,
+    start: int = 0,
+    selectFields: list[str] | None = None,
+) -> dict[str, object]:
+    restContext = buildBitrixRestContext(portalUrl, credential)
+    responsePayload = callBitrixRestMethod(
+        portalUrl,
+        credential,
+        "crm.item.list",
+        {
+            **restContext.defaultPayload,
+            "entityTypeId": entityTypeId,
+            "select": selectFields or BITRIX_CRM_COMMON_SELECT_FIELDS,
+            "filter": {},
+            "order": {"id": "DESC"},
+            "start": max(0, int(start or 0)),
+        },
+        timeout=90,
+    )
+    resultPayload = responsePayload.get("result") or {}
+    pageItems = resultPayload.get("items") or []
+    nextStart = resultPayload.get("next", responsePayload.get("next"))
+    return {
+        "portal_url": portalUrl.rstrip("/"),
+        "auth_mode": restContext.authMode,
+        "items": pageItems,
+        "total": int(responsePayload.get("total") or len(pageItems)),
+        "next": nextStart,
+        "start": start,
+    }
+
+
+def fetchBitrixDealsPage(portalUrl: str, credential: str, start: int = 0) -> dict[str, object]:
+    return fetchBitrixCrmItemsPage(
+        portalUrl,
+        credential,
+        entityTypeId=BITRIX_DEAL_ENTITY_TYPE_ID,
+        selectFields=BITRIX_DEALS_SELECT_FIELDS,
+        start=start,
+    )
+
+
+def fetchBitrixLeadsPage(portalUrl: str, credential: str, start: int = 0) -> dict[str, object]:
+    return fetchBitrixCrmItemsPage(
+        portalUrl,
+        credential,
+        entityTypeId=BITRIX_LEAD_ENTITY_TYPE_ID,
+        selectFields=BITRIX_CRM_COMMON_SELECT_FIELDS,
+        start=start,
+    )
+
+
+def fetchBitrixInvoicesPage(portalUrl: str, credential: str, start: int = 0) -> dict[str, object]:
+    return fetchBitrixCrmItemsPage(
+        portalUrl,
+        credential,
+        entityTypeId=BITRIX_INVOICE_ENTITY_TYPE_ID,
+        selectFields=BITRIX_CRM_COMMON_SELECT_FIELDS,
+        start=start,
+    )
+
+
 def fetchAllBitrixLeads(portalUrl: str, credential: str) -> dict[str, object]:
     return fetchAllBitrixCrmItems(
         portalUrl,
