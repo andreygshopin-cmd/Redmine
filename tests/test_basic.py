@@ -37,6 +37,8 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert response.media_type == "text/html"
     assert "Bitrix test page" in body
     assert "Маршрут /Bitrix уже доступен на сайте" in body
+    assert "Удалить выбранный срез" in body
+    assert 'data-bitrix-filter="currency_id"' not in body
 
 
 def testReadBitrixPageMasksCredential(monkeypatch) -> None:
@@ -54,6 +56,7 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
 
     assert "Сравнение срезов сделок" in body
     assert "/api/bitrix/deal-snapshots/compare" in body
+    assert "<th>Валюта</th>" not in body
 
 
 def testGetBitrixDealsEndpointReturnsItems(monkeypatch) -> None:
@@ -171,6 +174,28 @@ def testCompareBitrixDealSnapshotsEndpointReturnsChanges(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["changes"][0]["deal_id"] == 501
+
+
+def testDeleteBitrixDealSnapshotByDateEndpointDeletesRows(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+    monkeypatch.setattr(
+        app_module,
+        "deleteBitrixDealSnapshotForDate",
+        lambda capturedForDate: {
+            "captured_for_date": capturedForDate,
+            "deleted_items": 100,
+            "deleted_runs": 1,
+        },
+    )
+    monkeypatch.setattr(app_module, "listBitrixDealSnapshotRuns", lambda limit=50: [])
+
+    response = client.delete("/api/bitrix/deal-snapshots/by-date?captured_for_date=2026-05-06")
+
+    assert response.status_code == 200
+    assert response.json()["deleted_items"] == 100
+    assert response.json()["deleted_runs"] == 1
 
 
 def testGetTimeReturnsServerTimePayload() -> None:

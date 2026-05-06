@@ -476,6 +476,7 @@ def ensureBitrixDealSnapshotTables() -> None:
                         stage_id TEXT,
                         stage_name TEXT,
                         assigned_by_id BIGINT,
+                        assigned_by_name TEXT,
                         opportunity DOUBLE PRECISION,
                         currency_id TEXT,
                         category_id BIGINT,
@@ -489,6 +490,7 @@ def ensureBitrixDealSnapshotTables() -> None:
             )
             connection.execute(text("ALTER TABLE bitrix_deal_snapshot_items ADD COLUMN IF NOT EXISTS stage_name TEXT"))
             connection.execute(text("ALTER TABLE bitrix_deal_snapshot_items ADD COLUMN IF NOT EXISTS category_name TEXT"))
+            connection.execute(text("ALTER TABLE bitrix_deal_snapshot_items ADD COLUMN IF NOT EXISTS assigned_by_name TEXT"))
             connection.execute(
                 text(
                     """
@@ -4226,19 +4228,22 @@ def createBitrixDealSnapshot(
     dictionaryValues = dictionaries or {}
     stageNames = dictionaryValues.get("stage_names") or {}
     categoryNames = dictionaryValues.get("category_names") or {}
+    assignedByNames = dictionaryValues.get("assigned_by_names") or {}
     for deal in deals:
         dealId = _toIntOrNone(deal.get("id"))
         if dealId is None:
             continue
         categoryId = _toIntOrNone(deal.get("categoryId"))
         stageId = str(deal.get("stageId") or "")
+        assignedById = _toIntOrNone(deal.get("assignedById"))
         normalizedDeals.append(
             {
                 "deal_id": dealId,
                 "title": deal.get("title"),
                 "stage_id": stageId,
                 "stage_name": stageNames.get(f"{categoryId or 0}:{stageId}") or stageNames.get(stageId),
-                "assigned_by_id": _toIntOrNone(deal.get("assignedById")),
+                "assigned_by_id": assignedById,
+                "assigned_by_name": assignedByNames.get(assignedById or 0),
                 "opportunity": _toFloatOrNone(deal.get("opportunity")),
                 "currency_id": deal.get("currencyId"),
                 "category_id": categoryId,
@@ -4300,10 +4305,10 @@ def createBitrixDealSnapshot(
         insertStatement = text(
             """
             INSERT INTO bitrix_deal_snapshot_items (
-                snapshot_run_id, deal_id, title, stage_id, stage_name, assigned_by_id, opportunity,
+                snapshot_run_id, deal_id, title, stage_id, stage_name, assigned_by_id, assigned_by_name, opportunity,
                 currency_id, category_id, category_name, created_time, updated_time, raw_payload
             ) VALUES (
-                :snapshot_run_id, :deal_id, :title, :stage_id, :stage_name, :assigned_by_id, :opportunity,
+                :snapshot_run_id, :deal_id, :title, :stage_id, :stage_name, :assigned_by_id, :assigned_by_name, :opportunity,
                 :currency_id, :category_id, :category_name, :created_time, :updated_time, CAST(:raw_payload AS JSONB)
             )
             """
@@ -4313,6 +4318,63 @@ def createBitrixDealSnapshot(
             connection.execute(insertStatement, payloadChunk)
 
     return {"snapshot_run_id": snapshotRunId, "captured_for_date": capturedForDate, "total_deals": len(normalizedDeals)}
+
+
+def deleteBitrixDealSnapshotForDate(capturedForDate: str) -> dict[str, int | str]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    with engine.begin() as connection:
+        runIds = [
+            int(row.id)
+            for row in connection.execute(
+                text(
+                    """
+                    SELECT id
+                    FROM bitrix_deal_snapshot_runs
+                    WHERE captured_for_date = CAST(:captured_for_date AS DATE)
+                    """
+                ),
+                {"captured_for_date": capturedForDate},
+            )
+        ]
+
+        if not runIds:
+            return {
+                "captured_for_date": capturedForDate,
+                "deleted_items": 0,
+                "deleted_runs": 0,
+            }
+
+        itemCount = int(
+            connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM bitrix_deal_snapshot_items
+                    WHERE snapshot_run_id IN :run_ids
+                    """
+                ).bindparams(bindparam("run_ids", expanding=True)),
+                {"run_ids": runIds},
+            ).scalar_one()
+        )
+
+        connection.execute(
+            text(
+                """
+                DELETE FROM bitrix_deal_snapshot_runs
+                WHERE id IN :run_ids
+                """
+            ).bindparams(bindparam("run_ids", expanding=True)),
+            {"run_ids": runIds},
+        )
+
+    return {
+        "captured_for_date": capturedForDate,
+        "deleted_items": itemCount,
+        "deleted_runs": len(runIds),
+    }
 
 
 def listBitrixDealSnapshotRuns(limit: int = 50) -> list[dict[str, object]]:
@@ -4401,6 +4463,7 @@ def getBitrixDealSnapshotItems(
             "stage_id": "stage_id",
             "stage_name": "stage_name",
             "assigned_by_id": "CAST(assigned_by_id AS TEXT)",
+            "assigned_by_name": "assigned_by_name",
             "opportunity": "CAST(opportunity AS TEXT)",
             "currency_id": "currency_id",
             "category_id": "CAST(category_id AS TEXT)",
@@ -4424,7 +4487,7 @@ def getBitrixDealSnapshotItems(
         rows = connection.execute(
             text(
                 f"""
-                SELECT id, snapshot_run_id, deal_id, title, stage_id, stage_name, assigned_by_id,
+                SELECT id, snapshot_run_id, deal_id, title, stage_id, stage_name, assigned_by_id, assigned_by_name,
                        opportunity, currency_id, category_id, category_name, created_time, updated_time
                 FROM bitrix_deal_snapshot_items
                 WHERE {whereSql}
@@ -4492,6 +4555,8 @@ def compareBitrixDealSnapshots(leftDate: str | None = None, rightDate: str | Non
                     r.stage_name AS right_stage_name,
                     l.assigned_by_id AS left_assigned_by_id,
                     r.assigned_by_id AS right_assigned_by_id,
+                    l.assigned_by_name AS left_assigned_by_name,
+                    r.assigned_by_name AS right_assigned_by_name,
                     l.opportunity AS left_opportunity,
                     r.opportunity AS right_opportunity,
                     l.currency_id AS left_currency_id,
@@ -4515,6 +4580,7 @@ def compareBitrixDealSnapshots(leftDate: str | None = None, rightDate: str | Non
                    OR l.stage_id IS DISTINCT FROM r.stage_id
                    OR l.stage_name IS DISTINCT FROM r.stage_name
                    OR l.assigned_by_id IS DISTINCT FROM r.assigned_by_id
+                   OR l.assigned_by_name IS DISTINCT FROM r.assigned_by_name
                    OR l.opportunity IS DISTINCT FROM r.opportunity
                    OR l.currency_id IS DISTINCT FROM r.currency_id
                    OR l.category_id IS DISTINCT FROM r.category_id

@@ -35,6 +35,7 @@ from src.redmine.db import (
     createBitrixDealSnapshot,
     createPlanningProject,
     createUser,
+    deleteBitrixDealSnapshotForDate,
     deleteIssueSnapshotForProjectDate,
     deleteIssueSnapshotsForDate,
     deletePlanningProject,
@@ -222,8 +223,6 @@ def _publicPath(path: str) -> bool:
         "/reset-password",
         "/logout",
         "/change-password",
-        "/Bitrix",
-        "/Bitrix/deal-snapshots/compare",
         "/health",
         "/db-health",
         "/api/auth/login",
@@ -8351,9 +8350,6 @@ BITRIX_PAGE_HTML = """<!doctype html>
     }
 
     .snapshot-table th {
-      position: sticky;
-      top: 0;
-      z-index: 1;
       background: #f3f7fa;
       color: var(--ink);
       font-weight: 700;
@@ -8484,6 +8480,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
           </label>
           <button class="button" id="reloadBitrixDealSnapshotButton" type="button">Показать</button>
           <button class="button" id="resetBitrixDealFiltersButton" type="button">Сбросить фильтры</button>
+          <button class="button" id="deleteBitrixDealSnapshotButton" type="button">Удалить выбранный срез</button>
         </div>
         <div class="status-note" id="bitrixDealSnapshotStatus">Срезы сделок еще не загружены.</div>
         <div class="snapshot-table-wrap">
@@ -8493,9 +8490,8 @@ BITRIX_PAGE_HTML = """<!doctype html>
                 <th>ID<br><input data-bitrix-filter="deal_id" placeholder="Фильтр"></th>
                 <th>Название<br><input data-bitrix-filter="title" placeholder="Фильтр"></th>
                 <th>Стадия<br><input data-bitrix-filter="stage_name" placeholder="Фильтр"></th>
-                <th>Ответственный<br><input data-bitrix-filter="assigned_by_id" placeholder="Фильтр"></th>
+                <th>Ответственный<br><input data-bitrix-filter="assigned_by_name" placeholder="Фильтр"></th>
                 <th>Сумма<br><input data-bitrix-filter="opportunity" placeholder="Фильтр"></th>
-                <th>Валюта<br><input data-bitrix-filter="currency_id" placeholder="Фильтр"></th>
                 <th>Воронка<br><input data-bitrix-filter="category_name" placeholder="Фильтр"></th>
                 <th>Создана<br><input data-bitrix-filter="created_time" placeholder="Фильтр"></th>
                 <th>Обновлена<br><input data-bitrix-filter="updated_time" placeholder="Фильтр"></th>
@@ -8619,6 +8615,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
     const captureBitrixDealSnapshotButton = document.getElementById("captureBitrixDealSnapshotButton");
     const reloadBitrixDealSnapshotButton = document.getElementById("reloadBitrixDealSnapshotButton");
     const resetBitrixDealFiltersButton = document.getElementById("resetBitrixDealFiltersButton");
+    const deleteBitrixDealSnapshotButton = document.getElementById("deleteBitrixDealSnapshotButton");
     const bitrixDealSnapshotDateSelect = document.getElementById("bitrixDealSnapshotDateSelect");
     const bitrixDealSnapshotPageSizeInput = document.getElementById("bitrixDealSnapshotPageSizeInput");
     const bitrixDealSnapshotStatus = document.getElementById("bitrixDealSnapshotStatus");
@@ -8645,6 +8642,14 @@ BITRIX_PAGE_HTML = """<!doctype html>
       return escapeHtml(value);
     }
 
+    function formatIntegerAmount(value) {
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue)) {
+        return formatSnapshotValue(value);
+      }
+      return escapeHtml(Math.round(numericValue).toLocaleString("ru-RU"));
+    }
+
     function setSnapshotStatus(message, isError = false) {
       bitrixDealSnapshotStatus.textContent = message;
       bitrixDealSnapshotStatus.classList.toggle("is-error", Boolean(isError));
@@ -8667,7 +8672,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
 
     function renderBitrixDealSnapshotRows(deals) {
       if (!Array.isArray(deals) || !deals.length) {
-        bitrixDealSnapshotTableBody.innerHTML = '<tr><td colspan="9">Сделки не найдены.</td></tr>';
+        bitrixDealSnapshotTableBody.innerHTML = '<tr><td colspan="8">Сделки не найдены.</td></tr>';
         return;
       }
       bitrixDealSnapshotTableBody.innerHTML = deals.map((deal) => `
@@ -8675,9 +8680,8 @@ BITRIX_PAGE_HTML = """<!doctype html>
           <td class="mono"><a href="https://sms-it.bitrix24.ru/crm/deal/details/${encodeURIComponent(deal.deal_id ?? "")}/" target="_blank" rel="noreferrer">${formatSnapshotValue(deal.deal_id)}</a></td>
           <td>${formatSnapshotValue(deal.title)}</td>
           <td>${formatSnapshotValue(deal.stage_name || deal.stage_id)}</td>
-          <td class="mono">${formatSnapshotValue(deal.assigned_by_id)}</td>
-          <td class="mono">${formatSnapshotValue(deal.opportunity)}</td>
-          <td class="mono">${formatSnapshotValue(deal.currency_id)}</td>
+          <td>${formatSnapshotValue(deal.assigned_by_name || deal.assigned_by_id)}</td>
+          <td class="mono">${formatIntegerAmount(deal.opportunity)}</td>
           <td>${formatSnapshotValue(deal.category_name || deal.category_id)}</td>
           <td class="mono">${formatSnapshotValue(deal.created_time)}</td>
           <td class="mono">${formatSnapshotValue(deal.updated_time)}</td>
@@ -8731,6 +8735,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
 
     async function captureBitrixDealSnapshot() {
       captureBitrixDealSnapshotButton.disabled = true;
+      deleteBitrixDealSnapshotButton.disabled = true;
       setSnapshotStatus("Скачиваю все сделки из Bitrix24 и сохраняю срез...");
       try {
         const response = await fetch("/api/bitrix/deal-snapshots/capture", { method: "POST" });
@@ -8746,10 +8751,43 @@ BITRIX_PAGE_HTML = """<!doctype html>
         setSnapshotStatus(String(error.message || error), true);
       } finally {
         captureBitrixDealSnapshotButton.disabled = false;
+        deleteBitrixDealSnapshotButton.disabled = false;
+      }
+    }
+
+    async function deleteSelectedBitrixDealSnapshot() {
+      const selectedDate = bitrixDealSnapshotDateSelect.value;
+      if (!selectedDate) {
+        setSnapshotStatus("Выберите конкретную дату среза для удаления.", true);
+        return;
+      }
+      if (!window.confirm(`Удалить срез сделок за ${selectedDate}?`)) {
+        return;
+      }
+
+      deleteBitrixDealSnapshotButton.disabled = true;
+      captureBitrixDealSnapshotButton.disabled = true;
+      setSnapshotStatus(`Удаляю срез сделок за ${selectedDate}...`);
+      try {
+        const response = await fetch(`/api/bitrix/deal-snapshots/by-date?captured_for_date=${encodeURIComponent(selectedDate)}`, { method: "DELETE" });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось удалить срез сделок.");
+        }
+        bitrixDealSnapshotPage = 1;
+        bitrixDealSnapshotDateSelect.value = "";
+        setSnapshotStatus(`Удалено строк: ${payload.deleted_items || 0}.`);
+        await loadBitrixDealSnapshotItems();
+      } catch (error) {
+        setSnapshotStatus(String(error.message || error), true);
+      } finally {
+        deleteBitrixDealSnapshotButton.disabled = false;
+        captureBitrixDealSnapshotButton.disabled = false;
       }
     }
 
     captureBitrixDealSnapshotButton?.addEventListener("click", captureBitrixDealSnapshot);
+    deleteBitrixDealSnapshotButton?.addEventListener("click", deleteSelectedBitrixDealSnapshot);
     reloadBitrixDealSnapshotButton?.addEventListener("click", () => {
       bitrixDealSnapshotPage = 1;
       safeLoadBitrixDealSnapshotItems();
@@ -8870,7 +8908,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: 100%; min-width: 1120px; border-collapse: collapse; font-size: 0.92rem; }
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; }
-    th { position: sticky; top: 0; background: #f3f7fa; z-index: 1; }
+    th { background: #f3f7fa; }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
   </style>
 </head>
@@ -8904,7 +8942,6 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
               <th>Стадия</th>
               <th>Ответственный</th>
               <th>Сумма</th>
-              <th>Валюта</th>
               <th>Воронка</th>
               <th>Обновлена</th>
             </tr>
@@ -8959,9 +8996,21 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
       return `${formatValue(leftValue)} → ${formatValue(rightValue)}`;
     }
 
+    function formatIntegerAmount(value) {
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue)) {
+        return formatValue(value);
+      }
+      return escapeHtml(Math.round(numericValue).toLocaleString("ru-RU"));
+    }
+
+    function buildAmountPair(leftValue, rightValue) {
+      return `${formatIntegerAmount(leftValue)} → ${formatIntegerAmount(rightValue)}`;
+    }
+
     function renderRows(changes) {
       if (!Array.isArray(changes) || !changes.length) {
-        compareTableBody.innerHTML = '<tr><td colspan="9">Изменений между срезами не найдено.</td></tr>';
+        compareTableBody.innerHTML = '<tr><td colspan="8">Изменений между срезами не найдено.</td></tr>';
         return;
       }
       compareTableBody.innerHTML = changes.map((change) => `
@@ -8970,9 +9019,8 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
           <td class="mono">${formatValue(change.change_type)}</td>
           <td>${buildPair(change.left_title, change.right_title)}</td>
           <td>${buildPair(change.left_stage_name || change.left_stage_id, change.right_stage_name || change.right_stage_id)}</td>
-          <td class="mono">${buildPair(change.left_assigned_by_id, change.right_assigned_by_id)}</td>
-          <td class="mono">${buildPair(change.left_opportunity, change.right_opportunity)}</td>
-          <td class="mono">${buildPair(change.left_currency_id, change.right_currency_id)}</td>
+          <td>${buildPair(change.left_assigned_by_name || change.left_assigned_by_id, change.right_assigned_by_name || change.right_assigned_by_id)}</td>
+          <td class="mono">${buildAmountPair(change.left_opportunity, change.right_opportunity)}</td>
           <td>${buildPair(change.left_category_name || change.left_category_id, change.right_category_name || change.right_category_id)}</td>
           <td class="mono">${buildPair(change.left_updated_time, change.right_updated_time)}</td>
         </tr>
@@ -12380,10 +12428,16 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
             for item in dealItems
             if isinstance(item, dict)
         ]
+        assignedByIds = [
+            int(item.get("assignedById") or 0)
+            for item in dealItems
+            if isinstance(item, dict)
+        ]
         dictionaries = fetchBitrixDealDictionaries(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
             categoryIds=categoryIds,
+            assignedByIds=assignedByIds,
         )
         snapshot = createBitrixDealSnapshot(dealItems, capturedForDate, dictionaries)
     except requests.HTTPError as error:
@@ -12410,6 +12464,23 @@ def getBitrixDealSnapshotRuns(limit: int = Query(50, ge=1, le=500)) -> dict[str,
     return {"snapshot_runs": listBitrixDealSnapshotRuns(limit)}
 
 
+@app.delete("/api/bitrix/deal-snapshots/by-date")
+def deleteBitrixDealSnapshotByDate(captured_for_date: str = Query(...)) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    try:
+        date.fromisoformat(captured_for_date)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="captured_for_date must be YYYY-MM-DD") from error
+
+    deleted = deleteBitrixDealSnapshotForDate(captured_for_date)
+    return {
+        **deleted,
+        "snapshot_runs": listBitrixDealSnapshotRuns(50),
+    }
+
+
 @app.get("/api/bitrix/deal-snapshots/items")
 def getBitrixDealSnapshotItemsApi(
     captured_for_date: str | None = Query(None),
@@ -12420,6 +12491,7 @@ def getBitrixDealSnapshotItemsApi(
     stage_id: str | None = Query(None),
     stage_name: str | None = Query(None),
     assigned_by_id: str | None = Query(None),
+    assigned_by_name: str | None = Query(None),
     opportunity: str | None = Query(None),
     currency_id: str | None = Query(None),
     category_id: str | None = Query(None),
@@ -12440,6 +12512,7 @@ def getBitrixDealSnapshotItemsApi(
             "stage_id": stage_id,
             "stage_name": stage_name,
             "assigned_by_id": assigned_by_id,
+            "assigned_by_name": assigned_by_name,
             "opportunity": opportunity,
             "currency_id": currency_id,
             "category_id": category_id,

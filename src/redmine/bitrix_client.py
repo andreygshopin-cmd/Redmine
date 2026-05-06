@@ -239,9 +239,11 @@ def fetchBitrixDealDictionaries(
     portalUrl: str,
     credential: str,
     categoryIds: list[int],
+    assignedByIds: list[int] | None = None,
 ) -> dict[str, dict[object, str]]:
     stageNames: dict[object, str] = {}
     categoryNames: dict[object, str] = {0: "Общая воронка"}
+    assignedByNames: dict[object, str] = {}
 
     try:
         categoryPayload = callBitrixRestMethod(
@@ -281,7 +283,37 @@ def fetchBitrixDealDictionaries(
                 stageNames[str(statusId)] = str(name)
                 stageNames[f"{categoryId}:{statusId}"] = str(name)
 
-    return {"stage_names": stageNames, "category_names": categoryNames}
+    uniqueAssignedByIds: list[int] = []
+    for value in assignedByIds or []:
+        try:
+            userId = int(value or 0)
+        except (TypeError, ValueError):
+            continue
+        if userId > 0:
+            uniqueAssignedByIds.append(userId)
+    uniqueAssignedByIds = sorted(set(uniqueAssignedByIds))
+    for offset in range(0, len(uniqueAssignedByIds), 50):
+        userIds = uniqueAssignedByIds[offset : offset + 50]
+        try:
+            usersPayload = callBitrixRestMethod(
+                portalUrl,
+                credential,
+                "user.get",
+                {"filter": {"ID": userIds}},
+            )
+        except Exception:
+            continue
+
+        users = usersPayload.get("result") or []
+        for user in users:
+            userId = user.get("ID") or user.get("id")
+            lastName = str(user.get("LAST_NAME") or "").strip()
+            name = str(user.get("NAME") or "").strip()
+            displayName = lastName or name or str(user.get("LOGIN") or "").strip() or str(userId or "").strip()
+            if userId and displayName:
+                assignedByNames[int(userId)] = displayName
+
+    return {"stage_names": stageNames, "category_names": categoryNames, "assigned_by_names": assignedByNames}
 
 
 def fetchBitrixProfile(portalUrl: str, credential: str) -> dict[str, object]:
