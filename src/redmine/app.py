@@ -34,6 +34,7 @@ from src.redmine.bitrix_client import (
     fetchBitrixLeadsPage,
     fetchBitrixProfile,
     fetchBitrixUserNames,
+    fetchBitrixUsers,
 )
 from src.redmine.config import loadConfig
 from src.redmine.db import (
@@ -70,7 +71,6 @@ from src.redmine.db import (
     listLatestSnapshotIssuesWithParents,
     listIssueSnapshotCaptureErrors,
     listBitrixDealSnapshotRuns,
-    listBitrixDealSnapshotResponsibleIds,
     listPlanningProjects,
     listRecentIssueSnapshotRuns,
     listSnapshotDatesForProject,
@@ -8885,33 +8885,33 @@ BITRIX_PAGE_HTML = """<!doctype html>
     async function loadBitrixResponsibles() {
       loadBitrixResponsiblesButton.disabled = true;
       bitrixResponsiblesList.innerHTML = "";
-      setResponsiblesStatus("Загружаю ответственных из сохраненного среза...");
+      setResponsiblesStatus("Загружаю список пользователей из Bitrix...");
       try {
-        const params = new URLSearchParams();
-        if (bitrixDealSnapshotDateSelect.value) {
-          params.set("captured_for_date", bitrixDealSnapshotDateSelect.value);
-        }
-        const response = await fetch(`/api/bitrix/deal-snapshots/responsibles?${params.toString()}`);
+        const response = await fetch("/api/bitrix/responsibles?limit=1000");
         const payload = await response.json();
         if (!response.ok) {
           throw new Error(payload.detail || "Не удалось загрузить ответственных.");
         }
 
-        const items = payload.responsibles || [];
+        const items = payload.users || [];
         if (!items.length) {
-          setResponsiblesStatus("Ответственные в срезе не найдены.");
+          setResponsiblesStatus("Bitrix не вернул пользователей.");
           return;
         }
         bitrixResponsiblesList.innerHTML = items.map((item) => `
           <div class="deal-item">
             <div class="deal-title">
-              <span class="mono">#${formatSnapshotValue(item.assigned_by_id)}</span>
-              <span>${formatSnapshotValue(item.assigned_by_name || "ФИО не найдено")}</span>
+              <span class="mono">#${formatSnapshotValue(item.id)}</span>
+              <span>${formatSnapshotValue(item.name || "ФИО не найдено")}</span>
             </div>
-            <div class="deal-meta">Сделок: ${formatSnapshotValue(item.deal_count)}${item.assigned_by_name ? "" : "<br>Bitrix не вернул ФИО для этого ID."}</div>
+            <div class="deal-meta">
+              Активен: ${formatSnapshotValue(item.active)}<br>
+              Email: ${formatSnapshotValue(item.email)}<br>
+              Должность: ${formatSnapshotValue(item.work_position)}
+            </div>
           </div>
         `).join("");
-        setResponsiblesStatus(`Ответственные: ${items.length}. Срез: ${payload.snapshot_run?.captured_for_date || "последний"}.`);
+        setResponsiblesStatus(`Bitrix вернул пользователей: ${items.length}. Режим авторизации: ${payload.auth_mode || "?"}.`);
       } catch (error) {
         setResponsiblesStatus(String(error.message || error), true);
       } finally {
@@ -13063,54 +13063,23 @@ def getBitrixDealSnapshotRuns(limit: int = Query(50, ge=1, le=500)) -> dict[str,
     return {"snapshot_runs": listBitrixDealSnapshotRuns(limit)}
 
 
-@app.get("/api/bitrix/deal-snapshots/responsibles")
-def getBitrixDealSnapshotResponsibles(captured_for_date: str | None = Query(None)) -> dict[str, object]:
-    if not config.databaseUrl:
-        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+@app.get("/api/bitrix/responsibles")
+def getBitrixResponsibles(limit: int = Query(1000, ge=1, le=5000)) -> dict[str, object]:
+    requireBitrixConfig()
 
-    payload = listBitrixDealSnapshotResponsibleIds(captured_for_date)
-    responsibleRows = [row for row in payload.get("responsible_ids", []) if isinstance(row, dict)]
-    responsibleIds: list[int] = []
-    for row in responsibleRows:
-        try:
-            responsibleId = int(row.get("assigned_by_id") or 0)
-        except (TypeError, ValueError):
-            continue
-        if responsibleId > 0:
-            responsibleIds.append(responsibleId)
-
-    userNames: dict[object, str] = {}
-    if responsibleIds and config.bitrixPortalUrl and config.bitrixCredential:
-        try:
-            userNames = fetchBitrixUserNames(
-                portalUrl=config.bitrixPortalUrl,
-                credential=config.bitrixCredential,
-                userIds=responsibleIds,
-            )
-        except Exception:
-            userNames = {}
-
-    responsibles: list[dict[str, object]] = []
-    for row in responsibleRows:
-        try:
-            responsibleId = int(row.get("assigned_by_id") or 0)
-        except (TypeError, ValueError):
-            continue
-        if responsibleId <= 0:
-            continue
-        responsibles.append(
-            {
-                "assigned_by_id": responsibleId,
-                "assigned_by_name": userNames.get(responsibleId),
-                "deal_count": int(row.get("deal_count") or 0),
-            }
+    try:
+        return fetchBitrixUsers(
+            portalUrl=config.bitrixPortalUrl,
+            credential=config.bitrixCredential,
+            limit=limit,
         )
-
-    return {
-        "snapshot_run": payload.get("snapshot_run"),
-        "responsibles": responsibles,
-        "resolved_count": sum(1 for item in responsibles if item.get("assigned_by_name")),
-    }
+    except requests.HTTPError as error:
+        detail = "Bitrix24 users request failed."
+        if error.response is not None:
+            detail = f"{detail} HTTP {error.response.status_code}."
+        raise HTTPException(status_code=502, detail=detail) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
 
 def enrichBitrixDealSnapshotResponsibleNames(payload: dict[str, object]) -> dict[str, object]:

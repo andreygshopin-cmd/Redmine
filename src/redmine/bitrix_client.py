@@ -495,14 +495,75 @@ def extractBitrixUserNames(users: list[dict[str, object]], neededIds: set[int]) 
             continue
         if normalizedUserId not in neededIds:
             continue
-        lastName = str(user.get("LAST_NAME") or "").strip()
-        name = str(user.get("NAME") or "").strip()
-        secondName = str(user.get("SECOND_NAME") or "").strip()
-        displayName = " ".join(part for part in [lastName, name, secondName] if part)
-        displayName = displayName or str(user.get("LOGIN") or "").strip() or str(resultUserId or "").strip()
+        displayName = formatBitrixUserDisplayName(user)
         if displayName:
             userNames[normalizedUserId] = displayName
     return userNames
+
+
+def formatBitrixUserDisplayName(user: dict[str, object]) -> str:
+    resultUserId = user.get("ID") or user.get("id")
+    lastName = str(user.get("LAST_NAME") or "").strip()
+    name = str(user.get("NAME") or "").strip()
+    secondName = str(user.get("SECOND_NAME") or "").strip()
+    displayName = " ".join(part for part in [lastName, name, secondName] if part)
+    return displayName or str(user.get("LOGIN") or "").strip() or str(resultUserId or "").strip()
+
+
+def normalizeBitrixUser(user: dict[str, object]) -> dict[str, object]:
+    resultUserId = user.get("ID") or user.get("id")
+    try:
+        normalizedUserId = int(resultUserId or 0)
+    except (TypeError, ValueError):
+        normalizedUserId = 0
+
+    return {
+        "id": normalizedUserId or resultUserId,
+        "name": formatBitrixUserDisplayName(user),
+        "last_name": user.get("LAST_NAME") or user.get("lastName"),
+        "first_name": user.get("NAME") or user.get("name"),
+        "second_name": user.get("SECOND_NAME") or user.get("secondName"),
+        "login": user.get("LOGIN") or user.get("login"),
+        "email": user.get("EMAIL") or user.get("email"),
+        "active": user.get("ACTIVE") if "ACTIVE" in user else user.get("active"),
+        "work_position": user.get("WORK_POSITION") or user.get("workPosition"),
+    }
+
+
+def fetchBitrixUsers(portalUrl: str, credential: str, limit: int = 1000) -> dict[str, object]:
+    restContext = buildBitrixRestContext(portalUrl, credential, method="user.get")
+    requestedLimit = max(1, min(int(limit or 1000), 5000))
+    users: list[dict[str, object]] = []
+    start = 0
+
+    while len(users) < requestedLimit:
+        usersPayload = callBitrixRestMethod(
+            portalUrl,
+            credential,
+            "user.get",
+            {"start": start},
+        )
+        pageUsers = usersPayload.get("result") or []
+        if not pageUsers:
+            break
+
+        for user in pageUsers:
+            if isinstance(user, dict):
+                users.append(normalizeBitrixUser(user))
+                if len(users) >= requestedLimit:
+                    break
+
+        nextStart = usersPayload.get("next")
+        if nextStart is None or len(pageUsers) < BITRIX_PAGE_SIZE:
+            break
+        start = int(nextStart)
+
+    return {
+        "portal_url": portalUrl.rstrip("/"),
+        "auth_mode": restContext.authMode,
+        "users": users,
+        "total": len(users),
+    }
 
 
 def fetchBitrixAllUserNames(portalUrl: str, credential: str, neededUserIds: list[int]) -> dict[object, str]:

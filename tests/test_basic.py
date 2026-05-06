@@ -44,7 +44,7 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert "/api/bitrix/snapshots/capture/start" in body
     assert "/api/bitrix/snapshots/capture/page" in body
     assert "/api/bitrix/deal-snapshots?limit=500" in body
-    assert "/api/bitrix/deal-snapshots/responsibles" in body
+    assert "/api/bitrix/responsibles?limit=1000" in body
     assert "Скачиваю все сделки из Bitrix24" not in body
     assert 'href="/Bitrix/leads"' in body
     assert 'href="/Bitrix/invoices"' in body
@@ -267,34 +267,29 @@ def testDeleteBitrixDealSnapshotByDateEndpointDeletesRows(monkeypatch) -> None:
     assert response.json()["deleted_runs"] == 1
 
 
-def testGetBitrixDealSnapshotResponsiblesEndpointReturnsNames(monkeypatch) -> None:
-    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+def testGetBitrixResponsiblesEndpointReturnsUsers(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "bitrixPortalUrl", "https://sms-it.bitrix24.ru")
     monkeypatch.setattr(app_module.config, "bitrixCredential", "1/test-webhook")
     monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
     monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
     monkeypatch.setattr(
         app_module,
-        "listBitrixDealSnapshotResponsibleIds",
-        lambda capturedForDate=None: {
-            "snapshot_run": {"captured_for_date": capturedForDate or "2026-05-06"},
-            "responsible_ids": [
-                {"assigned_by_id": 7, "deal_count": 12},
-                {"assigned_by_id": 8, "deal_count": 5},
+        "fetchBitrixUsers",
+        lambda **kwargs: {
+            "auth_mode": "webhook_path",
+            "users": [
+                {"id": 7, "name": "Иванов Иван", "active": True},
+                {"id": 8, "name": "Петров Петр", "active": True},
             ],
+            "total": 2,
         },
     )
-    monkeypatch.setattr(
-        app_module,
-        "fetchBitrixUserNames",
-        lambda **kwargs: {7: "Иванов Иван", 8: "Петров Петр"},
-    )
 
-    response = client.get("/api/bitrix/deal-snapshots/responsibles?captured_for_date=2026-05-06")
+    response = client.get("/api/bitrix/responsibles?limit=1000")
 
     assert response.status_code == 200
-    assert response.json()["resolved_count"] == 2
-    assert response.json()["responsibles"][0]["assigned_by_name"] == "Иванов Иван"
+    assert response.json()["total"] == 2
+    assert response.json()["users"][0]["name"] == "Иванов Иван"
 
 
 def testExportBitrixDealSnapshotEndpointReturnsAnsiCsv(monkeypatch) -> None:
