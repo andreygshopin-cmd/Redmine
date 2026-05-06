@@ -35,9 +35,11 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     body = response.body.decode("utf-8")
 
     assert response.media_type == "text/html"
-    assert "Bitrix test page" in body
-    assert "Маршрут /Bitrix уже доступен на сайте" in body
+    assert "Анализ сделок Bitrix" in body
+    assert "Анализ изменений по сделкам Bitrix за интервалы времени. Формирование отчетности" in body
     assert "Удалить выбранный срез" in body
+    assert "Выгрузить в Excel" in body
+    assert "button-muted" in body
     assert 'data-bitrix-filter="currency_id"' not in body
 
 
@@ -46,8 +48,6 @@ def testReadBitrixPageMasksCredential(monkeypatch) -> None:
 
     body = readBitrixPage().body.decode("utf-8")
 
-    assert "Btrx:" in body
-    assert "id/webhook" in body
     assert "123/secret-webhook-code" not in body
 
 
@@ -196,6 +196,42 @@ def testDeleteBitrixDealSnapshotByDateEndpointDeletesRows(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["deleted_items"] == 100
     assert response.json()["deleted_runs"] == 1
+
+
+def testExportBitrixDealSnapshotEndpointReturnsAnsiCsv(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module.config, "bitrixPortalUrl", "")
+    monkeypatch.setattr(app_module.config, "bitrixCredential", "")
+    monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+    monkeypatch.setattr(
+        app_module,
+        "getBitrixDealSnapshotItems",
+        lambda capturedForDate, page=1, pageSize=5000, filters=None: {
+            "snapshot_run": {"captured_for_date": capturedForDate or "2026-05-06"},
+            "deals": [
+                {
+                    "deal_id": 501,
+                    "title": "Сделка",
+                    "stage_name": "Новая",
+                    "assigned_by_name": "Иванов Иван",
+                    "opportunity": 1234.6,
+                    "category_name": "Продажи",
+                    "created_time": "2026-05-01",
+                    "updated_time": "2026-05-06",
+                }
+            ] if page == 1 else [],
+            "total_count": 1,
+        },
+    )
+
+    response = client.get("/api/bitrix/deal-snapshots/export?captured_for_date=2026-05-06")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/csv; charset=windows-1251"
+    assert "bitrix-deals-2026-05-06.csv" in response.headers["content-disposition"]
+    assert "Иванов Иван" in response.content.decode("cp1251")
+    assert ";1235;" in response.content.decode("cp1251")
 
 
 def testGetTimeReturnsServerTimePayload() -> None:

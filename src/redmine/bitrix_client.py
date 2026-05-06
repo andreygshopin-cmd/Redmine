@@ -283,37 +283,46 @@ def fetchBitrixDealDictionaries(
                 stageNames[str(statusId)] = str(name)
                 stageNames[f"{categoryId}:{statusId}"] = str(name)
 
-    uniqueAssignedByIds: list[int] = []
-    for value in assignedByIds or []:
+    assignedByNames = fetchBitrixUserNames(portalUrl, credential, assignedByIds or [])
+
+    return {"stage_names": stageNames, "category_names": categoryNames, "assigned_by_names": assignedByNames}
+
+
+def fetchBitrixUserNames(portalUrl: str, credential: str, userIds: list[int]) -> dict[object, str]:
+    userNames: dict[object, str] = {}
+    uniqueUserIds: list[int] = []
+    for value in userIds:
         try:
             userId = int(value or 0)
         except (TypeError, ValueError):
             continue
         if userId > 0:
-            uniqueAssignedByIds.append(userId)
-    uniqueAssignedByIds = sorted(set(uniqueAssignedByIds))
-    for offset in range(0, len(uniqueAssignedByIds), 50):
-        userIds = uniqueAssignedByIds[offset : offset + 50]
+            uniqueUserIds.append(userId)
+
+    uniqueUserIds = sorted(set(uniqueUserIds))
+    for userId in uniqueUserIds:
         try:
             usersPayload = callBitrixRestMethod(
                 portalUrl,
                 credential,
                 "user.get",
-                {"filter": {"ID": userIds}},
+                {"ID": userId},
             )
         except Exception:
             continue
 
         users = usersPayload.get("result") or []
         for user in users:
-            userId = user.get("ID") or user.get("id")
+            resultUserId = user.get("ID") or user.get("id")
             lastName = str(user.get("LAST_NAME") or "").strip()
             name = str(user.get("NAME") or "").strip()
-            displayName = lastName or name or str(user.get("LOGIN") or "").strip() or str(userId or "").strip()
-            if userId and displayName:
-                assignedByNames[int(userId)] = displayName
+            secondName = str(user.get("SECOND_NAME") or "").strip()
+            displayName = " ".join(part for part in [lastName, name, secondName] if part)
+            displayName = displayName or str(user.get("LOGIN") or "").strip() or str(resultUserId or "").strip()
+            if resultUserId and displayName:
+                userNames[int(resultUserId)] = displayName
 
-    return {"stage_names": stageNames, "category_names": categoryNames, "assigned_by_names": assignedByNames}
+    return userNames
 
 
 def fetchBitrixProfile(portalUrl: str, credential: str) -> dict[str, object]:

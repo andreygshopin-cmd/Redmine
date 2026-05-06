@@ -25,6 +25,7 @@ from src.redmine.bitrix_client import (
     fetchBitrixDealDictionaries,
     fetchBitrixDeals,
     fetchBitrixProfile,
+    fetchBitrixUserNames,
 )
 from src.redmine.config import loadConfig
 from src.redmine.db import (
@@ -7993,7 +7994,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bitrix Test Page</title>
+  <title>Анализ сделок Bitrix</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -8133,7 +8134,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
     }
 
     h1 {
-      max-width: 10ch;
+      max-width: 14ch;
       margin: 0;
       font-size: clamp(2.5rem, 6vw, 5rem);
       line-height: 0.96;
@@ -8184,6 +8185,12 @@ BITRIX_PAGE_HTML = """<!doctype html>
       background: rgba(255, 255, 255, 0.12);
       color: #ffffff;
       border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .button-muted {
+      background: #e6ebef;
+      color: var(--ink);
+      border: 1px solid rgba(16, 41, 61, 0.08);
     }
 
     .grid {
@@ -8263,7 +8270,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
     }
 
     .metrics {
-      display: grid;
+      display: none;
       gap: 14px;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       margin-top: 22px;
@@ -8297,6 +8304,10 @@ BITRIX_PAGE_HTML = """<!doctype html>
 
     .wide-card {
       grid-column: 1 / -1;
+    }
+
+    .grid > .card:not(.wide-card) {
+      display: none;
     }
 
     .snapshot-toolbar {
@@ -8350,9 +8361,17 @@ BITRIX_PAGE_HTML = """<!doctype html>
     }
 
     .snapshot-table th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
       background: #f3f7fa;
       color: var(--ink);
       font-weight: 700;
+    }
+
+    .snapshot-table .amount-cell,
+    .snapshot-table .amount-header {
+      text-align: right;
     }
 
     .snapshot-table input {
@@ -8401,11 +8420,9 @@ BITRIX_PAGE_HTML = """<!doctype html>
       </div>
 
       <p class="eyebrow">Bitrix / Test Route</p>
-      <h1>Bitrix test page</h1>
+      <h1>Анализ сделок Bitrix</h1>
       <p class="lead">
-        Это тестовая страница для проверки отдельного маршрута в текущем приложении.
-        Она живет рядом с основным Redmine-интерфейсом и готова для дальнейшей
-        интеграции с Bitrix-формами, iframe или виджетами.
+        Анализ изменений по сделкам Bitrix за интервалы времени. Формирование отчетности
       </p>
 
       <div class="hero-actions">
@@ -8413,63 +8430,15 @@ BITRIX_PAGE_HTML = """<!doctype html>
         <a class="button button-secondary" href="/health">Проверить health endpoint</a>
       </div>
 
-      <div class="metrics">
-        <div class="metric">
-          <strong>/Bitrix</strong>
-          <span>Маршрут вынесен в FastAPI и доступен как отдельная страница.</span>
-        </div>
-        <div class="metric">
-          <strong>HTML</strong>
-          <span>Страница статическая и безопасно добавлена без влияния на базу данных.</span>
-        </div>
-        <div class="metric">
-          <strong>Ready</strong>
-          <span>Можно использовать как основу для дальнейшего тестирования Bitrix.</span>
-        </div>
-      </div>
     </section>
 
     <section class="grid">
-      <article class="card accent-card">
-        <h2>Что уже сделано</h2>
-        <ul>
-          <li>Поднят отдельный маршрут для страницы Bitrix внутри текущего приложения.</li>
-          <li>Страница оформлена в цветах существующего интерфейса, чтобы она выглядела частью продукта.</li>
-          <li>Добавлена базовая навигация обратно на главную и на health-проверку.</li>
-          <li>Подготовлен API-метод для чтения сделок из Bitrix24 через переменную Render `Btrx`.</li>
-        </ul>
-      </article>
-
-      <article class="card">
-        <h2>Что положить в Btrx</h2>
-        <p>
-          Для получения сделок нужен не пароль приложения, а входящий webhook или OAuth-токен
-          для REST API Bitrix24. В переменную <strong>Btrx</strong> можно положить полный webhook URL,
-          путь вида <strong>user_id/webhook_code</strong> или OAuth access token.
-        </p>
-      </article>
-
-      <article class="card">
-        <h2>Сделки Bitrix</h2>
-        <p>
-          Кнопка ниже обращается к <strong>/api/bitrix/deals</strong> и показывает последние сделки
-          напрямую с портала.
-        </p>
-        <div class="hero-actions">
-          <button class="button button-primary" id="loadBitrixDealsButton" type="button">Показать сделки</button>
-          <button class="button" id="checkBitrixProfileButton" type="button">Проверить profile</button>
-        </div>
-        <div class="status-note">__BITRIX_CREDENTIAL_DEBUG__</div>
-        <div class="status-note" id="bitrixDealsStatus">Готово к проверке интеграции.</div>
-        <div class="deal-list" id="bitrixDealsList"></div>
-      </article>
-
       <article class="card wide-card">
         <h2>Срезы сделок</h2>
         <p>Скачивает все сделки из Bitrix24, сохраняет срез в базу и показывает сохраненные строки по выбранной дате.</p>
         <div class="hero-actions">
           <button class="button button-primary" id="captureBitrixDealSnapshotButton" type="button">Получить срез по сделкам</button>
-          <a class="button" href="/Bitrix/deal-snapshots/compare">Сравнение срезов сделок</a>
+          <a class="button button-muted" href="/Bitrix/deal-snapshots/compare">Сравнение срезов сделок</a>
         </div>
         <div class="snapshot-toolbar">
           <label>Дата среза
@@ -8481,6 +8450,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
           <button class="button" id="reloadBitrixDealSnapshotButton" type="button">Показать</button>
           <button class="button" id="resetBitrixDealFiltersButton" type="button">Сбросить фильтры</button>
           <button class="button" id="deleteBitrixDealSnapshotButton" type="button">Удалить выбранный срез</button>
+          <button class="button" id="exportBitrixDealSnapshotButton" type="button">Выгрузить в Excel</button>
         </div>
         <div class="status-note" id="bitrixDealSnapshotStatus">Срезы сделок еще не загружены.</div>
         <div class="snapshot-table-wrap">
@@ -8491,7 +8461,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
                 <th>Название<br><input data-bitrix-filter="title" placeholder="Фильтр"></th>
                 <th>Стадия<br><input data-bitrix-filter="stage_name" placeholder="Фильтр"></th>
                 <th>Ответственный<br><input data-bitrix-filter="assigned_by_name" placeholder="Фильтр"></th>
-                <th>Сумма<br><input data-bitrix-filter="opportunity" placeholder="Фильтр"></th>
+                <th class="amount-header">Сумма<br><input data-bitrix-filter="opportunity" placeholder="Фильтр"></th>
                 <th>Воронка<br><input data-bitrix-filter="category_name" placeholder="Фильтр"></th>
                 <th>Создана<br><input data-bitrix-filter="created_time" placeholder="Фильтр"></th>
                 <th>Обновлена<br><input data-bitrix-filter="updated_time" placeholder="Фильтр"></th>
@@ -8616,6 +8586,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
     const reloadBitrixDealSnapshotButton = document.getElementById("reloadBitrixDealSnapshotButton");
     const resetBitrixDealFiltersButton = document.getElementById("resetBitrixDealFiltersButton");
     const deleteBitrixDealSnapshotButton = document.getElementById("deleteBitrixDealSnapshotButton");
+    const exportBitrixDealSnapshotButton = document.getElementById("exportBitrixDealSnapshotButton");
     const bitrixDealSnapshotDateSelect = document.getElementById("bitrixDealSnapshotDateSelect");
     const bitrixDealSnapshotPageSizeInput = document.getElementById("bitrixDealSnapshotPageSizeInput");
     const bitrixDealSnapshotStatus = document.getElementById("bitrixDealSnapshotStatus");
@@ -8681,7 +8652,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
           <td>${formatSnapshotValue(deal.title)}</td>
           <td>${formatSnapshotValue(deal.stage_name || deal.stage_id)}</td>
           <td>${formatSnapshotValue(deal.assigned_by_name || deal.assigned_by_id)}</td>
-          <td class="mono">${formatIntegerAmount(deal.opportunity)}</td>
+          <td class="mono amount-cell">${formatIntegerAmount(deal.opportunity)}</td>
           <td>${formatSnapshotValue(deal.category_name || deal.category_id)}</td>
           <td class="mono">${formatSnapshotValue(deal.created_time)}</td>
           <td class="mono">${formatSnapshotValue(deal.updated_time)}</td>
@@ -8786,8 +8757,16 @@ BITRIX_PAGE_HTML = """<!doctype html>
       }
     }
 
+    function exportBitrixDealSnapshot() {
+      const params = buildBitrixDealSnapshotParams();
+      params.delete("page");
+      params.delete("page_size");
+      window.location.href = `/api/bitrix/deal-snapshots/export?${params.toString()}`;
+    }
+
     captureBitrixDealSnapshotButton?.addEventListener("click", captureBitrixDealSnapshot);
     deleteBitrixDealSnapshotButton?.addEventListener("click", deleteSelectedBitrixDealSnapshot);
+    exportBitrixDealSnapshotButton?.addEventListener("click", exportBitrixDealSnapshot);
     reloadBitrixDealSnapshotButton?.addEventListener("click", () => {
       bitrixDealSnapshotPage = 1;
       safeLoadBitrixDealSnapshotItems();
@@ -12464,6 +12443,77 @@ def getBitrixDealSnapshotRuns(limit: int = Query(50, ge=1, le=500)) -> dict[str,
     return {"snapshot_runs": listBitrixDealSnapshotRuns(limit)}
 
 
+def enrichBitrixDealSnapshotResponsibleNames(payload: dict[str, object]) -> dict[str, object]:
+    deals = payload.get("deals")
+    if not isinstance(deals, list):
+        return payload
+
+    missingAssignedByIds: list[int] = []
+    for deal in deals:
+        if not isinstance(deal, dict) or deal.get("assigned_by_name"):
+            continue
+        try:
+            assignedById = int(deal.get("assigned_by_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if assignedById > 0:
+            missingAssignedByIds.append(assignedById)
+    if not missingAssignedByIds or not config.bitrixPortalUrl or not config.bitrixCredential:
+        return payload
+
+    try:
+        userNames = fetchBitrixUserNames(
+            portalUrl=config.bitrixPortalUrl,
+            credential=config.bitrixCredential,
+            userIds=missingAssignedByIds,
+        )
+    except Exception:
+        return payload
+
+    for deal in deals:
+        if not isinstance(deal, dict) or deal.get("assigned_by_name"):
+            continue
+        try:
+            assignedById = int(deal.get("assigned_by_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if assignedById in userNames:
+            deal["assigned_by_name"] = userNames[assignedById]
+
+    return payload
+
+
+def buildBitrixDealSnapshotFilters(
+    *,
+    deal_id: str | None = None,
+    title: str | None = None,
+    stage_id: str | None = None,
+    stage_name: str | None = None,
+    assigned_by_id: str | None = None,
+    assigned_by_name: str | None = None,
+    opportunity: str | None = None,
+    currency_id: str | None = None,
+    category_id: str | None = None,
+    category_name: str | None = None,
+    created_time: str | None = None,
+    updated_time: str | None = None,
+) -> dict[str, object]:
+    return {
+        "deal_id": deal_id,
+        "title": title,
+        "stage_id": stage_id,
+        "stage_name": stage_name,
+        "assigned_by_id": assigned_by_id,
+        "assigned_by_name": assigned_by_name,
+        "opportunity": opportunity,
+        "currency_id": currency_id,
+        "category_id": category_id,
+        "category_name": category_name,
+        "created_time": created_time,
+        "updated_time": updated_time,
+    }
+
+
 @app.delete("/api/bitrix/deal-snapshots/by-date")
 def deleteBitrixDealSnapshotByDate(captured_for_date: str = Query(...)) -> dict[str, object]:
     if not config.databaseUrl:
@@ -12502,24 +12552,106 @@ def getBitrixDealSnapshotItemsApi(
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
-    return getBitrixDealSnapshotItems(
+    return enrichBitrixDealSnapshotResponsibleNames(getBitrixDealSnapshotItems(
         captured_for_date,
         page=page,
         pageSize=page_size,
-        filters={
-            "deal_id": deal_id,
-            "title": title,
-            "stage_id": stage_id,
-            "stage_name": stage_name,
-            "assigned_by_id": assigned_by_id,
-            "assigned_by_name": assigned_by_name,
-            "opportunity": opportunity,
-            "currency_id": currency_id,
-            "category_id": category_id,
-            "category_name": category_name,
-            "created_time": created_time,
-            "updated_time": updated_time,
-        },
+        filters=buildBitrixDealSnapshotFilters(
+            deal_id=deal_id,
+            title=title,
+            stage_id=stage_id,
+            stage_name=stage_name,
+            assigned_by_id=assigned_by_id,
+            assigned_by_name=assigned_by_name,
+            opportunity=opportunity,
+            currency_id=currency_id,
+            category_id=category_id,
+            category_name=category_name,
+            created_time=created_time,
+            updated_time=updated_time,
+        ),
+    ))
+
+
+@app.get("/api/bitrix/deal-snapshots/export")
+def exportBitrixDealSnapshotItemsApi(
+    captured_for_date: str | None = Query(None),
+    deal_id: str | None = Query(None),
+    title: str | None = Query(None),
+    stage_id: str | None = Query(None),
+    stage_name: str | None = Query(None),
+    assigned_by_id: str | None = Query(None),
+    assigned_by_name: str | None = Query(None),
+    opportunity: str | None = Query(None),
+    currency_id: str | None = Query(None),
+    category_id: str | None = Query(None),
+    category_name: str | None = Query(None),
+    created_time: str | None = Query(None),
+    updated_time: str | None = Query(None),
+) -> Response:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    filters = buildBitrixDealSnapshotFilters(
+        deal_id=deal_id,
+        title=title,
+        stage_id=stage_id,
+        stage_name=stage_name,
+        assigned_by_id=assigned_by_id,
+        assigned_by_name=assigned_by_name,
+        opportunity=opportunity,
+        currency_id=currency_id,
+        category_id=category_id,
+        category_name=category_name,
+        created_time=created_time,
+        updated_time=updated_time,
+    )
+    rows: list[dict[str, object]] = []
+    page = 1
+    snapshotDate = captured_for_date
+    while True:
+        payload = enrichBitrixDealSnapshotResponsibleNames(getBitrixDealSnapshotItems(
+            snapshotDate,
+            page=page,
+            pageSize=5000,
+            filters=filters,
+        ))
+        rows.extend([row for row in payload.get("deals", []) if isinstance(row, dict)])
+        snapshotRun = payload.get("snapshot_run") or {}
+        if isinstance(snapshotRun, dict):
+            snapshotDate = str(snapshotRun.get("captured_for_date") or snapshotDate or "")
+        if len(rows) >= int(payload.get("total_count") or 0) or not payload.get("deals"):
+            break
+        page += 1
+
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";", lineterminator="\r\n")
+    writer.writerow(["ID", "Название", "Стадия", "Ответственный", "Сумма", "Воронка", "Создана", "Обновлена"])
+    for row in rows:
+        amount = row.get("opportunity")
+        roundedAmount = ""
+        if amount not in (None, ""):
+            try:
+                roundedAmount = str(round(float(amount)))
+            except (TypeError, ValueError):
+                roundedAmount = str(amount)
+        writer.writerow([
+            row.get("deal_id") or "",
+            row.get("title") or "",
+            row.get("stage_name") or row.get("stage_id") or "",
+            row.get("assigned_by_name") or row.get("assigned_by_id") or "",
+            roundedAmount,
+            row.get("category_name") or row.get("category_id") or "",
+            row.get("created_time") or "",
+            row.get("updated_time") or "",
+        ])
+
+    filenameDate = snapshotDate or date.today().isoformat()
+    content = output.getvalue().encode("cp1251", errors="replace")
+    return Response(
+        content=content,
+        media_type="text/csv; charset=windows-1251",
+        headers={"Content-Disposition": f'attachment; filename="bitrix-deals-{filenameDate}.csv"'},
     )
 
 
