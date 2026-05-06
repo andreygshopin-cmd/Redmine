@@ -22,6 +22,10 @@ from pydantic import BaseModel
 
 from src.redmine.bitrix_client import (
     fetchAllBitrixDeals,
+    fetchAllBitrixInvoices,
+    fetchAllBitrixLeads,
+    fetchBitrixCompanyNames,
+    fetchBitrixCrmItemDictionaries,
     fetchBitrixDealDictionaries,
     fetchBitrixDeals,
     fetchBitrixProfile,
@@ -34,9 +38,11 @@ from src.redmine.db import (
     countPlanningProjects,
     countIssueSnapshotRuns,
     createBitrixDealSnapshot,
+    createBitrixCrmSnapshot,
     createPlanningProject,
     createUser,
     deleteBitrixDealSnapshotForDate,
+    deleteBitrixCrmSnapshotForDate,
     deleteIssueSnapshotForProjectDate,
     deleteIssueSnapshotsForDate,
     deletePlanningProject,
@@ -47,6 +53,7 @@ from src.redmine.db import (
     ensureUsersTable,
     getFilteredSnapshotIssuesForProjectByDate,
     getBitrixDealSnapshotItems,
+    getBitrixCrmSnapshotItems,
     getSnapshotRunsWithIssuesForProjectYear,
     getSnapshotRunsWithIssuesForProjectDateRange,
     getSnapshotIssuesForProjectByDate,
@@ -8437,8 +8444,10 @@ BITRIX_PAGE_HTML = """<!doctype html>
         <h2>Срезы сделок</h2>
         <p>Скачивает все сделки из Bitrix24, сохраняет срез в базу и показывает сохраненные строки по выбранной дате.</p>
         <div class="hero-actions">
-          <button class="button button-primary" id="captureBitrixDealSnapshotButton" type="button">Получить срез по сделкам</button>
+          <button class="button button-primary" id="captureBitrixDealSnapshotButton" type="button">Получить срез по сделкам, лидам, счетам</button>
           <a class="button button-muted" href="/Bitrix/deal-snapshots/compare">Сравнение срезов сделок</a>
+          <a class="button button-muted" href="/Bitrix/leads">Лиды</a>
+          <a class="button button-muted" href="/Bitrix/invoices">Счета</a>
         </div>
         <div class="snapshot-toolbar">
           <label>Дата среза
@@ -8462,6 +8471,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
                 <th>Стадия<br><input data-bitrix-filter="stage_name" placeholder="Фильтр"></th>
                 <th>Ответственный<br><input data-bitrix-filter="assigned_by_name" placeholder="Фильтр"></th>
                 <th class="amount-header">Сумма<br><input data-bitrix-filter="opportunity" placeholder="Фильтр"></th>
+                <th>Компания<br><input data-bitrix-filter="company_name" placeholder="Фильтр"></th>
                 <th>Воронка<br><input data-bitrix-filter="category_name" placeholder="Фильтр"></th>
                 <th>Создана<br><input data-bitrix-filter="created_time" placeholder="Фильтр"></th>
                 <th>Обновлена<br><input data-bitrix-filter="updated_time" placeholder="Фильтр"></th>
@@ -8643,7 +8653,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
 
     function renderBitrixDealSnapshotRows(deals) {
       if (!Array.isArray(deals) || !deals.length) {
-        bitrixDealSnapshotTableBody.innerHTML = '<tr><td colspan="8">Сделки не найдены.</td></tr>';
+        bitrixDealSnapshotTableBody.innerHTML = '<tr><td colspan="9">Сделки не найдены.</td></tr>';
         return;
       }
       bitrixDealSnapshotTableBody.innerHTML = deals.map((deal) => `
@@ -8653,6 +8663,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
           <td>${formatSnapshotValue(deal.stage_name || deal.stage_id)}</td>
           <td>${formatSnapshotValue(deal.assigned_by_name || deal.assigned_by_id)}</td>
           <td class="mono amount-cell">${formatIntegerAmount(deal.opportunity)}</td>
+          <td>${formatSnapshotValue(deal.company_name || deal.company_id)}</td>
           <td>${formatSnapshotValue(deal.category_name || deal.category_id)}</td>
           <td class="mono">${formatSnapshotValue(deal.created_time)}</td>
           <td class="mono">${formatSnapshotValue(deal.updated_time)}</td>
@@ -10968,6 +10979,279 @@ def readBitrixPage() -> HTMLResponse:
     )
 
 
+def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str, bitrixPath: str) -> str:
+    return """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>__PAGE_TITLE__</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {
+      --ink: #10293d;
+      --muted: #5d7487;
+      --paper: #f4f8fb;
+      --line: rgba(16, 41, 61, 0.12);
+      --yellow: #ffc600;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Golos", "Segoe UI", Tahoma, sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #ffffff 0%, var(--paper) 100%);
+    }
+    main { max-width: 1280px; margin: 0 auto; padding: 28px 18px 52px; }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: #ffffff;
+      box-shadow: 0 14px 34px rgba(16, 41, 61, 0.08);
+    }
+    h1 { margin: 0; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0.04em; }
+    p { color: var(--muted); line-height: 1.55; }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #e6ebef;
+      color: var(--ink);
+      font: inherit;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .panel { margin-top: 18px; padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: #ffffff; }
+    .toolbar { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+    label { display: grid; gap: 6px; color: var(--muted); font-weight: 600; }
+    input, select {
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0 10px;
+      font: inherit;
+      background: #ffffff;
+      color: var(--ink);
+    }
+    .status { margin: 14px 0; color: var(--muted); }
+    .status.is-error { color: #b63d00; }
+    .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
+    table { width: 100%; min-width: 1080px; border-collapse: collapse; font-size: 0.92rem; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; }
+    th { position: sticky; top: 0; z-index: 2; background: #f3f7fa; }
+    th input { width: 100%; min-width: 90px; margin-top: 6px; padding: 7px 8px; }
+    .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+    .amount-cell, .amount-header { text-align: right; }
+    .pager { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>__PAGE_TITLE__</h1>
+        <p>Сохраненные срезы Bitrix: дата среза, фильтры по заголовкам и постраничный вывод.</p>
+      </div>
+      <div class="pager">
+        <a class="button" href="/Bitrix">Сделки</a>
+        <a class="button" href="/Bitrix/leads">Лиды</a>
+        <a class="button" href="/Bitrix/invoices">Счета</a>
+      </div>
+    </header>
+    <section class="panel">
+      <div class="toolbar">
+        <label>Дата среза
+          <select id="snapshotDateSelect"></select>
+        </label>
+        <label>Размер страницы
+          <input id="pageSizeInput" type="number" min="1" max="5000" value="1000">
+        </label>
+        <button class="button" id="reloadButton" type="button">Показать</button>
+        <button class="button" id="resetFiltersButton" type="button">Сбросить фильтры</button>
+      </div>
+      <div class="status" id="statusBox">Загружаю срез...</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID<br><input data-filter="item_id" placeholder="Фильтр"></th>
+              <th>Название<br><input data-filter="title" placeholder="Фильтр"></th>
+              <th>Статус<br><input data-filter="status_name" placeholder="Фильтр"></th>
+              <th>Ответственный<br><input data-filter="assigned_by_name" placeholder="Фильтр"></th>
+              <th class="amount-header">Сумма<br><input data-filter="opportunity" placeholder="Фильтр"></th>
+              <th>Компания<br><input data-filter="company_name" placeholder="Фильтр"></th>
+              <th>Создан<br><input data-filter="created_time" placeholder="Фильтр"></th>
+              <th>Обновлен<br><input data-filter="updated_time" placeholder="Фильтр"></th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button class="button" id="prevPageButton" type="button">Назад</button>
+        <button class="button" id="nextPageButton" type="button">Вперед</button>
+      </div>
+    </section>
+  </main>
+  <script>
+    const apiBasePath = "__API_BASE_PATH__";
+    const bitrixPath = "__BITRIX_PATH__";
+    const dateSelect = document.getElementById("snapshotDateSelect");
+    const pageSizeInput = document.getElementById("pageSizeInput");
+    const statusBox = document.getElementById("statusBox");
+    const tableBody = document.getElementById("tableBody");
+    const prevPageButton = document.getElementById("prevPageButton");
+    const nextPageButton = document.getElementById("nextPageButton");
+    const filterInputs = Array.from(document.querySelectorAll("[data-filter]"));
+    let currentPage = 1;
+    let totalCount = 0;
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+    function formatValue(value) {
+      if (value === null || value === undefined || value === "") {
+        return "—";
+      }
+      return escapeHtml(value);
+    }
+    function formatIntegerAmount(value) {
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue)) {
+        return formatValue(value);
+      }
+      return escapeHtml(Math.round(numericValue).toLocaleString("ru-RU"));
+    }
+    function setStatus(message, isError = false) {
+      statusBox.textContent = message;
+      statusBox.classList.toggle("is-error", Boolean(isError));
+    }
+    function syncDates(dates, selectedDate = "") {
+      const items = Array.isArray(dates) ? dates : [];
+      dateSelect.innerHTML = ['<option value="">Последний срез</option>']
+        .concat(items.map((dateValue) => `<option value="${escapeHtml(dateValue)}">${escapeHtml(dateValue)}</option>`))
+        .join("");
+      dateSelect.value = selectedDate || "";
+    }
+    function buildParams() {
+      const params = new URLSearchParams();
+      params.set("page", String(currentPage));
+      params.set("page_size", String(pageSizeInput.value || "1000"));
+      if (dateSelect.value) {
+        params.set("captured_for_date", dateSelect.value);
+      }
+      filterInputs.forEach((input) => {
+        const value = String(input.value || "").trim();
+        if (value) {
+          params.set(input.dataset.filter, value);
+        }
+      });
+      return params;
+    }
+    function renderRows(items) {
+      if (!Array.isArray(items) || !items.length) {
+        tableBody.innerHTML = '<tr><td colspan="8">Строки не найдены.</td></tr>';
+        return;
+      }
+      tableBody.innerHTML = items.map((item) => `
+        <tr>
+          <td class="mono"><a href="https://sms-it.bitrix24.ru/crm/${bitrixPath}/details/${encodeURIComponent(item.item_id ?? "")}/" target="_blank" rel="noreferrer">${formatValue(item.item_id)}</a></td>
+          <td>${formatValue(item.title)}</td>
+          <td>${formatValue(item.status_name || item.status_id)}</td>
+          <td>${formatValue(item.assigned_by_name || item.assigned_by_id)}</td>
+          <td class="mono amount-cell">${formatIntegerAmount(item.opportunity)}</td>
+          <td>${formatValue(item.company_name || item.company_id)}</td>
+          <td class="mono">${formatValue(item.created_time)}</td>
+          <td class="mono">${formatValue(item.updated_time)}</td>
+        </tr>
+      `).join("");
+    }
+    async function loadItems() {
+      setStatus("Загружаю срез...");
+      const response = await fetch(`${apiBasePath}/items?${buildParams().toString()}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || "Не удалось загрузить срез.");
+      }
+      totalCount = Number(payload.total_count || 0);
+      syncDates(payload.available_dates || [], String(payload.snapshot_run?.captured_for_date || ""));
+      renderRows(payload.items || []);
+      const pageSize = Number(payload.page_size || pageSizeInput.value || 1000);
+      const fromRow = totalCount ? ((currentPage - 1) * pageSize + 1) : 0;
+      const toRow = Math.min(totalCount, currentPage * pageSize);
+      setStatus(`Срез: ${payload.snapshot_run?.captured_for_date || "нет"}. Показано ${fromRow}-${toRow} из ${totalCount}.`);
+      prevPageButton.disabled = currentPage <= 1;
+      nextPageButton.disabled = toRow >= totalCount;
+    }
+    async function safeLoadItems() {
+      try {
+        await loadItems();
+      } catch (error) {
+        setStatus(String(error.message || error), true);
+      }
+    }
+    document.getElementById("reloadButton")?.addEventListener("click", () => {
+      currentPage = 1;
+      safeLoadItems();
+    });
+    document.getElementById("resetFiltersButton")?.addEventListener("click", () => {
+      filterInputs.forEach((input) => { input.value = ""; });
+      currentPage = 1;
+      safeLoadItems();
+    });
+    filterInputs.forEach((input) => input.addEventListener("change", () => {
+      currentPage = 1;
+      safeLoadItems();
+    }));
+    dateSelect.addEventListener("change", () => {
+      currentPage = 1;
+      safeLoadItems();
+    });
+    pageSizeInput.addEventListener("change", () => {
+      currentPage = 1;
+      safeLoadItems();
+    });
+    prevPageButton.addEventListener("click", () => {
+      currentPage = Math.max(1, currentPage - 1);
+      safeLoadItems();
+    });
+    nextPageButton.addEventListener("click", () => {
+      currentPage += 1;
+      safeLoadItems();
+    });
+    safeLoadItems();
+  </script>
+</body>
+</html>""".replace("__PAGE_TITLE__", pageTitle).replace("__API_BASE_PATH__", apiBasePath).replace("__BITRIX_PATH__", bitrixPath)
+
+
+@app.get("/Bitrix/leads", response_class=HTMLResponse)
+def readBitrixLeadsPage() -> HTMLResponse:
+    return _renderHtmlPage(buildBitrixCrmSnapshotPage("lead", "Лиды Bitrix", "/api/bitrix/lead-snapshots", "lead"))
+
+
+@app.get("/Bitrix/invoices", response_class=HTMLResponse)
+def readBitrixInvoicesPage() -> HTMLResponse:
+    return _renderHtmlPage(buildBitrixCrmSnapshotPage("invoice", "Счета Bitrix", "/api/bitrix/invoice-snapshots", "type/31"))
+
+
 @app.get("/Bitrix/deal-snapshots/compare", response_class=HTMLResponse)
 def readBitrixDealSnapshotComparePage() -> HTMLResponse:
     return _renderHtmlPage(BITRIX_DEAL_COMPARE_PAGE_HTML)
@@ -12412,13 +12696,58 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
             for item in dealItems
             if isinstance(item, dict)
         ]
+        companyIds = [
+            int(item.get("companyId") or 0)
+            for item in dealItems
+            if isinstance(item, dict)
+        ]
         dictionaries = fetchBitrixDealDictionaries(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
             categoryIds=categoryIds,
             assignedByIds=assignedByIds,
+            companyIds=companyIds,
         )
+        leadPayload = fetchAllBitrixLeads(
+            portalUrl=config.bitrixPortalUrl,
+            credential=config.bitrixCredential,
+        )
+        invoicePayload = fetchAllBitrixInvoices(
+            portalUrl=config.bitrixPortalUrl,
+            credential=config.bitrixCredential,
+        )
+        leadItems = leadPayload.get("items") or []
+        invoiceItems = invoicePayload.get("items") or []
+        crmAssignedByIds = [
+            int(item.get("assignedById") or 0)
+            for item in [*leadItems, *invoiceItems]
+            if isinstance(item, dict)
+        ]
+        crmCompanyIds = [
+            int(item.get("companyId") or 0)
+            for item in [*leadItems, *invoiceItems]
+            if isinstance(item, dict)
+        ]
+        leadDictionaries = fetchBitrixCrmItemDictionaries(
+            portalUrl=config.bitrixPortalUrl,
+            credential=config.bitrixCredential,
+            assignedByIds=crmAssignedByIds,
+            companyIds=crmCompanyIds,
+            statusEntityIds=["STATUS"],
+        )
+        invoiceDictionaries = fetchBitrixCrmItemDictionaries(
+            portalUrl=config.bitrixPortalUrl,
+            credential=config.bitrixCredential,
+            assignedByIds=crmAssignedByIds,
+            companyIds=crmCompanyIds,
+            statusEntityIds=["SMART_INVOICE_STAGE"],
+        )
+        deleteBitrixDealSnapshotForDate(capturedForDate)
+        deleteBitrixCrmSnapshotForDate("lead", capturedForDate)
+        deleteBitrixCrmSnapshotForDate("invoice", capturedForDate)
         snapshot = createBitrixDealSnapshot(dealItems, capturedForDate, dictionaries)
+        leadSnapshot = createBitrixCrmSnapshot("lead", leadItems, capturedForDate, leadDictionaries)
+        invoiceSnapshot = createBitrixCrmSnapshot("invoice", invoiceItems, capturedForDate, invoiceDictionaries)
     except requests.HTTPError as error:
         detail = "Bitrix24 deals snapshot request failed."
         if error.response is not None:
@@ -12429,9 +12758,13 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
 
     return {
         **snapshot,
+        "lead_snapshot": leadSnapshot,
+        "invoice_snapshot": invoiceSnapshot,
         "auth_mode": payload.get("auth_mode"),
         "bitrix_total": payload.get("total"),
-        "detail": f"Срез сделок сохранен: {snapshot['total_deals']} строк.",
+        "lead_total": leadPayload.get("total"),
+        "invoice_total": invoicePayload.get("total"),
+        "detail": f"Срез сохранен: сделки {snapshot['total_deals']}, лиды {leadSnapshot['total_items']}, счета {invoiceSnapshot['total_items']}.",
     }
 
 
@@ -12458,17 +12791,17 @@ def enrichBitrixDealSnapshotResponsibleNames(payload: dict[str, object]) -> dict
             continue
         if assignedById > 0:
             missingAssignedByIds.append(assignedById)
-    if not missingAssignedByIds or not config.bitrixPortalUrl or not config.bitrixCredential:
-        return payload
 
-    try:
-        userNames = fetchBitrixUserNames(
-            portalUrl=config.bitrixPortalUrl,
-            credential=config.bitrixCredential,
-            userIds=missingAssignedByIds,
-        )
-    except Exception:
-        return payload
+    userNames: dict[object, str] = {}
+    if missingAssignedByIds and config.bitrixPortalUrl and config.bitrixCredential:
+        try:
+            userNames = fetchBitrixUserNames(
+                portalUrl=config.bitrixPortalUrl,
+                credential=config.bitrixCredential,
+                userIds=missingAssignedByIds,
+            )
+        except Exception:
+            userNames = {}
 
     for deal in deals:
         if not isinstance(deal, dict) or deal.get("assigned_by_name"):
@@ -12479,6 +12812,38 @@ def enrichBitrixDealSnapshotResponsibleNames(payload: dict[str, object]) -> dict
             continue
         if assignedById in userNames:
             deal["assigned_by_name"] = userNames[assignedById]
+
+    missingCompanyIds: list[int] = []
+    for deal in deals:
+        if not isinstance(deal, dict) or deal.get("company_name"):
+            continue
+        try:
+            companyId = int(deal.get("company_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if companyId > 0:
+            missingCompanyIds.append(companyId)
+
+    companyNames: dict[object, str] = {}
+    if missingCompanyIds and config.bitrixPortalUrl and config.bitrixCredential:
+        try:
+            companyNames = fetchBitrixCompanyNames(
+                portalUrl=config.bitrixPortalUrl,
+                credential=config.bitrixCredential,
+                companyIds=missingCompanyIds,
+            )
+        except Exception:
+            companyNames = {}
+
+    for deal in deals:
+        if not isinstance(deal, dict) or deal.get("company_name"):
+            continue
+        try:
+            companyId = int(deal.get("company_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if companyId in companyNames:
+            deal["company_name"] = companyNames[companyId]
 
     return payload
 
@@ -12493,6 +12858,8 @@ def buildBitrixDealSnapshotFilters(
     assigned_by_name: str | None = None,
     opportunity: str | None = None,
     currency_id: str | None = None,
+    company_id: str | None = None,
+    company_name: str | None = None,
     category_id: str | None = None,
     category_name: str | None = None,
     created_time: str | None = None,
@@ -12507,6 +12874,8 @@ def buildBitrixDealSnapshotFilters(
         "assigned_by_name": assigned_by_name,
         "opportunity": opportunity,
         "currency_id": currency_id,
+        "company_id": company_id,
+        "company_name": company_name,
         "category_id": category_id,
         "category_name": category_name,
         "created_time": created_time,
@@ -12525,8 +12894,12 @@ def deleteBitrixDealSnapshotByDate(captured_for_date: str = Query(...)) -> dict[
         raise HTTPException(status_code=400, detail="captured_for_date must be YYYY-MM-DD") from error
 
     deleted = deleteBitrixDealSnapshotForDate(captured_for_date)
+    deletedLead = deleteBitrixCrmSnapshotForDate("lead", captured_for_date)
+    deletedInvoice = deleteBitrixCrmSnapshotForDate("invoice", captured_for_date)
     return {
         **deleted,
+        "deleted_lead_snapshot": deletedLead,
+        "deleted_invoice_snapshot": deletedInvoice,
         "snapshot_runs": listBitrixDealSnapshotRuns(50),
     }
 
@@ -12544,6 +12917,8 @@ def getBitrixDealSnapshotItemsApi(
     assigned_by_name: str | None = Query(None),
     opportunity: str | None = Query(None),
     currency_id: str | None = Query(None),
+    company_id: str | None = Query(None),
+    company_name: str | None = Query(None),
     category_id: str | None = Query(None),
     category_name: str | None = Query(None),
     created_time: str | None = Query(None),
@@ -12565,6 +12940,8 @@ def getBitrixDealSnapshotItemsApi(
             assigned_by_name=assigned_by_name,
             opportunity=opportunity,
             currency_id=currency_id,
+            company_id=company_id,
+            company_name=company_name,
             category_id=category_id,
             category_name=category_name,
             created_time=created_time,
@@ -12584,6 +12961,8 @@ def exportBitrixDealSnapshotItemsApi(
     assigned_by_name: str | None = Query(None),
     opportunity: str | None = Query(None),
     currency_id: str | None = Query(None),
+    company_id: str | None = Query(None),
+    company_name: str | None = Query(None),
     category_id: str | None = Query(None),
     category_name: str | None = Query(None),
     created_time: str | None = Query(None),
@@ -12601,6 +12980,8 @@ def exportBitrixDealSnapshotItemsApi(
         assigned_by_name=assigned_by_name,
         opportunity=opportunity,
         currency_id=currency_id,
+        company_id=company_id,
+        company_name=company_name,
         category_id=category_id,
         category_name=category_name,
         created_time=created_time,
@@ -12626,7 +13007,7 @@ def exportBitrixDealSnapshotItemsApi(
 
     output = io.StringIO()
     writer = csv.writer(output, delimiter=";", lineterminator="\r\n")
-    writer.writerow(["ID", "Название", "Стадия", "Ответственный", "Сумма", "Воронка", "Создана", "Обновлена"])
+    writer.writerow(["ID", "Название", "Стадия", "Ответственный", "Сумма", "Компания", "Воронка", "Создана", "Обновлена"])
     for row in rows:
         amount = row.get("opportunity")
         roundedAmount = ""
@@ -12641,6 +13022,7 @@ def exportBitrixDealSnapshotItemsApi(
             row.get("stage_name") or row.get("stage_id") or "",
             row.get("assigned_by_name") or row.get("assigned_by_id") or "",
             roundedAmount,
+            row.get("company_name") or row.get("company_id") or "",
             row.get("category_name") or row.get("category_id") or "",
             row.get("created_time") or "",
             row.get("updated_time") or "",
@@ -12652,6 +13034,199 @@ def exportBitrixDealSnapshotItemsApi(
         content=content,
         media_type="text/csv; charset=windows-1251",
         headers={"Content-Disposition": f'attachment; filename="bitrix-deals-{filenameDate}.csv"'},
+    )
+
+
+def enrichBitrixCrmSnapshotItemNames(payload: dict[str, object]) -> dict[str, object]:
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return payload
+
+    missingAssignedByIds: list[int] = []
+    missingCompanyIds: list[int] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if not item.get("assigned_by_name"):
+            try:
+                assignedById = int(item.get("assigned_by_id") or 0)
+            except (TypeError, ValueError):
+                assignedById = 0
+            if assignedById > 0:
+                missingAssignedByIds.append(assignedById)
+        if not item.get("company_name"):
+            try:
+                companyId = int(item.get("company_id") or 0)
+            except (TypeError, ValueError):
+                companyId = 0
+            if companyId > 0:
+                missingCompanyIds.append(companyId)
+
+    userNames: dict[object, str] = {}
+    companyNames: dict[object, str] = {}
+    if config.bitrixPortalUrl and config.bitrixCredential:
+        if missingAssignedByIds:
+            try:
+                userNames = fetchBitrixUserNames(
+                    portalUrl=config.bitrixPortalUrl,
+                    credential=config.bitrixCredential,
+                    userIds=missingAssignedByIds,
+                )
+            except Exception:
+                userNames = {}
+        if missingCompanyIds:
+            try:
+                companyNames = fetchBitrixCompanyNames(
+                    portalUrl=config.bitrixPortalUrl,
+                    credential=config.bitrixCredential,
+                    companyIds=missingCompanyIds,
+                )
+            except Exception:
+                companyNames = {}
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if not item.get("assigned_by_name"):
+            try:
+                assignedById = int(item.get("assigned_by_id") or 0)
+            except (TypeError, ValueError):
+                assignedById = 0
+            if assignedById in userNames:
+                item["assigned_by_name"] = userNames[assignedById]
+        if not item.get("company_name"):
+            try:
+                companyId = int(item.get("company_id") or 0)
+            except (TypeError, ValueError):
+                companyId = 0
+            if companyId in companyNames:
+                item["company_name"] = companyNames[companyId]
+
+    return payload
+
+
+def buildBitrixCrmSnapshotFilters(
+    *,
+    item_id: str | None = None,
+    title: str | None = None,
+    status_id: str | None = None,
+    status_name: str | None = None,
+    assigned_by_id: str | None = None,
+    assigned_by_name: str | None = None,
+    opportunity: str | None = None,
+    company_id: str | None = None,
+    company_name: str | None = None,
+    created_time: str | None = None,
+    updated_time: str | None = None,
+) -> dict[str, object]:
+    return {
+        "item_id": item_id,
+        "title": title,
+        "status_id": status_id,
+        "status_name": status_name,
+        "assigned_by_id": assigned_by_id,
+        "assigned_by_name": assigned_by_name,
+        "opportunity": opportunity,
+        "company_id": company_id,
+        "company_name": company_name,
+        "created_time": created_time,
+        "updated_time": updated_time,
+    }
+
+
+def getBitrixCrmSnapshotItemsApiPayload(
+    entityType: str,
+    captured_for_date: str | None,
+    page: int,
+    page_size: int,
+    filters: dict[str, object],
+) -> dict[str, object]:
+    return enrichBitrixCrmSnapshotItemNames(getBitrixCrmSnapshotItems(
+        entityType,
+        captured_for_date,
+        page=page,
+        pageSize=page_size,
+        filters=filters,
+    ))
+
+
+@app.get("/api/bitrix/lead-snapshots/items")
+def getBitrixLeadSnapshotItemsApi(
+    captured_for_date: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(1000, ge=1, le=5000),
+    item_id: str | None = Query(None),
+    title: str | None = Query(None),
+    status_id: str | None = Query(None),
+    status_name: str | None = Query(None),
+    assigned_by_id: str | None = Query(None),
+    assigned_by_name: str | None = Query(None),
+    opportunity: str | None = Query(None),
+    company_id: str | None = Query(None),
+    company_name: str | None = Query(None),
+    created_time: str | None = Query(None),
+    updated_time: str | None = Query(None),
+) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+    return getBitrixCrmSnapshotItemsApiPayload(
+        "lead",
+        captured_for_date,
+        page,
+        page_size,
+        buildBitrixCrmSnapshotFilters(
+            item_id=item_id,
+            title=title,
+            status_id=status_id,
+            status_name=status_name,
+            assigned_by_id=assigned_by_id,
+            assigned_by_name=assigned_by_name,
+            opportunity=opportunity,
+            company_id=company_id,
+            company_name=company_name,
+            created_time=created_time,
+            updated_time=updated_time,
+        ),
+    )
+
+
+@app.get("/api/bitrix/invoice-snapshots/items")
+def getBitrixInvoiceSnapshotItemsApi(
+    captured_for_date: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(1000, ge=1, le=5000),
+    item_id: str | None = Query(None),
+    title: str | None = Query(None),
+    status_id: str | None = Query(None),
+    status_name: str | None = Query(None),
+    assigned_by_id: str | None = Query(None),
+    assigned_by_name: str | None = Query(None),
+    opportunity: str | None = Query(None),
+    company_id: str | None = Query(None),
+    company_name: str | None = Query(None),
+    created_time: str | None = Query(None),
+    updated_time: str | None = Query(None),
+) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+    return getBitrixCrmSnapshotItemsApiPayload(
+        "invoice",
+        captured_for_date,
+        page,
+        page_size,
+        buildBitrixCrmSnapshotFilters(
+            item_id=item_id,
+            title=title,
+            status_id=status_id,
+            status_name=status_name,
+            assigned_by_id=assigned_by_id,
+            assigned_by_name=assigned_by_name,
+            opportunity=opportunity,
+            company_id=company_id,
+            company_name=company_name,
+            created_time=created_time,
+            updated_time=updated_time,
+        ),
     )
 
 

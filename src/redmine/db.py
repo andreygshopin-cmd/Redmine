@@ -479,6 +479,8 @@ def ensureBitrixDealSnapshotTables() -> None:
                         assigned_by_name TEXT,
                         opportunity DOUBLE PRECISION,
                         currency_id TEXT,
+                        company_id BIGINT,
+                        company_name TEXT,
                         category_id BIGINT,
                         category_name TEXT,
                         created_time TIMESTAMPTZ NULL,
@@ -491,6 +493,45 @@ def ensureBitrixDealSnapshotTables() -> None:
             connection.execute(text("ALTER TABLE bitrix_deal_snapshot_items ADD COLUMN IF NOT EXISTS stage_name TEXT"))
             connection.execute(text("ALTER TABLE bitrix_deal_snapshot_items ADD COLUMN IF NOT EXISTS category_name TEXT"))
             connection.execute(text("ALTER TABLE bitrix_deal_snapshot_items ADD COLUMN IF NOT EXISTS assigned_by_name TEXT"))
+            connection.execute(text("ALTER TABLE bitrix_deal_snapshot_items ADD COLUMN IF NOT EXISTS company_id BIGINT"))
+            connection.execute(text("ALTER TABLE bitrix_deal_snapshot_items ADD COLUMN IF NOT EXISTS company_name TEXT"))
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS bitrix_crm_snapshot_runs (
+                        id BIGSERIAL PRIMARY KEY,
+                        entity_type TEXT NOT NULL,
+                        captured_for_date DATE NOT NULL DEFAULT CURRENT_DATE,
+                        captured_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        total_items INTEGER NOT NULL DEFAULT 0
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS bitrix_crm_snapshot_items (
+                        id BIGSERIAL PRIMARY KEY,
+                        snapshot_run_id BIGINT NOT NULL REFERENCES bitrix_crm_snapshot_runs(id) ON DELETE CASCADE,
+                        entity_type TEXT NOT NULL,
+                        item_id BIGINT NOT NULL,
+                        title TEXT,
+                        status_id TEXT,
+                        status_name TEXT,
+                        assigned_by_id BIGINT,
+                        assigned_by_name TEXT,
+                        opportunity DOUBLE PRECISION,
+                        currency_id TEXT,
+                        company_id BIGINT,
+                        company_name TEXT,
+                        created_time TIMESTAMPTZ NULL,
+                        updated_time TIMESTAMPTZ NULL,
+                        raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb
+                    )
+                    """
+                )
+            )
             connection.execute(
                 text(
                     """
@@ -504,6 +545,30 @@ def ensureBitrixDealSnapshotTables() -> None:
                     """
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_bitrix_deal_snapshot_items_run_deal_unique
                     ON bitrix_deal_snapshot_items(snapshot_run_id, deal_id)
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_bitrix_crm_snapshot_runs_type_date_unique
+                    ON bitrix_crm_snapshot_runs(entity_type, captured_for_date)
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_bitrix_crm_snapshot_items_run_item_unique
+                    ON bitrix_crm_snapshot_items(snapshot_run_id, item_id)
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_bitrix_crm_snapshot_items_run
+                    ON bitrix_crm_snapshot_items(snapshot_run_id)
                     """
                 )
             )
@@ -4229,6 +4294,7 @@ def createBitrixDealSnapshot(
     stageNames = dictionaryValues.get("stage_names") or {}
     categoryNames = dictionaryValues.get("category_names") or {}
     assignedByNames = dictionaryValues.get("assigned_by_names") or {}
+    companyNames = dictionaryValues.get("company_names") or {}
     for deal in deals:
         dealId = _toIntOrNone(deal.get("id"))
         if dealId is None:
@@ -4236,6 +4302,7 @@ def createBitrixDealSnapshot(
         categoryId = _toIntOrNone(deal.get("categoryId"))
         stageId = str(deal.get("stageId") or "")
         assignedById = _toIntOrNone(deal.get("assignedById"))
+        companyId = _toIntOrNone(deal.get("companyId"))
         normalizedDeals.append(
             {
                 "deal_id": dealId,
@@ -4246,6 +4313,8 @@ def createBitrixDealSnapshot(
                 "assigned_by_name": assignedByNames.get(assignedById or 0),
                 "opportunity": _toFloatOrNone(deal.get("opportunity")),
                 "currency_id": deal.get("currencyId"),
+                "company_id": companyId,
+                "company_name": companyNames.get(companyId or 0),
                 "category_id": categoryId,
                 "category_name": categoryNames.get(categoryId or 0),
                 "created_time": deal.get("createdTime"),
@@ -4306,10 +4375,10 @@ def createBitrixDealSnapshot(
             """
             INSERT INTO bitrix_deal_snapshot_items (
                 snapshot_run_id, deal_id, title, stage_id, stage_name, assigned_by_id, assigned_by_name, opportunity,
-                currency_id, category_id, category_name, created_time, updated_time, raw_payload
+                currency_id, company_id, company_name, category_id, category_name, created_time, updated_time, raw_payload
             ) VALUES (
                 :snapshot_run_id, :deal_id, :title, :stage_id, :stage_name, :assigned_by_id, :assigned_by_name, :opportunity,
-                :currency_id, :category_id, :category_name, :created_time, :updated_time, CAST(:raw_payload AS JSONB)
+                :currency_id, :company_id, :company_name, :category_id, :category_name, :created_time, :updated_time, CAST(:raw_payload AS JSONB)
             )
             """
         )
@@ -4466,6 +4535,8 @@ def getBitrixDealSnapshotItems(
             "assigned_by_name": "assigned_by_name",
             "opportunity": "CAST(opportunity AS TEXT)",
             "currency_id": "currency_id",
+            "company_id": "CAST(company_id AS TEXT)",
+            "company_name": "company_name",
             "category_id": "CAST(category_id AS TEXT)",
             "category_name": "category_name",
             "created_time": "CAST(created_time AS TEXT)",
@@ -4488,7 +4559,7 @@ def getBitrixDealSnapshotItems(
             text(
                 f"""
                 SELECT id, snapshot_run_id, deal_id, title, stage_id, stage_name, assigned_by_id, assigned_by_name,
-                       opportunity, currency_id, category_id, category_name, created_time, updated_time
+                       opportunity, currency_id, company_id, company_name, category_id, category_name, created_time, updated_time
                 FROM bitrix_deal_snapshot_items
                 WHERE {whereSql}
                 ORDER BY deal_id DESC
@@ -4505,6 +4576,311 @@ def getBitrixDealSnapshotItems(
             "page_size": safePageSize,
             "total_count": totalCount,
         }
+
+
+def _normalizeBitrixCrmSnapshotItems(
+    entityType: str,
+    items: Sequence[dict[str, object]],
+    dictionaries: Mapping[str, dict[object, str]] | None = None,
+) -> list[dict[str, object]]:
+    dictionaryValues = dictionaries or {}
+    statusNames = dictionaryValues.get("status_names") or {}
+    assignedByNames = dictionaryValues.get("assigned_by_names") or {}
+    companyNames = dictionaryValues.get("company_names") or {}
+    normalizedItems: list[dict[str, object]] = []
+    for item in items:
+        itemId = _toIntOrNone(item.get("id") or item.get("ID"))
+        if itemId is None:
+            continue
+        statusId = str(item.get("statusId") or item.get("stageId") or item.get("STATUS_ID") or item.get("STAGE_ID") or "")
+        assignedById = _toIntOrNone(item.get("assignedById") or item.get("ASSIGNED_BY_ID") or item.get("RESPONSIBLE_ID"))
+        companyId = _toIntOrNone(item.get("companyId") or item.get("COMPANY_ID") or item.get("UF_COMPANY_ID"))
+        normalizedItems.append(
+            {
+                "entity_type": entityType,
+                "item_id": itemId,
+                "title": item.get("title") or item.get("TITLE") or item.get("ORDER_TOPIC") or item.get("ACCOUNT_NUMBER"),
+                "status_id": statusId,
+                "status_name": statusNames.get(statusId),
+                "assigned_by_id": assignedById,
+                "assigned_by_name": assignedByNames.get(assignedById or 0),
+                "opportunity": _toFloatOrNone(item.get("opportunity") or item.get("OPPORTUNITY") or item.get("PRICE")),
+                "currency_id": item.get("currencyId") or item.get("CURRENCY_ID") or item.get("CURRENCY"),
+                "company_id": companyId,
+                "company_name": companyNames.get(companyId or 0),
+                "created_time": item.get("createdTime") or item.get("DATE_CREATE") or item.get("DATE_INSERT"),
+                "updated_time": item.get("updatedTime") or item.get("DATE_MODIFY") or item.get("DATE_UPDATE"),
+                "raw_payload": json.dumps(item, ensure_ascii=False),
+            }
+        )
+    return normalizedItems
+
+
+def createBitrixCrmSnapshot(
+    entityType: str,
+    items: Sequence[dict[str, object]],
+    capturedForDate: str,
+    dictionaries: Mapping[str, dict[object, str]] | None = None,
+) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    normalizedItems = _normalizeBitrixCrmSnapshotItems(entityType, items, dictionaries)
+    with engine.begin() as connection:
+        existingRunId = connection.execute(
+            text(
+                """
+                SELECT id
+                FROM bitrix_crm_snapshot_runs
+                WHERE entity_type = :entity_type
+                  AND captured_for_date = CAST(:captured_for_date AS DATE)
+                """
+            ),
+            {"entity_type": entityType, "captured_for_date": capturedForDate},
+        ).scalar_one_or_none()
+
+        if existingRunId is not None:
+            snapshotRunId = int(existingRunId)
+            connection.execute(
+                text("DELETE FROM bitrix_crm_snapshot_items WHERE snapshot_run_id = :snapshot_run_id"),
+                {"snapshot_run_id": snapshotRunId},
+            )
+            connection.execute(
+                text(
+                    """
+                    UPDATE bitrix_crm_snapshot_runs
+                    SET captured_at = CURRENT_TIMESTAMP,
+                        total_items = :total_items
+                    WHERE id = :snapshot_run_id
+                    """
+                ),
+                {"snapshot_run_id": snapshotRunId, "total_items": len(normalizedItems)},
+            )
+        else:
+            snapshotRunId = int(
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO bitrix_crm_snapshot_runs (entity_type, captured_for_date, total_items)
+                        VALUES (:entity_type, CAST(:captured_for_date AS DATE), :total_items)
+                        RETURNING id
+                        """
+                    ),
+                    {"entity_type": entityType, "captured_for_date": capturedForDate, "total_items": len(normalizedItems)},
+                ).scalar_one()
+            )
+
+        insertStatement = text(
+            """
+            INSERT INTO bitrix_crm_snapshot_items (
+                snapshot_run_id, entity_type, item_id, title, status_id, status_name,
+                assigned_by_id, assigned_by_name, opportunity, currency_id, company_id,
+                company_name, created_time, updated_time, raw_payload
+            ) VALUES (
+                :snapshot_run_id, :entity_type, :item_id, :title, :status_id, :status_name,
+                :assigned_by_id, :assigned_by_name, :opportunity, :currency_id, :company_id,
+                :company_name, :created_time, :updated_time, CAST(:raw_payload AS JSONB)
+            )
+            """
+        )
+        insertPayload = [{**item, "snapshot_run_id": snapshotRunId} for item in normalizedItems]
+        for payloadChunk in chunkSequence(insertPayload, SNAPSHOT_INSERT_BATCH_SIZE):
+            connection.execute(insertStatement, payloadChunk)
+
+    return {
+        "snapshot_run_id": snapshotRunId,
+        "captured_for_date": capturedForDate,
+        "entity_type": entityType,
+        "total_items": len(normalizedItems),
+    }
+
+
+def deleteBitrixCrmSnapshotForDate(entityType: str, capturedForDate: str) -> dict[str, int | str]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    with engine.begin() as connection:
+        runIds = [
+            int(row.id)
+            for row in connection.execute(
+                text(
+                    """
+                    SELECT id
+                    FROM bitrix_crm_snapshot_runs
+                    WHERE entity_type = :entity_type
+                      AND captured_for_date = CAST(:captured_for_date AS DATE)
+                    """
+                ),
+                {"entity_type": entityType, "captured_for_date": capturedForDate},
+            )
+        ]
+        if not runIds:
+            return {"entity_type": entityType, "captured_for_date": capturedForDate, "deleted_items": 0, "deleted_runs": 0}
+        itemCount = int(
+            connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM bitrix_crm_snapshot_items
+                    WHERE snapshot_run_id IN :run_ids
+                    """
+                ).bindparams(bindparam("run_ids", expanding=True)),
+                {"run_ids": runIds},
+            ).scalar_one()
+        )
+        connection.execute(
+            text(
+                """
+                DELETE FROM bitrix_crm_snapshot_runs
+                WHERE id IN :run_ids
+                """
+            ).bindparams(bindparam("run_ids", expanding=True)),
+            {"run_ids": runIds},
+        )
+
+    return {"entity_type": entityType, "captured_for_date": capturedForDate, "deleted_items": itemCount, "deleted_runs": len(runIds)}
+
+
+def listBitrixCrmSnapshotRuns(entityType: str, limit: int = 50) -> list[dict[str, object]]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    safeLimit = max(1, min(int(limit or 50), 500))
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT id, entity_type, captured_for_date, captured_at, total_items
+                FROM bitrix_crm_snapshot_runs
+                WHERE entity_type = :entity_type
+                ORDER BY captured_for_date DESC, captured_at DESC, id DESC
+                LIMIT :limit_value
+                """
+            ),
+            {"entity_type": entityType, "limit_value": safeLimit},
+        )
+        return [dict(row._mapping) for row in rows]
+
+
+def listBitrixCrmSnapshotDates(entityType: str) -> list[str]:
+    return [str(row["captured_for_date"]) for row in listBitrixCrmSnapshotRuns(entityType, 500)]
+
+
+def getBitrixCrmSnapshotItems(
+    entityType: str,
+    capturedForDate: str | None = None,
+    *,
+    page: int = 1,
+    pageSize: int = 1000,
+    filters: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    safePage = max(1, int(page or 1))
+    safePageSize = max(1, min(int(pageSize or 1000), 5000))
+    params: dict[str, object] = {
+        "entity_type": entityType,
+        "limit_value": safePageSize,
+        "offset_value": (safePage - 1) * safePageSize,
+    }
+    whereClauses: list[str] = []
+    filterValues = dict(filters or {})
+
+    with engine.connect() as connection:
+        if capturedForDate:
+            params["captured_for_date"] = capturedForDate
+            run = connection.execute(
+                text(
+                    """
+                    SELECT id, entity_type, captured_for_date, captured_at, total_items
+                    FROM bitrix_crm_snapshot_runs
+                    WHERE entity_type = :entity_type
+                      AND captured_for_date = CAST(:captured_for_date AS DATE)
+                    ORDER BY captured_at DESC, id DESC
+                    LIMIT 1
+                    """
+                ),
+                params,
+            ).mappings().first()
+        else:
+            run = connection.execute(
+                text(
+                    """
+                    SELECT id, entity_type, captured_for_date, captured_at, total_items
+                    FROM bitrix_crm_snapshot_runs
+                    WHERE entity_type = :entity_type
+                    ORDER BY captured_for_date DESC, captured_at DESC, id DESC
+                    LIMIT 1
+                    """
+                ),
+                params,
+            ).mappings().first()
+
+        if run is None:
+            return {
+                "snapshot_run": None,
+                "items": [],
+                "available_dates": listBitrixCrmSnapshotDates(entityType),
+                "page": safePage,
+                "page_size": safePageSize,
+                "total_count": 0,
+            }
+
+        params["snapshot_run_id"] = int(run["id"])
+        for fieldName, columnName in {
+            "item_id": "CAST(item_id AS TEXT)",
+            "title": "title",
+            "status_id": "status_id",
+            "status_name": "status_name",
+            "assigned_by_id": "CAST(assigned_by_id AS TEXT)",
+            "assigned_by_name": "assigned_by_name",
+            "opportunity": "CAST(opportunity AS TEXT)",
+            "company_id": "CAST(company_id AS TEXT)",
+            "company_name": "company_name",
+            "created_time": "CAST(created_time AS TEXT)",
+            "updated_time": "CAST(updated_time AS TEXT)",
+        }.items():
+            value = str(filterValues.get(fieldName) or "").strip()
+            if value:
+                paramName = f"filter_{fieldName}"
+                whereClauses.append(f"LOWER(COALESCE({columnName}, '')) LIKE :{paramName}")
+                params[paramName] = f"%{value.lower()}%"
+
+        whereSql = " AND ".join(["snapshot_run_id = :snapshot_run_id", "entity_type = :entity_type", *whereClauses])
+        totalCount = int(
+            connection.execute(
+                text(f"SELECT COUNT(*) FROM bitrix_crm_snapshot_items WHERE {whereSql}"),
+                params,
+            ).scalar_one()
+        )
+        rows = connection.execute(
+            text(
+                f"""
+                SELECT id, snapshot_run_id, entity_type, item_id, title, status_id, status_name,
+                       assigned_by_id, assigned_by_name, opportunity, currency_id, company_id,
+                       company_name, created_time, updated_time
+                FROM bitrix_crm_snapshot_items
+                WHERE {whereSql}
+                ORDER BY item_id DESC
+                LIMIT :limit_value OFFSET :offset_value
+                """
+            ),
+            params,
+        )
+
+    return {
+        "snapshot_run": dict(run),
+        "items": [dict(row._mapping) for row in rows],
+        "available_dates": listBitrixCrmSnapshotDates(entityType),
+        "page": safePage,
+        "page_size": safePageSize,
+        "total_count": totalCount,
+    }
 
 
 def compareBitrixDealSnapshots(leftDate: str | None = None, rightDate: str | None = None) -> dict[str, object]:
@@ -4561,6 +4937,10 @@ def compareBitrixDealSnapshots(leftDate: str | None = None, rightDate: str | Non
                     r.opportunity AS right_opportunity,
                     l.currency_id AS left_currency_id,
                     r.currency_id AS right_currency_id,
+                    l.company_id AS left_company_id,
+                    r.company_id AS right_company_id,
+                    l.company_name AS left_company_name,
+                    r.company_name AS right_company_name,
                     l.category_id AS left_category_id,
                     r.category_id AS right_category_id,
                     l.category_name AS left_category_name,
@@ -4583,6 +4963,8 @@ def compareBitrixDealSnapshots(leftDate: str | None = None, rightDate: str | Non
                    OR l.assigned_by_name IS DISTINCT FROM r.assigned_by_name
                    OR l.opportunity IS DISTINCT FROM r.opportunity
                    OR l.currency_id IS DISTINCT FROM r.currency_id
+                   OR l.company_id IS DISTINCT FROM r.company_id
+                   OR l.company_name IS DISTINCT FROM r.company_name
                    OR l.category_id IS DISTINCT FROM r.category_id
                    OR l.category_name IS DISTINCT FROM r.category_name
                    OR l.updated_time IS DISTINCT FROM r.updated_time

@@ -37,8 +37,12 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert response.media_type == "text/html"
     assert "Анализ сделок Bitrix" in body
     assert "Анализ изменений по сделкам Bitrix за интервалы времени. Формирование отчетности" in body
+    assert "Получить срез по сделкам, лидам, счетам" in body
     assert "Удалить выбранный срез" in body
     assert "Выгрузить в Excel" in body
+    assert 'href="/Bitrix/leads"' in body
+    assert 'href="/Bitrix/invoices"' in body
+    assert 'data-bitrix-filter="company_name"' in body
     assert "button-muted" in body
     assert 'data-bitrix-filter="currency_id"' not in body
 
@@ -137,7 +141,28 @@ def testCaptureBitrixDealSnapshotEndpointStoresDeals(monkeypatch) -> None:
             "items": [{"id": 501, "title": "Deal #501"}],
         },
     )
+    monkeypatch.setattr(
+        app_module,
+        "fetchAllBitrixLeads",
+        lambda **kwargs: {
+            "auth_mode": "webhook_path",
+            "total": 1,
+            "items": [{"id": 601, "title": "Lead #601"}],
+        },
+    )
+    monkeypatch.setattr(
+        app_module,
+        "fetchAllBitrixInvoices",
+        lambda **kwargs: {
+            "auth_mode": "webhook_path",
+            "total": 1,
+            "items": [{"id": 701, "title": "Invoice #701"}],
+        },
+    )
     monkeypatch.setattr(app_module, "fetchBitrixDealDictionaries", lambda **kwargs: {})
+    monkeypatch.setattr(app_module, "fetchBitrixCrmItemDictionaries", lambda **kwargs: {})
+    monkeypatch.setattr(app_module, "deleteBitrixDealSnapshotForDate", lambda capturedForDate: {})
+    monkeypatch.setattr(app_module, "deleteBitrixCrmSnapshotForDate", lambda entityType, capturedForDate: {})
     monkeypatch.setattr(
         app_module,
         "createBitrixDealSnapshot",
@@ -147,12 +172,24 @@ def testCaptureBitrixDealSnapshotEndpointStoresDeals(monkeypatch) -> None:
             "total_deals": len(deals),
         },
     )
+    monkeypatch.setattr(
+        app_module,
+        "createBitrixCrmSnapshot",
+        lambda entityType, items, capturedForDate, dictionaries=None: {
+            "snapshot_run_id": 20 if entityType == "lead" else 30,
+            "captured_for_date": capturedForDate,
+            "entity_type": entityType,
+            "total_items": len(items),
+        },
+    )
 
     response = client.post("/api/bitrix/deal-snapshots/capture")
 
     assert response.status_code == 200
     assert response.json()["snapshot_run_id"] == 10
     assert response.json()["total_deals"] == 1
+    assert response.json()["lead_snapshot"]["total_items"] == 1
+    assert response.json()["invoice_snapshot"]["total_items"] == 1
 
 
 def testCompareBitrixDealSnapshotsEndpointReturnsChanges(monkeypatch) -> None:
@@ -189,6 +226,12 @@ def testDeleteBitrixDealSnapshotByDateEndpointDeletesRows(monkeypatch) -> None:
             "deleted_runs": 1,
         },
     )
+    monkeypatch.setattr(app_module, "deleteBitrixCrmSnapshotForDate", lambda entityType, capturedForDate: {
+        "entity_type": entityType,
+        "captured_for_date": capturedForDate,
+        "deleted_items": 0,
+        "deleted_runs": 0,
+    })
     monkeypatch.setattr(app_module, "listBitrixDealSnapshotRuns", lambda limit=50: [])
 
     response = client.delete("/api/bitrix/deal-snapshots/by-date?captured_for_date=2026-05-06")

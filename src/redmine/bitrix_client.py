@@ -3,6 +3,8 @@ from dataclasses import dataclass
 import requests
 
 BITRIX_DEAL_ENTITY_TYPE_ID = 2
+BITRIX_LEAD_ENTITY_TYPE_ID = 1
+BITRIX_INVOICE_ENTITY_TYPE_ID = 31
 BITRIX_PAGE_SIZE = 50
 BITRIX_PLACEHOLDER_VALUES = {
     "replace_me",
@@ -16,7 +18,20 @@ BITRIX_DEALS_SELECT_FIELDS = [
     "assignedById",
     "opportunity",
     "currencyId",
+    "companyId",
     "categoryId",
+    "createdTime",
+    "updatedTime",
+]
+BITRIX_CRM_COMMON_SELECT_FIELDS = [
+    "id",
+    "title",
+    "stageId",
+    "statusId",
+    "assignedById",
+    "opportunity",
+    "currencyId",
+    "companyId",
     "createdTime",
     "updatedTime",
 ]
@@ -192,6 +207,21 @@ def fetchBitrixDeals(
 
 
 def fetchAllBitrixDeals(portalUrl: str, credential: str) -> dict[str, object]:
+    return fetchAllBitrixCrmItems(
+        portalUrl,
+        credential,
+        entityTypeId=BITRIX_DEAL_ENTITY_TYPE_ID,
+        selectFields=BITRIX_DEALS_SELECT_FIELDS,
+    )
+
+
+def fetchAllBitrixCrmItems(
+    portalUrl: str,
+    credential: str,
+    *,
+    entityTypeId: int,
+    selectFields: list[str] | None = None,
+) -> dict[str, object]:
     restContext = buildBitrixRestContext(portalUrl, credential)
     items: list[dict[str, object]] = []
     start = 0
@@ -200,8 +230,8 @@ def fetchAllBitrixDeals(portalUrl: str, credential: str) -> dict[str, object]:
     while True:
         payload = {
             **restContext.defaultPayload,
-            "entityTypeId": BITRIX_DEAL_ENTITY_TYPE_ID,
-            "select": BITRIX_DEALS_SELECT_FIELDS,
+            "entityTypeId": entityTypeId,
+            "select": selectFields or BITRIX_CRM_COMMON_SELECT_FIELDS,
             "filter": {},
             "order": {"id": "DESC"},
             "start": start,
@@ -235,11 +265,30 @@ def fetchAllBitrixDeals(portalUrl: str, credential: str) -> dict[str, object]:
     }
 
 
+def fetchAllBitrixLeads(portalUrl: str, credential: str) -> dict[str, object]:
+    return fetchAllBitrixCrmItems(
+        portalUrl,
+        credential,
+        entityTypeId=BITRIX_LEAD_ENTITY_TYPE_ID,
+        selectFields=BITRIX_CRM_COMMON_SELECT_FIELDS,
+    )
+
+
+def fetchAllBitrixInvoices(portalUrl: str, credential: str) -> dict[str, object]:
+    return fetchAllBitrixCrmItems(
+        portalUrl,
+        credential,
+        entityTypeId=BITRIX_INVOICE_ENTITY_TYPE_ID,
+        selectFields=BITRIX_CRM_COMMON_SELECT_FIELDS,
+    )
+
+
 def fetchBitrixDealDictionaries(
     portalUrl: str,
     credential: str,
     categoryIds: list[int],
     assignedByIds: list[int] | None = None,
+    companyIds: list[int] | None = None,
 ) -> dict[str, dict[object, str]]:
     stageNames: dict[object, str] = {}
     categoryNames: dict[object, str] = {0: "Общая воронка"}
@@ -283,9 +332,15 @@ def fetchBitrixDealDictionaries(
                 stageNames[str(statusId)] = str(name)
                 stageNames[f"{categoryId}:{statusId}"] = str(name)
 
+    companyNames = fetchBitrixCompanyNames(portalUrl, credential, companyIds or [])
     assignedByNames = fetchBitrixUserNames(portalUrl, credential, assignedByIds or [])
 
-    return {"stage_names": stageNames, "category_names": categoryNames, "assigned_by_names": assignedByNames}
+    return {
+        "stage_names": stageNames,
+        "category_names": categoryNames,
+        "assigned_by_names": assignedByNames,
+        "company_names": companyNames,
+    }
 
 
 def fetchBitrixUserNames(portalUrl: str, credential: str, userIds: list[int]) -> dict[object, str]:
@@ -301,17 +356,22 @@ def fetchBitrixUserNames(portalUrl: str, credential: str, userIds: list[int]) ->
 
     uniqueUserIds = sorted(set(uniqueUserIds))
     for userId in uniqueUserIds:
-        try:
-            usersPayload = callBitrixRestMethod(
-                portalUrl,
-                credential,
-                "user.get",
-                {"ID": userId},
-            )
-        except Exception:
+        users = []
+        for payload in (
+            {"filter": {"ID": userId}},
+            {"FILTER": {"ID": userId}},
+            {"ID": userId},
+        ):
+            try:
+                usersPayload = callBitrixRestMethod(portalUrl, credential, "user.get", payload)
+            except Exception:
+                continue
+            users = usersPayload.get("result") or []
+            if users:
+                break
+        if not users:
             continue
 
-        users = usersPayload.get("result") or []
         for user in users:
             resultUserId = user.get("ID") or user.get("id")
             lastName = str(user.get("LAST_NAME") or "").strip()
@@ -322,7 +382,117 @@ def fetchBitrixUserNames(portalUrl: str, credential: str, userIds: list[int]) ->
             if resultUserId and displayName:
                 userNames[int(resultUserId)] = displayName
 
+    missingUserIds = [userId for userId in uniqueUserIds if userId not in userNames]
+    if missingUserIds:
+        userNames.update(fetchBitrixAllUserNames(portalUrl, credential, missingUserIds))
+
     return userNames
+
+
+def fetchBitrixAllUserNames(portalUrl: str, credential: str, neededUserIds: list[int]) -> dict[object, str]:
+    neededIds = set(neededUserIds)
+    userNames: dict[object, str] = {}
+    start = 0
+    while neededIds - set(userNames):
+        try:
+            usersPayload = callBitrixRestMethod(
+                portalUrl,
+                credential,
+                "user.get",
+                {"start": start},
+            )
+        except Exception:
+            break
+
+        users = usersPayload.get("result") or []
+        if not users:
+            break
+
+        for user in users:
+            resultUserId = user.get("ID") or user.get("id")
+            try:
+                normalizedUserId = int(resultUserId or 0)
+            except (TypeError, ValueError):
+                continue
+            if normalizedUserId not in neededIds:
+                continue
+            lastName = str(user.get("LAST_NAME") or "").strip()
+            name = str(user.get("NAME") or "").strip()
+            secondName = str(user.get("SECOND_NAME") or "").strip()
+            displayName = " ".join(part for part in [lastName, name, secondName] if part)
+            displayName = displayName or str(user.get("LOGIN") or "").strip() or str(resultUserId or "").strip()
+            if displayName:
+                userNames[normalizedUserId] = displayName
+
+        nextStart = usersPayload.get("next")
+        if nextStart is None or len(users) < BITRIX_PAGE_SIZE:
+            break
+        start = int(nextStart)
+
+    return userNames
+
+
+def fetchBitrixCompanyNames(portalUrl: str, credential: str, companyIds: list[int]) -> dict[object, str]:
+    companyNames: dict[object, str] = {}
+    uniqueCompanyIds: list[int] = []
+    for value in companyIds:
+        try:
+            companyId = int(value or 0)
+        except (TypeError, ValueError):
+            continue
+        if companyId > 0:
+            uniqueCompanyIds.append(companyId)
+
+    uniqueCompanyIds = sorted(set(uniqueCompanyIds))
+    for companyId in uniqueCompanyIds:
+        try:
+            companyPayload = callBitrixRestMethod(
+                portalUrl,
+                credential,
+                "crm.company.get",
+                {"id": companyId},
+            )
+        except Exception:
+            continue
+
+        company = companyPayload.get("result") or {}
+        title = str(company.get("TITLE") or company.get("title") or "").strip()
+        if title:
+            companyNames[companyId] = title
+
+    return companyNames
+
+
+def fetchBitrixCrmItemDictionaries(
+    portalUrl: str,
+    credential: str,
+    *,
+    assignedByIds: list[int] | None = None,
+    companyIds: list[int] | None = None,
+    statusEntityIds: list[str] | None = None,
+) -> dict[str, dict[object, str]]:
+    statusNames: dict[object, str] = {}
+    for entityId in statusEntityIds or []:
+        try:
+            statusPayload = callBitrixRestMethod(
+                portalUrl,
+                credential,
+                "crm.status.list",
+                {"filter": {"ENTITY_ID": entityId}},
+            )
+        except Exception:
+            continue
+        for status in statusPayload.get("result") or []:
+            statusId = status.get("STATUS_ID")
+            name = status.get("NAME") or status.get("NAME_INIT") or statusId
+            if statusId and name:
+                statusNames[str(statusId)] = str(name)
+
+    return {
+        "status_names": statusNames,
+        "assigned_by_names": fetchBitrixUserNames(portalUrl, credential, assignedByIds or []),
+        "company_names": fetchBitrixCompanyNames(portalUrl, credential, companyIds or []),
+    }
 
 
 def fetchBitrixProfile(portalUrl: str, credential: str) -> dict[str, object]:
