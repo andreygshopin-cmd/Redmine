@@ -173,6 +173,54 @@ def fetchBitrixDeals(
     }
 
 
+def fetchAllBitrixDeals(portalUrl: str, credential: str) -> dict[str, object]:
+    restContext = buildBitrixRestContext(portalUrl, credential)
+    items: list[dict[str, object]] = []
+    start = 0
+    total = 0
+
+    while True:
+        payload = {
+            **restContext.defaultPayload,
+            "entityTypeId": BITRIX_DEAL_ENTITY_TYPE_ID,
+            "select": BITRIX_DEALS_SELECT_FIELDS,
+            "filter": {},
+            "order": {"id": "DESC"},
+            "start": start,
+        }
+        response = requests.post(
+            restContext.endpoint,
+            json=payload,
+            timeout=90,
+        )
+        response.raise_for_status()
+
+        responsePayload = response.json()
+        responseError = extractBitrixError(responsePayload)
+        if responseError is not None:
+            raise RuntimeError(responseError)
+
+        resultPayload = responsePayload.get("result") or {}
+        pageItems = resultPayload.get("items") or []
+        items.extend(pageItems)
+        total = int(responsePayload.get("total") or total or len(items))
+
+        nextStart = resultPayload.get("next", responsePayload.get("next"))
+        if nextStart is None or not pageItems:
+            break
+        start = int(nextStart)
+
+        if len(pageItems) < BITRIX_PAGE_SIZE:
+            break
+
+    return {
+        "portal_url": portalUrl.rstrip("/"),
+        "auth_mode": restContext.authMode,
+        "items": items,
+        "total": total or len(items),
+    }
+
+
 def fetchBitrixProfile(portalUrl: str, credential: str) -> dict[str, object]:
     restContext = buildBitrixRestContext(portalUrl, credential, method="profile.json")
     response = requests.post(

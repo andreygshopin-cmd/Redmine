@@ -20,12 +20,14 @@ from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from src.redmine.bitrix_client import fetchBitrixDeals, fetchBitrixProfile
+from src.redmine.bitrix_client import fetchAllBitrixDeals, fetchBitrixDeals, fetchBitrixProfile
 from src.redmine.config import loadConfig
 from src.redmine.db import (
     checkDatabaseConnection,
+    compareBitrixDealSnapshots,
     countPlanningProjects,
     countIssueSnapshotRuns,
+    createBitrixDealSnapshot,
     createPlanningProject,
     createUser,
     deleteIssueSnapshotForProjectDate,
@@ -37,6 +39,7 @@ from src.redmine.db import (
     ensureProjectsTable,
     ensureUsersTable,
     getFilteredSnapshotIssuesForProjectByDate,
+    getBitrixDealSnapshotItems,
     getSnapshotRunsWithIssuesForProjectYear,
     getSnapshotRunsWithIssuesForProjectDateRange,
     getSnapshotIssuesForProjectByDate,
@@ -48,6 +51,7 @@ from src.redmine.db import (
     listFilteredSnapshotIssuesForProjectByDate,
     listLatestSnapshotIssuesWithParents,
     listIssueSnapshotCaptureErrors,
+    listBitrixDealSnapshotRuns,
     listPlanningProjects,
     listRecentIssueSnapshotRuns,
     listSnapshotDatesForProject,
@@ -8286,6 +8290,84 @@ BITRIX_PAGE_HTML = """<!doctype html>
         #ffffff;
     }
 
+    .wide-card {
+      grid-column: 1 / -1;
+    }
+
+    .snapshot-toolbar {
+      display: flex;
+      align-items: end;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    .snapshot-toolbar label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .snapshot-toolbar input,
+    .snapshot-toolbar select {
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0 12px;
+      font: inherit;
+      background: #ffffff;
+      color: var(--ink);
+    }
+
+    .snapshot-table-wrap {
+      overflow: auto;
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #ffffff;
+    }
+
+    .snapshot-table {
+      width: 100%;
+      min-width: 1040px;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+
+    .snapshot-table th,
+    .snapshot-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(16, 41, 61, 0.08);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .snapshot-table th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #f3f7fa;
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .snapshot-table input {
+      width: 100%;
+      min-width: 90px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 7px 8px;
+      font: inherit;
+      background: #ffffff;
+    }
+
+    .mono {
+      font-variant-numeric: tabular-nums;
+      font-family: "Cascadia Mono", Consolas, monospace;
+    }
+
     @media (max-width: 760px) {
       .shell {
         padding: 18px 14px 40px;
@@ -8378,6 +8460,81 @@ BITRIX_PAGE_HTML = """<!doctype html>
         <div class="status-note">__BITRIX_CREDENTIAL_DEBUG__</div>
         <div class="status-note" id="bitrixDealsStatus">Готово к проверке интеграции.</div>
         <div class="deal-list" id="bitrixDealsList"></div>
+      </article>
+
+      <article class="card wide-card">
+        <h2>Срезы сделок</h2>
+        <p>Скачивает все сделки из Bitrix24, сохраняет срез в базу и показывает сохраненные строки по выбранной дате.</p>
+        <div class="hero-actions">
+          <button class="button button-primary" id="captureBitrixDealSnapshotButton" type="button">Получить срез по сделкам</button>
+          <a class="button" href="/Bitrix#bitrix-deal-compare">Сравнить срезы</a>
+        </div>
+        <div class="snapshot-toolbar">
+          <label>Дата среза
+            <select id="bitrixDealSnapshotDateSelect"></select>
+          </label>
+          <label>Размер страницы
+            <input id="bitrixDealSnapshotPageSizeInput" type="number" min="1" max="5000" value="1000">
+          </label>
+          <button class="button" id="reloadBitrixDealSnapshotButton" type="button">Показать</button>
+          <button class="button" id="resetBitrixDealFiltersButton" type="button">Сбросить фильтры</button>
+        </div>
+        <div class="status-note" id="bitrixDealSnapshotStatus">Срезы сделок еще не загружены.</div>
+        <div class="snapshot-table-wrap">
+          <table class="snapshot-table">
+            <thead>
+              <tr>
+                <th>ID<br><input data-bitrix-filter="deal_id" placeholder="Фильтр"></th>
+                <th>Название<br><input data-bitrix-filter="title" placeholder="Фильтр"></th>
+                <th>Стадия<br><input data-bitrix-filter="stage_id" placeholder="Фильтр"></th>
+                <th>Ответственный<br><input data-bitrix-filter="assigned_by_id" placeholder="Фильтр"></th>
+                <th>Сумма<br><input data-bitrix-filter="opportunity" placeholder="Фильтр"></th>
+                <th>Валюта<br><input data-bitrix-filter="currency_id" placeholder="Фильтр"></th>
+                <th>Воронка<br><input data-bitrix-filter="category_id" placeholder="Фильтр"></th>
+                <th>Создана<br><input data-bitrix-filter="created_time" placeholder="Фильтр"></th>
+                <th>Обновлена<br><input data-bitrix-filter="updated_time" placeholder="Фильтр"></th>
+              </tr>
+            </thead>
+            <tbody id="bitrixDealSnapshotTableBody"></tbody>
+          </table>
+        </div>
+        <div class="hero-actions">
+          <button class="button" id="bitrixDealSnapshotPrevPageButton" type="button">Назад</button>
+          <button class="button" id="bitrixDealSnapshotNextPageButton" type="button">Вперед</button>
+        </div>
+      </article>
+
+      <article class="card wide-card" id="bitrix-deal-compare">
+        <h2>Сравнение срезов сделок</h2>
+        <p>По умолчанию сравниваются последний и предпоследний срезы.</p>
+        <div class="snapshot-toolbar">
+          <label>Левый срез
+            <select id="bitrixDealCompareLeftDateSelect"></select>
+          </label>
+          <label>Правый срез
+            <select id="bitrixDealCompareRightDateSelect"></select>
+          </label>
+          <button class="button" id="compareBitrixDealSnapshotsButton" type="button">Сравнить</button>
+        </div>
+        <div class="status-note" id="bitrixDealCompareStatus">Сравнение появится после загрузки срезов.</div>
+        <div class="snapshot-table-wrap">
+          <table class="snapshot-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Тип</th>
+                <th>Название</th>
+                <th>Стадия</th>
+                <th>Ответственный</th>
+                <th>Сумма</th>
+                <th>Валюта</th>
+                <th>Воронка</th>
+                <th>Обновлена</th>
+              </tr>
+            </thead>
+            <tbody id="bitrixDealCompareTableBody"></tbody>
+          </table>
+        </div>
       </article>
     </section>
   </div>
@@ -8484,6 +8641,240 @@ BITRIX_PAGE_HTML = """<!doctype html>
 
     loadBitrixDealsButton?.addEventListener("click", loadBitrixDeals);
     checkBitrixProfileButton?.addEventListener("click", checkBitrixProfile);
+
+    const captureBitrixDealSnapshotButton = document.getElementById("captureBitrixDealSnapshotButton");
+    const reloadBitrixDealSnapshotButton = document.getElementById("reloadBitrixDealSnapshotButton");
+    const resetBitrixDealFiltersButton = document.getElementById("resetBitrixDealFiltersButton");
+    const bitrixDealSnapshotDateSelect = document.getElementById("bitrixDealSnapshotDateSelect");
+    const bitrixDealSnapshotPageSizeInput = document.getElementById("bitrixDealSnapshotPageSizeInput");
+    const bitrixDealSnapshotStatus = document.getElementById("bitrixDealSnapshotStatus");
+    const bitrixDealSnapshotTableBody = document.getElementById("bitrixDealSnapshotTableBody");
+    const bitrixDealSnapshotPrevPageButton = document.getElementById("bitrixDealSnapshotPrevPageButton");
+    const bitrixDealSnapshotNextPageButton = document.getElementById("bitrixDealSnapshotNextPageButton");
+    const bitrixDealCompareLeftDateSelect = document.getElementById("bitrixDealCompareLeftDateSelect");
+    const bitrixDealCompareRightDateSelect = document.getElementById("bitrixDealCompareRightDateSelect");
+    const compareBitrixDealSnapshotsButton = document.getElementById("compareBitrixDealSnapshotsButton");
+    const bitrixDealCompareStatus = document.getElementById("bitrixDealCompareStatus");
+    const bitrixDealCompareTableBody = document.getElementById("bitrixDealCompareTableBody");
+    const bitrixDealFilterInputs = Array.from(document.querySelectorAll("[data-bitrix-filter]"));
+    let bitrixDealSnapshotPage = 1;
+    let bitrixDealSnapshotTotal = 0;
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatSnapshotValue(value) {
+      if (value === null || value === undefined || value === "") {
+        return "—";
+      }
+      return escapeHtml(value);
+    }
+
+    function setSnapshotStatus(message, isError = false) {
+      bitrixDealSnapshotStatus.textContent = message;
+      bitrixDealSnapshotStatus.classList.toggle("is-error", Boolean(isError));
+    }
+
+    function setCompareStatus(message, isError = false) {
+      bitrixDealCompareStatus.textContent = message;
+      bitrixDealCompareStatus.classList.toggle("is-error", Boolean(isError));
+    }
+
+    function syncBitrixDealDateSelects(dates, selectedDate = "") {
+      const dateItems = Array.isArray(dates) ? dates : [];
+      const optionHtml = ['<option value="">Последний срез</option>']
+        .concat(dateItems.map((dateValue) => `<option value="${escapeHtml(dateValue)}">${escapeHtml(dateValue)}</option>`))
+        .join("");
+      [bitrixDealSnapshotDateSelect, bitrixDealCompareLeftDateSelect, bitrixDealCompareRightDateSelect].forEach((select) => {
+        if (!select) {
+          return;
+        }
+        const previousValue = select.value;
+        select.innerHTML = optionHtml;
+        select.value = selectedDate || previousValue || "";
+      });
+      if (dateItems.length) {
+        bitrixDealCompareRightDateSelect.value = bitrixDealCompareRightDateSelect.value || dateItems[0] || "";
+        bitrixDealCompareLeftDateSelect.value = bitrixDealCompareLeftDateSelect.value || dateItems[1] || dateItems[0] || "";
+      }
+    }
+
+    function renderBitrixDealSnapshotRows(deals) {
+      if (!Array.isArray(deals) || !deals.length) {
+        bitrixDealSnapshotTableBody.innerHTML = '<tr><td colspan="9">Сделки не найдены.</td></tr>';
+        return;
+      }
+      bitrixDealSnapshotTableBody.innerHTML = deals.map((deal) => `
+        <tr>
+          <td class="mono">${formatSnapshotValue(deal.deal_id)}</td>
+          <td>${formatSnapshotValue(deal.title)}</td>
+          <td class="mono">${formatSnapshotValue(deal.stage_id)}</td>
+          <td class="mono">${formatSnapshotValue(deal.assigned_by_id)}</td>
+          <td class="mono">${formatSnapshotValue(deal.opportunity)}</td>
+          <td class="mono">${formatSnapshotValue(deal.currency_id)}</td>
+          <td class="mono">${formatSnapshotValue(deal.category_id)}</td>
+          <td class="mono">${formatSnapshotValue(deal.created_time)}</td>
+          <td class="mono">${formatSnapshotValue(deal.updated_time)}</td>
+        </tr>
+      `).join("");
+    }
+
+    function buildBitrixDealSnapshotParams() {
+      const params = new URLSearchParams();
+      params.set("page", String(bitrixDealSnapshotPage));
+      params.set("page_size", String(bitrixDealSnapshotPageSizeInput.value || "1000"));
+      if (bitrixDealSnapshotDateSelect.value) {
+        params.set("captured_for_date", bitrixDealSnapshotDateSelect.value);
+      }
+      bitrixDealFilterInputs.forEach((input) => {
+        const key = input.dataset.bitrixFilter;
+        const value = String(input.value || "").trim();
+        if (key && value) {
+          params.set(key, value);
+        }
+      });
+      return params;
+    }
+
+    async function loadBitrixDealSnapshotItems() {
+      setSnapshotStatus("Загружаю сохраненный срез сделок...");
+      const response = await fetch(`/api/bitrix/deal-snapshots/items?${buildBitrixDealSnapshotParams().toString()}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || "Не удалось загрузить срез сделок.");
+      }
+
+      bitrixDealSnapshotTotal = Number(payload.total_count || 0);
+      syncBitrixDealDateSelects(payload.available_dates || [], String(payload.snapshot_run?.captured_for_date || ""));
+      renderBitrixDealSnapshotRows(payload.deals || []);
+      const pageSize = Number(payload.page_size || bitrixDealSnapshotPageSizeInput.value || 1000);
+      const fromRow = bitrixDealSnapshotTotal ? ((bitrixDealSnapshotPage - 1) * pageSize + 1) : 0;
+      const toRow = Math.min(bitrixDealSnapshotTotal, bitrixDealSnapshotPage * pageSize);
+      setSnapshotStatus(`Срез: ${payload.snapshot_run?.captured_for_date || "нет"}. Показано ${fromRow}-${toRow} из ${bitrixDealSnapshotTotal}.`);
+      bitrixDealSnapshotPrevPageButton.disabled = bitrixDealSnapshotPage <= 1;
+      bitrixDealSnapshotNextPageButton.disabled = toRow >= bitrixDealSnapshotTotal;
+    }
+
+    async function safeLoadBitrixDealSnapshotItems() {
+      try {
+        await loadBitrixDealSnapshotItems();
+      } catch (error) {
+        setSnapshotStatus(String(error.message || error), true);
+      }
+    }
+
+    async function captureBitrixDealSnapshot() {
+      captureBitrixDealSnapshotButton.disabled = true;
+      setSnapshotStatus("Скачиваю все сделки из Bitrix24 и сохраняю срез...");
+      try {
+        const response = await fetch("/api/bitrix/deal-snapshots/capture", { method: "POST" });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось сохранить срез сделок.");
+        }
+        bitrixDealSnapshotPage = 1;
+        bitrixDealSnapshotDateSelect.value = payload.captured_for_date || "";
+        setSnapshotStatus(payload.detail || "Срез сделок сохранен.");
+        await loadBitrixDealSnapshotItems();
+        await loadBitrixDealSnapshotCompare();
+      } catch (error) {
+        setSnapshotStatus(String(error.message || error), true);
+      } finally {
+        captureBitrixDealSnapshotButton.disabled = false;
+      }
+    }
+
+    function renderBitrixDealCompareRows(changes) {
+      if (!Array.isArray(changes) || !changes.length) {
+        bitrixDealCompareTableBody.innerHTML = '<tr><td colspan="9">Изменений между срезами не найдено.</td></tr>';
+        return;
+      }
+      bitrixDealCompareTableBody.innerHTML = changes.map((change) => `
+        <tr>
+          <td class="mono">${formatSnapshotValue(change.deal_id)}</td>
+          <td class="mono">${formatSnapshotValue(change.change_type)}</td>
+          <td>${formatSnapshotValue(change.left_title)} → ${formatSnapshotValue(change.right_title)}</td>
+          <td class="mono">${formatSnapshotValue(change.left_stage_id)} → ${formatSnapshotValue(change.right_stage_id)}</td>
+          <td class="mono">${formatSnapshotValue(change.left_assigned_by_id)} → ${formatSnapshotValue(change.right_assigned_by_id)}</td>
+          <td class="mono">${formatSnapshotValue(change.left_opportunity)} → ${formatSnapshotValue(change.right_opportunity)}</td>
+          <td class="mono">${formatSnapshotValue(change.left_currency_id)} → ${formatSnapshotValue(change.right_currency_id)}</td>
+          <td class="mono">${formatSnapshotValue(change.left_category_id)} → ${formatSnapshotValue(change.right_category_id)}</td>
+          <td class="mono">${formatSnapshotValue(change.left_updated_time)} → ${formatSnapshotValue(change.right_updated_time)}</td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadBitrixDealSnapshotCompare() {
+      setCompareStatus("Сравниваю срезы сделок...");
+      const params = new URLSearchParams();
+      if (bitrixDealCompareLeftDateSelect.value) {
+        params.set("left_date", bitrixDealCompareLeftDateSelect.value);
+      }
+      if (bitrixDealCompareRightDateSelect.value) {
+        params.set("right_date", bitrixDealCompareRightDateSelect.value);
+      }
+      const response = await fetch(`/api/bitrix/deal-snapshots/compare?${params.toString()}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || "Не удалось сравнить срезы сделок.");
+      }
+      syncBitrixDealDateSelects(payload.available_dates || []);
+      renderBitrixDealCompareRows(payload.changes || []);
+      setCompareStatus(`Сравнение: ${payload.left_run?.captured_for_date || "нет"} → ${payload.right_run?.captured_for_date || "нет"}. Изменений: ${(payload.changes || []).length}.`);
+    }
+
+    async function safeLoadBitrixDealSnapshotCompare() {
+      try {
+        await loadBitrixDealSnapshotCompare();
+      } catch (error) {
+        setCompareStatus(String(error.message || error), true);
+      }
+    }
+
+    captureBitrixDealSnapshotButton?.addEventListener("click", captureBitrixDealSnapshot);
+    reloadBitrixDealSnapshotButton?.addEventListener("click", () => {
+      bitrixDealSnapshotPage = 1;
+      safeLoadBitrixDealSnapshotItems();
+    });
+    resetBitrixDealFiltersButton?.addEventListener("click", () => {
+      bitrixDealFilterInputs.forEach((input) => { input.value = ""; });
+      bitrixDealSnapshotPage = 1;
+      safeLoadBitrixDealSnapshotItems();
+    });
+    bitrixDealFilterInputs.forEach((input) => {
+      input.addEventListener("change", () => {
+        bitrixDealSnapshotPage = 1;
+        safeLoadBitrixDealSnapshotItems();
+      });
+    });
+    bitrixDealSnapshotDateSelect?.addEventListener("change", () => {
+      bitrixDealSnapshotPage = 1;
+      safeLoadBitrixDealSnapshotItems();
+    });
+    bitrixDealSnapshotPageSizeInput?.addEventListener("change", () => {
+      bitrixDealSnapshotPage = 1;
+      safeLoadBitrixDealSnapshotItems();
+    });
+    bitrixDealSnapshotPrevPageButton?.addEventListener("click", () => {
+      bitrixDealSnapshotPage = Math.max(1, bitrixDealSnapshotPage - 1);
+      safeLoadBitrixDealSnapshotItems();
+    });
+    bitrixDealSnapshotNextPageButton?.addEventListener("click", () => {
+      bitrixDealSnapshotPage += 1;
+      safeLoadBitrixDealSnapshotItems();
+    });
+    compareBitrixDealSnapshotsButton?.addEventListener("click", safeLoadBitrixDealSnapshotCompare);
+    bitrixDealCompareLeftDateSelect?.addEventListener("change", safeLoadBitrixDealSnapshotCompare);
+    bitrixDealCompareRightDateSelect?.addEventListener("change", safeLoadBitrixDealSnapshotCompare);
+
+    safeLoadBitrixDealSnapshotItems();
+    safeLoadBitrixDealSnapshotCompare();
   </script>
 </body>
 </html>"""
@@ -11830,6 +12221,90 @@ def getBitrixProfile() -> dict[str, object]:
         raise HTTPException(status_code=502, detail=detail) from error
     except RuntimeError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
+
+
+@app.post("/api/bitrix/deal-snapshots/capture")
+def captureBitrixDealSnapshot() -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+    requireBitrixConfig()
+
+    capturedForDate = datetime.now(UTC).date().isoformat()
+    try:
+        payload = fetchAllBitrixDeals(
+            portalUrl=config.bitrixPortalUrl,
+            credential=config.bitrixCredential,
+        )
+        snapshot = createBitrixDealSnapshot(payload.get("items") or [], capturedForDate)
+    except requests.HTTPError as error:
+        detail = "Bitrix24 deals snapshot request failed."
+        if error.response is not None:
+            detail = f"{detail} HTTP {error.response.status_code}."
+        raise HTTPException(status_code=502, detail=detail) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+    return {
+        **snapshot,
+        "auth_mode": payload.get("auth_mode"),
+        "bitrix_total": payload.get("total"),
+        "detail": f"Срез сделок сохранен: {snapshot['total_deals']} строк.",
+    }
+
+
+@app.get("/api/bitrix/deal-snapshots")
+def getBitrixDealSnapshotRuns(limit: int = Query(50, ge=1, le=500)) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    return {"snapshot_runs": listBitrixDealSnapshotRuns(limit)}
+
+
+@app.get("/api/bitrix/deal-snapshots/items")
+def getBitrixDealSnapshotItemsApi(
+    captured_for_date: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(1000, ge=1, le=5000),
+    deal_id: str | None = Query(None),
+    title: str | None = Query(None),
+    stage_id: str | None = Query(None),
+    assigned_by_id: str | None = Query(None),
+    opportunity: str | None = Query(None),
+    currency_id: str | None = Query(None),
+    category_id: str | None = Query(None),
+    created_time: str | None = Query(None),
+    updated_time: str | None = Query(None),
+) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    return getBitrixDealSnapshotItems(
+        captured_for_date,
+        page=page,
+        pageSize=page_size,
+        filters={
+            "deal_id": deal_id,
+            "title": title,
+            "stage_id": stage_id,
+            "assigned_by_id": assigned_by_id,
+            "opportunity": opportunity,
+            "currency_id": currency_id,
+            "category_id": category_id,
+            "created_time": created_time,
+            "updated_time": updated_time,
+        },
+    )
+
+
+@app.get("/api/bitrix/deal-snapshots/compare")
+def compareBitrixDealSnapshotsApi(
+    left_date: str | None = Query(None),
+    right_date: str | None = Query(None),
+) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    return compareBitrixDealSnapshots(left_date, right_date)
 
 
 @app.get("/snapshot-rules", response_class=HTMLResponse)

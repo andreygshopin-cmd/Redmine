@@ -112,6 +112,59 @@ def testGetBitrixProfileEndpointReturnsProfile(monkeypatch) -> None:
     assert captured["credential"] == "1/test-webhook"
 
 
+def testCaptureBitrixDealSnapshotEndpointStoresDeals(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module.config, "bitrixPortalUrl", "https://sms-it.bitrix24.ru")
+    monkeypatch.setattr(app_module.config, "bitrixCredential", "1/test-webhook")
+    monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+    monkeypatch.setattr(
+        app_module,
+        "fetchAllBitrixDeals",
+        lambda **kwargs: {
+            "auth_mode": "webhook_path",
+            "total": 1,
+            "items": [{"id": 501, "title": "Deal #501"}],
+        },
+    )
+    monkeypatch.setattr(
+        app_module,
+        "createBitrixDealSnapshot",
+        lambda deals, capturedForDate: {
+            "snapshot_run_id": 10,
+            "captured_for_date": capturedForDate,
+            "total_deals": len(deals),
+        },
+    )
+
+    response = client.post("/api/bitrix/deal-snapshots/capture")
+
+    assert response.status_code == 200
+    assert response.json()["snapshot_run_id"] == 10
+    assert response.json()["total_deals"] == 1
+
+
+def testCompareBitrixDealSnapshotsEndpointReturnsChanges(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+    monkeypatch.setattr(
+        app_module,
+        "compareBitrixDealSnapshots",
+        lambda leftDate, rightDate: {
+            "left_run": {"captured_for_date": leftDate},
+            "right_run": {"captured_for_date": rightDate},
+            "changes": [{"deal_id": 501, "change_type": "changed"}],
+            "available_dates": [rightDate, leftDate],
+        },
+    )
+
+    response = client.get("/api/bitrix/deal-snapshots/compare?left_date=2026-05-01&right_date=2026-05-06")
+
+    assert response.status_code == 200
+    assert response.json()["changes"][0]["deal_id"] == 501
+
+
 def testGetTimeReturnsServerTimePayload() -> None:
     payload = getTime()
 

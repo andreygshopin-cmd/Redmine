@@ -31,10 +31,12 @@ engine = create_engine(normalizedDatabaseUrl, pool_pre_ping=True) if normalizedD
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if engine else None
 _projectsTableEnsureLock = Lock()
 _issueSnapshotTablesEnsureLock = Lock()
+_bitrixDealSnapshotTablesEnsureLock = Lock()
 _planningProjectsTableEnsureLock = Lock()
 _usersTableEnsureLock = Lock()
 _projectsTableEnsured = False
 _issueSnapshotTablesEnsured = False
+_bitrixDealSnapshotTablesEnsured = False
 _planningProjectsTableEnsured = False
 _usersTableEnsured = False
 
@@ -435,6 +437,88 @@ def ensureIssueSnapshotTables() -> None:
             )
 
         _issueSnapshotTablesEnsured = True
+
+
+def ensureBitrixDealSnapshotTables() -> None:
+    global _bitrixDealSnapshotTablesEnsured
+
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    if _bitrixDealSnapshotTablesEnsured:
+        return
+
+    with _bitrixDealSnapshotTablesEnsureLock:
+        if _bitrixDealSnapshotTablesEnsured:
+            return
+
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS bitrix_deal_snapshot_runs (
+                        id BIGSERIAL PRIMARY KEY,
+                        captured_for_date DATE NOT NULL DEFAULT CURRENT_DATE,
+                        captured_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        total_deals INTEGER NOT NULL DEFAULT 0
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS bitrix_deal_snapshot_items (
+                        id BIGSERIAL PRIMARY KEY,
+                        snapshot_run_id BIGINT NOT NULL REFERENCES bitrix_deal_snapshot_runs(id) ON DELETE CASCADE,
+                        deal_id BIGINT NOT NULL,
+                        title TEXT,
+                        stage_id TEXT,
+                        assigned_by_id BIGINT,
+                        opportunity DOUBLE PRECISION,
+                        currency_id TEXT,
+                        category_id BIGINT,
+                        created_time TIMESTAMPTZ NULL,
+                        updated_time TIMESTAMPTZ NULL,
+                        raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_bitrix_deal_snapshot_runs_date_unique
+                    ON bitrix_deal_snapshot_runs(captured_for_date)
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_bitrix_deal_snapshot_items_run_deal_unique
+                    ON bitrix_deal_snapshot_items(snapshot_run_id, deal_id)
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_bitrix_deal_snapshot_items_run
+                    ON bitrix_deal_snapshot_items(snapshot_run_id)
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_bitrix_deal_snapshot_items_stage
+                    ON bitrix_deal_snapshot_items(snapshot_run_id, stage_id)
+                    """
+                )
+            )
+
+        _bitrixDealSnapshotTablesEnsured = True
 
 
 def readIssueSnapshotCaptureStatusRecord() -> dict[str, object] | None:
@@ -4105,3 +4189,323 @@ def createIssueSnapshotRun(
                 connection.execute(timeEntryInsertStatement, payloadChunk)
 
     return snapshotRunId
+
+
+def _toIntOrNone(value: object) -> int | None:
+    try:
+        if value is None or value == "":
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _toFloatOrNone(value: object) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def createBitrixDealSnapshot(deals: Sequence[dict[str, object]], capturedForDate: str) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    normalizedDeals: list[dict[str, object]] = []
+    for deal in deals:
+        dealId = _toIntOrNone(deal.get("id"))
+        if dealId is None:
+            continue
+        normalizedDeals.append(
+            {
+                "deal_id": dealId,
+                "title": deal.get("title"),
+                "stage_id": deal.get("stageId"),
+                "assigned_by_id": _toIntOrNone(deal.get("assignedById")),
+                "opportunity": _toFloatOrNone(deal.get("opportunity")),
+                "currency_id": deal.get("currencyId"),
+                "category_id": _toIntOrNone(deal.get("categoryId")),
+                "created_time": deal.get("createdTime"),
+                "updated_time": deal.get("updatedTime"),
+                "raw_payload": json.dumps(deal, ensure_ascii=False),
+            }
+        )
+
+    with engine.begin() as connection:
+        existingRunId = connection.execute(
+            text(
+                """
+                SELECT id
+                FROM bitrix_deal_snapshot_runs
+                WHERE captured_for_date = CAST(:captured_for_date AS DATE)
+                """
+            ),
+            {"captured_for_date": capturedForDate},
+        ).scalar_one_or_none()
+
+        if existingRunId is not None:
+            snapshotRunId = int(existingRunId)
+            connection.execute(
+                text(
+                    """
+                    DELETE FROM bitrix_deal_snapshot_items
+                    WHERE snapshot_run_id = :snapshot_run_id
+                    """
+                ),
+                {"snapshot_run_id": snapshotRunId},
+            )
+            connection.execute(
+                text(
+                    """
+                    UPDATE bitrix_deal_snapshot_runs
+                    SET captured_at = CURRENT_TIMESTAMP,
+                        total_deals = :total_deals
+                    WHERE id = :snapshot_run_id
+                    """
+                ),
+                {"snapshot_run_id": snapshotRunId, "total_deals": len(normalizedDeals)},
+            )
+        else:
+            snapshotRunId = int(
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO bitrix_deal_snapshot_runs (captured_for_date, total_deals)
+                        VALUES (CAST(:captured_for_date AS DATE), :total_deals)
+                        RETURNING id
+                        """
+                    ),
+                    {"captured_for_date": capturedForDate, "total_deals": len(normalizedDeals)},
+                ).scalar_one()
+            )
+
+        insertStatement = text(
+            """
+            INSERT INTO bitrix_deal_snapshot_items (
+                snapshot_run_id, deal_id, title, stage_id, assigned_by_id, opportunity,
+                currency_id, category_id, created_time, updated_time, raw_payload
+            ) VALUES (
+                :snapshot_run_id, :deal_id, :title, :stage_id, :assigned_by_id, :opportunity,
+                :currency_id, :category_id, :created_time, :updated_time, CAST(:raw_payload AS JSONB)
+            )
+            """
+        )
+        insertPayload = [{**item, "snapshot_run_id": snapshotRunId} for item in normalizedDeals]
+        for payloadChunk in chunkSequence(insertPayload, SNAPSHOT_INSERT_BATCH_SIZE):
+            connection.execute(insertStatement, payloadChunk)
+
+    return {"snapshot_run_id": snapshotRunId, "captured_for_date": capturedForDate, "total_deals": len(normalizedDeals)}
+
+
+def listBitrixDealSnapshotRuns(limit: int = 50) -> list[dict[str, object]]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    safeLimit = max(1, min(int(limit or 50), 500))
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT id, captured_for_date, captured_at, total_deals
+                FROM bitrix_deal_snapshot_runs
+                ORDER BY captured_for_date DESC, captured_at DESC, id DESC
+                LIMIT :limit_value
+                """
+            ),
+            {"limit_value": safeLimit},
+        )
+        return [dict(row._mapping) for row in rows]
+
+
+def listBitrixDealSnapshotDates() -> list[str]:
+    return [str(row["captured_for_date"]) for row in listBitrixDealSnapshotRuns(500)]
+
+
+def getBitrixDealSnapshotItems(
+    capturedForDate: str | None = None,
+    *,
+    page: int = 1,
+    pageSize: int = 1000,
+    filters: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    safePage = max(1, int(page or 1))
+    safePageSize = max(1, min(int(pageSize or 1000), 5000))
+    params: dict[str, object] = {"limit_value": safePageSize, "offset_value": (safePage - 1) * safePageSize}
+    whereClauses: list[str] = []
+    filterValues = dict(filters or {})
+
+    with engine.connect() as connection:
+        if capturedForDate:
+            params["captured_for_date"] = capturedForDate
+            run = connection.execute(
+                text(
+                    """
+                    SELECT id, captured_for_date, captured_at, total_deals
+                    FROM bitrix_deal_snapshot_runs
+                    WHERE captured_for_date = CAST(:captured_for_date AS DATE)
+                    ORDER BY captured_at DESC, id DESC
+                    LIMIT 1
+                    """
+                ),
+                params,
+            ).mappings().first()
+        else:
+            run = connection.execute(
+                text(
+                    """
+                    SELECT id, captured_for_date, captured_at, total_deals
+                    FROM bitrix_deal_snapshot_runs
+                    ORDER BY captured_for_date DESC, captured_at DESC, id DESC
+                    LIMIT 1
+                    """
+                )
+            ).mappings().first()
+
+        if run is None:
+            return {
+                "snapshot_run": None,
+                "deals": [],
+                "available_dates": listBitrixDealSnapshotDates(),
+                "page": safePage,
+                "page_size": safePageSize,
+                "total_count": 0,
+            }
+
+        params["snapshot_run_id"] = int(run["id"])
+        for fieldName, columnName in {
+            "deal_id": "CAST(deal_id AS TEXT)",
+            "title": "title",
+            "stage_id": "stage_id",
+            "assigned_by_id": "CAST(assigned_by_id AS TEXT)",
+            "opportunity": "CAST(opportunity AS TEXT)",
+            "currency_id": "currency_id",
+            "category_id": "CAST(category_id AS TEXT)",
+            "created_time": "CAST(created_time AS TEXT)",
+            "updated_time": "CAST(updated_time AS TEXT)",
+        }.items():
+            value = str(filterValues.get(fieldName) or "").strip()
+            if value:
+                paramName = f"filter_{fieldName}"
+                whereClauses.append(f"LOWER(COALESCE({columnName}, '')) LIKE :{paramName}")
+                params[paramName] = f"%{value.lower()}%"
+
+        whereSql = " AND ".join(["snapshot_run_id = :snapshot_run_id", *whereClauses])
+        totalCount = int(
+            connection.execute(
+                text(f"SELECT COUNT(*) FROM bitrix_deal_snapshot_items WHERE {whereSql}"),
+                params,
+            ).scalar_one()
+        )
+        rows = connection.execute(
+            text(
+                f"""
+                SELECT id, snapshot_run_id, deal_id, title, stage_id, assigned_by_id,
+                       opportunity, currency_id, category_id, created_time, updated_time
+                FROM bitrix_deal_snapshot_items
+                WHERE {whereSql}
+                ORDER BY deal_id DESC
+                LIMIT :limit_value OFFSET :offset_value
+                """
+            ),
+            params,
+        )
+        return {
+            "snapshot_run": dict(run),
+            "deals": [dict(row._mapping) for row in rows],
+            "available_dates": listBitrixDealSnapshotDates(),
+            "page": safePage,
+            "page_size": safePageSize,
+            "total_count": totalCount,
+        }
+
+
+def compareBitrixDealSnapshots(leftDate: str | None = None, rightDate: str | None = None) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    runs = listBitrixDealSnapshotRuns(500)
+    if not runs:
+        return {"left_run": None, "right_run": None, "changes": [], "available_dates": []}
+
+    def resolveRun(dateValue: str | None, fallbackIndex: int) -> dict[str, object] | None:
+        if dateValue:
+            for runItem in runs:
+                if str(runItem.get("captured_for_date")) == str(dateValue):
+                    return runItem
+        if len(runs) > fallbackIndex:
+            return runs[fallbackIndex]
+        return None
+
+    rightRun = resolveRun(rightDate, 0)
+    leftRun = resolveRun(leftDate, 1 if len(runs) > 1 else 0)
+    if leftRun is None or rightRun is None:
+        return {
+            "left_run": leftRun,
+            "right_run": rightRun,
+            "changes": [],
+            "available_dates": [str(run["captured_for_date"]) for run in runs],
+        }
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                WITH left_items AS (
+                    SELECT * FROM bitrix_deal_snapshot_items WHERE snapshot_run_id = :left_run_id
+                ),
+                right_items AS (
+                    SELECT * FROM bitrix_deal_snapshot_items WHERE snapshot_run_id = :right_run_id
+                )
+                SELECT
+                    COALESCE(l.deal_id, r.deal_id) AS deal_id,
+                    l.title AS left_title,
+                    r.title AS right_title,
+                    l.stage_id AS left_stage_id,
+                    r.stage_id AS right_stage_id,
+                    l.assigned_by_id AS left_assigned_by_id,
+                    r.assigned_by_id AS right_assigned_by_id,
+                    l.opportunity AS left_opportunity,
+                    r.opportunity AS right_opportunity,
+                    l.currency_id AS left_currency_id,
+                    r.currency_id AS right_currency_id,
+                    l.category_id AS left_category_id,
+                    r.category_id AS right_category_id,
+                    l.updated_time AS left_updated_time,
+                    r.updated_time AS right_updated_time,
+                    CASE
+                        WHEN l.deal_id IS NULL THEN 'added'
+                        WHEN r.deal_id IS NULL THEN 'removed'
+                        ELSE 'changed'
+                    END AS change_type
+                FROM left_items l
+                FULL OUTER JOIN right_items r ON r.deal_id = l.deal_id
+                WHERE l.deal_id IS NULL
+                   OR r.deal_id IS NULL
+                   OR l.title IS DISTINCT FROM r.title
+                   OR l.stage_id IS DISTINCT FROM r.stage_id
+                   OR l.assigned_by_id IS DISTINCT FROM r.assigned_by_id
+                   OR l.opportunity IS DISTINCT FROM r.opportunity
+                   OR l.currency_id IS DISTINCT FROM r.currency_id
+                   OR l.category_id IS DISTINCT FROM r.category_id
+                   OR l.updated_time IS DISTINCT FROM r.updated_time
+                ORDER BY COALESCE(l.deal_id, r.deal_id) DESC
+                """
+            ),
+            {"left_run_id": int(leftRun["id"]), "right_run_id": int(rightRun["id"])},
+        )
+
+    return {
+        "left_run": leftRun,
+        "right_run": rightRun,
+        "changes": [dict(row._mapping) for row in rows],
+        "available_dates": [str(run["captured_for_date"]) for run in runs],
+    }
