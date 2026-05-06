@@ -6,6 +6,7 @@ BITRIX_DEAL_ENTITY_TYPE_ID = 2
 BITRIX_LEAD_ENTITY_TYPE_ID = 1
 BITRIX_INVOICE_ENTITY_TYPE_ID = 31
 BITRIX_PAGE_SIZE = 50
+BITRIX_CAPTURE_BATCH_SIZE = 1000
 BITRIX_PLACEHOLDER_VALUES = {
     "replace_me",
     "put_incoming_webhook_or_oauth_token_here",
@@ -272,30 +273,44 @@ def fetchBitrixCrmItemsPage(
     entityTypeId: int,
     start: int = 0,
     selectFields: list[str] | None = None,
+    batchSize: int = BITRIX_CAPTURE_BATCH_SIZE,
 ) -> dict[str, object]:
     restContext = buildBitrixRestContext(portalUrl, credential)
-    responsePayload = callBitrixRestMethod(
-        portalUrl,
-        credential,
-        "crm.item.list",
-        {
-            **restContext.defaultPayload,
-            "entityTypeId": entityTypeId,
-            "select": selectFields or BITRIX_CRM_COMMON_SELECT_FIELDS,
-            "filter": {},
-            "order": {"id": "DESC"},
-            "start": max(0, int(start or 0)),
-        },
-        timeout=90,
-    )
-    resultPayload = responsePayload.get("result") or {}
-    pageItems = resultPayload.get("items") or []
-    nextStart = resultPayload.get("next", responsePayload.get("next"))
+    requestedBatchSize = max(BITRIX_PAGE_SIZE, min(int(batchSize or BITRIX_CAPTURE_BATCH_SIZE), BITRIX_CAPTURE_BATCH_SIZE))
+    items: list[dict[str, object]] = []
+    currentStart = max(0, int(start or 0))
+    total = 0
+    nextStart = currentStart
+
+    while len(items) < requestedBatchSize and nextStart is not None:
+        responsePayload = callBitrixRestMethod(
+            portalUrl,
+            credential,
+            "crm.item.list",
+            {
+                **restContext.defaultPayload,
+                "entityTypeId": entityTypeId,
+                "select": selectFields or BITRIX_CRM_COMMON_SELECT_FIELDS,
+                "filter": {},
+                "order": {"id": "DESC"},
+                "start": currentStart,
+            },
+            timeout=30,
+        )
+        resultPayload = responsePayload.get("result") or {}
+        pageItems = resultPayload.get("items") or []
+        items.extend(pageItems)
+        total = int(responsePayload.get("total") or total or len(items))
+        nextStart = resultPayload.get("next", responsePayload.get("next"))
+        if nextStart is None or not pageItems or len(pageItems) < BITRIX_PAGE_SIZE:
+            break
+        currentStart = int(nextStart)
+
     return {
         "portal_url": portalUrl.rstrip("/"),
         "auth_mode": restContext.authMode,
-        "items": pageItems,
-        "total": int(responsePayload.get("total") or len(pageItems)),
+        "items": items,
+        "total": total or len(items),
         "next": nextStart,
         "start": start,
     }

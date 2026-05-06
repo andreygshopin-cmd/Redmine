@@ -8647,6 +8647,16 @@ BITRIX_PAGE_HTML = """<!doctype html>
       bitrixDealSnapshotStatus.classList.toggle("is-error", Boolean(isError));
     }
 
+    async function fetchWithTimeout(url, options = {}, timeoutMs = 45000) {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    }
+
     function syncBitrixDealDateSelects(dates, selectedDate = "") {
       const dateItems = Array.isArray(dates) ? dates : [];
       const optionHtml = ['<option value="">Последний срез</option>']
@@ -8742,19 +8752,32 @@ BITRIX_PAGE_HTML = """<!doctype html>
           let nextStart = 0;
           let done = false;
           while (!done) {
-            setSnapshotStatus(`Скачиваю ${entity.label}: запрашиваю пакет с позиции ${nextStart}...`);
-            const pageResponse = await fetch("/api/bitrix/snapshots/capture/page", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                session_id: startPayload.session_id,
-                entity: entity.key,
-                start: nextStart,
-              }),
-            });
-            const pagePayload = await pageResponse.json();
-            if (!pageResponse.ok) {
-              throw new Error(pagePayload.detail || `Не удалось скачать ${entity.label}.`);
+            let pagePayload = null;
+            for (let attempt = 1; attempt <= 3; attempt += 1) {
+              setSnapshotStatus(`Скачиваю ${entity.label}: пакет до 1000 строк с позиции ${nextStart}, попытка ${attempt}/3...`);
+              try {
+                const pageResponse = await fetchWithTimeout("/api/bitrix/snapshots/capture/page", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    session_id: startPayload.session_id,
+                    entity: entity.key,
+                    start: nextStart,
+                  }),
+                }, 120000);
+                pagePayload = await pageResponse.json();
+                if (!pageResponse.ok) {
+                  throw new Error(pagePayload.detail || `Не удалось скачать ${entity.label}.`);
+                }
+                break;
+              } catch (error) {
+                if (attempt >= 3) {
+                  throw error;
+                }
+                const retryMessage = error?.name === "AbortError" ? "таймаут Bitrix" : String(error.message || error);
+                setSnapshotStatus(`Скачиваю ${entity.label}: ${retryMessage}. Повторяю пакет с позиции ${nextStart}...`, true);
+                await new Promise((resolve) => window.setTimeout(resolve, 1500));
+              }
             }
             const total = Number(pagePayload.total || 0);
             const fetched = Number(pagePayload.fetched || 0);
@@ -8778,7 +8801,10 @@ BITRIX_PAGE_HTML = """<!doctype html>
         setSnapshotStatus(`Срез сохранен. ${summaryText}.`);
         await loadBitrixDealSnapshotItems();
       } catch (error) {
-        setSnapshotStatus(String(error.message || error), true);
+        const message = error?.name === "AbortError"
+          ? "Пакет Bitrix не ответил за 120 секунд. Запустите получение еще раз; уже видно, на какой сущности и позиции остановилось."
+          : String(error.message || error);
+        setSnapshotStatus(message, true);
       } finally {
         captureBitrixDealSnapshotButton.disabled = false;
         deleteBitrixDealSnapshotButton.disabled = false;
