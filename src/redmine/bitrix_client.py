@@ -436,7 +436,6 @@ def fetchBitrixDealDictionaries(
 
 
 def fetchBitrixUserNames(portalUrl: str, credential: str, userIds: list[int]) -> dict[object, str]:
-    userNames: dict[object, str] = {}
     uniqueUserIds: list[int] = []
     for value in userIds:
         try:
@@ -447,8 +446,29 @@ def fetchBitrixUserNames(portalUrl: str, credential: str, userIds: list[int]) ->
             uniqueUserIds.append(userId)
 
     uniqueUserIds = sorted(set(uniqueUserIds))
-    for userId in uniqueUserIds:
-        users = []
+    if not uniqueUserIds:
+        return {}
+
+    userNames: dict[object, str] = {}
+    neededIds = set(uniqueUserIds)
+    for payload in (
+        {"filter": {"ID": uniqueUserIds}},
+        {"FILTER": {"ID": uniqueUserIds}},
+    ):
+        try:
+            usersPayload = callBitrixRestMethod(portalUrl, credential, "user.get", payload)
+        except Exception:
+            continue
+        userNames.update(extractBitrixUserNames(usersPayload.get("result") or [], neededIds))
+        if neededIds <= set(userNames):
+            return userNames
+
+    missingUserIds = [userId for userId in uniqueUserIds if userId not in userNames]
+    if missingUserIds:
+        userNames.update(fetchBitrixAllUserNames(portalUrl, credential, missingUserIds))
+
+    missingUserIds = [userId for userId in uniqueUserIds if userId not in userNames]
+    for userId in missingUserIds:
         for payload in (
             {"filter": {"ID": userId}},
             {"FILTER": {"ID": userId}},
@@ -458,26 +478,30 @@ def fetchBitrixUserNames(portalUrl: str, credential: str, userIds: list[int]) ->
                 usersPayload = callBitrixRestMethod(portalUrl, credential, "user.get", payload)
             except Exception:
                 continue
-            users = usersPayload.get("result") or []
-            if users:
+            userNames.update(extractBitrixUserNames(usersPayload.get("result") or [], {userId}))
+            if userId in userNames:
                 break
-        if not users:
+
+    return userNames
+
+
+def extractBitrixUserNames(users: list[dict[str, object]], neededIds: set[int]) -> dict[object, str]:
+    userNames: dict[object, str] = {}
+    for user in users:
+        resultUserId = user.get("ID") or user.get("id")
+        try:
+            normalizedUserId = int(resultUserId or 0)
+        except (TypeError, ValueError):
             continue
-
-        for user in users:
-            resultUserId = user.get("ID") or user.get("id")
-            lastName = str(user.get("LAST_NAME") or "").strip()
-            name = str(user.get("NAME") or "").strip()
-            secondName = str(user.get("SECOND_NAME") or "").strip()
-            displayName = " ".join(part for part in [lastName, name, secondName] if part)
-            displayName = displayName or str(user.get("LOGIN") or "").strip() or str(resultUserId or "").strip()
-            if resultUserId and displayName:
-                userNames[int(resultUserId)] = displayName
-
-    missingUserIds = [userId for userId in uniqueUserIds if userId not in userNames]
-    if missingUserIds:
-        userNames.update(fetchBitrixAllUserNames(portalUrl, credential, missingUserIds))
-
+        if normalizedUserId not in neededIds:
+            continue
+        lastName = str(user.get("LAST_NAME") or "").strip()
+        name = str(user.get("NAME") or "").strip()
+        secondName = str(user.get("SECOND_NAME") or "").strip()
+        displayName = " ".join(part for part in [lastName, name, secondName] if part)
+        displayName = displayName or str(user.get("LOGIN") or "").strip() or str(resultUserId or "").strip()
+        if displayName:
+            userNames[normalizedUserId] = displayName
     return userNames
 
 
@@ -500,21 +524,7 @@ def fetchBitrixAllUserNames(portalUrl: str, credential: str, neededUserIds: list
         if not users:
             break
 
-        for user in users:
-            resultUserId = user.get("ID") or user.get("id")
-            try:
-                normalizedUserId = int(resultUserId or 0)
-            except (TypeError, ValueError):
-                continue
-            if normalizedUserId not in neededIds:
-                continue
-            lastName = str(user.get("LAST_NAME") or "").strip()
-            name = str(user.get("NAME") or "").strip()
-            secondName = str(user.get("SECOND_NAME") or "").strip()
-            displayName = " ".join(part for part in [lastName, name, secondName] if part)
-            displayName = displayName or str(user.get("LOGIN") or "").strip() or str(resultUserId or "").strip()
-            if displayName:
-                userNames[normalizedUserId] = displayName
+        userNames.update(extractBitrixUserNames(users, neededIds))
 
         nextStart = usersPayload.get("next")
         if nextStart is None or len(users) < BITRIX_PAGE_SIZE:

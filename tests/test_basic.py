@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from src.redmine import app as app_module
 from src.redmine.app import app, getTime, readBitrixDealSnapshotComparePage, readBitrixPage, readRoot
+from src.redmine.bitrix_client import fetchBitrixUserNames
 from src.redmine.config import loadConfig
 from src.redmine.db import chunkSequence, normalizeDatabaseUrl
 from src.redmine.redmine_client import (
@@ -128,6 +129,26 @@ def testGetBitrixProfileEndpointReturnsProfile(monkeypatch) -> None:
     assert response.json()["profile"]["ID"] == "1"
     assert captured["portalUrl"] == "https://sms-it.bitrix24.ru"
     assert captured["credential"] == "1/test-webhook"
+
+
+def testFetchBitrixUserNamesUsesBatchFilter(monkeypatch) -> None:
+    capturedPayloads: list[dict[str, object]] = []
+
+    def fakeCallBitrixRestMethod(portalUrl, credential, method, payload=None, timeout=45):
+        capturedPayloads.append(dict(payload or {}))
+        return {
+            "result": [
+                {"ID": "7", "LAST_NAME": "Иванов", "NAME": "Иван"},
+                {"ID": "8", "LAST_NAME": "Петров", "NAME": "Петр"},
+            ]
+        }
+
+    monkeypatch.setattr("src.redmine.bitrix_client.callBitrixRestMethod", fakeCallBitrixRestMethod)
+
+    userNames = fetchBitrixUserNames("https://sms-it.bitrix24.ru", "1/test-webhook", [7, 8, 7])
+
+    assert userNames == {7: "Иванов Иван", 8: "Петров Петр"}
+    assert capturedPayloads == [{"filter": {"ID": [7, 8]}}]
 
 
 def testCaptureBitrixDealSnapshotEndpointStoresDeals(monkeypatch) -> None:
