@@ -559,11 +559,12 @@ def fetchBitrixUsers(portalUrl: str, credential: str, limit: int = 1000) -> dict
     start = 0
 
     while len(users) < requestedLimit:
+        requestPayload = {} if start == 0 else {"start": start}
         usersPayload = callBitrixRestMethodGet(
             portalUrl,
             credential,
             "user.get",
-            {"start": start},
+            requestPayload,
         )
         pageUsers = usersPayload.get("result") or []
         if not pageUsers:

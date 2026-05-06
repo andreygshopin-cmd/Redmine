@@ -13077,6 +13077,9 @@ def getBitrixResponsibles(limit: int = Query(1000, ge=1, le=5000)) -> dict[str, 
         detail = "Bitrix24 users request failed."
         if error.response is not None:
             detail = f"{detail} HTTP {error.response.status_code}."
+            responseText = error.response.text.strip()
+            if responseText:
+                detail = f"{detail} Response: {responseText[:500]}"
         raise HTTPException(status_code=502, detail=detail) from error
     except RuntimeError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error

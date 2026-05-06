@@ -175,7 +175,7 @@ def testFetchBitrixUsersUsesGetRequest(monkeypatch) -> None:
     payload = fetchBitrixUsers("https://sms-it.bitrix24.ru", "1/test-webhook")
 
     assert captured["method"] == "user.get"
-    assert captured["payload"] == {"start": 0}
+    assert captured["payload"] == {}
     assert payload["users"][0]["name"] == "Иванов Иван"
 
 
