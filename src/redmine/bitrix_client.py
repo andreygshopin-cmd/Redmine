@@ -7,7 +7,7 @@ BITRIX_DEAL_ENTITY_TYPE_ID = 2
 BITRIX_LEAD_ENTITY_TYPE_ID = 1
 BITRIX_INVOICE_ENTITY_TYPE_ID = 31
 BITRIX_PAGE_SIZE = 50
-BITRIX_CAPTURE_BATCH_SIZE = 50
+BITRIX_CAPTURE_BATCH_SIZE = 1000
 BITRIX_PLACEHOLDER_VALUES = {
     "replace_me",
     "put_incoming_webhook_or_oauth_token_here",
@@ -425,14 +425,13 @@ def fetchBitrixDealDictionaries(
                 stageNames[str(statusId)] = str(name)
                 stageNames[f"{categoryId}:{statusId}"] = str(name)
 
-    companyNames = fetchBitrixCompanyNames(portalUrl, credential, companyIds or [])
     assignedByNames = fetchBitrixUserNames(portalUrl, credential, assignedByIds or [])
 
     return {
         "stage_names": stageNames,
         "category_names": categoryNames,
         "assigned_by_names": assignedByNames,
-        "company_names": companyNames,
+        "company_names": {},
     }
 
 
@@ -584,7 +583,7 @@ def fetchBitrixCrmItemDictionaries(
     return {
         "status_names": statusNames,
         "assigned_by_names": fetchBitrixUserNames(portalUrl, credential, assignedByIds or []),
-        "company_names": fetchBitrixCompanyNames(portalUrl, credential, companyIds or []),
+        "company_names": {},
     }
 
 
