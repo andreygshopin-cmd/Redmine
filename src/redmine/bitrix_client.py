@@ -29,12 +29,23 @@ class BitrixRestContext:
     defaultPayload: dict[str, object]
 
 
-def buildBitrixRestContext(portalUrl: str, credential: str) -> BitrixRestContext:
+def _buildBitrixWebhookEndpoint(webhookUrl: str, method: str) -> str:
+    endpoint = webhookUrl.strip().rstrip("/")
+    lastSegment = endpoint.rsplit("/", 1)[-1]
+    if "." in lastSegment:
+        return f"{endpoint.rsplit('/', 1)[0]}/{method}"
+    return f"{endpoint}/{method}"
+
+
+def buildBitrixRestContext(portalUrl: str, credential: str, method: str = "crm.item.list") -> BitrixRestContext:
     portalUrlNormalized = str(portalUrl or "").strip().rstrip("/")
     credentialNormalized = str(credential or "").strip()
+    methodNormalized = str(method or "").strip().lstrip("/")
 
     if not portalUrlNormalized:
         raise RuntimeError("BITRIX_PORTAL_URL is not set")
+    if not methodNormalized:
+        raise RuntimeError("Bitrix REST method is not set")
 
     if not credentialNormalized or credentialNormalized in BITRIX_PLACEHOLDER_VALUES:
         raise RuntimeError(
@@ -42,17 +53,15 @@ def buildBitrixRestContext(portalUrl: str, credential: str) -> BitrixRestContext
         )
 
     if credentialNormalized.startswith("http://") or credentialNormalized.startswith("https://"):
-        endpoint = credentialNormalized.rstrip("/")
-        if not endpoint.endswith("/crm.item.list"):
-            endpoint = f"{endpoint}/crm.item.list"
+        endpoint = _buildBitrixWebhookEndpoint(credentialNormalized, methodNormalized)
         return BitrixRestContext(endpoint=endpoint, authMode="webhook_url", defaultPayload={})
 
     if "/" in credentialNormalized and " " not in credentialNormalized:
-        endpoint = f"{portalUrlNormalized}/rest/{credentialNormalized.strip('/')}/crm.item.list"
+        endpoint = f"{portalUrlNormalized}/rest/{credentialNormalized.strip('/')}/{methodNormalized}"
         return BitrixRestContext(endpoint=endpoint, authMode="webhook_path", defaultPayload={})
 
     return BitrixRestContext(
-        endpoint=f"{portalUrlNormalized}/rest/crm.item.list",
+        endpoint=f"{portalUrlNormalized}/rest/{methodNormalized}",
         authMode="oauth_token",
         defaultPayload={"auth": credentialNormalized},
     )
@@ -161,4 +170,26 @@ def fetchBitrixDeals(
         "total": total,
         "requested_limit": requestedLimit,
         "filter": filters,
+    }
+
+
+def fetchBitrixProfile(portalUrl: str, credential: str) -> dict[str, object]:
+    restContext = buildBitrixRestContext(portalUrl, credential, method="profile.json")
+    response = requests.post(
+        restContext.endpoint,
+        json=restContext.defaultPayload,
+        timeout=45,
+    )
+    response.raise_for_status()
+
+    responsePayload = response.json()
+    responseError = extractBitrixError(responsePayload)
+    if responseError is not None:
+        raise RuntimeError(responseError)
+
+    resultPayload = responsePayload.get("result") or {}
+    return {
+        "portal_url": portalUrl.rstrip("/"),
+        "auth_mode": restContext.authMode,
+        "profile": resultPayload,
     }

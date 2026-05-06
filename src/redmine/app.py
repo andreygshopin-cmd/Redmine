@@ -20,7 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from src.redmine.bitrix_client import fetchBitrixDeals
+from src.redmine.bitrix_client import fetchBitrixDeals, fetchBitrixProfile
 from src.redmine.config import loadConfig
 from src.redmine.db import (
     checkDatabaseConnection,
@@ -8373,6 +8373,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
         </p>
         <div class="hero-actions">
           <button class="button button-primary" id="loadBitrixDealsButton" type="button">Показать сделки</button>
+          <button class="button" id="checkBitrixProfileButton" type="button">Проверить profile</button>
         </div>
         <div class="status-note">__BITRIX_CREDENTIAL_DEBUG__</div>
         <div class="status-note" id="bitrixDealsStatus">Готово к проверке интеграции.</div>
@@ -8382,6 +8383,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
   </div>
   <script>
     const loadBitrixDealsButton = document.getElementById("loadBitrixDealsButton");
+    const checkBitrixProfileButton = document.getElementById("checkBitrixProfileButton");
     const bitrixDealsStatus = document.getElementById("bitrixDealsStatus");
     const bitrixDealsList = document.getElementById("bitrixDealsList");
 
@@ -8429,6 +8431,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
 
     async function loadBitrixDeals() {
       loadBitrixDealsButton.disabled = true;
+      checkBitrixProfileButton.disabled = true;
       bitrixDealsList.innerHTML = "";
       setBitrixStatus("Загружаю сделки из Bitrix24...");
 
@@ -8449,10 +8452,38 @@ BITRIX_PAGE_HTML = """<!doctype html>
         setBitrixStatus(String(error.message || error), true);
       } finally {
         loadBitrixDealsButton.disabled = false;
+        checkBitrixProfileButton.disabled = false;
+      }
+    }
+
+    async function checkBitrixProfile() {
+      checkBitrixProfileButton.disabled = true;
+      loadBitrixDealsButton.disabled = true;
+      bitrixDealsList.innerHTML = "";
+      setBitrixStatus("Проверяю Bitrix profile.json...");
+
+      try {
+        const response = await fetch("/api/bitrix/profile");
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось получить profile.json из Bitrix24.");
+        }
+
+        const profile = payload.profile || {};
+        const profileName = [profile.NAME, profile.LAST_NAME].filter(Boolean).join(" ") || profile.LOGIN || profile.ID || "профиль получен";
+        setBitrixStatus(`profile.json получен: ${profileName}. Режим авторизации: ${payload.auth_mode}.`);
+        bitrixDealsList.innerHTML = `<div class="deal-empty">profile.json ответил успешно. Если сделки дают 401, проверьте CRM-права webhook.</div>`;
+      } catch (error) {
+        setBitrixStatus(String(error.message || error), true);
+      } finally {
+        checkBitrixProfileButton.disabled = false;
+        loadBitrixDealsButton.disabled = false;
       }
     }
 
     loadBitrixDealsButton?.addEventListener("click", loadBitrixDeals);
+    checkBitrixProfileButton?.addEventListener("click", checkBitrixProfile);
   </script>
 </body>
 </html>"""
@@ -11776,6 +11807,24 @@ def getBitrixDeals(
         )
     except requests.HTTPError as error:
         detail = "Bitrix24 request failed."
+        if error.response is not None:
+            detail = f"{detail} HTTP {error.response.status_code}."
+        raise HTTPException(status_code=502, detail=detail) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+
+@app.get("/api/bitrix/profile")
+def getBitrixProfile() -> dict[str, object]:
+    requireBitrixConfig()
+
+    try:
+        return fetchBitrixProfile(
+            portalUrl=config.bitrixPortalUrl,
+            credential=config.bitrixCredential,
+        )
+    except requests.HTTPError as error:
+        detail = "Bitrix24 profile request failed."
         if error.response is not None:
             detail = f"{detail} HTTP {error.response.status_code}."
         raise HTTPException(status_code=502, detail=detail) from error

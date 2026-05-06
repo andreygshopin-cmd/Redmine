@@ -88,6 +88,30 @@ def testGetBitrixDealsEndpointRequiresCredential(monkeypatch) -> None:
     assert "Btrx is not set" in response.json()["detail"]
 
 
+def testGetBitrixProfileEndpointReturnsProfile(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "bitrixPortalUrl", "https://sms-it.bitrix24.ru")
+    monkeypatch.setattr(app_module.config, "bitrixCredential", "1/test-webhook")
+
+    captured: dict[str, object] = {}
+
+    def fakeFetchBitrixProfile(**kwargs) -> dict[str, object]:
+        captured.update(kwargs)
+        return {
+            "portal_url": "https://sms-it.bitrix24.ru",
+            "auth_mode": "webhook_path",
+            "profile": {"ID": "1", "NAME": "Test"},
+        }
+
+    monkeypatch.setattr(app_module, "fetchBitrixProfile", fakeFetchBitrixProfile)
+
+    response = client.get("/api/bitrix/profile")
+
+    assert response.status_code == 200
+    assert response.json()["profile"]["ID"] == "1"
+    assert captured["portalUrl"] == "https://sms-it.bitrix24.ru"
+    assert captured["credential"] == "1/test-webhook"
+
+
 def testGetTimeReturnsServerTimePayload() -> None:
     payload = getTime()
 
