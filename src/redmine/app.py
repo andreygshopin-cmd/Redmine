@@ -8618,6 +8618,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
     const bitrixDealFilterInputs = Array.from(document.querySelectorAll("[data-bitrix-filter]"));
     let bitrixDealSnapshotPage = 1;
     let bitrixDealSnapshotTotal = 0;
+    let bitrixDealSnapshotDatesLoaded = false;
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -8669,8 +8670,23 @@ BITRIX_PAGE_HTML = """<!doctype html>
         }
         const previousValue = select.value;
         select.innerHTML = optionHtml;
-        select.value = selectedDate || previousValue || "";
+        const nextValue = selectedDate || previousValue || dateItems[0] || "";
+        select.value = nextValue && dateItems.includes(nextValue) ? nextValue : "";
       });
+    }
+
+    async function loadBitrixDealSnapshotRuns(selectedDate = "") {
+      const response = await fetch("/api/bitrix/deal-snapshots?limit=500");
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || "Не удалось загрузить список срезов сделок.");
+      }
+      const dates = (payload.snapshot_runs || [])
+        .map((run) => String(run.captured_for_date || "").trim())
+        .filter(Boolean);
+      syncBitrixDealDateSelects(dates, selectedDate);
+      bitrixDealSnapshotDatesLoaded = true;
+      return dates;
     }
 
     function renderBitrixDealSnapshotRows(deals) {
@@ -8712,6 +8728,9 @@ BITRIX_PAGE_HTML = """<!doctype html>
 
     async function loadBitrixDealSnapshotItems() {
       setSnapshotStatus("Загружаю сохраненный срез сделок...");
+      if (!bitrixDealSnapshotDatesLoaded || !bitrixDealSnapshotDateSelect.value) {
+        await loadBitrixDealSnapshotRuns(bitrixDealSnapshotDateSelect.value);
+      }
       const response = await fetch(`/api/bitrix/deal-snapshots/items?${buildBitrixDealSnapshotParams().toString()}`);
       const payload = await response.json();
       if (!response.ok) {
@@ -8756,7 +8775,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
             let pagePayload = null;
             for (let attempt = 1; attempt <= 3; attempt += 1) {
               const packageStartedAt = new Date();
-              setSnapshotStatus(`Начат пакет: ${entity.label}, позиция ${nextStart}, до 1000 строк, попытка ${attempt}/3, время ${packageStartedAt.toLocaleTimeString("ru-RU")}.`);
+              setSnapshotStatus(`Начат диагностический шаг: ${entity.label}, позиция ${nextStart}, до 50 строк, попытка ${attempt}/3, время ${packageStartedAt.toLocaleTimeString("ru-RU")}.`);
               try {
                 const pageResponse = await fetchWithTimeout("/api/bitrix/snapshots/capture/page", {
                   method: "POST",
@@ -8766,12 +8785,12 @@ BITRIX_PAGE_HTML = """<!doctype html>
                     entity: entity.key,
                     start: nextStart,
                   }),
-                }, 180000);
+                }, 60000);
                 pagePayload = await pageResponse.json();
                 if (!pageResponse.ok) {
                   throw new Error(pagePayload.detail || `Не удалось скачать ${entity.label}.`);
                 }
-                setSnapshotStatus(`Завершен пакет: ${entity.label}, позиция ${nextStart}, получено ${pagePayload.page_count || 0}, длительность ${pagePayload.duration_seconds || "?"} сек, внутренних страниц Bitrix ${(pagePayload.trace || []).length}.`);
+                setSnapshotStatus(`Завершен диагностический шаг: ${entity.label}, позиция ${nextStart}, получено ${pagePayload.page_count || 0}, длительность ${pagePayload.duration_seconds || "?"} сек, внутренних страниц Bitrix ${(pagePayload.trace || []).length}.`);
                 break;
               } catch (error) {
                 if (attempt >= 3) {
@@ -8805,7 +8824,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
         await loadBitrixDealSnapshotItems();
       } catch (error) {
         const message = error?.name === "AbortError"
-          ? "Пакет Bitrix не ответил за 3 минуты. Сейчас временно включены только сделки; если снова зависнет на той же позиции, проблема внутри выгрузки сделок."
+          ? "Диагностический шаг Bitrix не ответил за 60 секунд. Сейчас включены только сделки; последняя позиция на экране показывает конкретное место зависания."
           : String(error.message || error);
         setSnapshotStatus(message, true);
       } finally {

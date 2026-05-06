@@ -42,6 +42,7 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert "Выгрузить в Excel" in body
     assert "/api/bitrix/snapshots/capture/start" in body
     assert "/api/bitrix/snapshots/capture/page" in body
+    assert "/api/bitrix/deal-snapshots?limit=500" in body
     assert "Скачиваю все сделки из Bitrix24" not in body
     assert 'href="/Bitrix/leads"' in body
     assert 'href="/Bitrix/invoices"' in body
