@@ -143,6 +143,28 @@ def callBitrixRestMethod(
     return responsePayload
 
 
+def callBitrixRestMethodGet(
+    portalUrl: str,
+    credential: str,
+    method: str,
+    payload: dict[str, object] | None = None,
+    timeout: int = 45,
+) -> dict[str, object]:
+    restContext = buildBitrixRestContext(portalUrl, credential, method=method)
+    response = requests.get(
+        restContext.endpoint,
+        params={**restContext.defaultPayload, **dict(payload or {})},
+        timeout=timeout,
+    )
+    response.raise_for_status()
+
+    responsePayload = response.json()
+    responseError = extractBitrixError(responsePayload)
+    if responseError is not None:
+        raise RuntimeError(responseError)
+    return responsePayload
+
+
 def fetchBitrixDeals(
     portalUrl: str,
     credential: str,
@@ -537,7 +559,7 @@ def fetchBitrixUsers(portalUrl: str, credential: str, limit: int = 1000) -> dict
     start = 0
 
     while len(users) < requestedLimit:
-        usersPayload = callBitrixRestMethod(
+        usersPayload = callBitrixRestMethodGet(
             portalUrl,
             credential,
             "user.get",
