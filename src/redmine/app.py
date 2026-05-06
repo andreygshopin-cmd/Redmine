@@ -20,7 +20,12 @@ from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from src.redmine.bitrix_client import fetchAllBitrixDeals, fetchBitrixDeals, fetchBitrixProfile
+from src.redmine.bitrix_client import (
+    fetchAllBitrixDeals,
+    fetchBitrixDealDictionaries,
+    fetchBitrixDeals,
+    fetchBitrixProfile,
+)
 from src.redmine.config import loadConfig
 from src.redmine.db import (
     checkDatabaseConnection,
@@ -218,6 +223,7 @@ def _publicPath(path: str) -> bool:
         "/logout",
         "/change-password",
         "/Bitrix",
+        "/Bitrix/deal-snapshots/compare",
         "/health",
         "/db-health",
         "/api/auth/login",
@@ -8467,7 +8473,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
         <p>Скачивает все сделки из Bitrix24, сохраняет срез в базу и показывает сохраненные строки по выбранной дате.</p>
         <div class="hero-actions">
           <button class="button button-primary" id="captureBitrixDealSnapshotButton" type="button">Получить срез по сделкам</button>
-          <a class="button" href="/Bitrix#bitrix-deal-compare">Сравнить срезы</a>
+          <a class="button" href="/Bitrix/deal-snapshots/compare">Сравнение срезов сделок</a>
         </div>
         <div class="snapshot-toolbar">
           <label>Дата среза
@@ -8486,11 +8492,11 @@ BITRIX_PAGE_HTML = """<!doctype html>
               <tr>
                 <th>ID<br><input data-bitrix-filter="deal_id" placeholder="Фильтр"></th>
                 <th>Название<br><input data-bitrix-filter="title" placeholder="Фильтр"></th>
-                <th>Стадия<br><input data-bitrix-filter="stage_id" placeholder="Фильтр"></th>
+                <th>Стадия<br><input data-bitrix-filter="stage_name" placeholder="Фильтр"></th>
                 <th>Ответственный<br><input data-bitrix-filter="assigned_by_id" placeholder="Фильтр"></th>
                 <th>Сумма<br><input data-bitrix-filter="opportunity" placeholder="Фильтр"></th>
                 <th>Валюта<br><input data-bitrix-filter="currency_id" placeholder="Фильтр"></th>
-                <th>Воронка<br><input data-bitrix-filter="category_id" placeholder="Фильтр"></th>
+                <th>Воронка<br><input data-bitrix-filter="category_name" placeholder="Фильтр"></th>
                 <th>Создана<br><input data-bitrix-filter="created_time" placeholder="Фильтр"></th>
                 <th>Обновлена<br><input data-bitrix-filter="updated_time" placeholder="Фильтр"></th>
               </tr>
@@ -8504,38 +8510,6 @@ BITRIX_PAGE_HTML = """<!doctype html>
         </div>
       </article>
 
-      <article class="card wide-card" id="bitrix-deal-compare">
-        <h2>Сравнение срезов сделок</h2>
-        <p>По умолчанию сравниваются последний и предпоследний срезы.</p>
-        <div class="snapshot-toolbar">
-          <label>Левый срез
-            <select id="bitrixDealCompareLeftDateSelect"></select>
-          </label>
-          <label>Правый срез
-            <select id="bitrixDealCompareRightDateSelect"></select>
-          </label>
-          <button class="button" id="compareBitrixDealSnapshotsButton" type="button">Сравнить</button>
-        </div>
-        <div class="status-note" id="bitrixDealCompareStatus">Сравнение появится после загрузки срезов.</div>
-        <div class="snapshot-table-wrap">
-          <table class="snapshot-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Тип</th>
-                <th>Название</th>
-                <th>Стадия</th>
-                <th>Ответственный</th>
-                <th>Сумма</th>
-                <th>Валюта</th>
-                <th>Воронка</th>
-                <th>Обновлена</th>
-              </tr>
-            </thead>
-            <tbody id="bitrixDealCompareTableBody"></tbody>
-          </table>
-        </div>
-      </article>
     </section>
   </div>
   <script>
@@ -8651,11 +8625,6 @@ BITRIX_PAGE_HTML = """<!doctype html>
     const bitrixDealSnapshotTableBody = document.getElementById("bitrixDealSnapshotTableBody");
     const bitrixDealSnapshotPrevPageButton = document.getElementById("bitrixDealSnapshotPrevPageButton");
     const bitrixDealSnapshotNextPageButton = document.getElementById("bitrixDealSnapshotNextPageButton");
-    const bitrixDealCompareLeftDateSelect = document.getElementById("bitrixDealCompareLeftDateSelect");
-    const bitrixDealCompareRightDateSelect = document.getElementById("bitrixDealCompareRightDateSelect");
-    const compareBitrixDealSnapshotsButton = document.getElementById("compareBitrixDealSnapshotsButton");
-    const bitrixDealCompareStatus = document.getElementById("bitrixDealCompareStatus");
-    const bitrixDealCompareTableBody = document.getElementById("bitrixDealCompareTableBody");
     const bitrixDealFilterInputs = Array.from(document.querySelectorAll("[data-bitrix-filter]"));
     let bitrixDealSnapshotPage = 1;
     let bitrixDealSnapshotTotal = 0;
@@ -8681,17 +8650,12 @@ BITRIX_PAGE_HTML = """<!doctype html>
       bitrixDealSnapshotStatus.classList.toggle("is-error", Boolean(isError));
     }
 
-    function setCompareStatus(message, isError = false) {
-      bitrixDealCompareStatus.textContent = message;
-      bitrixDealCompareStatus.classList.toggle("is-error", Boolean(isError));
-    }
-
     function syncBitrixDealDateSelects(dates, selectedDate = "") {
       const dateItems = Array.isArray(dates) ? dates : [];
       const optionHtml = ['<option value="">Последний срез</option>']
         .concat(dateItems.map((dateValue) => `<option value="${escapeHtml(dateValue)}">${escapeHtml(dateValue)}</option>`))
         .join("");
-      [bitrixDealSnapshotDateSelect, bitrixDealCompareLeftDateSelect, bitrixDealCompareRightDateSelect].forEach((select) => {
+      [bitrixDealSnapshotDateSelect].forEach((select) => {
         if (!select) {
           return;
         }
@@ -8699,10 +8663,6 @@ BITRIX_PAGE_HTML = """<!doctype html>
         select.innerHTML = optionHtml;
         select.value = selectedDate || previousValue || "";
       });
-      if (dateItems.length) {
-        bitrixDealCompareRightDateSelect.value = bitrixDealCompareRightDateSelect.value || dateItems[0] || "";
-        bitrixDealCompareLeftDateSelect.value = bitrixDealCompareLeftDateSelect.value || dateItems[1] || dateItems[0] || "";
-      }
     }
 
     function renderBitrixDealSnapshotRows(deals) {
@@ -8712,13 +8672,13 @@ BITRIX_PAGE_HTML = """<!doctype html>
       }
       bitrixDealSnapshotTableBody.innerHTML = deals.map((deal) => `
         <tr>
-          <td class="mono">${formatSnapshotValue(deal.deal_id)}</td>
+          <td class="mono"><a href="https://sms-it.bitrix24.ru/crm/deal/details/${encodeURIComponent(deal.deal_id ?? "")}/" target="_blank" rel="noreferrer">${formatSnapshotValue(deal.deal_id)}</a></td>
           <td>${formatSnapshotValue(deal.title)}</td>
-          <td class="mono">${formatSnapshotValue(deal.stage_id)}</td>
+          <td>${formatSnapshotValue(deal.stage_name || deal.stage_id)}</td>
           <td class="mono">${formatSnapshotValue(deal.assigned_by_id)}</td>
           <td class="mono">${formatSnapshotValue(deal.opportunity)}</td>
           <td class="mono">${formatSnapshotValue(deal.currency_id)}</td>
-          <td class="mono">${formatSnapshotValue(deal.category_id)}</td>
+          <td>${formatSnapshotValue(deal.category_name || deal.category_id)}</td>
           <td class="mono">${formatSnapshotValue(deal.created_time)}</td>
           <td class="mono">${formatSnapshotValue(deal.updated_time)}</td>
         </tr>
@@ -8782,58 +8742,10 @@ BITRIX_PAGE_HTML = """<!doctype html>
         bitrixDealSnapshotDateSelect.value = payload.captured_for_date || "";
         setSnapshotStatus(payload.detail || "Срез сделок сохранен.");
         await loadBitrixDealSnapshotItems();
-        await loadBitrixDealSnapshotCompare();
       } catch (error) {
         setSnapshotStatus(String(error.message || error), true);
       } finally {
         captureBitrixDealSnapshotButton.disabled = false;
-      }
-    }
-
-    function renderBitrixDealCompareRows(changes) {
-      if (!Array.isArray(changes) || !changes.length) {
-        bitrixDealCompareTableBody.innerHTML = '<tr><td colspan="9">Изменений между срезами не найдено.</td></tr>';
-        return;
-      }
-      bitrixDealCompareTableBody.innerHTML = changes.map((change) => `
-        <tr>
-          <td class="mono">${formatSnapshotValue(change.deal_id)}</td>
-          <td class="mono">${formatSnapshotValue(change.change_type)}</td>
-          <td>${formatSnapshotValue(change.left_title)} → ${formatSnapshotValue(change.right_title)}</td>
-          <td class="mono">${formatSnapshotValue(change.left_stage_id)} → ${formatSnapshotValue(change.right_stage_id)}</td>
-          <td class="mono">${formatSnapshotValue(change.left_assigned_by_id)} → ${formatSnapshotValue(change.right_assigned_by_id)}</td>
-          <td class="mono">${formatSnapshotValue(change.left_opportunity)} → ${formatSnapshotValue(change.right_opportunity)}</td>
-          <td class="mono">${formatSnapshotValue(change.left_currency_id)} → ${formatSnapshotValue(change.right_currency_id)}</td>
-          <td class="mono">${formatSnapshotValue(change.left_category_id)} → ${formatSnapshotValue(change.right_category_id)}</td>
-          <td class="mono">${formatSnapshotValue(change.left_updated_time)} → ${formatSnapshotValue(change.right_updated_time)}</td>
-        </tr>
-      `).join("");
-    }
-
-    async function loadBitrixDealSnapshotCompare() {
-      setCompareStatus("Сравниваю срезы сделок...");
-      const params = new URLSearchParams();
-      if (bitrixDealCompareLeftDateSelect.value) {
-        params.set("left_date", bitrixDealCompareLeftDateSelect.value);
-      }
-      if (bitrixDealCompareRightDateSelect.value) {
-        params.set("right_date", bitrixDealCompareRightDateSelect.value);
-      }
-      const response = await fetch(`/api/bitrix/deal-snapshots/compare?${params.toString()}`);
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.detail || "Не удалось сравнить срезы сделок.");
-      }
-      syncBitrixDealDateSelects(payload.available_dates || []);
-      renderBitrixDealCompareRows(payload.changes || []);
-      setCompareStatus(`Сравнение: ${payload.left_run?.captured_for_date || "нет"} → ${payload.right_run?.captured_for_date || "нет"}. Изменений: ${(payload.changes || []).length}.`);
-    }
-
-    async function safeLoadBitrixDealSnapshotCompare() {
-      try {
-        await loadBitrixDealSnapshotCompare();
-      } catch (error) {
-        setCompareStatus(String(error.message || error), true);
       }
     }
 
@@ -8869,12 +8781,234 @@ BITRIX_PAGE_HTML = """<!doctype html>
       bitrixDealSnapshotPage += 1;
       safeLoadBitrixDealSnapshotItems();
     });
-    compareBitrixDealSnapshotsButton?.addEventListener("click", safeLoadBitrixDealSnapshotCompare);
-    bitrixDealCompareLeftDateSelect?.addEventListener("change", safeLoadBitrixDealSnapshotCompare);
-    bitrixDealCompareRightDateSelect?.addEventListener("change", safeLoadBitrixDealSnapshotCompare);
-
     safeLoadBitrixDealSnapshotItems();
-    safeLoadBitrixDealSnapshotCompare();
+  </script>
+</body>
+</html>"""
+
+
+BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Сравнение срезов сделок</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {
+      --ink: #10293d;
+      --muted: #5d7487;
+      --paper: #f4f8fb;
+      --line: rgba(16, 41, 61, 0.12);
+      --blue: #375d77;
+      --yellow: #ffc600;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Golos", "Segoe UI", Tahoma, sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #ffffff 0%, var(--paper) 100%);
+    }
+    main { max-width: 1280px; margin: 0 auto; padding: 28px 18px 48px; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.4rem); letter-spacing: -0.04em; }
+    p { color: var(--muted); line-height: 1.6; }
+    a, button {
+      color: inherit;
+      font: inherit;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 12px;
+      background: var(--blue);
+      color: #ffffff;
+      text-decoration: none;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .button-primary { background: var(--yellow); color: var(--ink); }
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.94);
+      padding: 20px;
+      box-shadow: 0 14px 32px rgba(16, 41, 61, 0.08);
+    }
+    .toolbar {
+      display: flex;
+      align-items: end;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 16px 0;
+    }
+    label { display: grid; gap: 6px; color: var(--muted); font-weight: 600; }
+    select {
+      min-height: 42px;
+      min-width: 180px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0 12px;
+      font: inherit;
+      background: #ffffff;
+      color: var(--ink);
+    }
+    .status { color: var(--muted); margin: 12px 0; }
+    .status.is-error { color: #b63d00; }
+    .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
+    table { width: 100%; min-width: 1120px; border-collapse: collapse; font-size: 0.92rem; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; }
+    th { position: sticky; top: 0; background: #f3f7fa; z-index: 1; }
+    .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Сравнение срезов сделок</h1>
+        <p>По умолчанию сравниваются последний и предпоследний срезы Bitrix.</p>
+      </div>
+      <a class="button" href="/Bitrix">К форме сделок</a>
+    </header>
+    <section class="panel">
+      <div class="toolbar">
+        <label>Левый срез
+          <select id="leftDateSelect"></select>
+        </label>
+        <label>Правый срез
+          <select id="rightDateSelect"></select>
+        </label>
+        <button class="button button-primary" id="compareButton" type="button">Сравнить</button>
+      </div>
+      <div class="status" id="compareStatus">Загружаю сравнение...</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Тип</th>
+              <th>Название</th>
+              <th>Стадия</th>
+              <th>Ответственный</th>
+              <th>Сумма</th>
+              <th>Валюта</th>
+              <th>Воронка</th>
+              <th>Обновлена</th>
+            </tr>
+          </thead>
+          <tbody id="compareTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script>
+    const leftDateSelect = document.getElementById("leftDateSelect");
+    const rightDateSelect = document.getElementById("rightDateSelect");
+    const compareButton = document.getElementById("compareButton");
+    const compareStatus = document.getElementById("compareStatus");
+    const compareTableBody = document.getElementById("compareTableBody");
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatValue(value) {
+      if (value === null || value === undefined || value === "") {
+        return "—";
+      }
+      return escapeHtml(value);
+    }
+
+    function setStatus(message, isError = false) {
+      compareStatus.textContent = message;
+      compareStatus.classList.toggle("is-error", Boolean(isError));
+    }
+
+    function syncDateOptions(dates) {
+      const options = (Array.isArray(dates) ? dates : [])
+        .map((dateValue) => `<option value="${escapeHtml(dateValue)}">${escapeHtml(dateValue)}</option>`)
+        .join("");
+      const previousLeft = leftDateSelect.value;
+      const previousRight = rightDateSelect.value;
+      leftDateSelect.innerHTML = options;
+      rightDateSelect.innerHTML = options;
+      const dateItems = Array.isArray(dates) ? dates : [];
+      leftDateSelect.value = previousLeft || dateItems[1] || dateItems[0] || "";
+      rightDateSelect.value = previousRight || dateItems[0] || "";
+    }
+
+    function buildPair(leftValue, rightValue) {
+      return `${formatValue(leftValue)} → ${formatValue(rightValue)}`;
+    }
+
+    function renderRows(changes) {
+      if (!Array.isArray(changes) || !changes.length) {
+        compareTableBody.innerHTML = '<tr><td colspan="9">Изменений между срезами не найдено.</td></tr>';
+        return;
+      }
+      compareTableBody.innerHTML = changes.map((change) => `
+        <tr>
+          <td class="mono"><a href="https://sms-it.bitrix24.ru/crm/deal/details/${encodeURIComponent(change.deal_id ?? "")}/" target="_blank" rel="noreferrer">${formatValue(change.deal_id)}</a></td>
+          <td class="mono">${formatValue(change.change_type)}</td>
+          <td>${buildPair(change.left_title, change.right_title)}</td>
+          <td>${buildPair(change.left_stage_name || change.left_stage_id, change.right_stage_name || change.right_stage_id)}</td>
+          <td class="mono">${buildPair(change.left_assigned_by_id, change.right_assigned_by_id)}</td>
+          <td class="mono">${buildPair(change.left_opportunity, change.right_opportunity)}</td>
+          <td class="mono">${buildPair(change.left_currency_id, change.right_currency_id)}</td>
+          <td>${buildPair(change.left_category_name || change.left_category_id, change.right_category_name || change.right_category_id)}</td>
+          <td class="mono">${buildPair(change.left_updated_time, change.right_updated_time)}</td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadCompare() {
+      compareButton.disabled = true;
+      setStatus("Сравниваю срезы сделок...");
+      try {
+        const params = new URLSearchParams();
+        if (leftDateSelect.value) {
+          params.set("left_date", leftDateSelect.value);
+        }
+        if (rightDateSelect.value) {
+          params.set("right_date", rightDateSelect.value);
+        }
+        const response = await fetch(`/api/bitrix/deal-snapshots/compare?${params.toString()}`);
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось сравнить срезы.");
+        }
+        syncDateOptions(payload.available_dates || []);
+        renderRows(payload.changes || []);
+        setStatus(`Сравнение: ${payload.left_run?.captured_for_date || "нет"} → ${payload.right_run?.captured_for_date || "нет"}. Изменений: ${(payload.changes || []).length}.`);
+      } catch (error) {
+        setStatus(String(error.message || error), true);
+      } finally {
+        compareButton.disabled = false;
+      }
+    }
+
+    compareButton.addEventListener("click", loadCompare);
+    leftDateSelect.addEventListener("change", loadCompare);
+    rightDateSelect.addEventListener("change", loadCompare);
+    loadCompare();
   </script>
 </body>
 </html>"""
@@ -10807,6 +10941,11 @@ def readBitrixPage() -> HTMLResponse:
     )
 
 
+@app.get("/Bitrix/deal-snapshots/compare", response_class=HTMLResponse)
+def readBitrixDealSnapshotComparePage() -> HTMLResponse:
+    return _renderHtmlPage(BITRIX_DEAL_COMPARE_PAGE_HTML)
+
+
 @app.get("/login", response_class=HTMLResponse)
 def getLoginPage(next: str | None = Query("/", alias="next")) -> HTMLResponse:
     _ensureAuthStorage()
@@ -12235,7 +12374,18 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
         )
-        snapshot = createBitrixDealSnapshot(payload.get("items") or [], capturedForDate)
+        dealItems = payload.get("items") or []
+        categoryIds = [
+            int(item.get("categoryId") or 0)
+            for item in dealItems
+            if isinstance(item, dict)
+        ]
+        dictionaries = fetchBitrixDealDictionaries(
+            portalUrl=config.bitrixPortalUrl,
+            credential=config.bitrixCredential,
+            categoryIds=categoryIds,
+        )
+        snapshot = createBitrixDealSnapshot(dealItems, capturedForDate, dictionaries)
     except requests.HTTPError as error:
         detail = "Bitrix24 deals snapshot request failed."
         if error.response is not None:
@@ -12268,10 +12418,12 @@ def getBitrixDealSnapshotItemsApi(
     deal_id: str | None = Query(None),
     title: str | None = Query(None),
     stage_id: str | None = Query(None),
+    stage_name: str | None = Query(None),
     assigned_by_id: str | None = Query(None),
     opportunity: str | None = Query(None),
     currency_id: str | None = Query(None),
     category_id: str | None = Query(None),
+    category_name: str | None = Query(None),
     created_time: str | None = Query(None),
     updated_time: str | None = Query(None),
 ) -> dict[str, object]:
@@ -12286,10 +12438,12 @@ def getBitrixDealSnapshotItemsApi(
             "deal_id": deal_id,
             "title": title,
             "stage_id": stage_id,
+            "stage_name": stage_name,
             "assigned_by_id": assigned_by_id,
             "opportunity": opportunity,
             "currency_id": currency_id,
             "category_id": category_id,
+            "category_name": category_name,
             "created_time": created_time,
             "updated_time": updated_time,
         },

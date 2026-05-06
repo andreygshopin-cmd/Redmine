@@ -104,6 +104,28 @@ def extractBitrixError(payload: dict[str, object]) -> str | None:
     return detail
 
 
+def callBitrixRestMethod(
+    portalUrl: str,
+    credential: str,
+    method: str,
+    payload: dict[str, object] | None = None,
+    timeout: int = 45,
+) -> dict[str, object]:
+    restContext = buildBitrixRestContext(portalUrl, credential, method=method)
+    response = requests.post(
+        restContext.endpoint,
+        json={**restContext.defaultPayload, **dict(payload or {})},
+        timeout=timeout,
+    )
+    response.raise_for_status()
+
+    responsePayload = response.json()
+    responseError = extractBitrixError(responsePayload)
+    if responseError is not None:
+        raise RuntimeError(responseError)
+    return responsePayload
+
+
 def fetchBitrixDeals(
     portalUrl: str,
     credential: str,
@@ -135,17 +157,13 @@ def fetchBitrixDeals(
             "order": {"id": "DESC"},
             "start": start,
         }
-        response = requests.post(
-            restContext.endpoint,
-            json=payload,
+        responsePayload = callBitrixRestMethod(
+            portalUrl,
+            credential,
+            "crm.item.list",
+            payload,
             timeout=45,
         )
-        response.raise_for_status()
-
-        responsePayload = response.json()
-        responseError = extractBitrixError(responsePayload)
-        if responseError is not None:
-            raise RuntimeError(responseError)
 
         resultPayload = responsePayload.get("result") or {}
         pageItems = resultPayload.get("items") or []
@@ -188,17 +206,13 @@ def fetchAllBitrixDeals(portalUrl: str, credential: str) -> dict[str, object]:
             "order": {"id": "DESC"},
             "start": start,
         }
-        response = requests.post(
-            restContext.endpoint,
-            json=payload,
+        responsePayload = callBitrixRestMethod(
+            portalUrl,
+            credential,
+            "crm.item.list",
+            payload,
             timeout=90,
         )
-        response.raise_for_status()
-
-        responsePayload = response.json()
-        responseError = extractBitrixError(responsePayload)
-        if responseError is not None:
-            raise RuntimeError(responseError)
 
         resultPayload = responsePayload.get("result") or {}
         pageItems = resultPayload.get("items") or []
@@ -221,19 +235,58 @@ def fetchAllBitrixDeals(portalUrl: str, credential: str) -> dict[str, object]:
     }
 
 
+def fetchBitrixDealDictionaries(
+    portalUrl: str,
+    credential: str,
+    categoryIds: list[int],
+) -> dict[str, dict[object, str]]:
+    stageNames: dict[object, str] = {}
+    categoryNames: dict[object, str] = {0: "Общая воронка"}
+
+    try:
+        categoryPayload = callBitrixRestMethod(
+            portalUrl,
+            credential,
+            "crm.category.list",
+            {"entityTypeId": BITRIX_DEAL_ENTITY_TYPE_ID},
+        )
+        categoryResult = categoryPayload.get("result") or {}
+        categories = categoryResult.get("categories") if isinstance(categoryResult, dict) else categoryResult
+        for category in categories or []:
+            categoryId = category.get("id")
+            name = category.get("name") or category.get("title")
+            if categoryId is not None and name:
+                categoryNames[int(categoryId)] = str(name)
+    except Exception:
+        pass
+
+    uniqueCategoryIds = sorted({int(value or 0) for value in categoryIds} | {0})
+    for categoryId in uniqueCategoryIds:
+        entityId = "DEAL_STAGE" if categoryId == 0 else f"DEAL_STAGE_{categoryId}"
+        try:
+            stagePayload = callBitrixRestMethod(
+                portalUrl,
+                credential,
+                "crm.status.list",
+                {"filter": {"ENTITY_ID": entityId}},
+            )
+        except Exception:
+            continue
+
+        stages = stagePayload.get("result") or []
+        for stage in stages:
+            statusId = stage.get("STATUS_ID")
+            name = stage.get("NAME") or stage.get("NAME_INIT") or statusId
+            if statusId and name:
+                stageNames[str(statusId)] = str(name)
+                stageNames[f"{categoryId}:{statusId}"] = str(name)
+
+    return {"stage_names": stageNames, "category_names": categoryNames}
+
+
 def fetchBitrixProfile(portalUrl: str, credential: str) -> dict[str, object]:
     restContext = buildBitrixRestContext(portalUrl, credential, method="profile.json")
-    response = requests.post(
-        restContext.endpoint,
-        json=restContext.defaultPayload,
-        timeout=45,
-    )
-    response.raise_for_status()
-
-    responsePayload = response.json()
-    responseError = extractBitrixError(responsePayload)
-    if responseError is not None:
-        raise RuntimeError(responseError)
+    responsePayload = callBitrixRestMethod(portalUrl, credential, "profile.json")
 
     resultPayload = responsePayload.get("result") or {}
     return {

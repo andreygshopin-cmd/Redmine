@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from src.redmine import app as app_module
-from src.redmine.app import app, getTime, readBitrixPage, readRoot
+from src.redmine.app import app, getTime, readBitrixDealSnapshotComparePage, readBitrixPage, readRoot
 from src.redmine.config import loadConfig
 from src.redmine.db import chunkSequence, normalizeDatabaseUrl
 from src.redmine.redmine_client import (
@@ -47,6 +47,13 @@ def testReadBitrixPageMasksCredential(monkeypatch) -> None:
     assert "Btrx:" in body
     assert "id/webhook" in body
     assert "123/secret-webhook-code" not in body
+
+
+def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
+    body = readBitrixDealSnapshotComparePage().body.decode("utf-8")
+
+    assert "Сравнение срезов сделок" in body
+    assert "/api/bitrix/deal-snapshots/compare" in body
 
 
 def testGetBitrixDealsEndpointReturnsItems(monkeypatch) -> None:
@@ -127,10 +134,11 @@ def testCaptureBitrixDealSnapshotEndpointStoresDeals(monkeypatch) -> None:
             "items": [{"id": 501, "title": "Deal #501"}],
         },
     )
+    monkeypatch.setattr(app_module, "fetchBitrixDealDictionaries", lambda **kwargs: {})
     monkeypatch.setattr(
         app_module,
         "createBitrixDealSnapshot",
-        lambda deals, capturedForDate: {
+        lambda deals, capturedForDate, dictionaries=None: {
             "snapshot_run_id": 10,
             "captured_for_date": capturedForDate,
             "total_deals": len(deals),
