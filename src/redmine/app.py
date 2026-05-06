@@ -12,6 +12,7 @@ import secrets
 import smtplib
 import requests
 import uuid
+from time import perf_counter
 from datetime import date, timedelta
 from urllib.parse import quote
 
@@ -8754,7 +8755,8 @@ BITRIX_PAGE_HTML = """<!doctype html>
           while (!done) {
             let pagePayload = null;
             for (let attempt = 1; attempt <= 3; attempt += 1) {
-              setSnapshotStatus(`Скачиваю ${entity.label}: пакет до 1000 строк с позиции ${nextStart}, попытка ${attempt}/3...`);
+              const packageStartedAt = new Date();
+              setSnapshotStatus(`Начат пакет: ${entity.label}, позиция ${nextStart}, до 1000 строк, попытка ${attempt}/3, время ${packageStartedAt.toLocaleTimeString("ru-RU")}.`);
               try {
                 const pageResponse = await fetchWithTimeout("/api/bitrix/snapshots/capture/page", {
                   method: "POST",
@@ -8764,11 +8766,12 @@ BITRIX_PAGE_HTML = """<!doctype html>
                     entity: entity.key,
                     start: nextStart,
                   }),
-                }, 600000);
+                }, 180000);
                 pagePayload = await pageResponse.json();
                 if (!pageResponse.ok) {
                   throw new Error(pagePayload.detail || `Не удалось скачать ${entity.label}.`);
                 }
+                setSnapshotStatus(`Завершен пакет: ${entity.label}, позиция ${nextStart}, получено ${pagePayload.page_count || 0}, длительность ${pagePayload.duration_seconds || "?"} сек, внутренних страниц Bitrix ${(pagePayload.trace || []).length}.`);
                 break;
               } catch (error) {
                 if (attempt >= 3) {
@@ -8802,7 +8805,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
         await loadBitrixDealSnapshotItems();
       } catch (error) {
         const message = error?.name === "AbortError"
-          ? "Пакет Bitrix не ответил за 10 минут. Попробуйте запустить получение еще раз; если снова остановится на той же позиции, уменьшим пакет или исключим проблемную сущность."
+          ? "Пакет Bitrix не ответил за 3 минуты. Сейчас временно включены только сделки; если снова зависнет на той же позиции, проблема внутри выгрузки сделок."
           : String(error.message || error);
         setSnapshotStatus(message, true);
       } finally {
@@ -12813,9 +12816,8 @@ def startBitrixSnapshotCapture() -> dict[str, object]:
         "captured_for_date": capturedForDate,
         "entities": [
             {"key": "deal", "label": "сделки"},
-            {"key": "lead", "label": "лиды"},
-            {"key": "invoice", "label": "счета/оплаты"},
         ],
+        "diagnostic_mode": "temporarily_deals_only",
     }
 
 
@@ -12833,6 +12835,7 @@ def captureBitrixSnapshotPage(payload: BitrixCapturePagePayload) -> dict[str, ob
     if entity not in {"deal", "lead", "invoice"}:
         raise HTTPException(status_code=400, detail="Unknown Bitrix capture entity")
 
+    startedAt = perf_counter()
     try:
         if entity == "deal":
             pagePayload = fetchBitrixDealsPage(config.bitrixPortalUrl, config.bitrixCredential, start=payload.start)
@@ -12884,6 +12887,7 @@ def captureBitrixSnapshotPage(payload: BitrixCapturePagePayload) -> dict[str, ob
             snapshots[entity] = snapshot
 
     remaining = max(0, total - len(entityItems))
+    durationSeconds = round(perf_counter() - startedAt, 3)
     return {
         "session_id": payload.session_id,
         "entity": entity,
@@ -12895,6 +12899,8 @@ def captureBitrixSnapshotPage(payload: BitrixCapturePagePayload) -> dict[str, ob
         "next": nextStart,
         "done": done,
         "snapshot": snapshot,
+        "duration_seconds": durationSeconds,
+        "trace": pagePayload.get("trace") or [],
     }
 
 

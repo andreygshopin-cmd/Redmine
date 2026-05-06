@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from time import perf_counter
 
 import requests
 
@@ -281,8 +282,10 @@ def fetchBitrixCrmItemsPage(
     currentStart = max(0, int(start or 0))
     total = 0
     nextStart = currentStart
+    trace: list[dict[str, object]] = []
 
     while len(items) < requestedBatchSize and nextStart is not None:
+        pageStartedAt = perf_counter()
         responsePayload = callBitrixRestMethod(
             portalUrl,
             credential,
@@ -302,6 +305,14 @@ def fetchBitrixCrmItemsPage(
         items.extend(pageItems)
         total = int(responsePayload.get("total") or total or len(items))
         nextStart = resultPayload.get("next", responsePayload.get("next"))
+        trace.append(
+            {
+                "start": currentStart,
+                "items": len(pageItems),
+                "next": nextStart,
+                "duration_seconds": round(perf_counter() - pageStartedAt, 3),
+            }
+        )
         if nextStart is None or not pageItems or len(pageItems) < BITRIX_PAGE_SIZE:
             break
         currentStart = int(nextStart)
@@ -313,6 +324,7 @@ def fetchBitrixCrmItemsPage(
         "total": total or len(items),
         "next": nextStart,
         "start": start,
+        "trace": trace,
     }
 
 
