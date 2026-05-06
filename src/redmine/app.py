@@ -70,6 +70,7 @@ from src.redmine.db import (
     listLatestSnapshotIssuesWithParents,
     listIssueSnapshotCaptureErrors,
     listBitrixDealSnapshotRuns,
+    listBitrixDealSnapshotResponsibleIds,
     listPlanningProjects,
     listRecentIssueSnapshotRuns,
     listSnapshotDatesForProject,
@@ -8471,8 +8472,11 @@ BITRIX_PAGE_HTML = """<!doctype html>
           <button class="button" id="resetBitrixDealFiltersButton" type="button">Сбросить фильтры</button>
           <button class="button" id="deleteBitrixDealSnapshotButton" type="button">Удалить выбранный срез</button>
           <button class="button" id="exportBitrixDealSnapshotButton" type="button">Выгрузить в Excel</button>
+          <button class="button" id="loadBitrixResponsiblesButton" type="button">Показать ответственных</button>
         </div>
         <div class="status-note" id="bitrixDealSnapshotStatus">Срезы сделок еще не загружены.</div>
+        <div class="status-note" id="bitrixResponsiblesStatus"></div>
+        <div class="deal-list" id="bitrixResponsiblesList"></div>
         <div class="snapshot-table-wrap">
           <table class="snapshot-table">
             <thead>
@@ -8608,6 +8612,9 @@ BITRIX_PAGE_HTML = """<!doctype html>
     const resetBitrixDealFiltersButton = document.getElementById("resetBitrixDealFiltersButton");
     const deleteBitrixDealSnapshotButton = document.getElementById("deleteBitrixDealSnapshotButton");
     const exportBitrixDealSnapshotButton = document.getElementById("exportBitrixDealSnapshotButton");
+    const loadBitrixResponsiblesButton = document.getElementById("loadBitrixResponsiblesButton");
+    const bitrixResponsiblesStatus = document.getElementById("bitrixResponsiblesStatus");
+    const bitrixResponsiblesList = document.getElementById("bitrixResponsiblesList");
     const bitrixDealSnapshotDateSelect = document.getElementById("bitrixDealSnapshotDateSelect");
     const bitrixDealSnapshotPageSizeInput = document.getElementById("bitrixDealSnapshotPageSizeInput");
     const bitrixDealSnapshotStatus = document.getElementById("bitrixDealSnapshotStatus");
@@ -8646,6 +8653,11 @@ BITRIX_PAGE_HTML = """<!doctype html>
     function setSnapshotStatus(message, isError = false) {
       bitrixDealSnapshotStatus.textContent = message;
       bitrixDealSnapshotStatus.classList.toggle("is-error", Boolean(isError));
+    }
+
+    function setResponsiblesStatus(message, isError = false) {
+      bitrixResponsiblesStatus.textContent = message;
+      bitrixResponsiblesStatus.classList.toggle("is-error", Boolean(isError));
     }
 
     async function fetchWithTimeout(url, options = {}, timeoutMs = 45000) {
@@ -8870,9 +8882,47 @@ BITRIX_PAGE_HTML = """<!doctype html>
       window.location.href = `/api/bitrix/deal-snapshots/export?${params.toString()}`;
     }
 
+    async function loadBitrixResponsibles() {
+      loadBitrixResponsiblesButton.disabled = true;
+      bitrixResponsiblesList.innerHTML = "";
+      setResponsiblesStatus("Загружаю ответственных из сохраненного среза...");
+      try {
+        const params = new URLSearchParams();
+        if (bitrixDealSnapshotDateSelect.value) {
+          params.set("captured_for_date", bitrixDealSnapshotDateSelect.value);
+        }
+        const response = await fetch(`/api/bitrix/deal-snapshots/responsibles?${params.toString()}`);
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось загрузить ответственных.");
+        }
+
+        const items = payload.responsibles || [];
+        if (!items.length) {
+          setResponsiblesStatus("Ответственные в срезе не найдены.");
+          return;
+        }
+        bitrixResponsiblesList.innerHTML = items.map((item) => `
+          <div class="deal-item">
+            <div class="deal-title">
+              <span class="mono">#${formatSnapshotValue(item.assigned_by_id)}</span>
+              <span>${formatSnapshotValue(item.assigned_by_name || "ФИО не найдено")}</span>
+            </div>
+            <div class="deal-meta">Сделок: ${formatSnapshotValue(item.deal_count)}${item.assigned_by_name ? "" : "<br>Bitrix не вернул ФИО для этого ID."}</div>
+          </div>
+        `).join("");
+        setResponsiblesStatus(`Ответственные: ${items.length}. Срез: ${payload.snapshot_run?.captured_for_date || "последний"}.`);
+      } catch (error) {
+        setResponsiblesStatus(String(error.message || error), true);
+      } finally {
+        loadBitrixResponsiblesButton.disabled = false;
+      }
+    }
+
     captureBitrixDealSnapshotButton?.addEventListener("click", captureBitrixDealSnapshot);
     deleteBitrixDealSnapshotButton?.addEventListener("click", deleteSelectedBitrixDealSnapshot);
     exportBitrixDealSnapshotButton?.addEventListener("click", exportBitrixDealSnapshot);
+    loadBitrixResponsiblesButton?.addEventListener("click", loadBitrixResponsibles);
     reloadBitrixDealSnapshotButton?.addEventListener("click", () => {
       bitrixDealSnapshotPage = 1;
       safeLoadBitrixDealSnapshotItems();
@@ -13011,6 +13061,56 @@ def getBitrixDealSnapshotRuns(limit: int = Query(50, ge=1, le=500)) -> dict[str,
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     return {"snapshot_runs": listBitrixDealSnapshotRuns(limit)}
+
+
+@app.get("/api/bitrix/deal-snapshots/responsibles")
+def getBitrixDealSnapshotResponsibles(captured_for_date: str | None = Query(None)) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    payload = listBitrixDealSnapshotResponsibleIds(captured_for_date)
+    responsibleRows = [row for row in payload.get("responsible_ids", []) if isinstance(row, dict)]
+    responsibleIds: list[int] = []
+    for row in responsibleRows:
+        try:
+            responsibleId = int(row.get("assigned_by_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if responsibleId > 0:
+            responsibleIds.append(responsibleId)
+
+    userNames: dict[object, str] = {}
+    if responsibleIds and config.bitrixPortalUrl and config.bitrixCredential:
+        try:
+            userNames = fetchBitrixUserNames(
+                portalUrl=config.bitrixPortalUrl,
+                credential=config.bitrixCredential,
+                userIds=responsibleIds,
+            )
+        except Exception:
+            userNames = {}
+
+    responsibles: list[dict[str, object]] = []
+    for row in responsibleRows:
+        try:
+            responsibleId = int(row.get("assigned_by_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if responsibleId <= 0:
+            continue
+        responsibles.append(
+            {
+                "assigned_by_id": responsibleId,
+                "assigned_by_name": userNames.get(responsibleId),
+                "deal_count": int(row.get("deal_count") or 0),
+            }
+        )
+
+    return {
+        "snapshot_run": payload.get("snapshot_run"),
+        "responsibles": responsibles,
+        "resolved_count": sum(1 for item in responsibles if item.get("assigned_by_name")),
+    }
 
 
 def enrichBitrixDealSnapshotResponsibleNames(payload: dict[str, object]) -> dict[str, object]:

@@ -4471,6 +4471,65 @@ def listBitrixDealSnapshotDates() -> list[str]:
     return [str(row["captured_for_date"]) for row in listBitrixDealSnapshotRuns(500)]
 
 
+def listBitrixDealSnapshotResponsibleIds(capturedForDate: str | None = None) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    params: dict[str, object] = {}
+    with engine.connect() as connection:
+        if capturedForDate:
+            params["captured_for_date"] = capturedForDate
+            run = connection.execute(
+                text(
+                    """
+                    SELECT id, captured_for_date, captured_at, total_deals
+                    FROM bitrix_deal_snapshot_runs
+                    WHERE captured_for_date = CAST(:captured_for_date AS DATE)
+                    ORDER BY captured_at DESC, id DESC
+                    LIMIT 1
+                    """
+                ),
+                params,
+            ).mappings().first()
+        else:
+            run = connection.execute(
+                text(
+                    """
+                    SELECT id, captured_for_date, captured_at, total_deals
+                    FROM bitrix_deal_snapshot_runs
+                    ORDER BY captured_for_date DESC, captured_at DESC, id DESC
+                    LIMIT 1
+                    """
+                )
+            ).mappings().first()
+
+        if run is None:
+            return {"snapshot_run": None, "responsible_ids": []}
+
+        responsibleRows = [
+            dict(row._mapping)
+            for row in connection.execute(
+                text(
+                    """
+                    SELECT assigned_by_id, COUNT(*) AS deal_count
+                    FROM bitrix_deal_snapshot_items
+                    WHERE snapshot_run_id = :snapshot_run_id
+                      AND assigned_by_id IS NOT NULL
+                    GROUP BY assigned_by_id
+                    ORDER BY deal_count DESC, assigned_by_id ASC
+                    """
+                ),
+                {"snapshot_run_id": int(run["id"])},
+            )
+        ]
+
+    return {
+        "snapshot_run": dict(run),
+        "responsible_ids": responsibleRows,
+    }
+
+
 def getBitrixDealSnapshotItems(
     capturedForDate: str | None = None,
     *,
