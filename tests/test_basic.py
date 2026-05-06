@@ -39,6 +39,16 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert "Маршрут /Bitrix уже доступен на сайте" in body
 
 
+def testReadBitrixPageMasksCredential(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "bitrixCredential", "123/secret-webhook-code")
+
+    body = readBitrixPage().body.decode("utf-8")
+
+    assert "Btrx:" in body
+    assert "id/webhook" in body
+    assert "123/secret-webhook-code" not in body
+
+
 def testGetBitrixDealsEndpointReturnsItems(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "bitrixPortalUrl", "https://sms-it.bitrix24.ru")
     monkeypatch.setattr(app_module.config, "bitrixCredential", "1/test-webhook")

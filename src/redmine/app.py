@@ -3257,6 +3257,36 @@ def requireBitrixConfig() -> None:
         )
 
 
+def buildBitrixCredentialDebugHtml() -> str:
+    credential = str(config.bitrixCredential or "").strip()
+    if not credential:
+        return "Btrx: не задана"
+
+    if credential in {
+        "replace_me",
+        "put_incoming_webhook_or_oauth_token_here",
+        "set_me_in_render_dashboard",
+    }:
+        return f"Btrx: placeholder ({escape(credential)})"
+
+    if credential.startswith("http://") or credential.startswith("https://"):
+        authMode = "полный webhook URL"
+    elif "/" in credential and " " not in credential:
+        authMode = "id/webhook"
+    else:
+        authMode = "OAuth token или одиночное значение"
+
+    if len(credential) <= 8:
+        masked = "*" * len(credential)
+    else:
+        masked = f"{credential[:2]}{'*' * max(4, len(credential) - 6)}{credential[-4:]}"
+
+    return (
+        f"Btrx: {escape(masked)} "
+        f"(формат: {escape(authMode)}, длина: {len(credential)})"
+    )
+
+
 def formatPageHours(value: object) -> str:
     try:
         return f"{float(value or 0):.1f}".replace(".", ",")
@@ -8344,6 +8374,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
         <div class="hero-actions">
           <button class="button button-primary" id="loadBitrixDealsButton" type="button">Показать сделки</button>
         </div>
+        <div class="status-note">__BITRIX_CREDENTIAL_DEBUG__</div>
         <div class="status-note" id="bitrixDealsStatus">Готово к проверке интеграции.</div>
         <div class="deal-list" id="bitrixDealsList"></div>
       </article>
@@ -10349,7 +10380,9 @@ def readRoot() -> HTMLResponse:
 
 @app.get("/Bitrix", response_class=HTMLResponse)
 def readBitrixPage() -> HTMLResponse:
-    return _renderHtmlPage(BITRIX_PAGE_HTML)
+    return _renderHtmlPage(
+        BITRIX_PAGE_HTML.replace("__BITRIX_CREDENTIAL_DEBUG__", buildBitrixCredentialDebugHtml())
+    )
 
 
 @app.get("/login", response_class=HTMLResponse)
