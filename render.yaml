@@ -18,6 +18,10 @@ services:
         sync: false
       - key: REDMINE_API_KEY
         sync: false
+      - key: BITRIX_PORTAL_URL
+        value: https://sms-it.bitrix24.ru
+      - key: Btrx
+        sync: false
 
   - type: cron
     name: redmine-snapshot-cron

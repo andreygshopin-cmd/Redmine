@@ -19,6 +19,7 @@ def testLoadConfigReturnsObject() -> None:
     config = loadConfig()
     assert config is not None
     assert config.appHost != ""
+    assert config.bitrixPortalUrl.startswith("https://")
 
 
 def testReadRootReturnsHtmlPage() -> None:
@@ -36,6 +37,45 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert response.media_type == "text/html"
     assert "Bitrix test page" in body
     assert "Маршрут /Bitrix уже доступен на сайте" in body
+
+
+def testGetBitrixDealsEndpointReturnsItems(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "bitrixPortalUrl", "https://sms-it.bitrix24.ru")
+    monkeypatch.setattr(app_module.config, "bitrixCredential", "1/test-webhook")
+
+    captured: dict[str, object] = {}
+
+    def fakeFetchBitrixDeals(**kwargs) -> dict[str, object]:
+        captured.update(kwargs)
+        return {
+            "portal_url": "https://sms-it.bitrix24.ru",
+            "auth_mode": "webhook_path",
+            "items": [{"id": 501, "title": "Deal #501"}],
+            "total": 1,
+            "requested_limit": 5,
+            "filter": {"stageId": "NEW"},
+        }
+
+    monkeypatch.setattr(app_module, "fetchBitrixDeals", fakeFetchBitrixDeals)
+
+    response = client.get("/api/bitrix/deals?limit=5&stage_id=NEW")
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["id"] == 501
+    assert captured["portalUrl"] == "https://sms-it.bitrix24.ru"
+    assert captured["credential"] == "1/test-webhook"
+    assert captured["limit"] == 5
+    assert captured["stageId"] == "NEW"
+
+
+def testGetBitrixDealsEndpointRequiresCredential(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "bitrixPortalUrl", "https://sms-it.bitrix24.ru")
+    monkeypatch.setattr(app_module.config, "bitrixCredential", "")
+
+    response = client.get("/api/bitrix/deals")
+
+    assert response.status_code == 400
+    assert "Btrx is not set" in response.json()["detail"]
 
 
 def testGetTimeReturnsServerTimePayload() -> None:

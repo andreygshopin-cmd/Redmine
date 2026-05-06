@@ -22,6 +22,8 @@ class Config:
     smtpUseSsl: bool = os.getenv("SMTP_USE_SSL", "false").strip().lower() in {"1", "true", "yes", "on"}
     renderApiKey: str = os.getenv("RENDER_API_KEY", "")
     renderServiceId: str = os.getenv("RENDER_SERVICE_ID", "")
+    bitrixPortalUrl: str = os.getenv("BITRIX_PORTAL_URL", "https://sms-it.bitrix24.ru")
+    bitrixCredential: str = os.getenv("Btrx", "")
 
 
 def loadConfig() -> Config:

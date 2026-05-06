@@ -20,6 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from src.redmine.bitrix_client import fetchBitrixDeals
 from src.redmine.config import loadConfig
 from src.redmine.db import (
     checkDatabaseConnection,
@@ -212,6 +213,7 @@ def _publicPath(path: str) -> bool:
         "/reset-password",
         "/logout",
         "/change-password",
+        "/Bitrix",
         "/health",
         "/db-health",
         "/api/auth/login",
@@ -3234,6 +3236,25 @@ def requireProjectSyncConfig() -> None:
         raise HTTPException(status_code=400, detail="REDMINE_URL is not set")
     if not config.apiKey:
         raise HTTPException(status_code=400, detail="REDMINE_API_KEY is not set")
+
+
+def requireBitrixConfig() -> None:
+    if not config.bitrixPortalUrl:
+        raise HTTPException(status_code=400, detail="BITRIX_PORTAL_URL is not set")
+    credentialNormalized = str(config.bitrixCredential or "").strip()
+    if credentialNormalized in {
+        "",
+        "replace_me",
+        "put_incoming_webhook_or_oauth_token_here",
+        "set_me_in_render_dashboard",
+    }:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Btrx is not set. Put an incoming webhook or OAuth token into the Render variable Btrx. "
+                "Bitrix24 application passwords do not work for REST deals."
+            ),
+        )
 
 
 def formatPageHours(value: object) -> str:
@@ -8101,9 +8122,12 @@ BITRIX_PAGE_HTML = """<!doctype html>
       justify-content: center;
       min-height: 48px;
       padding: 0 20px;
+      border: 0;
       border-radius: 14px;
+      font: inherit;
       text-decoration: none;
       font-weight: 700;
+      cursor: pointer;
       transition: transform 120ms ease, filter 120ms ease;
     }
 
@@ -8153,6 +8177,50 @@ BITRIX_PAGE_HTML = """<!doctype html>
     .card ul {
       margin: 0;
       padding-left: 18px;
+    }
+
+    .status-note {
+      margin-top: 14px;
+      color: var(--muted);
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+
+    .status-note.is-error {
+      color: #b63d00;
+    }
+
+    .deal-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .deal-item {
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.88);
+    }
+
+    .deal-title {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    .deal-meta {
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 0.96rem;
+    }
+
+    .deal-empty {
+      color: var(--muted);
+      line-height: 1.55;
     }
 
     .metrics {
@@ -8254,27 +8322,107 @@ BITRIX_PAGE_HTML = """<!doctype html>
           <li>Поднят отдельный маршрут для страницы Bitrix внутри текущего приложения.</li>
           <li>Страница оформлена в цветах существующего интерфейса, чтобы она выглядела частью продукта.</li>
           <li>Добавлена базовая навигация обратно на главную и на health-проверку.</li>
+          <li>Подготовлен API-метод для чтения сделок из Bitrix24 через переменную Render `Btrx`.</li>
         </ul>
       </article>
 
       <article class="card">
-        <h2>Для чего подходит</h2>
+        <h2>Что положить в Btrx</h2>
         <p>
-          Эту страницу удобно использовать как тестовую площадку перед подключением
-          Bitrix24-виджетов, HTML-вставок, API-диагностики или внутренних сценариев
-          интеграции.
+          Для получения сделок нужен не пароль приложения, а входящий webhook или OAuth-токен
+          для REST API Bitrix24. В переменную <strong>Btrx</strong> можно положить полный webhook URL,
+          путь вида <strong>user_id/webhook_code</strong> или OAuth access token.
         </p>
       </article>
 
       <article class="card">
-        <h2>Следующий шаг</h2>
+        <h2>Сделки Bitrix</h2>
         <p>
-          Если понадобится, сюда можно быстро добавить форму авторизации, webhooks,
-          iframe c Bitrix или диагностические блоки для обмена данными между системами.
+          Кнопка ниже обращается к <strong>/api/bitrix/deals</strong> и показывает последние сделки
+          напрямую с портала.
         </p>
+        <div class="hero-actions">
+          <button class="button button-primary" id="loadBitrixDealsButton" type="button">Показать сделки</button>
+        </div>
+        <div class="status-note" id="bitrixDealsStatus">Готово к проверке интеграции.</div>
+        <div class="deal-list" id="bitrixDealsList"></div>
       </article>
     </section>
   </div>
+  <script>
+    const loadBitrixDealsButton = document.getElementById("loadBitrixDealsButton");
+    const bitrixDealsStatus = document.getElementById("bitrixDealsStatus");
+    const bitrixDealsList = document.getElementById("bitrixDealsList");
+
+    function setBitrixStatus(message, isError = false) {
+      bitrixDealsStatus.textContent = message;
+      bitrixDealsStatus.classList.toggle("is-error", Boolean(isError));
+    }
+
+    function formatDealValue(value) {
+      if (value === null || value === undefined || value === "") {
+        return "—";
+      }
+      return String(value);
+    }
+
+    function renderBitrixDeals(items) {
+      bitrixDealsList.innerHTML = "";
+
+      if (!items.length) {
+        bitrixDealsList.innerHTML = '<div class="deal-empty">Сделки не найдены по текущему запросу.</div>';
+        return;
+      }
+
+      const fragment = document.createDocumentFragment();
+      items.forEach((item) => {
+        const dealNode = document.createElement("article");
+        dealNode.className = "deal-item";
+        dealNode.innerHTML = `
+          <div class="deal-title">
+            <span>#${formatDealValue(item.id)}</span>
+            <span>${formatDealValue(item.title)}</span>
+          </div>
+          <div class="deal-meta">
+            Стадия: ${formatDealValue(item.stageId)}<br>
+            Ответственный: ${formatDealValue(item.assignedById)}<br>
+            Сумма: ${formatDealValue(item.opportunity)} ${formatDealValue(item.currencyId)}<br>
+            Обновлена: ${formatDealValue(item.updatedTime)}
+          </div>
+        `;
+        fragment.appendChild(dealNode);
+      });
+
+      bitrixDealsList.appendChild(fragment);
+    }
+
+    async function loadBitrixDeals() {
+      loadBitrixDealsButton.disabled = true;
+      bitrixDealsList.innerHTML = "";
+      setBitrixStatus("Загружаю сделки из Bitrix24...");
+
+      try {
+        const response = await fetch("/api/bitrix/deals?limit=20");
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось получить сделки из Bitrix24.");
+        }
+
+        const items = payload.items || [];
+        renderBitrixDeals(items);
+        setBitrixStatus(
+          `Получено сделок: ${items.length} из ${payload.total || items.length}. Режим авторизации: ${payload.auth_mode}.`
+        );
+      } catch (error) {
+        setBitrixStatus(String(error.message || error), true);
+      } finally {
+        loadBitrixDealsButton.disabled = false;
+      }
+    }
+
+    loadBitrixDealsButton?.addEventListener("click", loadBitrixDeals);
+  </script>
 </body>
 </html>"""
 
@@ -10195,6 +10343,15 @@ def getIndexPage() -> HTMLResponse:
     return _renderHtmlPage(PAGE_HTML)
 
 
+def readRoot() -> HTMLResponse:
+    return _renderHtmlPage(PAGE_HTML)
+
+
+@app.get("/Bitrix", response_class=HTMLResponse)
+def readBitrixPage() -> HTMLResponse:
+    return _renderHtmlPage(BITRIX_PAGE_HTML)
+
+
 @app.get("/login", response_class=HTMLResponse)
 def getLoginPage(next: str | None = Query("/", alias="next")) -> HTMLResponse:
     _ensureAuthStorage()
@@ -11564,6 +11721,40 @@ def getStrangeSnapshotIssuesPage() -> HTMLResponse:
     return _renderHtmlPage(buildStrangeSnapshotIssuesPage())
 
 
+@app.get("/api/bitrix/deals")
+def getBitrixDeals(
+    limit: int = Query(20, ge=1, le=500),
+    search: str | None = Query(None),
+    stage_id: str | None = Query(None),
+    assigned_by_id: int | None = Query(None),
+    category_id: int | None = Query(None),
+) -> dict[str, object]:
+    requireBitrixConfig()
+
+    try:
+        return fetchBitrixDeals(
+            portalUrl=config.bitrixPortalUrl,
+            credential=config.bitrixCredential,
+            limit=limit,
+            search=search,
+            stageId=stage_id,
+            assignedById=assigned_by_id,
+            categoryId=category_id,
+        )
+    except requests.HTTPError as error:
+        detail = "Bitrix24 request failed."
+        if error.response is not None:
+            detail = f"{detail} HTTP {error.response.status_code}."
+        raise HTTPException(status_code=502, detail=detail) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+
+@app.get("/snapshot-rules", response_class=HTMLResponse)
+def getSnapshotRulesPage() -> HTMLResponse:
+    return HTMLResponse(buildSnapshotRulesPage())
+
+
 @app.get("/api/time")
 def getTime() -> dict[str, str]:
     nowUtc = datetime.now(UTC)
@@ -12418,8 +12609,6 @@ def recaptureIssueSnapshots() -> dict[str, object]:
         "captured_for_date": capturedForDate,
         "detail": "Обновление последних срезов запущено.",
     }
-
-
 @app.get("/api/issues/snapshots/capture-status")
 def getIssueSnapshotCaptureProgress() -> dict[str, object]:
     return getIssueSnapshotCaptureStatus()
@@ -12610,12 +12799,23 @@ def getRedmineProjectCustomFieldDiagnostics(
 
 @app.get("/health")
 def health() -> dict[str, object]:
+    bitrixCredentialNormalized = str(config.bitrixCredential or "").strip()
     return {
         "status": "ok",
         "build_id": APP_BUILD_ID,
         "environment": config.appEnv,
         "database_configured": bool(config.databaseUrl),
         "redmine_configured": bool(config.redmineUrl and config.apiKey),
+        "bitrix_configured": bool(
+            config.bitrixPortalUrl
+            and bitrixCredentialNormalized
+            and bitrixCredentialNormalized
+            not in {
+                "replace_me",
+                "put_incoming_webhook_or_oauth_token_here",
+                "set_me_in_render_dashboard",
+            }
+        ),
         "render_git_commit": os.getenv("RENDER_GIT_COMMIT", ""),
         "render_git_branch": os.getenv("RENDER_GIT_BRANCH", ""),
         "render_service_id": os.getenv("RENDER_SERVICE_ID", ""),
