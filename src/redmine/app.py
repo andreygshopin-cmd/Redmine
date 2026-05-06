@@ -6118,6 +6118,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         </div>
       </div>
       <div class="action-status" id="snapshotActionStatus"></div>
+      <div class="status-history" id="snapshotActionStatusHistory" hidden></div>
       <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Дата среза: {capturedForDate}. По фильтру: <span id="filteredIssuesCount">{initialFilteredIssues}</span> из {initialTotalIssues}. На странице: <span id="pageIssuesCount">{len(issues)}</span>.</p>
       <div class="summary-block">
         <table class="summary-table">
@@ -6254,6 +6255,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     </div>
     <script>
       const snapshotActionStatus = document.getElementById("snapshotActionStatus");
+      const snapshotActionStatusHistory = document.getElementById("snapshotActionStatusHistory");
       const capturedForDateSelect = document.getElementById("capturedForDate");
       const filteredIssuesCount = document.getElementById("filteredIssuesCount");
       const pageIssuesCount = document.getElementById("pageIssuesCount");
@@ -6283,6 +6285,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       let currentSnapshotTotalIssues = {initialTotalIssues};
       let currentSnapshotPageSize = {initialPageSize};
       let snapshotReloadTimer = null;
+      let snapshotCaptureErrorsExpanded = false;
 
       function getSelectedSnapshotDate() {{
         return String(capturedForDateSelect?.value || selectedSnapshotDate || "").trim();
@@ -6316,10 +6319,95 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const summaryBugSpentYear = document.getElementById("summaryBugSpentYear");
       let currentSnapshotFilterSignature = "";
 
-      function setActionStatus(message) {{
-        if (snapshotActionStatus) {{
-          snapshotActionStatus.textContent = message;
+      function isSnapshotCaptureErrorMessage(message) {{
+        return String(message || "").includes("Render job: failed");
+      }}
+
+      function clearSnapshotCaptureErrorHistory() {{
+        snapshotCaptureErrorsExpanded = false;
+        if (snapshotActionStatusHistory) {{
+          snapshotActionStatusHistory.hidden = true;
+          snapshotActionStatusHistory.innerHTML = "";
         }}
+      }}
+
+      function renderSnapshotCaptureErrorStatus(message) {{
+        if (!snapshotActionStatus) {{
+          return;
+        }}
+        snapshotActionStatus.innerHTML = `${{escapeHtml(message)}} <a href="#" class="status-history-link" id="snapshotActionStatusHistoryLink">Показать все ошибки</a>`;
+        const historyLink = document.getElementById("snapshotActionStatusHistoryLink");
+        if (historyLink) {{
+          historyLink.addEventListener("click", async (event) => {{
+            event.preventDefault();
+            if (snapshotCaptureErrorsExpanded) {{
+              clearSnapshotCaptureErrorHistory();
+              renderSnapshotCaptureErrorStatus(message);
+              return;
+            }}
+            await loadSnapshotCaptureErrorHistory(message);
+          }});
+        }}
+      }}
+
+      async function loadSnapshotCaptureErrorHistory(currentMessage = "") {{
+        snapshotCaptureErrorsExpanded = true;
+        if (!snapshotActionStatusHistory) {{
+          return;
+        }}
+        snapshotActionStatusHistory.hidden = false;
+        snapshotActionStatusHistory.innerHTML = '<p class="status-history-empty">Загружаем историю ошибок...</p>';
+
+        try {{
+          const response = await fetch("/api/issues/snapshots/capture-errors");
+          const payload = await response.json();
+          if (!response.ok) {{
+            throw new Error(payload.detail || "Не удалось загрузить историю ошибок.");
+          }}
+
+          const errors = Array.isArray(payload.errors) ? payload.errors : [];
+          if (!errors.length) {{
+            snapshotActionStatusHistory.innerHTML = '<p class="status-history-empty">Сохраненных ошибок пока нет.</p>';
+            return;
+          }}
+
+          const itemsHtml = errors.map((item) => {{
+            const createdAt = escapeHtml(formatSnapshotStatusDate(item.created_at));
+            const projectPart = item.project_name
+              ? ` • ${{escapeHtml(item.project_name)}}`
+              : item.project_redmine_id
+                ? ` • проект ${{escapeHtml(item.project_redmine_id)}}`
+                : "";
+            const modePart = item.mode ? ` • режим ${{escapeHtml(item.mode)}}` : "";
+            const runnerPart = item.runner_kind ? ` • ${{escapeHtml(item.runner_kind)}}` : "";
+            const datePart = item.captured_for_date ? ` • дата ${{escapeHtml(item.captured_for_date)}}` : "";
+            return `<li><span class="mono">${{createdAt}}</span>${{projectPart}}${{modePart}}${{runnerPart}}${{datePart}}<br>${{escapeHtml(item.message || "")}}</li>`;
+          }}).join("");
+
+          snapshotActionStatusHistory.innerHTML = `
+            <p class="status-history-title">История ошибок загрузки срезов</p>
+            <ol class="status-history-list">${{itemsHtml}}</ol>
+          `;
+          renderSnapshotCaptureErrorStatus(currentMessage || errors[0]?.message || "Ошибка загрузки срезов.");
+          const activeLink = document.getElementById("snapshotActionStatusHistoryLink");
+          if (activeLink) {{
+            activeLink.textContent = "Скрыть ошибки";
+          }}
+        }} catch (error) {{
+          snapshotActionStatusHistory.innerHTML = `<p class="status-history-empty">${{escapeHtml(error.message || "Не удалось загрузить историю ошибок.")}}</p>`;
+        }}
+      }}
+
+      function setActionStatus(message) {{
+        if (!snapshotActionStatus) {{
+          return;
+        }}
+        if (isSnapshotCaptureErrorMessage(message)) {{
+          renderSnapshotCaptureErrorStatus(message);
+          return;
+        }}
+        clearSnapshotCaptureErrorHistory();
+        snapshotActionStatus.textContent = message;
       }}
 
       function setSnapshotLoading(isLoading) {{
@@ -6354,6 +6442,13 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }}
 
       function formatSnapshotDateTime(value) {{
+        if (!value) {{
+          return "—";
+        }}
+        return String(value).replace("T", " ").replace("+00:00", " UTC");
+      }}
+
+      function formatSnapshotStatusDate(value) {{
         if (!value) {{
           return "—";
         }}

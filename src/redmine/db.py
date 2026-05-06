@@ -4065,12 +4065,31 @@ def createIssueSnapshotRun(
                     :created_on,
                     :updated_on
                 )
+                ON CONFLICT (snapshot_run_id, time_entry_redmine_id) DO UPDATE SET
+                    project_redmine_id = EXCLUDED.project_redmine_id,
+                    project_name = EXCLUDED.project_name,
+                    issue_redmine_id = EXCLUDED.issue_redmine_id,
+                    issue_subject = EXCLUDED.issue_subject,
+                    issue_tracker_name = EXCLUDED.issue_tracker_name,
+                    issue_status_name = EXCLUDED.issue_status_name,
+                    user_id = EXCLUDED.user_id,
+                    user_name = EXCLUDED.user_name,
+                    activity_id = EXCLUDED.activity_id,
+                    activity_name = EXCLUDED.activity_name,
+                    hours = EXCLUDED.hours,
+                    comments = EXCLUDED.comments,
+                    spent_on = EXCLUDED.spent_on,
+                    created_on = EXCLUDED.created_on,
+                    updated_on = EXCLUDED.updated_on
                 """
             )
 
-            timeEntryPayload: list[dict[str, object]] = []
+            timeEntryPayloadById: dict[int, dict[str, object]] = {}
             for timeEntry in timeEntries:
                 item = dict(timeEntry)
+                timeEntryRedmineId = int(item.get("time_entry_redmine_id") or 0)
+                if timeEntryRedmineId <= 0:
+                    continue
                 item["snapshot_run_id"] = snapshotRunId
                 issueRedmineId = int(item.get("issue_redmine_id") or 0)
                 issueMeta = issueMetaById.get(issueRedmineId, {})
@@ -4078,7 +4097,9 @@ def createIssueSnapshotRun(
                 item["issue_subject"] = issueMeta.get("issue_subject")
                 item["issue_tracker_name"] = issueMeta.get("issue_tracker_name")
                 item["issue_status_name"] = issueMeta.get("issue_status_name")
-                timeEntryPayload.append(item)
+                timeEntryPayloadById[timeEntryRedmineId] = item
+
+            timeEntryPayload = list(timeEntryPayloadById.values())
 
             for payloadChunk in chunkSequence(timeEntryPayload, SNAPSHOT_INSERT_BATCH_SIZE):
                 connection.execute(timeEntryInsertStatement, payloadChunk)
