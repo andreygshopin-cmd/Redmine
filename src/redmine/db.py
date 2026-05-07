@@ -5202,8 +5202,6 @@ def compareBitrixDealSnapshots(leftDate: str | None = None, rightDate: str | Non
                     r.category_id AS right_category_id,
                     l.category_name AS left_category_name,
                     r.category_name AS right_category_name,
-                    l.updated_time AS left_updated_time,
-                    r.updated_time AS right_updated_time,
                     CASE
                         WHEN l.deal_id IS NULL THEN 'added'
                         WHEN r.deal_id IS NULL THEN 'removed'
@@ -5224,7 +5222,6 @@ def compareBitrixDealSnapshots(leftDate: str | None = None, rightDate: str | Non
                    OR l.company_name IS DISTINCT FROM r.company_name
                    OR l.category_id IS DISTINCT FROM r.category_id
                    OR l.category_name IS DISTINCT FROM r.category_name
-                   OR l.updated_time IS DISTINCT FROM r.updated_time
                 ORDER BY COALESCE(l.deal_id, r.deal_id) DESC
                 """
             ),

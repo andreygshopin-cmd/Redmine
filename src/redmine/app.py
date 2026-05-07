@@ -9070,7 +9070,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
       color: var(--ink);
       background: linear-gradient(180deg, #ffffff 0%, var(--paper) 100%);
     }
-    main { max-width: 1280px; margin: 0 auto; padding: 28px 18px 48px; }
+    main { width: 100%; max-width: none; margin: 0 auto; padding: 28px 18px 48px; }
     header {
       display: flex;
       justify-content: space-between;
@@ -9128,9 +9128,17 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     }
     .status { color: var(--muted); margin: 12px 0; }
     .status.is-error { color: #b63d00; }
-    .table-wrap { overflow: visible; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
-    table { width: 100%; min-width: 1120px; border-collapse: collapse; font-size: 0.92rem; }
-    th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; }
+    .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: visible; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
+    table { width: max(100%, 178ch); min-width: 178ch; border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
+    .compare-col-id { width: 8ch; }
+    .compare-col-type { width: 12ch; }
+    .compare-col-title { width: 50ch; }
+    .compare-col-stage { width: 20ch; }
+    .compare-col-responsible { width: 24ch; }
+    .compare-col-amount { width: 14ch; }
+    .compare-col-company { width: 30ch; }
+    .compare-col-category { width: 20ch; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
     th { position: sticky; top: 0; z-index: 6; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
     .filter-row th { top: 48px; z-index: 5; padding-top: 8px; background: #f8fbfd; }
     .compare-filter { width: 100%; min-width: 90px; min-height: 36px; padding: 0 8px; border-radius: 10px; font-size: 0.88rem; }
@@ -9139,6 +9147,8 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     .pager { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
     .pager-info { color: var(--muted); }
     .changed-cell { background: #fff3b8; box-shadow: inset 0 0 0 1px rgba(205, 153, 0, 0.2); }
+    .amount-cell,
+    .amount-header { text-align: right; }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
   </style>
 </head>
@@ -9167,6 +9177,16 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
       <div class="status" id="compareStatus">Загружаю сравнение...</div>
       <div class="table-wrap">
         <table>
+          <colgroup>
+            <col class="compare-col-id">
+            <col class="compare-col-type">
+            <col class="compare-col-title">
+            <col class="compare-col-stage">
+            <col class="compare-col-responsible">
+            <col class="compare-col-amount">
+            <col class="compare-col-company">
+            <col class="compare-col-category">
+          </colgroup>
           <thead>
             <tr>
               <th><button class="sort-button" data-compare-sort="deal_id" data-label="ID" type="button">ID</button></th>
@@ -9174,10 +9194,9 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
               <th><button class="sort-button" data-compare-sort="title" data-label="Название" type="button">Название</button></th>
               <th><button class="sort-button" data-compare-sort="stage" data-label="Стадия" type="button">Стадия</button></th>
               <th><button class="sort-button" data-compare-sort="responsible" data-label="Ответственный" type="button">Ответственный</button></th>
-              <th><button class="sort-button" data-compare-sort="opportunity" data-label="Сумма" type="button">Сумма</button></th>
+              <th class="amount-header"><button class="sort-button" data-compare-sort="opportunity" data-label="Сумма" type="button">Сумма</button></th>
               <th><button class="sort-button" data-compare-sort="company" data-label="Компания" type="button">Компания</button></th>
               <th><button class="sort-button" data-compare-sort="category" data-label="Воронка" type="button">Воронка</button></th>
-              <th><button class="sort-button" data-compare-sort="updated_time" data-label="Обновлена" type="button">Обновлена</button></th>
             </tr>
             <tr class="filter-row">
               <th><input class="compare-filter" data-compare-filter="deal_id" placeholder="Фильтр"></th>
@@ -9188,7 +9207,6 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
               <th><input class="compare-filter" data-compare-filter="opportunity" placeholder="Фильтр"></th>
               <th><input class="compare-filter" data-compare-filter="company" placeholder="Фильтр"></th>
               <th><input class="compare-filter" data-compare-filter="category" placeholder="Фильтр"></th>
-              <th><input class="compare-filter" data-compare-filter="updated_time" placeholder="Фильтр"></th>
             </tr>
           </thead>
           <tbody id="compareTableBody"></tbody>
@@ -9260,6 +9278,10 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
       return String(value);
     }
 
+    function isMissingCompareValue(value) {
+      return value === null || value === undefined || value === "";
+    }
+
     function pickVisibleValue(leftValue, rightValue) {
       return rightValue === null || rightValue === undefined || rightValue === "" ? leftValue : rightValue;
     }
@@ -9273,6 +9295,9 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     }
 
     function normalizeAmountValue(value) {
+      if (value === null || value === undefined || value === "") {
+        return "";
+      }
       const numericValue = Number(value);
       if (!Number.isFinite(numericValue)) {
         return normalizeComparableValue(value);
@@ -9313,37 +9338,46 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
           return { left: change.left_company_name || change.left_company_id, right: change.right_company_name || change.right_company_id };
         case "category":
           return { left: change.left_category_name || change.left_category_id, right: change.right_category_name || change.right_category_id };
-        case "updated_time":
-          return { left: change.left_updated_time, right: change.right_updated_time };
         default:
           return { left: "", right: "" };
       }
     }
 
-    function buildCompareCell(leftValue, rightValue, formatter = formatValue, className = "") {
+    function buildChangedCompareContent(leftValue, rightValue, formatter, changeType) {
+      const normalizedChangeType = String(changeType || "").toLowerCase();
+      if (normalizedChangeType === "added" && isMissingCompareValue(leftValue)) {
+        return formatter(rightValue);
+      }
+      if (normalizedChangeType === "removed" && isMissingCompareValue(rightValue)) {
+        return formatter(leftValue);
+      }
+      return `${formatter(leftValue)} → ${formatter(rightValue)}`;
+    }
+
+    function buildCompareCell(leftValue, rightValue, formatter = formatValue, className = "", changeType = "") {
       const isChanged = normalizeComparableValue(leftValue) !== normalizeComparableValue(rightValue);
       const content = isChanged
-        ? `${formatter(leftValue)} → ${formatter(rightValue)}`
+        ? buildChangedCompareContent(leftValue, rightValue, formatter, changeType)
         : formatter(pickVisibleValue(leftValue, rightValue));
       const classes = [className, isChanged ? "changed-cell" : ""].filter(Boolean).join(" ");
       return `<td${classes ? ` class="${classes}"` : ""}>${content}</td>`;
     }
 
-    function buildAmountCell(leftValue, rightValue) {
+    function buildAmountCell(leftValue, rightValue, changeType = "") {
       const isChanged = normalizeAmountValue(leftValue) !== normalizeAmountValue(rightValue);
       const content = isChanged
-        ? `${formatIntegerAmount(leftValue)} → ${formatIntegerAmount(rightValue)}`
+        ? buildChangedCompareContent(leftValue, rightValue, formatIntegerAmount, changeType)
         : formatIntegerAmount(pickVisibleValue(leftValue, rightValue));
-      const classes = ["mono", isChanged ? "changed-cell" : ""].filter(Boolean).join(" ");
+      const classes = ["mono", "amount-cell", isChanged ? "changed-cell" : ""].filter(Boolean).join(" ");
       return `<td class="${classes}">${content}</td>`;
     }
 
     function buildCompareFieldCell(change, field, className = "") {
       const pair = getComparePair(change, field);
       if (pair.isAmount) {
-        return buildAmountCell(pair.left, pair.right);
+        return buildAmountCell(pair.left, pair.right, change.change_type);
       }
-      return buildCompareCell(pair.left, pair.right, formatValue, className);
+      return buildCompareCell(pair.left, pair.right, formatValue, className, change.change_type);
     }
 
     function getCompareFilterText(change, field) {
@@ -9397,7 +9431,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
 
     function renderRows(changes) {
       if (!Array.isArray(changes) || !changes.length) {
-        compareTableBody.innerHTML = '<tr><td colspan="9">Изменений между срезами не найдено.</td></tr>';
+        compareTableBody.innerHTML = '<tr><td colspan="8">Изменений между срезами не найдено.</td></tr>';
         return;
       }
       compareTableBody.innerHTML = changes.map((change) => `
@@ -9410,7 +9444,6 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
           ${buildCompareFieldCell(change, "opportunity")}
           ${buildCompareFieldCell(change, "company")}
           ${buildCompareFieldCell(change, "category")}
-          ${buildCompareFieldCell(change, "updated_time", "mono")}
         </tr>
       `).join("");
     }

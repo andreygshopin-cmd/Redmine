@@ -86,7 +86,14 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
     assert "comparePageSizeInput" in body
     assert 'data-compare-filter="company"' in body
     assert 'data-compare-sort="company"' in body
-    assert 'colspan="9"' in body
+    assert 'data-compare-sort="updated_time"' not in body
+    assert 'data-compare-filter="updated_time"' not in body
+    assert 'colspan="8"' in body
+    assert 'colspan="9"' not in body
+    assert "compare-col-title" in body
+    assert "width: max(100%, 178ch)" in body
+    assert "table-layout: fixed" in body
+    assert "buildChangedCompareContent" in body
     assert "<th>Валюта</th>" not in body
 
 
