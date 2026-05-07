@@ -37,6 +37,12 @@ BITRIX_CRM_COMMON_SELECT_FIELDS = [
     "createdTime",
     "updatedTime",
 ]
+BITRIX_INVOICE_SELECT_FIELDS = [
+    *BITRIX_CRM_COMMON_SELECT_FIELDS,
+    "categoryId",
+    "begindate",
+    "closedate",
+]
 
 
 @dataclass(frozen=True)
@@ -375,7 +381,7 @@ def fetchBitrixInvoicesPage(portalUrl: str, credential: str, start: int = 0) -> 
         portalUrl,
         credential,
         entityTypeId=BITRIX_INVOICE_ENTITY_TYPE_ID,
-        selectFields=BITRIX_CRM_COMMON_SELECT_FIELDS,
+        selectFields=BITRIX_INVOICE_SELECT_FIELDS,
         start=start,
     )
 
@@ -394,7 +400,7 @@ def fetchAllBitrixInvoices(portalUrl: str, credential: str) -> dict[str, object]
         portalUrl,
         credential,
         entityTypeId=BITRIX_INVOICE_ENTITY_TYPE_ID,
-        selectFields=BITRIX_CRM_COMMON_SELECT_FIELDS,
+        selectFields=BITRIX_INVOICE_SELECT_FIELDS,
     )
 
 
@@ -706,6 +712,53 @@ def fetchBitrixCompanyNames(portalUrl: str, credential: str, companyIds: list[in
     return companyNames
 
 
+def fetchBitrixCrmCategoryNames(portalUrl: str, credential: str, entityTypeId: int) -> dict[object, str]:
+    categoryNames: dict[object, str] = {}
+    try:
+        categoryPayload = callBitrixRestMethod(
+            portalUrl,
+            credential,
+            "crm.category.list",
+            {"entityTypeId": entityTypeId},
+        )
+    except Exception:
+        return categoryNames
+
+    categoryResult = categoryPayload.get("result") or {}
+    categories = categoryResult.get("categories") if isinstance(categoryResult, dict) else categoryResult
+    for category in categories or []:
+        if not isinstance(category, dict):
+            continue
+        categoryId = category.get("id")
+        name = category.get("name") or category.get("title")
+        if categoryId is None or not name:
+            continue
+        try:
+            categoryNames[int(categoryId)] = str(name)
+        except (TypeError, ValueError):
+            continue
+    return categoryNames
+
+
+def buildBitrixCrmStageEntityIds(entityTypeId: int, categoryIds: list[int] | None = None) -> list[str]:
+    uniqueCategoryIds: list[int] = []
+    for value in categoryIds or []:
+        try:
+            categoryId = int(value or 0)
+        except (TypeError, ValueError):
+            continue
+        if categoryId not in uniqueCategoryIds:
+            uniqueCategoryIds.append(categoryId)
+
+    entityIds: list[str] = []
+    if entityTypeId == BITRIX_INVOICE_ENTITY_TYPE_ID:
+        for categoryId in uniqueCategoryIds:
+            entityIds.append(f"SMART_INVOICE_STAGE_{categoryId}")
+            entityIds.append(f"DYNAMIC_{entityTypeId}_STAGE_{categoryId}")
+        entityIds.append("SMART_INVOICE_STAGE")
+    return entityIds
+
+
 def fetchBitrixCrmItemDictionaries(
     portalUrl: str,
     credential: str,
@@ -713,9 +766,29 @@ def fetchBitrixCrmItemDictionaries(
     assignedByIds: list[int] | None = None,
     companyIds: list[int] | None = None,
     statusEntityIds: list[str] | None = None,
+    entityTypeId: int | None = None,
+    categoryIds: list[int] | None = None,
 ) -> dict[str, dict[object, str]]:
     statusNames: dict[object, str] = {}
+    categoryNames: dict[object, str] = {}
+    requestedStatusEntityIds: list[str] = []
     for entityId in statusEntityIds or []:
+        if entityId and entityId not in requestedStatusEntityIds:
+            requestedStatusEntityIds.append(entityId)
+    if entityTypeId is not None:
+        categoryNames = fetchBitrixCrmCategoryNames(portalUrl, credential, entityTypeId)
+        allCategoryIdSet = {int(value) for value in categoryNames}
+        for value in categoryIds or []:
+            try:
+                allCategoryIdSet.add(int(value or 0))
+            except (TypeError, ValueError):
+                continue
+        allCategoryIds = sorted(allCategoryIdSet)
+        for entityId in buildBitrixCrmStageEntityIds(entityTypeId, allCategoryIds):
+            if entityId and entityId not in requestedStatusEntityIds:
+                requestedStatusEntityIds.append(entityId)
+
+    for entityId in requestedStatusEntityIds:
         try:
             statusPayload = callBitrixRestMethod(
                 portalUrl,
@@ -733,6 +806,7 @@ def fetchBitrixCrmItemDictionaries(
 
     return {
         "status_names": statusNames,
+        "category_names": categoryNames,
         "assigned_by_names": fetchBitrixUserNames(portalUrl, credential, assignedByIds or []),
         "company_names": {},
     }

@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from src.redmine import app as app_module
-from src.redmine.app import app, getTime, readBitrixDealSnapshotComparePage, readBitrixPage, readRoot
+from src.redmine.app import app, getTime, readBitrixDealSnapshotComparePage, readBitrixInvoicesPage, readBitrixPage, readRoot
 from src.redmine.bitrix_client import fetchBitrixUserNames, fetchBitrixUsers
 from src.redmine.config import loadConfig
 from src.redmine.db import chunkSequence, normalizeDatabaseUrl
@@ -95,6 +95,23 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
     assert "table-layout: fixed" in body
     assert "buildChangedCompareContent" in body
     assert "<th>Валюта</th>" not in body
+
+
+def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
+    body = readBitrixInvoicesPage().body.decode("utf-8")
+
+    assert "Счета Bitrix" in body
+    assert "/api/bitrix/invoice-snapshots" in body
+    assert "crm-table-invoice" in body
+    assert "crm-col-title { width: 50ch" in body
+    assert "crm-col-responsible { width: 20ch" in body
+    assert "Воронка/стадия/счет" in body
+    assert 'data-filter="pipeline_stage_invoice"' in body
+    assert "Дата выставления" in body
+    assert 'data-filter="begin_date"' in body
+    assert "Срок оплаты" in body
+    assert 'data-filter="close_date"' in body
+    assert 'colspan="11"' in body
 
 
 def testGetBitrixDealsEndpointReturnsItems(monkeypatch) -> None:

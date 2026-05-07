@@ -525,6 +525,10 @@ def ensureBitrixDealSnapshotTables() -> None:
                         currency_id TEXT,
                         company_id BIGINT,
                         company_name TEXT,
+                        category_id BIGINT,
+                        category_name TEXT,
+                        begin_date DATE NULL,
+                        close_date DATE NULL,
                         created_time TIMESTAMPTZ NULL,
                         updated_time TIMESTAMPTZ NULL,
                         raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb
@@ -532,6 +536,10 @@ def ensureBitrixDealSnapshotTables() -> None:
                     """
                 )
             )
+            connection.execute(text("ALTER TABLE bitrix_crm_snapshot_items ADD COLUMN IF NOT EXISTS category_id BIGINT"))
+            connection.execute(text("ALTER TABLE bitrix_crm_snapshot_items ADD COLUMN IF NOT EXISTS category_name TEXT"))
+            connection.execute(text("ALTER TABLE bitrix_crm_snapshot_items ADD COLUMN IF NOT EXISTS begin_date DATE NULL"))
+            connection.execute(text("ALTER TABLE bitrix_crm_snapshot_items ADD COLUMN IF NOT EXISTS close_date DATE NULL"))
 
             connection.execute(
                 text(
@@ -4312,6 +4320,35 @@ def _toFloatOrNone(value: object) -> float | None:
         return None
 
 
+def _firstNonEmptyValue(*values: object) -> object | None:
+    for value in values:
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def humanizeBitrixCrmStatusId(statusId: object) -> str | None:
+    statusText = str(statusId or "").strip()
+    if not statusText:
+        return None
+
+    if statusText.startswith("DT31_") and ":" in statusText:
+        categoryPart, stageCode = statusText.split(":", 1)
+        categoryId = categoryPart.replace("DT31_", "", 1)
+        stageNames = {
+            "N": "Новый",
+            "P": "В работе",
+            "S": "Успешно завершен",
+            "F": "Провален",
+        }
+        readableStage = stageNames.get(stageCode, stageCode)
+        if categoryId:
+            return f"Воронка {categoryId}: {readableStage}"
+        return readableStage
+
+    return None
+
+
 def createBitrixDealSnapshot(
     deals: Sequence[dict[str, object]],
     capturedForDate: str,
@@ -4842,6 +4879,7 @@ def _normalizeBitrixCrmSnapshotItems(
 ) -> list[dict[str, object]]:
     dictionaryValues = dictionaries or {}
     statusNames = dictionaryValues.get("status_names") or {}
+    categoryNames = dictionaryValues.get("category_names") or {}
     assignedByNames = dictionaryValues.get("assigned_by_names") or {}
     companyNames = dictionaryValues.get("company_names") or {}
     normalizedItems: list[dict[str, object]] = []
@@ -4852,19 +4890,24 @@ def _normalizeBitrixCrmSnapshotItems(
         statusId = str(item.get("statusId") or item.get("stageId") or item.get("STATUS_ID") or item.get("STAGE_ID") or "")
         assignedById = _toIntOrNone(item.get("assignedById") or item.get("ASSIGNED_BY_ID") or item.get("RESPONSIBLE_ID"))
         companyId = _toIntOrNone(item.get("companyId") or item.get("COMPANY_ID") or item.get("UF_COMPANY_ID"))
+        categoryId = _toIntOrNone(item.get("categoryId") or item.get("CATEGORY_ID"))
         normalizedItems.append(
             {
                 "entity_type": entityType,
                 "item_id": itemId,
                 "title": item.get("title") or item.get("TITLE") or item.get("ORDER_TOPIC") or item.get("ACCOUNT_NUMBER"),
                 "status_id": statusId,
-                "status_name": statusNames.get(statusId),
+                "status_name": statusNames.get(statusId) or humanizeBitrixCrmStatusId(statusId),
                 "assigned_by_id": assignedById,
                 "assigned_by_name": assignedByNames.get(assignedById or 0),
                 "opportunity": _toFloatOrNone(item.get("opportunity") or item.get("OPPORTUNITY") or item.get("PRICE")),
                 "currency_id": item.get("currencyId") or item.get("CURRENCY_ID") or item.get("CURRENCY"),
                 "company_id": companyId,
                 "company_name": companyNames.get(companyId or 0),
+                "category_id": categoryId,
+                "category_name": categoryNames.get(categoryId or 0),
+                "begin_date": _firstNonEmptyValue(item.get("begindate"), item.get("BEGINDATE"), item.get("dateBill"), item.get("DATE_BILL")),
+                "close_date": _firstNonEmptyValue(item.get("closedate"), item.get("CLOSEDATE"), item.get("datePayBefore"), item.get("DATE_PAY_BEFORE")),
                 "created_time": item.get("createdTime") or item.get("DATE_CREATE") or item.get("DATE_INSERT"),
                 "updated_time": item.get("updatedTime") or item.get("DATE_MODIFY") or item.get("DATE_UPDATE"),
                 "raw_payload": json.dumps(item, ensure_ascii=False),
@@ -4933,11 +4976,13 @@ def createBitrixCrmSnapshot(
             INSERT INTO bitrix_crm_snapshot_items (
                 snapshot_run_id, entity_type, item_id, title, status_id, status_name,
                 assigned_by_id, assigned_by_name, opportunity, currency_id, company_id,
-                company_name, created_time, updated_time, raw_payload
+                company_name, category_id, category_name, begin_date, close_date,
+                created_time, updated_time, raw_payload
             ) VALUES (
                 :snapshot_run_id, :entity_type, :item_id, :title, :status_id, :status_name,
                 :assigned_by_id, :assigned_by_name, :opportunity, :currency_id, :company_id,
-                :company_name, :created_time, :updated_time, CAST(:raw_payload AS JSONB)
+                :company_name, :category_id, :category_name, :begin_date, :close_date,
+                :created_time, :updated_time, CAST(:raw_payload AS JSONB)
             )
             """
         )
@@ -5099,6 +5144,11 @@ def getBitrixCrmSnapshotItems(
             "opportunity": "CAST(opportunity AS TEXT)",
             "company_id": "CAST(company_id AS TEXT)",
             "company_name": "company_name",
+            "category_id": "CAST(category_id AS TEXT)",
+            "category_name": "category_name",
+            "pipeline_stage_invoice": "CONCAT_WS(' ', category_name, CAST(category_id AS TEXT), status_name, status_id, title, CAST(item_id AS TEXT))",
+            "begin_date": "CAST(begin_date AS TEXT)",
+            "close_date": "CAST(close_date AS TEXT)",
             "created_time": "CAST(created_time AS TEXT)",
             "updated_time": "CAST(updated_time AS TEXT)",
         }.items():
@@ -5120,7 +5170,8 @@ def getBitrixCrmSnapshotItems(
                 f"""
                 SELECT id, snapshot_run_id, entity_type, item_id, title, status_id, status_name,
                        assigned_by_id, assigned_by_name, opportunity, currency_id, company_id,
-                       company_name, created_time, updated_time
+                       company_name, category_id, category_name, begin_date, close_date,
+                       created_time, updated_time
                 FROM bitrix_crm_snapshot_items
                 WHERE {whereSql}
                 ORDER BY item_id DESC

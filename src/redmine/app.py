@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from src.redmine.bitrix_client import (
+    BITRIX_INVOICE_ENTITY_TYPE_ID,
     fetchAllBitrixDeals,
     fetchAllBitrixInvoices,
     fetchAllBitrixLeads,
@@ -67,6 +68,7 @@ from src.redmine.db import (
     getSnapshotIssuesForProjectByDate,
     getSnapshotTimeEntriesForProjectByDateRange,
     getUserByPasswordResetToken,
+    humanizeBitrixCrmStatusId,
     getUserByLogin,
     listPlanningProjectIdentifiers,
     listPlanningProjectsByRedmineIdentifier,
@@ -11464,6 +11466,24 @@ def readBitrixPage() -> HTMLResponse:
 
 
 def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str, bitrixPath: str) -> str:
+    isInvoicePage = entityType == "invoice"
+    extraColumnGroups = """
+            <col class="crm-col-pipeline">
+            <col class="crm-col-date">
+            <col class="crm-col-date">
+""" if isInvoicePage else ""
+    extraHeaderCells = """
+              <th>Воронка/стадия/счет<br><input data-filter="pipeline_stage_invoice" placeholder="Фильтр"></th>
+              <th>Дата выставления<br><input data-filter="begin_date" placeholder="Фильтр"></th>
+              <th>Срок оплаты<br><input data-filter="close_date" placeholder="Фильтр"></th>
+""" if isInvoicePage else ""
+    extraRowCells = """
+          <td>${formatValue(buildPipelineStageInvoice(item))}</td>
+          <td class="mono">${formatValue(item.begin_date)}</td>
+          <td class="mono">${formatValue(item.close_date)}</td>
+""" if isInvoicePage else ""
+    emptyColspan = "11" if isInvoicePage else "8"
+    tableClass = "crm-table crm-table-invoice" if isInvoicePage else "crm-table crm-table-standard"
     return """<!doctype html>
 <html lang="ru">
 <head>
@@ -11531,9 +11551,20 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     }
     .status { margin: 14px 0; color: var(--muted); }
     .status.is-error { color: #b63d00; }
-    .table-wrap { overflow: visible; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
-    table { width: 100%; min-width: 1080px; border-collapse: collapse; font-size: 0.92rem; }
-    th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; }
+    .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: visible; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
+    table { width: max(100%, var(--crm-table-min-width, 166ch)); min-width: var(--crm-table-min-width, 166ch); border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
+    .crm-table-standard { --crm-table-min-width: 166ch; }
+    .crm-table-invoice { --crm-table-min-width: 230ch; }
+    .crm-col-id { width: 8ch; }
+    .crm-col-title { width: 50ch; }
+    .crm-col-status { width: 20ch; }
+    .crm-col-responsible { width: 20ch; }
+    .crm-col-amount { width: 12ch; }
+    .crm-col-company { width: 24ch; }
+    .crm-col-pipeline { width: 48ch; }
+    .crm-col-date { width: 14ch; }
+    .crm-col-datetime { width: 18ch; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
     th { position: sticky; top: 0; z-index: 6; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
     th input { width: 100%; min-width: 90px; margin-top: 6px; padding: 7px 8px; }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
@@ -11567,7 +11598,17 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
       </div>
       <div class="status" id="statusBox">Загружаю срез...</div>
       <div class="table-wrap">
-        <table>
+        <table class="__TABLE_CLASS__">
+          <colgroup>
+            <col class="crm-col-id">
+            <col class="crm-col-title">
+            <col class="crm-col-status">
+            <col class="crm-col-responsible">
+            <col class="crm-col-amount">
+            <col class="crm-col-company">
+__EXTRA_COLUMN_GROUPS__            <col class="crm-col-datetime">
+            <col class="crm-col-datetime">
+          </colgroup>
           <thead>
             <tr>
               <th>ID<br><input data-filter="item_id" placeholder="Фильтр"></th>
@@ -11576,6 +11617,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
               <th>Ответственный<br><input data-filter="assigned_by_name" placeholder="Фильтр"></th>
               <th class="amount-header">Сумма<br><input data-filter="opportunity" placeholder="Фильтр"></th>
               <th>Компания<br><input data-filter="company_name" placeholder="Фильтр"></th>
+__EXTRA_HEADER_CELLS__
               <th>Создан<br><input data-filter="created_time" placeholder="Фильтр"></th>
               <th>Обновлен<br><input data-filter="updated_time" placeholder="Фильтр"></th>
             </tr>
@@ -11623,6 +11665,12 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
       }
       return escapeHtml(Math.round(numericValue).toLocaleString("ru-RU"));
     }
+    function buildPipelineStageInvoice(item) {
+      const category = item.category_name || (item.category_id ? `Воронка ${item.category_id}` : "");
+      const status = item.status_name || item.status_id || "";
+      const invoice = item.title || item.item_id || "";
+      return [category, status, invoice].filter((value) => String(value || "").trim()).join(" / ");
+    }
     function setStatus(message, isError = false) {
       statusBox.textContent = message;
       statusBox.classList.toggle("is-error", Boolean(isError));
@@ -11651,7 +11699,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     }
     function renderRows(items) {
       if (!Array.isArray(items) || !items.length) {
-        tableBody.innerHTML = '<tr><td colspan="8">Строки не найдены.</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="__EMPTY_COLSPAN__">Строки не найдены.</td></tr>';
         return;
       }
       tableBody.innerHTML = items.map((item) => `
@@ -11662,6 +11710,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
           <td>${formatValue(item.assigned_by_name || item.assigned_by_id)}</td>
           <td class="mono amount-cell">${formatIntegerAmount(item.opportunity)}</td>
           <td>${formatValue(item.company_name || item.company_id)}</td>
+__EXTRA_ROW_CELLS__
           <td class="mono">${formatValue(item.created_time)}</td>
           <td class="mono">${formatValue(item.updated_time)}</td>
         </tr>
@@ -11723,7 +11772,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     safeLoadItems();
   </script>
 </body>
-</html>""".replace("__PAGE_TITLE__", pageTitle).replace("__API_BASE_PATH__", apiBasePath).replace("__BITRIX_PATH__", bitrixPath)
+</html>""".replace("__PAGE_TITLE__", pageTitle).replace("__API_BASE_PATH__", apiBasePath).replace("__BITRIX_PATH__", bitrixPath).replace("__TABLE_CLASS__", tableClass).replace("__EXTRA_COLUMN_GROUPS__", extraColumnGroups).replace("__EXTRA_HEADER_CELLS__", extraHeaderCells).replace("__EXTRA_ROW_CELLS__", extraRowCells).replace("__EMPTY_COLSPAN__", emptyColspan)
 
 
 @app.get("/Bitrix/leads", response_class=HTMLResponse)
@@ -13225,6 +13274,7 @@ def finalizeBitrixCaptureEntity(session: dict[str, object], entity: str) -> dict
 
     assignedByIds = collectBitrixIntegerField(items, "assignedById")
     companyIds = collectBitrixIntegerField(items, "companyId")
+    categoryIds = collectBitrixIntegerField(items, "categoryId")
     assignedByNames = getBitrixUserNamesByIds(assignedByIds)
     companyNames = getBitrixCompanyNamesByIds(companyIds)
     dictionaries = fetchBitrixCrmItemDictionaries(
@@ -13233,6 +13283,8 @@ def finalizeBitrixCaptureEntity(session: dict[str, object], entity: str) -> dict
         assignedByIds=[],
         companyIds=[],
         statusEntityIds=["STATUS"] if entity == "lead" else ["SMART_INVOICE_STAGE"],
+        entityTypeId=BITRIX_INVOICE_ENTITY_TYPE_ID if entity == "invoice" else None,
+        categoryIds=categoryIds if entity == "invoice" else [],
     )
     dictionaries["assigned_by_names"] = assignedByNames
     dictionaries["company_names"] = companyNames
@@ -13424,6 +13476,11 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
             for item in [*leadItems, *invoiceItems]
             if isinstance(item, dict)
         ]
+        invoiceCategoryIds = [
+            int(item.get("categoryId") or item.get("CATEGORY_ID") or 0)
+            for item in invoiceItems
+            if isinstance(item, dict)
+        ]
         crmAssignedByNames = getBitrixUserNamesByIds(crmAssignedByIds)
         crmCompanyNames = getBitrixCompanyNamesByIds(crmCompanyIds)
         leadDictionaries = fetchBitrixCrmItemDictionaries(
@@ -13441,6 +13498,8 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
             assignedByIds=[],
             companyIds=[],
             statusEntityIds=["SMART_INVOICE_STAGE"],
+            entityTypeId=BITRIX_INVOICE_ENTITY_TYPE_ID,
+            categoryIds=invoiceCategoryIds,
         )
         invoiceDictionaries["assigned_by_names"] = crmAssignedByNames
         invoiceDictionaries["company_names"] = crmCompanyNames
@@ -13818,6 +13877,8 @@ def enrichBitrixCrmSnapshotItemNames(payload: dict[str, object]) -> dict[str, ob
                 companyId = 0
             if companyId in companyNames:
                 item["company_name"] = companyNames[companyId]
+        if not item.get("status_name"):
+            item["status_name"] = humanizeBitrixCrmStatusId(item.get("status_id"))
 
     return payload
 
@@ -13833,6 +13894,11 @@ def buildBitrixCrmSnapshotFilters(
     opportunity: str | None = None,
     company_id: str | None = None,
     company_name: str | None = None,
+    category_id: str | None = None,
+    category_name: str | None = None,
+    pipeline_stage_invoice: str | None = None,
+    begin_date: str | None = None,
+    close_date: str | None = None,
     created_time: str | None = None,
     updated_time: str | None = None,
 ) -> dict[str, object]:
@@ -13846,6 +13912,11 @@ def buildBitrixCrmSnapshotFilters(
         "opportunity": opportunity,
         "company_id": company_id,
         "company_name": company_name,
+        "category_id": category_id,
+        "category_name": category_name,
+        "pipeline_stage_invoice": pipeline_stage_invoice,
+        "begin_date": begin_date,
+        "close_date": close_date,
         "created_time": created_time,
         "updated_time": updated_time,
     }
@@ -13881,6 +13952,11 @@ def getBitrixLeadSnapshotItemsApi(
     opportunity: str | None = Query(None),
     company_id: str | None = Query(None),
     company_name: str | None = Query(None),
+    category_id: str | None = Query(None),
+    category_name: str | None = Query(None),
+    pipeline_stage_invoice: str | None = Query(None),
+    begin_date: str | None = Query(None),
+    close_date: str | None = Query(None),
     created_time: str | None = Query(None),
     updated_time: str | None = Query(None),
 ) -> dict[str, object]:
@@ -13901,6 +13977,11 @@ def getBitrixLeadSnapshotItemsApi(
             opportunity=opportunity,
             company_id=company_id,
             company_name=company_name,
+            category_id=category_id,
+            category_name=category_name,
+            pipeline_stage_invoice=pipeline_stage_invoice,
+            begin_date=begin_date,
+            close_date=close_date,
             created_time=created_time,
             updated_time=updated_time,
         ),
@@ -13921,6 +14002,11 @@ def getBitrixInvoiceSnapshotItemsApi(
     opportunity: str | None = Query(None),
     company_id: str | None = Query(None),
     company_name: str | None = Query(None),
+    category_id: str | None = Query(None),
+    category_name: str | None = Query(None),
+    pipeline_stage_invoice: str | None = Query(None),
+    begin_date: str | None = Query(None),
+    close_date: str | None = Query(None),
     created_time: str | None = Query(None),
     updated_time: str | None = Query(None),
 ) -> dict[str, object]:
@@ -13941,6 +14027,11 @@ def getBitrixInvoiceSnapshotItemsApi(
             opportunity=opportunity,
             company_id=company_id,
             company_name=company_name,
+            category_id=category_id,
+            category_name=category_name,
+            pipeline_stage_invoice=pipeline_stage_invoice,
+            begin_date=begin_date,
+            close_date=close_date,
             created_time=created_time,
             updated_time=updated_time,
         ),
