@@ -8222,6 +8222,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
       gap: 18px;
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
       margin-top: 22px;
+      min-width: 0;
     }
 
     .card {
@@ -8231,6 +8232,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
       background: var(--card);
       box-shadow: 0 14px 32px rgba(16, 41, 61, 0.08);
       backdrop-filter: blur(16px);
+      min-width: 0;
     }
 
     .card h2 {
@@ -8330,6 +8332,8 @@ BITRIX_PAGE_HTML = """<!doctype html>
       grid-column: 1 / -1;
       margin-left: calc(50% - 50vw + 20px);
       width: calc(100vw - 40px);
+      max-width: calc(100vw - 40px);
+      min-width: 0;
     }
 
     .grid > .card:not(.wide-card) {
@@ -8368,7 +8372,9 @@ BITRIX_PAGE_HTML = """<!doctype html>
     }
 
     .snapshot-table-wrap {
-      overflow: visible;
+      max-width: 100%;
+      overflow-x: auto;
+      overflow-y: visible;
       margin-top: 16px;
       border: 1px solid var(--line);
       border-radius: 16px;
@@ -8376,8 +8382,8 @@ BITRIX_PAGE_HTML = """<!doctype html>
     }
 
     .snapshot-table {
-      width: 100%;
-      min-width: 0;
+      width: max(100%, 190ch);
+      min-width: 190ch;
       border-collapse: collapse;
       font-size: 0.92rem;
       table-layout: fixed;
@@ -8448,6 +8454,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
       .wide-card {
         margin-left: calc(50% - 50vw + 14px);
         width: calc(100vw - 28px);
+        max-width: calc(100vw - 28px);
       }
 
       .hero {
