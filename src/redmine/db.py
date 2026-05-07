@@ -11,6 +11,16 @@ from src.redmine.config import loadConfig
 
 config = loadConfig()
 SNAPSHOT_INSERT_BATCH_SIZE = 200
+BITRIX_INVOICE_PRODUCT_SQL = """
+CASE
+    WHEN LENGTH(COALESCE(kot_products, '')) >= LENGTH(COALESCE(products, ''))
+     AND LENGTH(COALESCE(kot_products, '')) >= LENGTH(COALESCE(energy_products, ''))
+        THEN NULLIF(kot_products, '')
+    WHEN LENGTH(COALESCE(products, '')) >= LENGTH(COALESCE(energy_products, ''))
+        THEN NULLIF(products, '')
+    ELSE NULLIF(energy_products, '')
+END
+"""
 
 
 def normalizeDatabaseUrl(databaseUrl: str) -> str:
@@ -4895,7 +4905,6 @@ def getBitrixDealSnapshotFilterOptions(capturedForDate: str | None = None) -> di
         fieldExpressions = {
             "stage_name": "COALESCE(stage_name, stage_id)",
             "assigned_by_name": "COALESCE(assigned_by_name, CAST(assigned_by_id AS TEXT))",
-            "company_name": "COALESCE(company_name, CAST(company_id AS TEXT))",
             "category_name": "COALESCE(category_name, CAST(category_id AS TEXT))",
         }
         options: dict[str, list[str]] = {}
@@ -5146,6 +5155,10 @@ def _getBitrixCrmSnapshotFilterOptions(
     }
     if entityType == "invoice":
         optionExpressions["stage_group"] = "stage_group"
+        optionExpressions["kot_products"] = "kot_products"
+        optionExpressions["products"] = "products"
+        optionExpressions["energy_products"] = "energy_products"
+        optionExpressions["product"] = BITRIX_INVOICE_PRODUCT_SQL
 
     options: dict[str, list[str]] = {}
     for fieldName, expression in optionExpressions.items():
@@ -5258,6 +5271,7 @@ def getBitrixCrmSnapshotItems(
             "kot_products": "kot_products",
             "products": "products",
             "energy_products": "energy_products",
+            "product": BITRIX_INVOICE_PRODUCT_SQL,
             "created_time": "CAST(created_time AS TEXT)",
             "updated_time": "CAST(updated_time AS TEXT)",
         }.items():
@@ -5281,6 +5295,7 @@ def getBitrixCrmSnapshotItems(
                        assigned_by_id, assigned_by_name, opportunity, currency_id, company_id,
                        company_name, category_id, category_name, begin_date, close_date,
                        kot_products, products, energy_products, stage_group, pipeline_stage_invoice,
+                       {BITRIX_INVOICE_PRODUCT_SQL} AS product,
                        created_time, updated_time
                 FROM bitrix_crm_snapshot_items
                 WHERE {whereSql}

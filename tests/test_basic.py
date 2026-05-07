@@ -55,8 +55,11 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert 'data-bitrix-filter="company_name"' in body
     assert '<select data-bitrix-filter="stage_name">' in body
     assert '<select data-bitrix-filter="assigned_by_name">' in body
-    assert '<select data-bitrix-filter="company_name">' in body
+    assert '<input data-bitrix-filter="company_name">' in body
+    assert '<select data-bitrix-filter="company_name">' not in body
     assert '<select data-bitrix-filter="category_name">' in body
+    assert 'placeholder="Фильтр"' not in body
+    assert '<option value="">Фильтр</option>' not in body
     assert "/api/bitrix/deal-snapshots/filter-options" in body
     assert "table-layout: fixed" in body
     assert "width: calc(100vw - 40px)" in body
@@ -87,6 +90,11 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
     assert "comparePageSizeInput" in body
     assert 'data-compare-filter="company"' in body
     assert 'data-compare-sort="company"' in body
+    assert '<select class="compare-filter" data-compare-filter="change_type">' in body
+    assert '<select class="compare-filter" data-compare-filter="stage">' in body
+    assert '<select class="compare-filter" data-compare-filter="category">' in body
+    assert 'placeholder="Фильтр"' not in body
+    assert "thead { position: sticky; top: 0" in body
     assert 'data-compare-sort="updated_time"' not in body
     assert 'data-compare-filter="updated_time"' not in body
     assert 'colspan="8"' in body
@@ -106,7 +114,7 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert "crm-table-invoice" in body
     assert "crm-col-title { width: 50ch" in body
     assert "crm-col-responsible { width: 20ch" in body
-    assert "crm-col-begin-date { width: 17ch" in body
+    assert "crm-col-begin-date { width: 20ch" in body
     assert "Воронка/стадия/счет" in body
     assert 'data-filter="pipeline_stage_invoice"' in body
     assert "Группа стадий" in body
@@ -121,12 +129,18 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert 'data-filter="products"' in body
     assert "Продукты (энергетика)" in body
     assert 'data-filter="energy_products"' in body
+    assert "Продукт" in body
+    assert 'data-filter="product"' in body
     assert '<select data-filter="status_name">' in body
     assert '<select data-filter="assigned_by_name">' in body
+    assert '<select data-filter="kot_products">' in body
+    assert '<select data-filter="products">' in body
+    assert '<select data-filter="energy_products">' in body
+    assert '<select data-filter="product">' in body
     assert "buildPipelineStageInvoice" not in body
     assert 'placeholder="Фильтр"' not in body
     assert '<option value="">Фильтр</option>' not in body
-    assert 'colspan="15"' in body
+    assert 'colspan="16"' in body
 
 
 def testReadBitrixLeadsPageReturnsDropdownFiltersWithoutPlaceholder() -> None:
@@ -391,14 +405,14 @@ def testGetBitrixDealSnapshotFilterOptionsEndpointReturnsOptions(monkeypatch) ->
         "getBitrixDealSnapshotFilterOptions",
         lambda capturedForDate: {
             "snapshot_run": {"captured_for_date": capturedForDate},
-            "options": {"company_name": ["ООО Ромашка"], "stage_name": ["Новая"]},
+            "options": {"category_name": ["КОТ"], "stage_name": ["Новая"]},
         },
     )
 
     response = client.get("/api/bitrix/deal-snapshots/filter-options?captured_for_date=2026-05-06")
 
     assert response.status_code == 200
-    assert response.json()["options"]["company_name"] == ["ООО Ромашка"]
+    assert response.json()["options"]["category_name"] == ["КОТ"]
     assert response.json()["snapshot_run"]["captured_for_date"] == "2026-05-06"
 
 

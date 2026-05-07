@@ -8540,15 +8540,15 @@ BITRIX_PAGE_HTML = """<!doctype html>
             </colgroup>
             <thead>
               <tr>
-                <th>ID<br><input data-bitrix-filter="deal_id" placeholder="Фильтр"></th>
-                <th>Название<br><input data-bitrix-filter="title" placeholder="Фильтр"></th>
-                <th>Стадия<br><select data-bitrix-filter="stage_name"><option value="">Фильтр</option></select></th>
-                <th>Ответственный<br><select data-bitrix-filter="assigned_by_name"><option value="">Фильтр</option></select></th>
-                <th class="amount-header">Сумма<br><input data-bitrix-filter="opportunity" placeholder="Фильтр"></th>
-                <th>Компания<br><select data-bitrix-filter="company_name"><option value="">Фильтр</option></select></th>
-                <th>Воронка<br><select data-bitrix-filter="category_name"><option value="">Фильтр</option></select></th>
-                <th>Создана<br><input data-bitrix-filter="created_time" placeholder="Фильтр"></th>
-                <th>Обновлена<br><input data-bitrix-filter="updated_time" placeholder="Фильтр"></th>
+                <th>ID<br><input data-bitrix-filter="deal_id"></th>
+                <th>Название<br><input data-bitrix-filter="title"></th>
+                <th>Стадия<br><select data-bitrix-filter="stage_name"><option value=""></option></select></th>
+                <th>Ответственный<br><select data-bitrix-filter="assigned_by_name"><option value=""></option></select></th>
+                <th class="amount-header">Сумма<br><input data-bitrix-filter="opportunity"></th>
+                <th>Компания<br><input data-bitrix-filter="company_name"></th>
+                <th>Воронка<br><select data-bitrix-filter="category_name"><option value=""></option></select></th>
+                <th>Создана<br><input data-bitrix-filter="created_time"></th>
+                <th>Обновлена<br><input data-bitrix-filter="updated_time"></th>
               </tr>
             </thead>
             <tbody id="bitrixDealSnapshotTableBody"></tbody>
@@ -8765,7 +8765,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
         const key = select.dataset.bitrixFilter;
         const previousValue = select.value;
         const values = Array.isArray(optionsByField[key]) ? optionsByField[key] : [];
-        select.innerHTML = ['<option value="">Фильтр</option>']
+        select.innerHTML = ['<option value=""></option>']
           .concat(values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`))
           .join("");
         select.value = values.includes(previousValue) ? previousValue : "";
@@ -9141,8 +9141,9 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     .compare-col-company { width: 30ch; }
     .compare-col-category { width: 20ch; }
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
-    th { position: sticky; top: 0; z-index: 6; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
-    .filter-row th { top: 48px; z-index: 5; padding-top: 8px; background: #f8fbfd; }
+    thead { position: sticky; top: 0; z-index: 20; }
+    th { background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
+    .filter-row th { padding-top: 8px; background: #f8fbfd; }
     .compare-filter { width: 100%; min-width: 90px; min-height: 36px; padding: 0 8px; border-radius: 10px; font-size: 0.88rem; }
     .sort-button { display: inline-flex; align-items: center; gap: 6px; border: 0; padding: 0; background: transparent; color: inherit; font-weight: 800; cursor: pointer; text-align: left; }
     .sort-button.is-active { color: var(--blue); }
@@ -9201,14 +9202,14 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
               <th><button class="sort-button" data-compare-sort="category" data-label="Воронка" type="button">Воронка</button></th>
             </tr>
             <tr class="filter-row">
-              <th><input class="compare-filter" data-compare-filter="deal_id" placeholder="Фильтр"></th>
-              <th><input class="compare-filter" data-compare-filter="change_type" placeholder="Фильтр"></th>
-              <th><input class="compare-filter" data-compare-filter="title" placeholder="Фильтр"></th>
-              <th><input class="compare-filter" data-compare-filter="stage" placeholder="Фильтр"></th>
-              <th><input class="compare-filter" data-compare-filter="responsible" placeholder="Фильтр"></th>
-              <th><input class="compare-filter" data-compare-filter="opportunity" placeholder="Фильтр"></th>
-              <th><input class="compare-filter" data-compare-filter="company" placeholder="Фильтр"></th>
-              <th><input class="compare-filter" data-compare-filter="category" placeholder="Фильтр"></th>
+              <th><input class="compare-filter" data-compare-filter="deal_id"></th>
+              <th><select class="compare-filter" data-compare-filter="change_type"><option value=""></option></select></th>
+              <th><input class="compare-filter" data-compare-filter="title"></th>
+              <th><select class="compare-filter" data-compare-filter="stage"><option value=""></option></select></th>
+              <th><input class="compare-filter" data-compare-filter="responsible"></th>
+              <th><input class="compare-filter" data-compare-filter="opportunity"></th>
+              <th><input class="compare-filter" data-compare-filter="company"></th>
+              <th><select class="compare-filter" data-compare-filter="category"><option value=""></option></select></th>
             </tr>
           </thead>
           <tbody id="compareTableBody"></tbody>
@@ -9232,6 +9233,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     const compareNextPageButton = document.getElementById("compareNextPageButton");
     const comparePageInfo = document.getElementById("comparePageInfo");
     const compareFilterInputs = Array.from(document.querySelectorAll("[data-compare-filter]"));
+    const compareDropdownFilterInputs = Array.from(document.querySelectorAll("select[data-compare-filter]"));
     const compareSortButtons = Array.from(document.querySelectorAll("[data-compare-sort]"));
     let compareChanges = [];
     let comparePage = 1;
@@ -9388,6 +9390,30 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
       return `${formatter(pair.left)} ${formatter(pair.right)}`.toLowerCase();
     }
 
+    function getCompareFilterOptionValues(change, field) {
+      const pair = getComparePair(change, field);
+      const formatter = pair.isAmount ? formatPlainAmount : formatPlainValue;
+      return [formatter(pair.left), formatter(pair.right)]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean);
+    }
+
+    function syncCompareFilterOptions() {
+      compareDropdownFilterInputs.forEach((select) => {
+        const field = select.dataset.compareFilter;
+        const previousValue = select.value;
+        const values = new Set();
+        compareChanges.forEach((change) => {
+          getCompareFilterOptionValues(change, field).forEach((value) => values.add(value));
+        });
+        const sortedValues = Array.from(values).sort((left, right) => left.localeCompare(right, "ru"));
+        select.innerHTML = ['<option value=""></option>']
+          .concat(sortedValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`))
+          .join("");
+        select.value = sortedValues.includes(previousValue) ? previousValue : "";
+      });
+    }
+
     function getCompareSortValue(change, field) {
       const pair = getComparePair(change, field);
       if (field === "deal_id" || pair.isAmount) {
@@ -9485,6 +9511,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
         }
         syncDateOptions(payload.available_dates || []);
         compareChanges = payload.changes || [];
+        syncCompareFilterOptions();
         compareLeftDate = payload.left_run?.captured_for_date || "";
         compareRightDate = payload.right_run?.captured_for_date || "";
         comparePage = 1;
@@ -9504,7 +9531,8 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
       applyCompareView();
     });
     compareFilterInputs.forEach((input) => {
-      input.addEventListener("input", () => {
+      const eventName = input.tagName === "SELECT" ? "change" : "input";
+      input.addEventListener(eventName, () => {
         comparePage = 1;
         applyCompareView();
       });
@@ -11475,15 +11503,17 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
             <col class="crm-col-product">
             <col class="crm-col-product">
             <col class="crm-col-product">
+            <col class="crm-col-product">
 """ if isInvoicePage else ""
     extraHeaderCells = """
               <th>Воронка/стадия/счет<br><input data-filter="pipeline_stage_invoice"></th>
               <th>Группа стадий<br><select data-filter="stage_group"><option value=""></option></select></th>
               <th>Дата выставления<br><input data-filter="begin_date"></th>
               <th>Срок оплаты<br><input data-filter="close_date"></th>
-              <th>КОТ ПРОДУКТЫ<br><input data-filter="kot_products"></th>
-              <th>Продукты<br><input data-filter="products"></th>
-              <th>Продукты (энергетика)<br><input data-filter="energy_products"></th>
+              <th>КОТ ПРОДУКТЫ<br><select data-filter="kot_products"><option value=""></option></select></th>
+              <th>Продукты<br><select data-filter="products"><option value=""></option></select></th>
+              <th>Продукты (энергетика)<br><select data-filter="energy_products"><option value=""></option></select></th>
+              <th>Продукт<br><select data-filter="product"><option value=""></option></select></th>
 """ if isInvoicePage else ""
     extraRowCells = """
           <td>${formatValue(item.pipeline_stage_invoice)}</td>
@@ -11493,8 +11523,9 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
           <td>${formatValue(item.kot_products)}</td>
           <td>${formatValue(item.products)}</td>
           <td>${formatValue(item.energy_products)}</td>
+          <td>${formatValue(item.product)}</td>
 """ if isInvoicePage else ""
-    emptyColspan = "15" if isInvoicePage else "8"
+    emptyColspan = "16" if isInvoicePage else "8"
     tableClass = "crm-table crm-table-invoice" if isInvoicePage else "crm-table crm-table-standard"
     return """<!doctype html>
 <html lang="ru">
@@ -11566,7 +11597,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: visible; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: max(100%, var(--crm-table-min-width, 166ch)); min-width: var(--crm-table-min-width, 166ch); border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
     .crm-table-standard { --crm-table-min-width: 166ch; }
-    .crm-table-invoice { --crm-table-min-width: 322ch; }
+    .crm-table-invoice { --crm-table-min-width: 346ch; }
     .crm-col-id { width: 8ch; }
     .crm-col-title { width: 50ch; }
     .crm-col-status { width: 20ch; }
@@ -11575,7 +11606,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     .crm-col-company { width: 24ch; }
     .crm-col-pipeline { width: 48ch; }
     .crm-col-stage-group { width: 20ch; }
-    .crm-col-begin-date { width: 17ch; }
+    .crm-col-begin-date { width: 20ch; }
     .crm-col-date { width: 14ch; }
     .crm-col-product { width: 24ch; }
     .crm-col-datetime { width: 18ch; }
@@ -13925,6 +13956,7 @@ def buildBitrixCrmSnapshotFilters(
     kot_products: str | None = None,
     products: str | None = None,
     energy_products: str | None = None,
+    product: str | None = None,
     created_time: str | None = None,
     updated_time: str | None = None,
 ) -> dict[str, object]:
@@ -13947,6 +13979,7 @@ def buildBitrixCrmSnapshotFilters(
         "kot_products": kot_products,
         "products": products,
         "energy_products": energy_products,
+        "product": product,
         "created_time": created_time,
         "updated_time": updated_time,
     }
@@ -13991,6 +14024,7 @@ def getBitrixLeadSnapshotItemsApi(
     kot_products: str | None = Query(None),
     products: str | None = Query(None),
     energy_products: str | None = Query(None),
+    product: str | None = Query(None),
     created_time: str | None = Query(None),
     updated_time: str | None = Query(None),
 ) -> dict[str, object]:
@@ -14020,6 +14054,7 @@ def getBitrixLeadSnapshotItemsApi(
             kot_products=kot_products,
             products=products,
             energy_products=energy_products,
+            product=product,
             created_time=created_time,
             updated_time=updated_time,
         ),
@@ -14049,6 +14084,7 @@ def getBitrixInvoiceSnapshotItemsApi(
     kot_products: str | None = Query(None),
     products: str | None = Query(None),
     energy_products: str | None = Query(None),
+    product: str | None = Query(None),
     created_time: str | None = Query(None),
     updated_time: str | None = Query(None),
 ) -> dict[str, object]:
@@ -14078,6 +14114,7 @@ def getBitrixInvoiceSnapshotItemsApi(
             kot_products=kot_products,
             products=products,
             energy_products=energy_products,
+            product=product,
             created_time=created_time,
             updated_time=updated_time,
         ),
