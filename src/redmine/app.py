@@ -8839,7 +8839,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
         await loadBitrixDealSnapshotItems();
       } catch (error) {
         const message = error?.name === "AbortError"
-          ? "Пакет Bitrix не ответил за 3 минуты. Сейчас включены только сделки; последняя позиция на экране показывает конкретное место зависания."
+          ? "Пакет Bitrix не ответил за 3 минуты. Последняя позиция на экране показывает сущность и место зависания."
           : String(error.message || error);
         setSnapshotStatus(message, true);
       } finally {
@@ -12937,8 +12937,9 @@ def startBitrixSnapshotCapture() -> dict[str, object]:
         "captured_for_date": capturedForDate,
         "entities": [
             {"key": "deal", "label": "сделки"},
+            {"key": "lead", "label": "лиды"},
+            {"key": "invoice", "label": "счета"},
         ],
-        "diagnostic_mode": "temporarily_deals_only",
         "users_dictionary": usersDictionary,
         "companies_dictionary": companiesDictionary,
     }
