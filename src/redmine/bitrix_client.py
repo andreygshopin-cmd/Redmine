@@ -589,6 +589,63 @@ def fetchBitrixUsers(portalUrl: str, credential: str, limit: int = 1000) -> dict
     }
 
 
+def normalizeBitrixCompany(company: dict[str, object]) -> dict[str, object]:
+    companyId = company.get("ID") or company.get("id")
+    try:
+        normalizedCompanyId = int(companyId or 0)
+    except (TypeError, ValueError):
+        normalizedCompanyId = 0
+
+    return {
+        "id": normalizedCompanyId or companyId,
+        "title": company.get("TITLE") or company.get("title") or "",
+        "raw": company,
+    }
+
+
+def fetchBitrixCompanies(portalUrl: str, credential: str, limit: int = 5000) -> dict[str, object]:
+    restContext = buildBitrixRestContext(portalUrl, credential, method="crm.company.list")
+    requestedLimit = max(1, min(int(limit or 5000), 20000))
+    companies: list[dict[str, object]] = []
+    start = 0
+
+    while len(companies) < requestedLimit:
+        companyPayload = callBitrixRestMethod(
+            portalUrl,
+            credential,
+            "crm.company.list",
+            {
+                "select": ["ID", "TITLE"],
+                "order": {"ID": "ASC"},
+                "start": start,
+            },
+            timeout=90,
+        )
+        pageCompanies = companyPayload.get("result") or []
+        if not pageCompanies:
+            break
+
+        for company in pageCompanies:
+            if isinstance(company, dict):
+                normalizedCompany = normalizeBitrixCompany(company)
+                if normalizedCompany.get("id") and normalizedCompany.get("title"):
+                    companies.append(normalizedCompany)
+                if len(companies) >= requestedLimit:
+                    break
+
+        nextStart = companyPayload.get("next")
+        if nextStart is None or len(pageCompanies) < BITRIX_PAGE_SIZE:
+            break
+        start = int(nextStart)
+
+    return {
+        "portal_url": portalUrl.rstrip("/"),
+        "auth_mode": restContext.authMode,
+        "companies": companies,
+        "total": len(companies),
+    }
+
+
 def fetchBitrixAllUserNames(portalUrl: str, credential: str, neededUserIds: list[int]) -> dict[object, str]:
     neededIds = set(neededUserIds)
     userNames: dict[object, str] = {}

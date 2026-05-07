@@ -555,6 +555,18 @@ def ensureBitrixDealSnapshotTables() -> None:
             connection.execute(
                 text(
                     """
+                    CREATE TABLE IF NOT EXISTS bitrix_companies (
+                        bitrix_company_id BIGINT PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        synced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_bitrix_deal_snapshot_runs_date_unique
                     ON bitrix_deal_snapshot_runs(captured_for_date)
                     """
@@ -4578,6 +4590,79 @@ def getBitrixUserNamesByIds(userIds: Sequence[int]) -> dict[object, str]:
             {"user_ids": normalizedIds},
         )
         return {int(row.bitrix_user_id): str(row.display_name) for row in rows}
+
+
+def upsertBitrixCompanies(companies: Sequence[dict[str, object]]) -> dict[str, int]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    normalizedCompanies: list[dict[str, object]] = []
+    for company in companies:
+        companyId = _toIntOrNone(company.get("id") or company.get("ID"))
+        title = str(company.get("title") or company.get("TITLE") or "").strip()
+        if companyId is None or not title:
+            continue
+        normalizedCompanies.append(
+            {
+                "bitrix_company_id": companyId,
+                "title": title,
+                "raw_payload": json.dumps(company, ensure_ascii=False),
+            }
+        )
+
+    if not normalizedCompanies:
+        return {"upserted": 0}
+
+    statement = text(
+        """
+        INSERT INTO bitrix_companies (
+            bitrix_company_id, title, raw_payload
+        ) VALUES (
+            :bitrix_company_id, :title, CAST(:raw_payload AS JSONB)
+        )
+        ON CONFLICT (bitrix_company_id) DO UPDATE
+        SET title = EXCLUDED.title,
+            raw_payload = EXCLUDED.raw_payload,
+            synced_at = CURRENT_TIMESTAMP
+        """
+    )
+    with engine.begin() as connection:
+        for payloadChunk in chunkSequence(normalizedCompanies, SNAPSHOT_INSERT_BATCH_SIZE):
+            connection.execute(statement, payloadChunk)
+
+    return {"upserted": len(normalizedCompanies)}
+
+
+def getBitrixCompanyNamesByIds(companyIds: Sequence[int]) -> dict[object, str]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    normalizedIdSet: set[int] = set()
+    for value in companyIds:
+        try:
+            normalizedId = int(value or 0)
+        except (TypeError, ValueError):
+            continue
+        if normalizedId > 0:
+            normalizedIdSet.add(normalizedId)
+    normalizedIds = sorted(normalizedIdSet)
+    if not normalizedIds:
+        return {}
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT bitrix_company_id, title
+                FROM bitrix_companies
+                WHERE bitrix_company_id IN :company_ids
+                """
+            ).bindparams(bindparam("company_ids", expanding=True)),
+            {"company_ids": normalizedIds},
+        )
+        return {int(row.bitrix_company_id): str(row.title) for row in rows}
 
 
 def getBitrixDealSnapshotItems(

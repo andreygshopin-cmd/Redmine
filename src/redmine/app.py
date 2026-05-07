@@ -26,6 +26,7 @@ from src.redmine.bitrix_client import (
     fetchAllBitrixDeals,
     fetchAllBitrixInvoices,
     fetchAllBitrixLeads,
+    fetchBitrixCompanies,
     fetchBitrixCrmItemDictionaries,
     fetchBitrixDealDictionaries,
     fetchBitrixDealsPage,
@@ -58,6 +59,7 @@ from src.redmine.db import (
     getFilteredSnapshotIssuesForProjectByDate,
     getBitrixDealSnapshotItems,
     getBitrixCrmSnapshotItems,
+    getBitrixCompanyNamesByIds,
     getBitrixUserNamesByIds,
     getSnapshotRunsWithIssuesForProjectYear,
     getSnapshotRunsWithIssuesForProjectDateRange,
@@ -88,6 +90,7 @@ from src.redmine.db import (
     listPlanningDirections,
     listProjectPlanningSummary,
     listProjectPlanningSummaryVersioned,
+    upsertBitrixCompanies,
     upsertBitrixUsers,
 )
 from src.redmine.redmine_client import fetchAllProjectsFromRedmine
@@ -12846,6 +12849,21 @@ def refreshBitrixUsersDictionary(limit: int = 5000) -> dict[str, object]:
     }
 
 
+def refreshBitrixCompaniesDictionary(limit: int = 20000) -> dict[str, object]:
+    companiesPayload = fetchBitrixCompanies(
+        portalUrl=config.bitrixPortalUrl,
+        credential=config.bitrixCredential,
+        limit=limit,
+    )
+    companies = [company for company in companiesPayload.get("companies", []) if isinstance(company, dict)]
+    storeResult = upsertBitrixCompanies(companies)
+    return {
+        "auth_mode": companiesPayload.get("auth_mode"),
+        "bitrix_total": companiesPayload.get("total"),
+        **storeResult,
+    }
+
+
 def finalizeBitrixCaptureEntity(session: dict[str, object], entity: str) -> dict[str, object]:
     capturedForDate = str(session["captured_for_date"])
     itemsByEntity = session.setdefault("items", {})
@@ -12856,7 +12874,9 @@ def finalizeBitrixCaptureEntity(session: dict[str, object], entity: str) -> dict
     if entity == "deal":
         categoryIds = collectBitrixIntegerField(items, "categoryId")
         assignedByIds = collectBitrixIntegerField(items, "assignedById")
+        companyIds = collectBitrixIntegerField(items, "companyId")
         assignedByNames = getBitrixUserNamesByIds(assignedByIds)
+        companyNames = getBitrixCompanyNamesByIds(companyIds)
         dictionaries = fetchBitrixDealDictionaries(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
@@ -12865,10 +12885,13 @@ def finalizeBitrixCaptureEntity(session: dict[str, object], entity: str) -> dict
             companyIds=[],
         )
         dictionaries["assigned_by_names"] = assignedByNames
+        dictionaries["company_names"] = companyNames
         return createBitrixDealSnapshot(items, capturedForDate, dictionaries)
 
     assignedByIds = collectBitrixIntegerField(items, "assignedById")
+    companyIds = collectBitrixIntegerField(items, "companyId")
     assignedByNames = getBitrixUserNamesByIds(assignedByIds)
+    companyNames = getBitrixCompanyNamesByIds(companyIds)
     dictionaries = fetchBitrixCrmItemDictionaries(
         portalUrl=config.bitrixPortalUrl,
         credential=config.bitrixCredential,
@@ -12877,6 +12900,7 @@ def finalizeBitrixCaptureEntity(session: dict[str, object], entity: str) -> dict
         statusEntityIds=["STATUS"] if entity == "lead" else ["SMART_INVOICE_STAGE"],
     )
     dictionaries["assigned_by_names"] = assignedByNames
+    dictionaries["company_names"] = companyNames
     return createBitrixCrmSnapshot(entity, items, capturedForDate, dictionaries)
 
 
@@ -12889,8 +12913,9 @@ def startBitrixSnapshotCapture() -> dict[str, object]:
     capturedForDate = datetime.now(UTC).date().isoformat()
     try:
         usersDictionary = refreshBitrixUsersDictionary()
+        companiesDictionary = refreshBitrixCompaniesDictionary()
     except requests.HTTPError as error:
-        detail = "Bitrix24 users dictionary request failed."
+        detail = "Bitrix24 dictionaries request failed."
         if error.response is not None:
             detail = f"{detail} HTTP {error.response.status_code}."
         raise HTTPException(status_code=502, detail=detail) from error
@@ -12915,6 +12940,7 @@ def startBitrixSnapshotCapture() -> dict[str, object]:
         ],
         "diagnostic_mode": "temporarily_deals_only",
         "users_dictionary": usersDictionary,
+        "companies_dictionary": companiesDictionary,
     }
 
 
@@ -13010,6 +13036,7 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
     capturedForDate = datetime.now(UTC).date().isoformat()
     try:
         usersDictionary = refreshBitrixUsersDictionary()
+        companiesDictionary = refreshBitrixCompaniesDictionary()
         payload = fetchAllBitrixDeals(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
@@ -13025,7 +13052,13 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
             for item in dealItems
             if isinstance(item, dict)
         ]
+        companyIds = [
+            int(item.get("companyId") or 0)
+            for item in dealItems
+            if isinstance(item, dict)
+        ]
         assignedByNames = getBitrixUserNamesByIds(assignedByIds)
+        companyNames = getBitrixCompanyNamesByIds(companyIds)
         dictionaries = fetchBitrixDealDictionaries(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
@@ -13034,6 +13067,7 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
             companyIds=[],
         )
         dictionaries["assigned_by_names"] = assignedByNames
+        dictionaries["company_names"] = companyNames
         leadPayload = fetchAllBitrixLeads(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
@@ -13049,7 +13083,13 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
             for item in [*leadItems, *invoiceItems]
             if isinstance(item, dict)
         ]
+        crmCompanyIds = [
+            int(item.get("companyId") or item.get("COMPANY_ID") or 0)
+            for item in [*leadItems, *invoiceItems]
+            if isinstance(item, dict)
+        ]
         crmAssignedByNames = getBitrixUserNamesByIds(crmAssignedByIds)
+        crmCompanyNames = getBitrixCompanyNamesByIds(crmCompanyIds)
         leadDictionaries = fetchBitrixCrmItemDictionaries(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
@@ -13058,6 +13098,7 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
             statusEntityIds=["STATUS"],
         )
         leadDictionaries["assigned_by_names"] = crmAssignedByNames
+        leadDictionaries["company_names"] = crmCompanyNames
         invoiceDictionaries = fetchBitrixCrmItemDictionaries(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
@@ -13066,6 +13107,7 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
             statusEntityIds=["SMART_INVOICE_STAGE"],
         )
         invoiceDictionaries["assigned_by_names"] = crmAssignedByNames
+        invoiceDictionaries["company_names"] = crmCompanyNames
         deleteBitrixDealSnapshotForDate(capturedForDate)
         deleteBitrixCrmSnapshotForDate("lead", capturedForDate)
         deleteBitrixCrmSnapshotForDate("invoice", capturedForDate)
@@ -13089,6 +13131,7 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
         "lead_total": leadPayload.get("total"),
         "invoice_total": invoicePayload.get("total"),
         "users_dictionary": usersDictionary,
+        "companies_dictionary": companiesDictionary,
         "detail": f"Срез сохранен: сделки {snapshot['total_deals']}, лиды {leadSnapshot['total_items']}, счета {invoiceSnapshot['total_items']}.",
     }
 
@@ -13132,15 +13175,24 @@ def enrichBitrixDealSnapshotResponsibleNames(payload: dict[str, object]) -> dict
         return payload
 
     missingAssignedByIds: list[int] = []
+    missingCompanyIds: list[int] = []
     for deal in deals:
-        if not isinstance(deal, dict) or deal.get("assigned_by_name"):
+        if not isinstance(deal, dict):
             continue
-        try:
-            assignedById = int(deal.get("assigned_by_id") or 0)
-        except (TypeError, ValueError):
-            continue
-        if assignedById > 0:
-            missingAssignedByIds.append(assignedById)
+        if not deal.get("assigned_by_name"):
+            try:
+                assignedById = int(deal.get("assigned_by_id") or 0)
+            except (TypeError, ValueError):
+                assignedById = 0
+            if assignedById > 0:
+                missingAssignedByIds.append(assignedById)
+        if not deal.get("company_name"):
+            try:
+                companyId = int(deal.get("company_id") or 0)
+            except (TypeError, ValueError):
+                companyId = 0
+            if companyId > 0:
+                missingCompanyIds.append(companyId)
 
     userNames: dict[object, str] = {}
     if missingAssignedByIds:
@@ -13148,16 +13200,30 @@ def enrichBitrixDealSnapshotResponsibleNames(payload: dict[str, object]) -> dict
             userNames = getBitrixUserNamesByIds(missingAssignedByIds)
         except Exception:
             userNames = {}
+    companyNames: dict[object, str] = {}
+    if missingCompanyIds:
+        try:
+            companyNames = getBitrixCompanyNamesByIds(missingCompanyIds)
+        except Exception:
+            companyNames = {}
 
     for deal in deals:
-        if not isinstance(deal, dict) or deal.get("assigned_by_name"):
+        if not isinstance(deal, dict):
             continue
-        try:
-            assignedById = int(deal.get("assigned_by_id") or 0)
-        except (TypeError, ValueError):
-            continue
-        if assignedById in userNames:
-            deal["assigned_by_name"] = userNames[assignedById]
+        if not deal.get("assigned_by_name"):
+            try:
+                assignedById = int(deal.get("assigned_by_id") or 0)
+            except (TypeError, ValueError):
+                assignedById = 0
+            if assignedById in userNames:
+                deal["assigned_by_name"] = userNames[assignedById]
+        if not deal.get("company_name"):
+            try:
+                companyId = int(deal.get("company_id") or 0)
+            except (TypeError, ValueError):
+                companyId = 0
+            if companyId in companyNames:
+                deal["company_name"] = companyNames[companyId]
 
     return payload
 
@@ -13357,6 +13423,7 @@ def enrichBitrixCrmSnapshotItemNames(payload: dict[str, object]) -> dict[str, ob
         return payload
 
     missingAssignedByIds: list[int] = []
+    missingCompanyIds: list[int] = []
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -13367,6 +13434,13 @@ def enrichBitrixCrmSnapshotItemNames(payload: dict[str, object]) -> dict[str, ob
                 assignedById = 0
             if assignedById > 0:
                 missingAssignedByIds.append(assignedById)
+        if not item.get("company_name"):
+            try:
+                companyId = int(item.get("company_id") or 0)
+            except (TypeError, ValueError):
+                companyId = 0
+            if companyId > 0:
+                missingCompanyIds.append(companyId)
 
     userNames: dict[object, str] = {}
     if missingAssignedByIds:
@@ -13374,6 +13448,12 @@ def enrichBitrixCrmSnapshotItemNames(payload: dict[str, object]) -> dict[str, ob
             userNames = getBitrixUserNamesByIds(missingAssignedByIds)
         except Exception:
             userNames = {}
+    companyNames: dict[object, str] = {}
+    if missingCompanyIds:
+        try:
+            companyNames = getBitrixCompanyNamesByIds(missingCompanyIds)
+        except Exception:
+            companyNames = {}
 
     for item in items:
         if not isinstance(item, dict):
@@ -13385,6 +13465,13 @@ def enrichBitrixCrmSnapshotItemNames(payload: dict[str, object]) -> dict[str, ob
                 assignedById = 0
             if assignedById in userNames:
                 item["assigned_by_name"] = userNames[assignedById]
+        if not item.get("company_name"):
+            try:
+                companyId = int(item.get("company_id") or 0)
+            except (TypeError, ValueError):
+                companyId = 0
+            if companyId in companyNames:
+                item["company_name"] = companyNames[companyId]
 
     return payload
 

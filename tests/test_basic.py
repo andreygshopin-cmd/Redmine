@@ -215,7 +215,9 @@ def testCaptureBitrixDealSnapshotEndpointStoresDeals(monkeypatch) -> None:
     monkeypatch.setattr(app_module, "fetchBitrixDealDictionaries", lambda **kwargs: {})
     monkeypatch.setattr(app_module, "fetchBitrixCrmItemDictionaries", lambda **kwargs: {})
     monkeypatch.setattr(app_module, "refreshBitrixUsersDictionary", lambda: {"upserted": 2})
+    monkeypatch.setattr(app_module, "refreshBitrixCompaniesDictionary", lambda: {"upserted": 1})
     monkeypatch.setattr(app_module, "getBitrixUserNamesByIds", lambda userIds: {7: "Иванов Иван"})
+    monkeypatch.setattr(app_module, "getBitrixCompanyNamesByIds", lambda companyIds: {100: "ООО Ромашка"})
     monkeypatch.setattr(app_module, "deleteBitrixDealSnapshotForDate", lambda capturedForDate: {})
     monkeypatch.setattr(app_module, "deleteBitrixCrmSnapshotForDate", lambda entityType, capturedForDate: {})
     monkeypatch.setattr(
