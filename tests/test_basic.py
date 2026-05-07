@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from src.redmine import app as app_module
 from src.redmine import bitrix_client as bitrix_client_module
-from src.redmine.app import app, getTime, readBitrixDealSnapshotComparePage, readBitrixInvoicesPage, readBitrixPage, readRoot
+from src.redmine.app import app, getTime, readBitrixDealSnapshotComparePage, readBitrixInvoicesPage, readBitrixLeadsPage, readBitrixPage, readRoot
 from src.redmine.bitrix_client import fetchBitrixUserNames, fetchBitrixUsers
 from src.redmine.config import loadConfig
 from src.redmine.db import chunkSequence, normalizeDatabaseUrl
@@ -106,8 +106,11 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert "crm-table-invoice" in body
     assert "crm-col-title { width: 50ch" in body
     assert "crm-col-responsible { width: 20ch" in body
+    assert "crm-col-begin-date { width: 17ch" in body
     assert "Воронка/стадия/счет" in body
     assert 'data-filter="pipeline_stage_invoice"' in body
+    assert "Группа стадий" in body
+    assert '<select data-filter="stage_group">' in body
     assert "Дата выставления" in body
     assert 'data-filter="begin_date"' in body
     assert "Срок оплаты" in body
@@ -118,7 +121,22 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert 'data-filter="products"' in body
     assert "Продукты (энергетика)" in body
     assert 'data-filter="energy_products"' in body
-    assert 'colspan="14"' in body
+    assert '<select data-filter="status_name">' in body
+    assert '<select data-filter="assigned_by_name">' in body
+    assert "buildPipelineStageInvoice" not in body
+    assert 'placeholder="Фильтр"' not in body
+    assert '<option value="">Фильтр</option>' not in body
+    assert 'colspan="15"' in body
+
+
+def testReadBitrixLeadsPageReturnsDropdownFiltersWithoutPlaceholder() -> None:
+    body = readBitrixLeadsPage().body.decode("utf-8")
+
+    assert "Лиды Bitrix" in body
+    assert '<select data-filter="status_name">' in body
+    assert '<select data-filter="assigned_by_name">' in body
+    assert 'placeholder="Фильтр"' not in body
+    assert '<option value="">Фильтр</option>' not in body
 
 
 def testResolveBitrixInvoiceSelectFieldsAddsNamedFields(monkeypatch) -> None:
@@ -134,6 +152,11 @@ def testResolveBitrixInvoiceSelectFieldsAddsNamedFields(monkeypatch) -> None:
                         "items": [{"ID": "10", "VALUE": "Сервис"}],
                     },
                     "ufCrmEnergyProducts": {"listLabel": "Продукты (энергетика)"},
+                    "ufCrmStageGroup": {
+                        "title": "Группа стадий",
+                        "items": [{"id": "20", "value": "КОТ"}],
+                    },
+                    "ufCrmPipelineStageInvoice": {"formLabel": "ВОРОНКА/СТАДИЯ/СЧЕТ"},
                 }
             }
         }
@@ -148,9 +171,14 @@ def testResolveBitrixInvoiceSelectFieldsAddsNamedFields(monkeypatch) -> None:
     assert "ufCrmKotProducts" in selectFields
     assert "ufCrmProducts" in selectFields
     assert "ufCrmEnergyProducts" in selectFields
+    assert "ufCrmStageGroup" in selectFields
+    assert "ufCrmPipelineStageInvoice" in selectFields
     assert extraFieldInfo["invoice_extra_field_names"]["kot_products"] == "ufCrmKotProducts"
     assert extraFieldInfo["invoice_extra_field_names"]["products"] == "ufCrmProducts"
+    assert extraFieldInfo["invoice_extra_field_names"]["stage_group"] == "ufCrmStageGroup"
+    assert extraFieldInfo["invoice_extra_field_names"]["pipeline_stage_invoice"] == "ufCrmPipelineStageInvoice"
     assert extraFieldInfo["invoice_extra_field_value_maps"]["products"]["10"] == "Сервис"
+    assert extraFieldInfo["invoice_extra_field_value_maps"]["stage_group"]["20"] == "КОТ"
 
 
 def testGetBitrixDealsEndpointReturnsItems(monkeypatch) -> None:

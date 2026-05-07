@@ -48,6 +48,8 @@ BITRIX_INVOICE_EXTRA_FIELD_LABELS = {
     "kot_products": "КОТ ПРОДУКТЫ",
     "products": "Продукты",
     "energy_products": "Продукты (энергетика)",
+    "stage_group": "Группа стадий",
+    "pipeline_stage_invoice": "Воронка/стадия/счет",
 }
 _BITRIX_CRM_FIELD_CACHE: dict[tuple[str, str, int], dict[str, object]] = {}
 

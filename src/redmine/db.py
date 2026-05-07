@@ -532,6 +532,8 @@ def ensureBitrixDealSnapshotTables() -> None:
                         kot_products TEXT,
                         products TEXT,
                         energy_products TEXT,
+                        stage_group TEXT,
+                        pipeline_stage_invoice TEXT,
                         created_time TIMESTAMPTZ NULL,
                         updated_time TIMESTAMPTZ NULL,
                         raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb
@@ -546,6 +548,8 @@ def ensureBitrixDealSnapshotTables() -> None:
             connection.execute(text("ALTER TABLE bitrix_crm_snapshot_items ADD COLUMN IF NOT EXISTS kot_products TEXT"))
             connection.execute(text("ALTER TABLE bitrix_crm_snapshot_items ADD COLUMN IF NOT EXISTS products TEXT"))
             connection.execute(text("ALTER TABLE bitrix_crm_snapshot_items ADD COLUMN IF NOT EXISTS energy_products TEXT"))
+            connection.execute(text("ALTER TABLE bitrix_crm_snapshot_items ADD COLUMN IF NOT EXISTS stage_group TEXT"))
+            connection.execute(text("ALTER TABLE bitrix_crm_snapshot_items ADD COLUMN IF NOT EXISTS pipeline_stage_invoice TEXT"))
 
             connection.execute(
                 text(
@@ -4958,6 +4962,13 @@ def _normalizeBitrixCrmSnapshotItems(
                 "kot_products": _readBitrixInvoiceExtraField(item, "kot_products", invoiceExtraFieldNames, invoiceExtraFieldValueMaps),
                 "products": _readBitrixInvoiceExtraField(item, "products", invoiceExtraFieldNames, invoiceExtraFieldValueMaps),
                 "energy_products": _readBitrixInvoiceExtraField(item, "energy_products", invoiceExtraFieldNames, invoiceExtraFieldValueMaps),
+                "stage_group": _readBitrixInvoiceExtraField(item, "stage_group", invoiceExtraFieldNames, invoiceExtraFieldValueMaps),
+                "pipeline_stage_invoice": _readBitrixInvoiceExtraField(
+                    item,
+                    "pipeline_stage_invoice",
+                    invoiceExtraFieldNames,
+                    invoiceExtraFieldValueMaps,
+                ),
                 "created_time": item.get("createdTime") or item.get("DATE_CREATE") or item.get("DATE_INSERT"),
                 "updated_time": item.get("updatedTime") or item.get("DATE_MODIFY") or item.get("DATE_UPDATE"),
                 "raw_payload": json.dumps(item, ensure_ascii=False),
@@ -5027,12 +5038,14 @@ def createBitrixCrmSnapshot(
                 snapshot_run_id, entity_type, item_id, title, status_id, status_name,
                 assigned_by_id, assigned_by_name, opportunity, currency_id, company_id,
                 company_name, category_id, category_name, begin_date, close_date,
-                kot_products, products, energy_products, created_time, updated_time, raw_payload
+                kot_products, products, energy_products, stage_group, pipeline_stage_invoice,
+                created_time, updated_time, raw_payload
             ) VALUES (
                 :snapshot_run_id, :entity_type, :item_id, :title, :status_id, :status_name,
                 :assigned_by_id, :assigned_by_name, :opportunity, :currency_id, :company_id,
                 :company_name, :category_id, :category_name, :begin_date, :close_date,
-                :kot_products, :products, :energy_products, :created_time, :updated_time, CAST(:raw_payload AS JSONB)
+                :kot_products, :products, :energy_products, :stage_group, :pipeline_stage_invoice,
+                :created_time, :updated_time, CAST(:raw_payload AS JSONB)
             )
             """
         )
@@ -5121,6 +5134,42 @@ def listBitrixCrmSnapshotDates(entityType: str) -> list[str]:
     return [str(row["captured_for_date"]) for row in listBitrixCrmSnapshotRuns(entityType, 500)]
 
 
+def _getBitrixCrmSnapshotFilterOptions(
+    connection: Connection,
+    *,
+    snapshotRunId: int,
+    entityType: str,
+) -> dict[str, list[str]]:
+    optionExpressions = {
+        "status_name": "COALESCE(status_name, status_id)",
+        "assigned_by_name": "COALESCE(assigned_by_name, CAST(assigned_by_id AS TEXT))",
+    }
+    if entityType == "invoice":
+        optionExpressions["stage_group"] = "stage_group"
+
+    options: dict[str, list[str]] = {}
+    for fieldName, expression in optionExpressions.items():
+        rows = connection.execute(
+            text(
+                f"""
+                SELECT DISTINCT NULLIF(TRIM(COALESCE({expression}, '')), '') AS value
+                FROM bitrix_crm_snapshot_items
+                WHERE snapshot_run_id = :snapshot_run_id
+                  AND entity_type = :entity_type
+                ORDER BY value ASC
+                LIMIT 5000
+                """
+            ),
+            {"snapshot_run_id": snapshotRunId, "entity_type": entityType},
+        )
+        options[fieldName] = [
+            str(row.value)
+            for row in rows
+            if row.value is not None and str(row.value).strip()
+        ]
+    return options
+
+
 def getBitrixCrmSnapshotItems(
     entityType: str,
     capturedForDate: str | None = None,
@@ -5178,12 +5227,18 @@ def getBitrixCrmSnapshotItems(
                 "snapshot_run": None,
                 "items": [],
                 "available_dates": listBitrixCrmSnapshotDates(entityType),
+                "filter_options": {},
                 "page": safePage,
                 "page_size": safePageSize,
                 "total_count": 0,
             }
 
         params["snapshot_run_id"] = int(run["id"])
+        filterOptions = _getBitrixCrmSnapshotFilterOptions(
+            connection,
+            snapshotRunId=int(run["id"]),
+            entityType=entityType,
+        )
         for fieldName, columnName in {
             "item_id": "CAST(item_id AS TEXT)",
             "title": "title",
@@ -5196,7 +5251,8 @@ def getBitrixCrmSnapshotItems(
             "company_name": "company_name",
             "category_id": "CAST(category_id AS TEXT)",
             "category_name": "category_name",
-            "pipeline_stage_invoice": "CONCAT_WS(' ', category_name, CAST(category_id AS TEXT), status_name, status_id, title, CAST(item_id AS TEXT))",
+            "pipeline_stage_invoice": "pipeline_stage_invoice",
+            "stage_group": "stage_group",
             "begin_date": "CAST(begin_date AS TEXT)",
             "close_date": "CAST(close_date AS TEXT)",
             "kot_products": "kot_products",
@@ -5224,7 +5280,8 @@ def getBitrixCrmSnapshotItems(
                 SELECT id, snapshot_run_id, entity_type, item_id, title, status_id, status_name,
                        assigned_by_id, assigned_by_name, opportunity, currency_id, company_id,
                        company_name, category_id, category_name, begin_date, close_date,
-                       kot_products, products, energy_products, created_time, updated_time
+                       kot_products, products, energy_products, stage_group, pipeline_stage_invoice,
+                       created_time, updated_time
                 FROM bitrix_crm_snapshot_items
                 WHERE {whereSql}
                 ORDER BY item_id DESC
@@ -5238,6 +5295,7 @@ def getBitrixCrmSnapshotItems(
         "snapshot_run": dict(run),
         "items": [dict(row._mapping) for row in rows],
         "available_dates": listBitrixCrmSnapshotDates(entityType),
+        "filter_options": filterOptions,
         "page": safePage,
         "page_size": safePageSize,
         "total_count": totalCount,

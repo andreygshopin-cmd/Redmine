@@ -11469,29 +11469,32 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     isInvoicePage = entityType == "invoice"
     extraColumnGroups = """
             <col class="crm-col-pipeline">
-            <col class="crm-col-date">
+            <col class="crm-col-stage-group">
+            <col class="crm-col-begin-date">
             <col class="crm-col-date">
             <col class="crm-col-product">
             <col class="crm-col-product">
             <col class="crm-col-product">
 """ if isInvoicePage else ""
     extraHeaderCells = """
-              <th>Воронка/стадия/счет<br><input data-filter="pipeline_stage_invoice" placeholder="Фильтр"></th>
-              <th>Дата выставления<br><input data-filter="begin_date" placeholder="Фильтр"></th>
-              <th>Срок оплаты<br><input data-filter="close_date" placeholder="Фильтр"></th>
-              <th>КОТ ПРОДУКТЫ<br><input data-filter="kot_products" placeholder="Фильтр"></th>
-              <th>Продукты<br><input data-filter="products" placeholder="Фильтр"></th>
-              <th>Продукты (энергетика)<br><input data-filter="energy_products" placeholder="Фильтр"></th>
+              <th>Воронка/стадия/счет<br><input data-filter="pipeline_stage_invoice"></th>
+              <th>Группа стадий<br><select data-filter="stage_group"><option value=""></option></select></th>
+              <th>Дата выставления<br><input data-filter="begin_date"></th>
+              <th>Срок оплаты<br><input data-filter="close_date"></th>
+              <th>КОТ ПРОДУКТЫ<br><input data-filter="kot_products"></th>
+              <th>Продукты<br><input data-filter="products"></th>
+              <th>Продукты (энергетика)<br><input data-filter="energy_products"></th>
 """ if isInvoicePage else ""
     extraRowCells = """
-          <td>${formatValue(buildPipelineStageInvoice(item))}</td>
+          <td>${formatValue(item.pipeline_stage_invoice)}</td>
+          <td>${formatValue(item.stage_group)}</td>
           <td class="mono">${formatValue(item.begin_date)}</td>
           <td class="mono">${formatValue(item.close_date)}</td>
           <td>${formatValue(item.kot_products)}</td>
           <td>${formatValue(item.products)}</td>
           <td>${formatValue(item.energy_products)}</td>
 """ if isInvoicePage else ""
-    emptyColspan = "14" if isInvoicePage else "8"
+    emptyColspan = "15" if isInvoicePage else "8"
     tableClass = "crm-table crm-table-invoice" if isInvoicePage else "crm-table crm-table-standard"
     return """<!doctype html>
 <html lang="ru">
@@ -11563,7 +11566,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: visible; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: max(100%, var(--crm-table-min-width, 166ch)); min-width: var(--crm-table-min-width, 166ch); border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
     .crm-table-standard { --crm-table-min-width: 166ch; }
-    .crm-table-invoice { --crm-table-min-width: 302ch; }
+    .crm-table-invoice { --crm-table-min-width: 322ch; }
     .crm-col-id { width: 8ch; }
     .crm-col-title { width: 50ch; }
     .crm-col-status { width: 20ch; }
@@ -11571,12 +11574,14 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     .crm-col-amount { width: 12ch; }
     .crm-col-company { width: 24ch; }
     .crm-col-pipeline { width: 48ch; }
+    .crm-col-stage-group { width: 20ch; }
+    .crm-col-begin-date { width: 17ch; }
     .crm-col-date { width: 14ch; }
     .crm-col-product { width: 24ch; }
     .crm-col-datetime { width: 18ch; }
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
     th { position: sticky; top: 0; z-index: 6; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
-    th input { width: 100%; min-width: 90px; margin-top: 6px; padding: 7px 8px; }
+    th input, th select { width: 100%; min-width: 90px; margin-top: 6px; padding: 7px 8px; }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
     .amount-cell, .amount-header { text-align: right; }
     .pager { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
@@ -11621,15 +11626,15 @@ __EXTRA_COLUMN_GROUPS__            <col class="crm-col-datetime">
           </colgroup>
           <thead>
             <tr>
-              <th>ID<br><input data-filter="item_id" placeholder="Фильтр"></th>
-              <th>Название<br><input data-filter="title" placeholder="Фильтр"></th>
-              <th>Статус<br><input data-filter="status_name" placeholder="Фильтр"></th>
-              <th>Ответственный<br><input data-filter="assigned_by_name" placeholder="Фильтр"></th>
-              <th class="amount-header">Сумма<br><input data-filter="opportunity" placeholder="Фильтр"></th>
-              <th>Компания<br><input data-filter="company_name" placeholder="Фильтр"></th>
+              <th>ID<br><input data-filter="item_id"></th>
+              <th>Название<br><input data-filter="title"></th>
+              <th>Статус<br><select data-filter="status_name"><option value=""></option></select></th>
+              <th>Ответственный<br><select data-filter="assigned_by_name"><option value=""></option></select></th>
+              <th class="amount-header">Сумма<br><input data-filter="opportunity"></th>
+              <th>Компания<br><input data-filter="company_name"></th>
 __EXTRA_HEADER_CELLS__
-              <th>Создан<br><input data-filter="created_time" placeholder="Фильтр"></th>
-              <th>Обновлен<br><input data-filter="updated_time" placeholder="Фильтр"></th>
+              <th>Создан<br><input data-filter="created_time"></th>
+              <th>Обновлен<br><input data-filter="updated_time"></th>
             </tr>
           </thead>
           <tbody id="tableBody"></tbody>
@@ -11651,6 +11656,7 @@ __EXTRA_HEADER_CELLS__
     const prevPageButton = document.getElementById("prevPageButton");
     const nextPageButton = document.getElementById("nextPageButton");
     const filterInputs = Array.from(document.querySelectorAll("[data-filter]"));
+    const dropdownFilterInputs = Array.from(document.querySelectorAll("select[data-filter]"));
     let currentPage = 1;
     let totalCount = 0;
 
@@ -11675,12 +11681,6 @@ __EXTRA_HEADER_CELLS__
       }
       return escapeHtml(Math.round(numericValue).toLocaleString("ru-RU"));
     }
-    function buildPipelineStageInvoice(item) {
-      const category = item.category_name || (item.category_id ? `Воронка ${item.category_id}` : "");
-      const status = item.status_name || item.status_id || "";
-      const invoice = item.title || item.item_id || "";
-      return [category, status, invoice].filter((value) => String(value || "").trim()).join(" / ");
-    }
     function setStatus(message, isError = false) {
       statusBox.textContent = message;
       statusBox.classList.toggle("is-error", Boolean(isError));
@@ -11691,6 +11691,17 @@ __EXTRA_HEADER_CELLS__
         .concat(items.map((dateValue) => `<option value="${escapeHtml(dateValue)}">${escapeHtml(dateValue)}</option>`))
         .join("");
       dateSelect.value = selectedDate || "";
+    }
+    function syncFilterOptions(optionsByField = {}) {
+      dropdownFilterInputs.forEach((select) => {
+        const key = select.dataset.filter;
+        const previousValue = select.value;
+        const values = Array.isArray(optionsByField[key]) ? optionsByField[key] : [];
+        select.innerHTML = ['<option value=""></option>']
+          .concat(values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`))
+          .join("");
+        select.value = values.includes(previousValue) ? previousValue : "";
+      });
     }
     function buildParams() {
       const params = new URLSearchParams();
@@ -11735,6 +11746,7 @@ __EXTRA_ROW_CELLS__
       }
       totalCount = Number(payload.total_count || 0);
       syncDates(payload.available_dates || [], String(payload.snapshot_run?.captured_for_date || ""));
+      syncFilterOptions(payload.filter_options || {});
       renderRows(payload.items || []);
       const pageSize = Number(payload.page_size || pageSizeInput.value || 1000);
       const fromRow = totalCount ? ((currentPage - 1) * pageSize + 1) : 0;
@@ -13907,6 +13919,7 @@ def buildBitrixCrmSnapshotFilters(
     category_id: str | None = None,
     category_name: str | None = None,
     pipeline_stage_invoice: str | None = None,
+    stage_group: str | None = None,
     begin_date: str | None = None,
     close_date: str | None = None,
     kot_products: str | None = None,
@@ -13928,6 +13941,7 @@ def buildBitrixCrmSnapshotFilters(
         "category_id": category_id,
         "category_name": category_name,
         "pipeline_stage_invoice": pipeline_stage_invoice,
+        "stage_group": stage_group,
         "begin_date": begin_date,
         "close_date": close_date,
         "kot_products": kot_products,
@@ -13971,6 +13985,7 @@ def getBitrixLeadSnapshotItemsApi(
     category_id: str | None = Query(None),
     category_name: str | None = Query(None),
     pipeline_stage_invoice: str | None = Query(None),
+    stage_group: str | None = Query(None),
     begin_date: str | None = Query(None),
     close_date: str | None = Query(None),
     kot_products: str | None = Query(None),
@@ -13999,6 +14014,7 @@ def getBitrixLeadSnapshotItemsApi(
             category_id=category_id,
             category_name=category_name,
             pipeline_stage_invoice=pipeline_stage_invoice,
+            stage_group=stage_group,
             begin_date=begin_date,
             close_date=close_date,
             kot_products=kot_products,
@@ -14027,6 +14043,7 @@ def getBitrixInvoiceSnapshotItemsApi(
     category_id: str | None = Query(None),
     category_name: str | None = Query(None),
     pipeline_stage_invoice: str | None = Query(None),
+    stage_group: str | None = Query(None),
     begin_date: str | None = Query(None),
     close_date: str | None = Query(None),
     kot_products: str | None = Query(None),
@@ -14055,6 +14072,7 @@ def getBitrixInvoiceSnapshotItemsApi(
             category_id=category_id,
             category_name=category_name,
             pipeline_stage_invoice=pipeline_stage_invoice,
+            stage_group=stage_group,
             begin_date=begin_date,
             close_date=close_date,
             kot_products=kot_products,
