@@ -52,6 +52,7 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert 'href="/Bitrix/leads"' in body
     assert 'href="/Bitrix/invoices"' in body
     assert 'data-bitrix-filter="company_name"' in body
+    assert "min-width: 1040px" not in body
     assert "button-muted" in body
     assert 'data-bitrix-filter="currency_id"' not in body
 
@@ -69,6 +70,8 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
 
     assert "Сравнение срезов сделок" in body
     assert "/api/bitrix/deal-snapshots/compare" in body
+    assert "changed-cell" in body
+    assert "buildCompareCell" in body
     assert "<th>Валюта</th>" not in body
 
 

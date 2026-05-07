@@ -8374,7 +8374,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
 
     .snapshot-table {
       width: 100%;
-      min-width: 1040px;
+      min-width: 0;
       border-collapse: collapse;
       font-size: 0.92rem;
     }
@@ -8385,6 +8385,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
       border-bottom: 1px solid rgba(16, 41, 61, 0.08);
       text-align: left;
       vertical-align: top;
+      overflow-wrap: anywhere;
     }
 
     .snapshot-table th {
@@ -8404,7 +8405,8 @@ BITRIX_PAGE_HTML = """<!doctype html>
 
     .snapshot-table input {
       width: 100%;
-      min-width: 90px;
+      min-width: 0;
+      box-sizing: border-box;
       border: 1px solid var(--line);
       border-radius: 10px;
       padding: 7px 8px;
@@ -9058,6 +9060,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     table { width: 100%; min-width: 1120px; border-collapse: collapse; font-size: 0.92rem; }
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; }
     th { position: sticky; top: 0; z-index: 6; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
+    .changed-cell { background: #fff3b8; box-shadow: inset 0 0 0 1px rgba(205, 153, 0, 0.2); }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
   </style>
 </head>
@@ -9141,8 +9144,15 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
       rightDateSelect.value = previousRight || dateItems[0] || "";
     }
 
-    function buildPair(leftValue, rightValue) {
-      return `${formatValue(leftValue)} → ${formatValue(rightValue)}`;
+    function normalizeComparableValue(value) {
+      if (value === null || value === undefined || value === "") {
+        return "";
+      }
+      return String(value);
+    }
+
+    function pickVisibleValue(leftValue, rightValue) {
+      return rightValue === null || rightValue === undefined || rightValue === "" ? leftValue : rightValue;
     }
 
     function formatIntegerAmount(value) {
@@ -9153,8 +9163,30 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
       return escapeHtml(Math.round(numericValue).toLocaleString("ru-RU"));
     }
 
-    function buildAmountPair(leftValue, rightValue) {
-      return `${formatIntegerAmount(leftValue)} → ${formatIntegerAmount(rightValue)}`;
+    function normalizeAmountValue(value) {
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue)) {
+        return normalizeComparableValue(value);
+      }
+      return String(Math.round(numericValue));
+    }
+
+    function buildCompareCell(leftValue, rightValue, formatter = formatValue, className = "") {
+      const isChanged = normalizeComparableValue(leftValue) !== normalizeComparableValue(rightValue);
+      const content = isChanged
+        ? `${formatter(leftValue)} → ${formatter(rightValue)}`
+        : formatter(pickVisibleValue(leftValue, rightValue));
+      const classes = [className, isChanged ? "changed-cell" : ""].filter(Boolean).join(" ");
+      return `<td${classes ? ` class="${classes}"` : ""}>${content}</td>`;
+    }
+
+    function buildAmountCell(leftValue, rightValue) {
+      const isChanged = normalizeAmountValue(leftValue) !== normalizeAmountValue(rightValue);
+      const content = isChanged
+        ? `${formatIntegerAmount(leftValue)} → ${formatIntegerAmount(rightValue)}`
+        : formatIntegerAmount(pickVisibleValue(leftValue, rightValue));
+      const classes = ["mono", isChanged ? "changed-cell" : ""].filter(Boolean).join(" ");
+      return `<td class="${classes}">${content}</td>`;
     }
 
     function renderRows(changes) {
@@ -9166,12 +9198,12 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
         <tr>
           <td class="mono"><a href="https://sms-it.bitrix24.ru/crm/deal/details/${encodeURIComponent(change.deal_id ?? "")}/" target="_blank" rel="noreferrer">${formatValue(change.deal_id)}</a></td>
           <td class="mono">${formatValue(change.change_type)}</td>
-          <td>${buildPair(change.left_title, change.right_title)}</td>
-          <td>${buildPair(change.left_stage_name || change.left_stage_id, change.right_stage_name || change.right_stage_id)}</td>
-          <td>${buildPair(change.left_assigned_by_name || change.left_assigned_by_id, change.right_assigned_by_name || change.right_assigned_by_id)}</td>
-          <td class="mono">${buildAmountPair(change.left_opportunity, change.right_opportunity)}</td>
-          <td>${buildPair(change.left_category_name || change.left_category_id, change.right_category_name || change.right_category_id)}</td>
-          <td class="mono">${buildPair(change.left_updated_time, change.right_updated_time)}</td>
+          ${buildCompareCell(change.left_title, change.right_title)}
+          ${buildCompareCell(change.left_stage_name || change.left_stage_id, change.right_stage_name || change.right_stage_id)}
+          ${buildCompareCell(change.left_assigned_by_name || change.left_assigned_by_id, change.right_assigned_by_name || change.right_assigned_by_id)}
+          ${buildAmountCell(change.left_opportunity, change.right_opportunity)}
+          ${buildCompareCell(change.left_category_name || change.left_category_id, change.right_category_name || change.right_category_id)}
+          ${buildCompareCell(change.left_updated_time, change.right_updated_time, formatValue, "mono")}
         </tr>
       `).join("");
     }
