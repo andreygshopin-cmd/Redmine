@@ -33,7 +33,6 @@ from src.redmine.bitrix_client import (
     fetchBitrixInvoicesPage,
     fetchBitrixLeadsPage,
     fetchBitrixProfile,
-    fetchBitrixUserNames,
     fetchBitrixUsers,
 )
 from src.redmine.config import loadConfig
@@ -59,6 +58,7 @@ from src.redmine.db import (
     getFilteredSnapshotIssuesForProjectByDate,
     getBitrixDealSnapshotItems,
     getBitrixCrmSnapshotItems,
+    getBitrixUserNamesByIds,
     getSnapshotRunsWithIssuesForProjectYear,
     getSnapshotRunsWithIssuesForProjectDateRange,
     getSnapshotIssuesForProjectByDate,
@@ -88,6 +88,7 @@ from src.redmine.db import (
     listPlanningDirections,
     listProjectPlanningSummary,
     listProjectPlanningSummaryVersioned,
+    upsertBitrixUsers,
 )
 from src.redmine.redmine_client import fetchAllProjectsFromRedmine
 from src.redmine.snapshots import (
@@ -12830,6 +12831,21 @@ def collectBitrixIntegerField(items: list[dict[str, object]], fieldName: str) ->
     return values
 
 
+def refreshBitrixUsersDictionary(limit: int = 5000) -> dict[str, object]:
+    usersPayload = fetchBitrixUsers(
+        portalUrl=config.bitrixPortalUrl,
+        credential=config.bitrixCredential,
+        limit=limit,
+    )
+    users = [user for user in usersPayload.get("users", []) if isinstance(user, dict)]
+    storeResult = upsertBitrixUsers(users)
+    return {
+        "auth_mode": usersPayload.get("auth_mode"),
+        "bitrix_total": usersPayload.get("total"),
+        **storeResult,
+    }
+
+
 def finalizeBitrixCaptureEntity(session: dict[str, object], entity: str) -> dict[str, object]:
     capturedForDate = str(session["captured_for_date"])
     itemsByEntity = session.setdefault("items", {})
@@ -12840,23 +12856,27 @@ def finalizeBitrixCaptureEntity(session: dict[str, object], entity: str) -> dict
     if entity == "deal":
         categoryIds = collectBitrixIntegerField(items, "categoryId")
         assignedByIds = collectBitrixIntegerField(items, "assignedById")
+        assignedByNames = getBitrixUserNamesByIds(assignedByIds)
         dictionaries = fetchBitrixDealDictionaries(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
             categoryIds=categoryIds,
-            assignedByIds=assignedByIds,
+            assignedByIds=[],
             companyIds=[],
         )
+        dictionaries["assigned_by_names"] = assignedByNames
         return createBitrixDealSnapshot(items, capturedForDate, dictionaries)
 
     assignedByIds = collectBitrixIntegerField(items, "assignedById")
+    assignedByNames = getBitrixUserNamesByIds(assignedByIds)
     dictionaries = fetchBitrixCrmItemDictionaries(
         portalUrl=config.bitrixPortalUrl,
         credential=config.bitrixCredential,
-        assignedByIds=assignedByIds,
+        assignedByIds=[],
         companyIds=[],
         statusEntityIds=["STATUS"] if entity == "lead" else ["SMART_INVOICE_STAGE"],
     )
+    dictionaries["assigned_by_names"] = assignedByNames
     return createBitrixCrmSnapshot(entity, items, capturedForDate, dictionaries)
 
 
@@ -12867,6 +12887,16 @@ def startBitrixSnapshotCapture() -> dict[str, object]:
     requireBitrixConfig()
 
     capturedForDate = datetime.now(UTC).date().isoformat()
+    try:
+        usersDictionary = refreshBitrixUsersDictionary()
+    except requests.HTTPError as error:
+        detail = "Bitrix24 users dictionary request failed."
+        if error.response is not None:
+            detail = f"{detail} HTTP {error.response.status_code}."
+        raise HTTPException(status_code=502, detail=detail) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
     deleteBitrixDealSnapshotForDate(capturedForDate)
     deleteBitrixCrmSnapshotForDate("lead", capturedForDate)
     deleteBitrixCrmSnapshotForDate("invoice", capturedForDate)
@@ -12884,6 +12914,7 @@ def startBitrixSnapshotCapture() -> dict[str, object]:
             {"key": "deal", "label": "сделки"},
         ],
         "diagnostic_mode": "temporarily_deals_only",
+        "users_dictionary": usersDictionary,
     }
 
 
@@ -12978,6 +13009,7 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
 
     capturedForDate = datetime.now(UTC).date().isoformat()
     try:
+        usersDictionary = refreshBitrixUsersDictionary()
         payload = fetchAllBitrixDeals(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
@@ -12993,13 +13025,15 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
             for item in dealItems
             if isinstance(item, dict)
         ]
+        assignedByNames = getBitrixUserNamesByIds(assignedByIds)
         dictionaries = fetchBitrixDealDictionaries(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
             categoryIds=categoryIds,
-            assignedByIds=assignedByIds,
+            assignedByIds=[],
             companyIds=[],
         )
+        dictionaries["assigned_by_names"] = assignedByNames
         leadPayload = fetchAllBitrixLeads(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
@@ -13015,20 +13049,23 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
             for item in [*leadItems, *invoiceItems]
             if isinstance(item, dict)
         ]
+        crmAssignedByNames = getBitrixUserNamesByIds(crmAssignedByIds)
         leadDictionaries = fetchBitrixCrmItemDictionaries(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
-            assignedByIds=crmAssignedByIds,
+            assignedByIds=[],
             companyIds=[],
             statusEntityIds=["STATUS"],
         )
+        leadDictionaries["assigned_by_names"] = crmAssignedByNames
         invoiceDictionaries = fetchBitrixCrmItemDictionaries(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
-            assignedByIds=crmAssignedByIds,
+            assignedByIds=[],
             companyIds=[],
             statusEntityIds=["SMART_INVOICE_STAGE"],
         )
+        invoiceDictionaries["assigned_by_names"] = crmAssignedByNames
         deleteBitrixDealSnapshotForDate(capturedForDate)
         deleteBitrixCrmSnapshotForDate("lead", capturedForDate)
         deleteBitrixCrmSnapshotForDate("invoice", capturedForDate)
@@ -13051,6 +13088,7 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
         "bitrix_total": payload.get("total"),
         "lead_total": leadPayload.get("total"),
         "invoice_total": invoicePayload.get("total"),
+        "users_dictionary": usersDictionary,
         "detail": f"Срез сохранен: сделки {snapshot['total_deals']}, лиды {leadSnapshot['total_items']}, счета {invoiceSnapshot['total_items']}.",
     }
 
@@ -13068,11 +13106,14 @@ def getBitrixResponsibles(limit: int = Query(1000, ge=1, le=5000)) -> dict[str, 
     requireBitrixConfig()
 
     try:
-        return fetchBitrixUsers(
+        usersPayload = fetchBitrixUsers(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
             limit=limit,
         )
+        users = [user for user in usersPayload.get("users", []) if isinstance(user, dict)]
+        usersPayload["users_dictionary"] = upsertBitrixUsers(users)
+        return usersPayload
     except requests.HTTPError as error:
         detail = "Bitrix24 users request failed."
         if error.response is not None:
@@ -13102,13 +13143,9 @@ def enrichBitrixDealSnapshotResponsibleNames(payload: dict[str, object]) -> dict
             missingAssignedByIds.append(assignedById)
 
     userNames: dict[object, str] = {}
-    if missingAssignedByIds and config.bitrixPortalUrl and config.bitrixCredential:
+    if missingAssignedByIds:
         try:
-            userNames = fetchBitrixUserNames(
-                portalUrl=config.bitrixPortalUrl,
-                credential=config.bitrixCredential,
-                userIds=missingAssignedByIds,
-            )
+            userNames = getBitrixUserNamesByIds(missingAssignedByIds)
         except Exception:
             userNames = {}
 
@@ -13332,16 +13369,11 @@ def enrichBitrixCrmSnapshotItemNames(payload: dict[str, object]) -> dict[str, ob
                 missingAssignedByIds.append(assignedById)
 
     userNames: dict[object, str] = {}
-    if config.bitrixPortalUrl and config.bitrixCredential:
-        if missingAssignedByIds:
-            try:
-                userNames = fetchBitrixUserNames(
-                    portalUrl=config.bitrixPortalUrl,
-                    credential=config.bitrixCredential,
-                    userIds=missingAssignedByIds,
-                )
-            except Exception:
-                userNames = {}
+    if missingAssignedByIds:
+        try:
+            userNames = getBitrixUserNamesByIds(missingAssignedByIds)
+        except Exception:
+            userNames = {}
 
     for item in items:
         if not isinstance(item, dict):

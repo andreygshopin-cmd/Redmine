@@ -532,6 +532,26 @@ def ensureBitrixDealSnapshotTables() -> None:
                     """
                 )
             )
+
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS bitrix_users (
+                        bitrix_user_id BIGINT PRIMARY KEY,
+                        display_name TEXT NOT NULL,
+                        last_name TEXT,
+                        first_name TEXT,
+                        second_name TEXT,
+                        login TEXT,
+                        email TEXT,
+                        active TEXT,
+                        work_position TEXT,
+                        raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        synced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
             connection.execute(
                 text(
                     """
@@ -4469,6 +4489,95 @@ def listBitrixDealSnapshotRuns(limit: int = 50) -> list[dict[str, object]]:
 
 def listBitrixDealSnapshotDates() -> list[str]:
     return [str(row["captured_for_date"]) for row in listBitrixDealSnapshotRuns(500)]
+
+
+def upsertBitrixUsers(users: Sequence[dict[str, object]]) -> dict[str, int]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    normalizedUsers: list[dict[str, object]] = []
+    for user in users:
+        userId = _toIntOrNone(user.get("id") or user.get("ID"))
+        displayName = str(user.get("name") or user.get("display_name") or "").strip()
+        if userId is None or not displayName:
+            continue
+        normalizedUsers.append(
+            {
+                "bitrix_user_id": userId,
+                "display_name": displayName,
+                "last_name": user.get("last_name") or user.get("LAST_NAME"),
+                "first_name": user.get("first_name") or user.get("NAME"),
+                "second_name": user.get("second_name") or user.get("SECOND_NAME"),
+                "login": user.get("login") or user.get("LOGIN"),
+                "email": user.get("email") or user.get("EMAIL"),
+                "active": str(user.get("active") if user.get("active") is not None else user.get("ACTIVE") or ""),
+                "work_position": user.get("work_position") or user.get("WORK_POSITION"),
+                "raw_payload": json.dumps(user, ensure_ascii=False),
+            }
+        )
+
+    if not normalizedUsers:
+        return {"upserted": 0}
+
+    statement = text(
+        """
+        INSERT INTO bitrix_users (
+            bitrix_user_id, display_name, last_name, first_name, second_name,
+            login, email, active, work_position, raw_payload
+        ) VALUES (
+            :bitrix_user_id, :display_name, :last_name, :first_name, :second_name,
+            :login, :email, :active, :work_position, CAST(:raw_payload AS JSONB)
+        )
+        ON CONFLICT (bitrix_user_id) DO UPDATE
+        SET display_name = EXCLUDED.display_name,
+            last_name = EXCLUDED.last_name,
+            first_name = EXCLUDED.first_name,
+            second_name = EXCLUDED.second_name,
+            login = EXCLUDED.login,
+            email = EXCLUDED.email,
+            active = EXCLUDED.active,
+            work_position = EXCLUDED.work_position,
+            raw_payload = EXCLUDED.raw_payload,
+            synced_at = CURRENT_TIMESTAMP
+        """
+    )
+    with engine.begin() as connection:
+        for payloadChunk in chunkSequence(normalizedUsers, SNAPSHOT_INSERT_BATCH_SIZE):
+            connection.execute(statement, payloadChunk)
+
+    return {"upserted": len(normalizedUsers)}
+
+
+def getBitrixUserNamesByIds(userIds: Sequence[int]) -> dict[object, str]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    normalizedIdSet: set[int] = set()
+    for value in userIds:
+        try:
+            normalizedId = int(value or 0)
+        except (TypeError, ValueError):
+            continue
+        if normalizedId > 0:
+            normalizedIdSet.add(normalizedId)
+    normalizedIds = sorted(normalizedIdSet)
+    if not normalizedIds:
+        return {}
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT bitrix_user_id, display_name
+                FROM bitrix_users
+                WHERE bitrix_user_id IN :user_ids
+                """
+            ).bindparams(bindparam("user_ids", expanding=True)),
+            {"user_ids": normalizedIds},
+        )
+        return {int(row.bitrix_user_id): str(row.display_name) for row in rows}
 
 
 def getBitrixDealSnapshotItems(

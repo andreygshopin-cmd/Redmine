@@ -214,6 +214,8 @@ def testCaptureBitrixDealSnapshotEndpointStoresDeals(monkeypatch) -> None:
     )
     monkeypatch.setattr(app_module, "fetchBitrixDealDictionaries", lambda **kwargs: {})
     monkeypatch.setattr(app_module, "fetchBitrixCrmItemDictionaries", lambda **kwargs: {})
+    monkeypatch.setattr(app_module, "refreshBitrixUsersDictionary", lambda: {"upserted": 2})
+    monkeypatch.setattr(app_module, "getBitrixUserNamesByIds", lambda userIds: {7: "Иванов Иван"})
     monkeypatch.setattr(app_module, "deleteBitrixDealSnapshotForDate", lambda capturedForDate: {})
     monkeypatch.setattr(app_module, "deleteBitrixCrmSnapshotForDate", lambda entityType, capturedForDate: {})
     monkeypatch.setattr(
@@ -299,6 +301,7 @@ def testGetBitrixResponsiblesEndpointReturnsUsers(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "bitrixCredential", "1/test-webhook")
     monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
     monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+    monkeypatch.setattr(app_module, "upsertBitrixUsers", lambda users: {"upserted": len(users)})
     monkeypatch.setattr(
         app_module,
         "fetchBitrixUsers",
