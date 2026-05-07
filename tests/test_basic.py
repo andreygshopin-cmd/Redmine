@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from src.redmine import app as app_module
+from src.redmine import bitrix_client as bitrix_client_module
 from src.redmine.app import app, getTime, readBitrixDealSnapshotComparePage, readBitrixInvoicesPage, readBitrixPage, readRoot
 from src.redmine.bitrix_client import fetchBitrixUserNames, fetchBitrixUsers
 from src.redmine.config import loadConfig
@@ -111,7 +112,45 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert 'data-filter="begin_date"' in body
     assert "Срок оплаты" in body
     assert 'data-filter="close_date"' in body
-    assert 'colspan="11"' in body
+    assert "КОТ ПРОДУКТЫ" in body
+    assert 'data-filter="kot_products"' in body
+    assert "Продукты" in body
+    assert 'data-filter="products"' in body
+    assert "Продукты (энергетика)" in body
+    assert 'data-filter="energy_products"' in body
+    assert 'colspan="14"' in body
+
+
+def testResolveBitrixInvoiceSelectFieldsAddsNamedFields(monkeypatch) -> None:
+    bitrix_client_module._BITRIX_CRM_FIELD_CACHE.clear()
+
+    def fakeCallBitrixRestMethod(*args, **kwargs) -> dict[str, object]:
+        return {
+            "result": {
+                "fields": {
+                    "ufCrmKotProducts": {"title": "КОТ ПРОДУКТЫ"},
+                    "ufCrmProducts": {
+                        "formLabel": "Продукты",
+                        "items": [{"ID": "10", "VALUE": "Сервис"}],
+                    },
+                    "ufCrmEnergyProducts": {"listLabel": "Продукты (энергетика)"},
+                }
+            }
+        }
+
+    monkeypatch.setattr(bitrix_client_module, "callBitrixRestMethod", fakeCallBitrixRestMethod)
+
+    selectFields, extraFieldInfo = bitrix_client_module.buildBitrixInvoiceSelectFields(
+        "https://sms-it.bitrix24.ru",
+        "1/test-webhook",
+    )
+
+    assert "ufCrmKotProducts" in selectFields
+    assert "ufCrmProducts" in selectFields
+    assert "ufCrmEnergyProducts" in selectFields
+    assert extraFieldInfo["invoice_extra_field_names"]["kot_products"] == "ufCrmKotProducts"
+    assert extraFieldInfo["invoice_extra_field_names"]["products"] == "ufCrmProducts"
+    assert extraFieldInfo["invoice_extra_field_value_maps"]["products"]["10"] == "Сервис"
 
 
 def testGetBitrixDealsEndpointReturnsItems(monkeypatch) -> None:

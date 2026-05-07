@@ -11471,18 +11471,27 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
             <col class="crm-col-pipeline">
             <col class="crm-col-date">
             <col class="crm-col-date">
+            <col class="crm-col-product">
+            <col class="crm-col-product">
+            <col class="crm-col-product">
 """ if isInvoicePage else ""
     extraHeaderCells = """
               <th>Воронка/стадия/счет<br><input data-filter="pipeline_stage_invoice" placeholder="Фильтр"></th>
               <th>Дата выставления<br><input data-filter="begin_date" placeholder="Фильтр"></th>
               <th>Срок оплаты<br><input data-filter="close_date" placeholder="Фильтр"></th>
+              <th>КОТ ПРОДУКТЫ<br><input data-filter="kot_products" placeholder="Фильтр"></th>
+              <th>Продукты<br><input data-filter="products" placeholder="Фильтр"></th>
+              <th>Продукты (энергетика)<br><input data-filter="energy_products" placeholder="Фильтр"></th>
 """ if isInvoicePage else ""
     extraRowCells = """
           <td>${formatValue(buildPipelineStageInvoice(item))}</td>
           <td class="mono">${formatValue(item.begin_date)}</td>
           <td class="mono">${formatValue(item.close_date)}</td>
+          <td>${formatValue(item.kot_products)}</td>
+          <td>${formatValue(item.products)}</td>
+          <td>${formatValue(item.energy_products)}</td>
 """ if isInvoicePage else ""
-    emptyColspan = "11" if isInvoicePage else "8"
+    emptyColspan = "14" if isInvoicePage else "8"
     tableClass = "crm-table crm-table-invoice" if isInvoicePage else "crm-table crm-table-standard"
     return """<!doctype html>
 <html lang="ru">
@@ -11554,7 +11563,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: visible; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: max(100%, var(--crm-table-min-width, 166ch)); min-width: var(--crm-table-min-width, 166ch); border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
     .crm-table-standard { --crm-table-min-width: 166ch; }
-    .crm-table-invoice { --crm-table-min-width: 230ch; }
+    .crm-table-invoice { --crm-table-min-width: 302ch; }
     .crm-col-id { width: 8ch; }
     .crm-col-title { width: 50ch; }
     .crm-col-status { width: 20ch; }
@@ -11563,6 +11572,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     .crm-col-company { width: 24ch; }
     .crm-col-pipeline { width: 48ch; }
     .crm-col-date { width: 14ch; }
+    .crm-col-product { width: 24ch; }
     .crm-col-datetime { width: 18ch; }
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
     th { position: sticky; top: 0; z-index: 6; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
@@ -13899,6 +13909,9 @@ def buildBitrixCrmSnapshotFilters(
     pipeline_stage_invoice: str | None = None,
     begin_date: str | None = None,
     close_date: str | None = None,
+    kot_products: str | None = None,
+    products: str | None = None,
+    energy_products: str | None = None,
     created_time: str | None = None,
     updated_time: str | None = None,
 ) -> dict[str, object]:
@@ -13917,6 +13930,9 @@ def buildBitrixCrmSnapshotFilters(
         "pipeline_stage_invoice": pipeline_stage_invoice,
         "begin_date": begin_date,
         "close_date": close_date,
+        "kot_products": kot_products,
+        "products": products,
+        "energy_products": energy_products,
         "created_time": created_time,
         "updated_time": updated_time,
     }
@@ -13957,6 +13973,9 @@ def getBitrixLeadSnapshotItemsApi(
     pipeline_stage_invoice: str | None = Query(None),
     begin_date: str | None = Query(None),
     close_date: str | None = Query(None),
+    kot_products: str | None = Query(None),
+    products: str | None = Query(None),
+    energy_products: str | None = Query(None),
     created_time: str | None = Query(None),
     updated_time: str | None = Query(None),
 ) -> dict[str, object]:
@@ -13982,6 +14001,9 @@ def getBitrixLeadSnapshotItemsApi(
             pipeline_stage_invoice=pipeline_stage_invoice,
             begin_date=begin_date,
             close_date=close_date,
+            kot_products=kot_products,
+            products=products,
+            energy_products=energy_products,
             created_time=created_time,
             updated_time=updated_time,
         ),
@@ -14007,6 +14029,9 @@ def getBitrixInvoiceSnapshotItemsApi(
     pipeline_stage_invoice: str | None = Query(None),
     begin_date: str | None = Query(None),
     close_date: str | None = Query(None),
+    kot_products: str | None = Query(None),
+    products: str | None = Query(None),
+    energy_products: str | None = Query(None),
     created_time: str | None = Query(None),
     updated_time: str | None = Query(None),
 ) -> dict[str, object]:
@@ -14032,6 +14057,9 @@ def getBitrixInvoiceSnapshotItemsApi(
             pipeline_stage_invoice=pipeline_stage_invoice,
             begin_date=begin_date,
             close_date=close_date,
+            kot_products=kot_products,
+            products=products,
+            energy_products=energy_products,
             created_time=created_time,
             updated_time=updated_time,
         ),

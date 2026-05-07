@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import re
 from time import perf_counter
 
 import requests
@@ -43,6 +44,12 @@ BITRIX_INVOICE_SELECT_FIELDS = [
     "begindate",
     "closedate",
 ]
+BITRIX_INVOICE_EXTRA_FIELD_LABELS = {
+    "kot_products": "КОТ ПРОДУКТЫ",
+    "products": "Продукты",
+    "energy_products": "Продукты (энергетика)",
+}
+_BITRIX_CRM_FIELD_CACHE: dict[tuple[str, str, int], dict[str, object]] = {}
 
 
 @dataclass(frozen=True)
@@ -169,6 +176,110 @@ def callBitrixRestMethodGet(
     if responseError is not None:
         raise RuntimeError(responseError)
     return responsePayload
+
+
+def normalizeBitrixFieldLabel(value: object) -> str:
+    return re.sub(r"[^0-9a-zа-я]+", "", str(value or "").lower().replace("ё", "е"))
+
+
+def fetchBitrixCrmItemFields(portalUrl: str, credential: str, entityTypeId: int) -> dict[str, object]:
+    cacheKey = (str(portalUrl or "").strip().rstrip("/"), str(credential or "").strip(), int(entityTypeId))
+    if cacheKey in _BITRIX_CRM_FIELD_CACHE:
+        return _BITRIX_CRM_FIELD_CACHE[cacheKey]
+
+    responsePayload = callBitrixRestMethod(
+        portalUrl,
+        credential,
+        "crm.item.fields",
+        {"entityTypeId": int(entityTypeId)},
+        timeout=45,
+    )
+    resultPayload = responsePayload.get("result") or {}
+    fieldsPayload = {}
+    if isinstance(resultPayload, dict):
+        fieldsPayload = resultPayload.get("fields") if "fields" in resultPayload else resultPayload
+    fields = fieldsPayload if isinstance(fieldsPayload, dict) else {}
+    _BITRIX_CRM_FIELD_CACHE[cacheKey] = fields
+    return fields
+
+
+def extractBitrixFieldLabels(fieldInfo: object) -> list[str]:
+    if not isinstance(fieldInfo, dict):
+        return []
+
+    labels: list[str] = []
+    for key in ("title", "listLabel", "formLabel", "filterLabel", "name", "label"):
+        value = fieldInfo.get(key)
+        if value:
+            labels.append(str(value))
+
+    settings = fieldInfo.get("settings")
+    if isinstance(settings, dict):
+        for key in ("title", "listLabel", "formLabel", "filterLabel", "label"):
+            value = settings.get(key)
+            if value:
+                labels.append(str(value))
+
+    return labels
+
+
+def buildBitrixFieldValueMap(fieldInfo: object) -> dict[object, str]:
+    if not isinstance(fieldInfo, dict):
+        return {}
+
+    itemsPayload = fieldInfo.get("items") or fieldInfo.get("values") or []
+    valueMap: dict[object, str] = {}
+    if not isinstance(itemsPayload, list):
+        return valueMap
+
+    for item in itemsPayload:
+        if not isinstance(item, dict):
+            continue
+        itemId = item.get("ID") or item.get("id") or item.get("VALUE_ID") or item.get("valueId")
+        name = item.get("VALUE") or item.get("value") or item.get("NAME") or item.get("name") or item.get("TITLE") or item.get("title")
+        if itemId is not None and name:
+            valueMap[str(itemId)] = str(name)
+            valueMap[itemId] = str(name)
+    return valueMap
+
+
+def resolveBitrixInvoiceExtraFields(portalUrl: str, credential: str) -> dict[str, object]:
+    try:
+        fields = fetchBitrixCrmItemFields(portalUrl, credential, BITRIX_INVOICE_ENTITY_TYPE_ID)
+    except Exception:
+        return {
+            "invoice_extra_field_names": {},
+            "invoice_extra_field_value_maps": {},
+        }
+    targetLabelsByKey = {
+        key: normalizeBitrixFieldLabel(label)
+        for key, label in BITRIX_INVOICE_EXTRA_FIELD_LABELS.items()
+    }
+    fieldNames: dict[str, str] = {}
+    valueMaps: dict[str, dict[object, str]] = {}
+
+    for fieldName, fieldInfo in fields.items():
+        normalizedLabels = {normalizeBitrixFieldLabel(label) for label in extractBitrixFieldLabels(fieldInfo)}
+        for key, normalizedTarget in targetLabelsByKey.items():
+            if key in fieldNames:
+                continue
+            if normalizedTarget in normalizedLabels:
+                fieldNames[key] = str(fieldName)
+                valueMaps[key] = buildBitrixFieldValueMap(fieldInfo)
+
+    return {
+        "invoice_extra_field_names": fieldNames,
+        "invoice_extra_field_value_maps": valueMaps,
+    }
+
+
+def buildBitrixInvoiceSelectFields(portalUrl: str, credential: str) -> tuple[list[str], dict[str, object]]:
+    extraFieldInfo = resolveBitrixInvoiceExtraFields(portalUrl, credential)
+    selectFields = list(BITRIX_INVOICE_SELECT_FIELDS)
+    for fieldName in (extraFieldInfo.get("invoice_extra_field_names") or {}).values():
+        if isinstance(fieldName, str) and fieldName and fieldName not in selectFields:
+            selectFields.append(fieldName)
+    return selectFields, extraFieldInfo
 
 
 def fetchBitrixDeals(
@@ -377,13 +488,16 @@ def fetchBitrixLeadsPage(portalUrl: str, credential: str, start: int = 0) -> dic
 
 
 def fetchBitrixInvoicesPage(portalUrl: str, credential: str, start: int = 0) -> dict[str, object]:
-    return fetchBitrixCrmItemsPage(
+    selectFields, extraFieldInfo = buildBitrixInvoiceSelectFields(portalUrl, credential)
+    payload = fetchBitrixCrmItemsPage(
         portalUrl,
         credential,
         entityTypeId=BITRIX_INVOICE_ENTITY_TYPE_ID,
-        selectFields=BITRIX_INVOICE_SELECT_FIELDS,
+        selectFields=selectFields,
         start=start,
     )
+    payload.update(extraFieldInfo)
+    return payload
 
 
 def fetchAllBitrixLeads(portalUrl: str, credential: str) -> dict[str, object]:
@@ -396,12 +510,15 @@ def fetchAllBitrixLeads(portalUrl: str, credential: str) -> dict[str, object]:
 
 
 def fetchAllBitrixInvoices(portalUrl: str, credential: str) -> dict[str, object]:
-    return fetchAllBitrixCrmItems(
+    selectFields, extraFieldInfo = buildBitrixInvoiceSelectFields(portalUrl, credential)
+    payload = fetchAllBitrixCrmItems(
         portalUrl,
         credential,
         entityTypeId=BITRIX_INVOICE_ENTITY_TYPE_ID,
-        selectFields=BITRIX_INVOICE_SELECT_FIELDS,
+        selectFields=selectFields,
     )
+    payload.update(extraFieldInfo)
+    return payload
 
 
 def fetchBitrixDealDictionaries(
@@ -768,15 +885,18 @@ def fetchBitrixCrmItemDictionaries(
     statusEntityIds: list[str] | None = None,
     entityTypeId: int | None = None,
     categoryIds: list[int] | None = None,
-) -> dict[str, dict[object, str]]:
+) -> dict[str, object]:
     statusNames: dict[object, str] = {}
     categoryNames: dict[object, str] = {}
+    extraFieldInfo: dict[str, object] = {}
     requestedStatusEntityIds: list[str] = []
     for entityId in statusEntityIds or []:
         if entityId and entityId not in requestedStatusEntityIds:
             requestedStatusEntityIds.append(entityId)
     if entityTypeId is not None:
         categoryNames = fetchBitrixCrmCategoryNames(portalUrl, credential, entityTypeId)
+        if entityTypeId == BITRIX_INVOICE_ENTITY_TYPE_ID:
+            extraFieldInfo = resolveBitrixInvoiceExtraFields(portalUrl, credential)
         allCategoryIdSet = {int(value) for value in categoryNames}
         for value in categoryIds or []:
             try:
@@ -809,6 +929,7 @@ def fetchBitrixCrmItemDictionaries(
         "category_names": categoryNames,
         "assigned_by_names": fetchBitrixUserNames(portalUrl, credential, assignedByIds or []),
         "company_names": {},
+        **extraFieldInfo,
     }
 
 
