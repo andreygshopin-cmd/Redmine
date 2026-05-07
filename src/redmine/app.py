@@ -58,6 +58,7 @@ from src.redmine.db import (
     ensureUsersTable,
     getFilteredSnapshotIssuesForProjectByDate,
     getBitrixDealSnapshotItems,
+    getBitrixDealSnapshotFilterOptions,
     getBitrixCrmSnapshotItems,
     getBitrixCompanyNamesByIds,
     getBitrixUserNamesByIds,
@@ -8377,6 +8378,23 @@ BITRIX_PAGE_HTML = """<!doctype html>
       min-width: 0;
       border-collapse: collapse;
       font-size: 0.92rem;
+      table-layout: fixed;
+    }
+
+    .snapshot-table col.deal-col-id {
+      width: 8ch;
+    }
+
+    .snapshot-table col.deal-col-title {
+      width: auto;
+    }
+
+    .snapshot-table col.deal-col-amount {
+      width: 12ch;
+    }
+
+    .snapshot-table col.deal-col-fixed {
+      width: 20ch;
     }
 
     .snapshot-table th,
@@ -8403,7 +8421,8 @@ BITRIX_PAGE_HTML = """<!doctype html>
       text-align: right;
     }
 
-    .snapshot-table input {
+    .snapshot-table input,
+    .snapshot-table select {
       width: 100%;
       min-width: 0;
       box-sizing: border-box;
@@ -8492,15 +8511,26 @@ BITRIX_PAGE_HTML = """<!doctype html>
         <div class="deal-list" id="bitrixResponsiblesList"></div>
         <div class="snapshot-table-wrap">
           <table class="snapshot-table">
+            <colgroup>
+              <col class="deal-col-id">
+              <col class="deal-col-title">
+              <col class="deal-col-fixed">
+              <col class="deal-col-fixed">
+              <col class="deal-col-amount">
+              <col class="deal-col-fixed">
+              <col class="deal-col-fixed">
+              <col class="deal-col-fixed">
+              <col class="deal-col-fixed">
+            </colgroup>
             <thead>
               <tr>
                 <th>ID<br><input data-bitrix-filter="deal_id" placeholder="Фильтр"></th>
                 <th>Название<br><input data-bitrix-filter="title" placeholder="Фильтр"></th>
-                <th>Стадия<br><input data-bitrix-filter="stage_name" placeholder="Фильтр"></th>
-                <th>Ответственный<br><input data-bitrix-filter="assigned_by_name" placeholder="Фильтр"></th>
+                <th>Стадия<br><select data-bitrix-filter="stage_name"><option value="">Фильтр</option></select></th>
+                <th>Ответственный<br><select data-bitrix-filter="assigned_by_name"><option value="">Фильтр</option></select></th>
                 <th class="amount-header">Сумма<br><input data-bitrix-filter="opportunity" placeholder="Фильтр"></th>
-                <th>Компания<br><input data-bitrix-filter="company_name" placeholder="Фильтр"></th>
-                <th>Воронка<br><input data-bitrix-filter="category_name" placeholder="Фильтр"></th>
+                <th>Компания<br><select data-bitrix-filter="company_name"><option value="">Фильтр</option></select></th>
+                <th>Воронка<br><select data-bitrix-filter="category_name"><option value="">Фильтр</option></select></th>
                 <th>Создана<br><input data-bitrix-filter="created_time" placeholder="Фильтр"></th>
                 <th>Обновлена<br><input data-bitrix-filter="updated_time" placeholder="Фильтр"></th>
               </tr>
@@ -8635,6 +8665,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
     const bitrixDealSnapshotPrevPageButton = document.getElementById("bitrixDealSnapshotPrevPageButton");
     const bitrixDealSnapshotNextPageButton = document.getElementById("bitrixDealSnapshotNextPageButton");
     const bitrixDealFilterInputs = Array.from(document.querySelectorAll("[data-bitrix-filter]"));
+    const bitrixDealDropdownFilterInputs = Array.from(document.querySelectorAll("select[data-bitrix-filter]"));
     let bitrixDealSnapshotPage = 1;
     let bitrixDealSnapshotTotal = 0;
     let bitrixDealSnapshotDatesLoaded = false;
@@ -8713,6 +8744,31 @@ BITRIX_PAGE_HTML = """<!doctype html>
       return dates;
     }
 
+    function syncBitrixDealFilterOptions(optionsByField = {}) {
+      bitrixDealDropdownFilterInputs.forEach((select) => {
+        const key = select.dataset.bitrixFilter;
+        const previousValue = select.value;
+        const values = Array.isArray(optionsByField[key]) ? optionsByField[key] : [];
+        select.innerHTML = ['<option value="">Фильтр</option>']
+          .concat(values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`))
+          .join("");
+        select.value = values.includes(previousValue) ? previousValue : "";
+      });
+    }
+
+    async function loadBitrixDealFilterOptions() {
+      const params = new URLSearchParams();
+      if (bitrixDealSnapshotDateSelect.value) {
+        params.set("captured_for_date", bitrixDealSnapshotDateSelect.value);
+      }
+      const response = await fetch(`/api/bitrix/deal-snapshots/filter-options?${params.toString()}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || "Не удалось загрузить списки фильтров сделок.");
+      }
+      syncBitrixDealFilterOptions(payload.options || {});
+    }
+
     function renderBitrixDealSnapshotRows(deals) {
       if (!Array.isArray(deals) || !deals.length) {
         bitrixDealSnapshotTableBody.innerHTML = '<tr><td colspan="9">Сделки не найдены.</td></tr>';
@@ -8755,6 +8811,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
       if (!bitrixDealSnapshotDatesLoaded || !bitrixDealSnapshotDateSelect.value) {
         await loadBitrixDealSnapshotRuns(bitrixDealSnapshotDateSelect.value);
       }
+      await loadBitrixDealFilterOptions();
       const response = await fetch(`/api/bitrix/deal-snapshots/items?${buildBitrixDealSnapshotParams().toString()}`);
       const payload = await response.json();
       if (!response.ok) {
@@ -9044,6 +9101,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
       margin: 16px 0;
     }
     label { display: grid; gap: 6px; color: var(--muted); font-weight: 600; }
+    input,
     select {
       min-height: 42px;
       min-width: 180px;
@@ -9060,6 +9118,12 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     table { width: 100%; min-width: 1120px; border-collapse: collapse; font-size: 0.92rem; }
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; }
     th { position: sticky; top: 0; z-index: 6; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
+    .filter-row th { top: 48px; z-index: 5; padding-top: 8px; background: #f8fbfd; }
+    .compare-filter { width: 100%; min-width: 90px; min-height: 36px; padding: 0 8px; border-radius: 10px; font-size: 0.88rem; }
+    .sort-button { display: inline-flex; align-items: center; gap: 6px; border: 0; padding: 0; background: transparent; color: inherit; font-weight: 800; cursor: pointer; text-align: left; }
+    .sort-button.is-active { color: var(--blue); }
+    .pager { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+    .pager-info { color: var(--muted); }
     .changed-cell { background: #fff3b8; box-shadow: inset 0 0 0 1px rgba(205, 153, 0, 0.2); }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
   </style>
@@ -9081,6 +9145,9 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
         <label>Правый срез
           <select id="rightDateSelect"></select>
         </label>
+        <label>Размер страницы
+          <input id="comparePageSizeInput" type="number" min="1" max="5000" value="1000">
+        </label>
         <button class="button button-primary" id="compareButton" type="button">Сравнить</button>
       </div>
       <div class="status" id="compareStatus">Загружаю сравнение...</div>
@@ -9088,18 +9155,35 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
         <table>
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Тип</th>
-              <th>Название</th>
-              <th>Стадия</th>
-              <th>Ответственный</th>
-              <th>Сумма</th>
-              <th>Воронка</th>
-              <th>Обновлена</th>
+              <th><button class="sort-button" data-compare-sort="deal_id" data-label="ID" type="button">ID</button></th>
+              <th><button class="sort-button" data-compare-sort="change_type" data-label="Тип" type="button">Тип</button></th>
+              <th><button class="sort-button" data-compare-sort="title" data-label="Название" type="button">Название</button></th>
+              <th><button class="sort-button" data-compare-sort="stage" data-label="Стадия" type="button">Стадия</button></th>
+              <th><button class="sort-button" data-compare-sort="responsible" data-label="Ответственный" type="button">Ответственный</button></th>
+              <th><button class="sort-button" data-compare-sort="opportunity" data-label="Сумма" type="button">Сумма</button></th>
+              <th><button class="sort-button" data-compare-sort="company" data-label="Компания" type="button">Компания</button></th>
+              <th><button class="sort-button" data-compare-sort="category" data-label="Воронка" type="button">Воронка</button></th>
+              <th><button class="sort-button" data-compare-sort="updated_time" data-label="Обновлена" type="button">Обновлена</button></th>
+            </tr>
+            <tr class="filter-row">
+              <th><input class="compare-filter" data-compare-filter="deal_id" placeholder="Фильтр"></th>
+              <th><input class="compare-filter" data-compare-filter="change_type" placeholder="Фильтр"></th>
+              <th><input class="compare-filter" data-compare-filter="title" placeholder="Фильтр"></th>
+              <th><input class="compare-filter" data-compare-filter="stage" placeholder="Фильтр"></th>
+              <th><input class="compare-filter" data-compare-filter="responsible" placeholder="Фильтр"></th>
+              <th><input class="compare-filter" data-compare-filter="opportunity" placeholder="Фильтр"></th>
+              <th><input class="compare-filter" data-compare-filter="company" placeholder="Фильтр"></th>
+              <th><input class="compare-filter" data-compare-filter="category" placeholder="Фильтр"></th>
+              <th><input class="compare-filter" data-compare-filter="updated_time" placeholder="Фильтр"></th>
             </tr>
           </thead>
           <tbody id="compareTableBody"></tbody>
         </table>
+      </div>
+      <div class="pager">
+        <button class="button" id="comparePrevPageButton" type="button">Назад</button>
+        <button class="button" id="compareNextPageButton" type="button">Вперед</button>
+        <span class="pager-info" id="comparePageInfo"></span>
       </div>
     </section>
   </main>
@@ -9109,6 +9193,17 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     const compareButton = document.getElementById("compareButton");
     const compareStatus = document.getElementById("compareStatus");
     const compareTableBody = document.getElementById("compareTableBody");
+    const comparePageSizeInput = document.getElementById("comparePageSizeInput");
+    const comparePrevPageButton = document.getElementById("comparePrevPageButton");
+    const compareNextPageButton = document.getElementById("compareNextPageButton");
+    const comparePageInfo = document.getElementById("comparePageInfo");
+    const compareFilterInputs = Array.from(document.querySelectorAll("[data-compare-filter]"));
+    const compareSortButtons = Array.from(document.querySelectorAll("[data-compare-sort]"));
+    let compareChanges = [];
+    let comparePage = 1;
+    let compareSort = { field: "deal_id", direction: "desc" };
+    let compareLeftDate = "";
+    let compareRightDate = "";
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -9171,6 +9266,46 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
       return String(Math.round(numericValue));
     }
 
+    function formatPlainValue(value) {
+      if (value === null || value === undefined || value === "") {
+        return "";
+      }
+      return String(value);
+    }
+
+    function formatPlainAmount(value) {
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue)) {
+        return formatPlainValue(value);
+      }
+      return String(Math.round(numericValue));
+    }
+
+    function getComparePair(change, field) {
+      switch (field) {
+        case "deal_id":
+          return { left: change.deal_id, right: change.deal_id };
+        case "change_type":
+          return { left: change.change_type, right: change.change_type };
+        case "title":
+          return { left: change.left_title, right: change.right_title };
+        case "stage":
+          return { left: change.left_stage_name || change.left_stage_id, right: change.right_stage_name || change.right_stage_id };
+        case "responsible":
+          return { left: change.left_assigned_by_name || change.left_assigned_by_id, right: change.right_assigned_by_name || change.right_assigned_by_id };
+        case "opportunity":
+          return { left: change.left_opportunity, right: change.right_opportunity, isAmount: true };
+        case "company":
+          return { left: change.left_company_name || change.left_company_id, right: change.right_company_name || change.right_company_id };
+        case "category":
+          return { left: change.left_category_name || change.left_category_id, right: change.right_category_name || change.right_category_id };
+        case "updated_time":
+          return { left: change.left_updated_time, right: change.right_updated_time };
+        default:
+          return { left: "", right: "" };
+      }
+    }
+
     function buildCompareCell(leftValue, rightValue, formatter = formatValue, className = "") {
       const isChanged = normalizeComparableValue(leftValue) !== normalizeComparableValue(rightValue);
       const content = isChanged
@@ -9189,23 +9324,98 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
       return `<td class="${classes}">${content}</td>`;
     }
 
+    function buildCompareFieldCell(change, field, className = "") {
+      const pair = getComparePair(change, field);
+      if (pair.isAmount) {
+        return buildAmountCell(pair.left, pair.right);
+      }
+      return buildCompareCell(pair.left, pair.right, formatValue, className);
+    }
+
+    function getCompareFilterText(change, field) {
+      const pair = getComparePair(change, field);
+      const formatter = pair.isAmount ? formatPlainAmount : formatPlainValue;
+      return `${formatter(pair.left)} ${formatter(pair.right)}`.toLowerCase();
+    }
+
+    function getCompareSortValue(change, field) {
+      const pair = getComparePair(change, field);
+      if (field === "deal_id" || pair.isAmount) {
+        const numericValue = Number(pickVisibleValue(pair.left, pair.right));
+        return Number.isFinite(numericValue) ? numericValue : 0;
+      }
+      return formatPlainValue(pickVisibleValue(pair.left, pair.right)).toLowerCase();
+    }
+
+    function updateCompareSortButtons() {
+      compareSortButtons.forEach((button) => {
+        const isActive = button.dataset.compareSort === compareSort.field;
+        button.classList.toggle("is-active", isActive);
+        const label = button.dataset.label || button.textContent || "";
+        const arrow = isActive ? (compareSort.direction === "asc" ? " ↑" : " ↓") : "";
+        button.textContent = `${label}${arrow}`;
+      });
+    }
+
+    function getFilteredCompareChanges() {
+      let rows = [...compareChanges];
+      compareFilterInputs.forEach((input) => {
+        const field = input.dataset.compareFilter;
+        const value = String(input.value || "").trim().toLowerCase();
+        if (!field || !value) {
+          return;
+        }
+        rows = rows.filter((change) => getCompareFilterText(change, field).includes(value));
+      });
+      rows.sort((leftChange, rightChange) => {
+        const leftValue = getCompareSortValue(leftChange, compareSort.field);
+        const rightValue = getCompareSortValue(rightChange, compareSort.field);
+        let result = 0;
+        if (typeof leftValue === "number" && typeof rightValue === "number") {
+          result = leftValue - rightValue;
+        } else {
+          result = String(leftValue).localeCompare(String(rightValue), "ru");
+        }
+        return compareSort.direction === "asc" ? result : -result;
+      });
+      return rows;
+    }
+
     function renderRows(changes) {
       if (!Array.isArray(changes) || !changes.length) {
-        compareTableBody.innerHTML = '<tr><td colspan="8">Изменений между срезами не найдено.</td></tr>';
+        compareTableBody.innerHTML = '<tr><td colspan="9">Изменений между срезами не найдено.</td></tr>';
         return;
       }
       compareTableBody.innerHTML = changes.map((change) => `
         <tr>
           <td class="mono"><a href="https://sms-it.bitrix24.ru/crm/deal/details/${encodeURIComponent(change.deal_id ?? "")}/" target="_blank" rel="noreferrer">${formatValue(change.deal_id)}</a></td>
           <td class="mono">${formatValue(change.change_type)}</td>
-          ${buildCompareCell(change.left_title, change.right_title)}
-          ${buildCompareCell(change.left_stage_name || change.left_stage_id, change.right_stage_name || change.right_stage_id)}
-          ${buildCompareCell(change.left_assigned_by_name || change.left_assigned_by_id, change.right_assigned_by_name || change.right_assigned_by_id)}
-          ${buildAmountCell(change.left_opportunity, change.right_opportunity)}
-          ${buildCompareCell(change.left_category_name || change.left_category_id, change.right_category_name || change.right_category_id)}
-          ${buildCompareCell(change.left_updated_time, change.right_updated_time, formatValue, "mono")}
+          ${buildCompareFieldCell(change, "title")}
+          ${buildCompareFieldCell(change, "stage")}
+          ${buildCompareFieldCell(change, "responsible")}
+          ${buildCompareFieldCell(change, "opportunity")}
+          ${buildCompareFieldCell(change, "company")}
+          ${buildCompareFieldCell(change, "category")}
+          ${buildCompareFieldCell(change, "updated_time", "mono")}
         </tr>
       `).join("");
+    }
+
+    function applyCompareView() {
+      const filteredRows = getFilteredCompareChanges();
+      const pageSize = Math.max(1, Math.min(Number(comparePageSizeInput.value || 1000), 5000));
+      const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+      comparePage = Math.min(Math.max(1, comparePage), totalPages);
+      const fromIndex = (comparePage - 1) * pageSize;
+      const pageRows = filteredRows.slice(fromIndex, fromIndex + pageSize);
+      renderRows(pageRows);
+      const fromRow = filteredRows.length ? fromIndex + 1 : 0;
+      const toRow = Math.min(filteredRows.length, fromIndex + pageSize);
+      comparePrevPageButton.disabled = comparePage <= 1;
+      compareNextPageButton.disabled = comparePage >= totalPages;
+      comparePageInfo.textContent = `Страница ${comparePage} из ${totalPages}. Показано ${fromRow}-${toRow} из ${filteredRows.length}.`;
+      setStatus(`Сравнение: ${compareLeftDate || "нет"} → ${compareRightDate || "нет"}. Изменений: ${compareChanges.length}. После фильтров: ${filteredRows.length}.`);
+      updateCompareSortButtons();
     }
 
     async function loadCompare() {
@@ -9225,8 +9435,11 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
           throw new Error(payload.detail || "Не удалось сравнить срезы.");
         }
         syncDateOptions(payload.available_dates || []);
-        renderRows(payload.changes || []);
-        setStatus(`Сравнение: ${payload.left_run?.captured_for_date || "нет"} → ${payload.right_run?.captured_for_date || "нет"}. Изменений: ${(payload.changes || []).length}.`);
+        compareChanges = payload.changes || [];
+        compareLeftDate = payload.left_run?.captured_for_date || "";
+        compareRightDate = payload.right_run?.captured_for_date || "";
+        comparePage = 1;
+        applyCompareView();
       } catch (error) {
         setStatus(String(error.message || error), true);
       } finally {
@@ -9237,6 +9450,39 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     compareButton.addEventListener("click", loadCompare);
     leftDateSelect.addEventListener("change", loadCompare);
     rightDateSelect.addEventListener("change", loadCompare);
+    comparePageSizeInput.addEventListener("change", () => {
+      comparePage = 1;
+      applyCompareView();
+    });
+    compareFilterInputs.forEach((input) => {
+      input.addEventListener("input", () => {
+        comparePage = 1;
+        applyCompareView();
+      });
+    });
+    compareSortButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const field = button.dataset.compareSort;
+        if (!field) {
+          return;
+        }
+        if (compareSort.field === field) {
+          compareSort.direction = compareSort.direction === "asc" ? "desc" : "asc";
+        } else {
+          compareSort = { field, direction: field === "deal_id" ? "desc" : "asc" };
+        }
+        comparePage = 1;
+        applyCompareView();
+      });
+    });
+    comparePrevPageButton.addEventListener("click", () => {
+      comparePage = Math.max(1, comparePage - 1);
+      applyCompareView();
+    });
+    compareNextPageButton.addEventListener("click", () => {
+      comparePage += 1;
+      applyCompareView();
+    });
     loadCompare();
   </script>
 </body>
@@ -13371,6 +13617,16 @@ def getBitrixDealSnapshotItemsApi(
             updated_time=updated_time,
         ),
     ))
+
+
+@app.get("/api/bitrix/deal-snapshots/filter-options")
+def getBitrixDealSnapshotFilterOptionsApi(
+    captured_for_date: str | None = Query(None),
+) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    return getBitrixDealSnapshotFilterOptions(captured_for_date)
 
 
 @app.get("/api/bitrix/deal-snapshots/export")

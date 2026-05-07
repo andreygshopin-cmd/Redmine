@@ -52,6 +52,13 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert 'href="/Bitrix/leads"' in body
     assert 'href="/Bitrix/invoices"' in body
     assert 'data-bitrix-filter="company_name"' in body
+    assert '<select data-bitrix-filter="stage_name">' in body
+    assert '<select data-bitrix-filter="assigned_by_name">' in body
+    assert '<select data-bitrix-filter="company_name">' in body
+    assert '<select data-bitrix-filter="category_name">' in body
+    assert "/api/bitrix/deal-snapshots/filter-options" in body
+    assert "table-layout: fixed" in body
+    assert "deal-col-fixed" in body
     assert "min-width: 1040px" not in body
     assert "button-muted" in body
     assert 'data-bitrix-filter="currency_id"' not in body
@@ -72,6 +79,10 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
     assert "/api/bitrix/deal-snapshots/compare" in body
     assert "changed-cell" in body
     assert "buildCompareCell" in body
+    assert "comparePageSizeInput" in body
+    assert 'data-compare-filter="company"' in body
+    assert 'data-compare-sort="company"' in body
+    assert 'colspan="9"' in body
     assert "<th>Валюта</th>" not in body
 
 
@@ -274,6 +285,26 @@ def testCompareBitrixDealSnapshotsEndpointReturnsChanges(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["changes"][0]["deal_id"] == 501
+
+
+def testGetBitrixDealSnapshotFilterOptionsEndpointReturnsOptions(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+    monkeypatch.setattr(
+        app_module,
+        "getBitrixDealSnapshotFilterOptions",
+        lambda capturedForDate: {
+            "snapshot_run": {"captured_for_date": capturedForDate},
+            "options": {"company_name": ["ООО Ромашка"], "stage_name": ["Новая"]},
+        },
+    )
+
+    response = client.get("/api/bitrix/deal-snapshots/filter-options?captured_for_date=2026-05-06")
+
+    assert response.status_code == 200
+    assert response.json()["options"]["company_name"] == ["ООО Ромашка"]
+    assert response.json()["snapshot_run"]["captured_for_date"] == "2026-05-06"
 
 
 def testDeleteBitrixDealSnapshotByDateEndpointDeletesRows(monkeypatch) -> None:

@@ -4724,15 +4724,15 @@ def getBitrixDealSnapshotItems(
             "deal_id": "CAST(deal_id AS TEXT)",
             "title": "title",
             "stage_id": "stage_id",
-            "stage_name": "stage_name",
+            "stage_name": "COALESCE(stage_name, stage_id)",
             "assigned_by_id": "CAST(assigned_by_id AS TEXT)",
-            "assigned_by_name": "assigned_by_name",
+            "assigned_by_name": "COALESCE(assigned_by_name, CAST(assigned_by_id AS TEXT))",
             "opportunity": "CAST(opportunity AS TEXT)",
             "currency_id": "currency_id",
             "company_id": "CAST(company_id AS TEXT)",
-            "company_name": "company_name",
+            "company_name": "COALESCE(company_name, CAST(company_id AS TEXT))",
             "category_id": "CAST(category_id AS TEXT)",
-            "category_name": "category_name",
+            "category_name": "COALESCE(category_name, CAST(category_id AS TEXT))",
             "created_time": "CAST(created_time AS TEXT)",
             "updated_time": "CAST(updated_time AS TEXT)",
         }.items():
@@ -4770,6 +4770,69 @@ def getBitrixDealSnapshotItems(
             "page_size": safePageSize,
             "total_count": totalCount,
         }
+
+
+def getBitrixDealSnapshotFilterOptions(capturedForDate: str | None = None) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    with engine.connect() as connection:
+        if capturedForDate:
+            run = connection.execute(
+                text(
+                    """
+                    SELECT id, captured_for_date, captured_at, total_deals
+                    FROM bitrix_deal_snapshot_runs
+                    WHERE captured_for_date = CAST(:captured_for_date AS DATE)
+                    ORDER BY captured_at DESC, id DESC
+                    LIMIT 1
+                    """
+                ),
+                {"captured_for_date": capturedForDate},
+            ).mappings().first()
+        else:
+            run = connection.execute(
+                text(
+                    """
+                    SELECT id, captured_for_date, captured_at, total_deals
+                    FROM bitrix_deal_snapshot_runs
+                    ORDER BY captured_for_date DESC, captured_at DESC, id DESC
+                    LIMIT 1
+                    """
+                )
+            ).mappings().first()
+
+        if run is None:
+            return {"snapshot_run": None, "options": {}}
+
+        fieldExpressions = {
+            "stage_name": "COALESCE(stage_name, stage_id)",
+            "assigned_by_name": "COALESCE(assigned_by_name, CAST(assigned_by_id AS TEXT))",
+            "company_name": "COALESCE(company_name, CAST(company_id AS TEXT))",
+            "category_name": "COALESCE(category_name, CAST(category_id AS TEXT))",
+        }
+        options: dict[str, list[str]] = {}
+        for fieldName, expression in fieldExpressions.items():
+            rows = connection.execute(
+                text(
+                    f"""
+                    SELECT DISTINCT value
+                    FROM (
+                        SELECT NULLIF(TRIM({expression}), '') AS value
+                        FROM bitrix_deal_snapshot_items
+                        WHERE snapshot_run_id = :snapshot_run_id
+                    ) values_source
+                    WHERE value IS NOT NULL
+                    ORDER BY value
+                    LIMIT 1000
+                    """
+                ),
+                {"snapshot_run_id": int(run["id"])},
+            )
+            options[fieldName] = [str(row.value) for row in rows]
+
+        return {"snapshot_run": dict(run), "options": options}
 
 
 def _normalizeBitrixCrmSnapshotItems(
