@@ -8328,6 +8328,8 @@ BITRIX_PAGE_HTML = """<!doctype html>
 
     .wide-card {
       grid-column: 1 / -1;
+      margin-left: calc(50% - 50vw + 20px);
+      width: calc(100vw - 40px);
     }
 
     .grid > .card:not(.wide-card) {
@@ -8386,7 +8388,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
     }
 
     .snapshot-table col.deal-col-title {
-      width: auto;
+      width: 50ch;
     }
 
     .snapshot-table col.deal-col-amount {
@@ -8441,6 +8443,11 @@ BITRIX_PAGE_HTML = """<!doctype html>
     @media (max-width: 760px) {
       .shell {
         padding: 18px 14px 40px;
+      }
+
+      .wide-card {
+        margin-left: calc(50% - 50vw + 14px);
+        width: calc(100vw - 28px);
       }
 
       .hero {

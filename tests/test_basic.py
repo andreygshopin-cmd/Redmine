@@ -58,6 +58,8 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert '<select data-bitrix-filter="category_name">' in body
     assert "/api/bitrix/deal-snapshots/filter-options" in body
     assert "table-layout: fixed" in body
+    assert "width: calc(100vw - 40px)" in body
+    assert "width: 50ch" in body
     assert "deal-col-fixed" in body
     assert "min-width: 1040px" not in body
     assert "button-muted" in body
