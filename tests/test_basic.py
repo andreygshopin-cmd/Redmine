@@ -40,6 +40,9 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert "Анализ изменений по сделкам Bitrix за интервалы времени. Формирование отчетности" in body
     assert "Получить срез по сделкам, лидам, счетам" in body
     assert "Удалить выбранный срез" in body
+    assert "Показать сделки" in body
+    assert "до 500 строк" in body
+    assert "до 1000 строк" not in body
     assert "Выгрузить в Excel" in body
     assert "/api/bitrix/snapshots/capture/start" in body
     assert "/api/bitrix/snapshots/capture/page" in body

@@ -8341,6 +8341,10 @@ BITRIX_PAGE_HTML = """<!doctype html>
       margin-top: 16px;
     }
 
+    .snapshot-toolbar + .snapshot-toolbar {
+      margin-top: 10px;
+    }
+
     .snapshot-toolbar label {
       display: grid;
       gap: 6px;
@@ -8361,7 +8365,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
     }
 
     .snapshot-table-wrap {
-      overflow: auto;
+      overflow: visible;
       margin-top: 16px;
       border: 1px solid var(--line);
       border-radius: 16px;
@@ -8386,8 +8390,9 @@ BITRIX_PAGE_HTML = """<!doctype html>
     .snapshot-table th {
       position: sticky;
       top: 0;
-      z-index: 2;
+      z-index: 6;
       background: #f3f7fa;
+      box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12);
       color: var(--ink);
       font-weight: 700;
     }
@@ -8465,16 +8470,18 @@ BITRIX_PAGE_HTML = """<!doctype html>
           <a class="button button-muted" href="/Bitrix/leads">Лиды</a>
           <a class="button button-muted" href="/Bitrix/invoices">Счета</a>
         </div>
-        <div class="snapshot-toolbar">
+        <div class="snapshot-toolbar snapshot-toolbar-primary">
           <label>Дата среза
             <select id="bitrixDealSnapshotDateSelect"></select>
           </label>
+          <button class="button" id="deleteBitrixDealSnapshotButton" type="button">Удалить выбранный срез</button>
+        </div>
+        <div class="snapshot-toolbar snapshot-toolbar-secondary">
           <label>Размер страницы
             <input id="bitrixDealSnapshotPageSizeInput" type="number" min="1" max="5000" value="1000">
           </label>
-          <button class="button" id="reloadBitrixDealSnapshotButton" type="button">Показать</button>
+          <button class="button" id="reloadBitrixDealSnapshotButton" type="button">Показать сделки</button>
           <button class="button" id="resetBitrixDealFiltersButton" type="button">Сбросить фильтры</button>
-          <button class="button" id="deleteBitrixDealSnapshotButton" type="button">Удалить выбранный срез</button>
           <button class="button" id="exportBitrixDealSnapshotButton" type="button">Выгрузить в Excel</button>
           <button class="button" id="loadBitrixResponsiblesButton" type="button">Показать ответственных</button>
         </div>
@@ -8790,7 +8797,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
             let pagePayload = null;
             for (let attempt = 1; attempt <= 3; attempt += 1) {
               const packageStartedAt = new Date();
-              setSnapshotStatus(`Начат пакет: ${entity.label}, позиция ${nextStart}, до 1000 строк, попытка ${attempt}/3, время ${packageStartedAt.toLocaleTimeString("ru-RU")}.`);
+              setSnapshotStatus(`Начат пакет: ${entity.label}, позиция ${nextStart}, до 500 строк, попытка ${attempt}/3, время ${packageStartedAt.toLocaleTimeString("ru-RU")}.`);
               try {
                 const pageResponse = await fetchWithTimeout("/api/bitrix/snapshots/capture/page", {
                   method: "POST",
@@ -8854,22 +8861,25 @@ BITRIX_PAGE_HTML = """<!doctype html>
         setSnapshotStatus("Выберите конкретную дату среза для удаления.", true);
         return;
       }
-      if (!window.confirm(`Удалить срез сделок за ${selectedDate}?`)) {
+      if (!window.confirm(`Удалить срез сделок, лидов и оплат за ${selectedDate}?`)) {
         return;
       }
 
       deleteBitrixDealSnapshotButton.disabled = true;
       captureBitrixDealSnapshotButton.disabled = true;
-      setSnapshotStatus(`Удаляю срез сделок за ${selectedDate}...`);
+      setSnapshotStatus(`Удаляю срез сделок, лидов и оплат за ${selectedDate}...`);
       try {
         const response = await fetch(`/api/bitrix/deal-snapshots/by-date?captured_for_date=${encodeURIComponent(selectedDate)}`, { method: "DELETE" });
         const payload = await response.json();
         if (!response.ok) {
-          throw new Error(payload.detail || "Не удалось удалить срез сделок.");
+          throw new Error(payload.detail || "Не удалось удалить срез сделок, лидов и оплат.");
         }
         bitrixDealSnapshotPage = 1;
         bitrixDealSnapshotDateSelect.value = "";
-        setSnapshotStatus(`Удалено строк: ${payload.deleted_items || 0}.`);
+        const deletedDeals = Number(payload.deleted_items || 0);
+        const deletedLeads = Number(payload.deleted_lead_snapshot?.deleted_items || 0);
+        const deletedInvoices = Number(payload.deleted_invoice_snapshot?.deleted_items || 0);
+        setSnapshotStatus(`Удалено: сделки ${deletedDeals}, лиды ${deletedLeads}, оплаты ${deletedInvoices}.`);
         await loadBitrixDealSnapshotItems();
       } catch (error) {
         setSnapshotStatus(String(error.message || error), true);
@@ -9044,10 +9054,10 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     }
     .status { color: var(--muted); margin: 12px 0; }
     .status.is-error { color: #b63d00; }
-    .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
+    .table-wrap { overflow: visible; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: 100%; min-width: 1120px; border-collapse: collapse; font-size: 0.92rem; }
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; }
-    th { background: #f3f7fa; }
+    th { position: sticky; top: 0; z-index: 6; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
   </style>
 </head>
@@ -11196,10 +11206,10 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     }
     .status { margin: 14px 0; color: var(--muted); }
     .status.is-error { color: #b63d00; }
-    .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
+    .table-wrap { overflow: visible; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: 100%; min-width: 1080px; border-collapse: collapse; font-size: 0.92rem; }
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; }
-    th { position: sticky; top: 0; z-index: 2; background: #f3f7fa; }
+    th { position: sticky; top: 0; z-index: 6; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
     th input { width: 100%; min-width: 90px; margin-top: 6px; padding: 7px 8px; }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
     .amount-cell, .amount-header { text-align: right; }
