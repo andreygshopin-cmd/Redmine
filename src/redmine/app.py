@@ -8029,9 +8029,9 @@ BITRIX_PAGE_HTML = """<!doctype html>
   <style>
     :root {
       color-scheme: light;
-      --ink: #10293d;
-      --muted: #5d7487;
-      --paper: #f4f8fb;
+      --ink: #16324a;
+      --muted: #64798d;
+      --paper: #ffffff;
       --card: rgba(255, 255, 255, 0.92);
       --line: rgba(16, 41, 61, 0.12);
       --blue-302: #375d77;
@@ -8163,16 +8163,17 @@ BITRIX_PAGE_HTML = """<!doctype html>
     h1 {
       max-width: 14ch;
       margin: 0;
-      font-size: clamp(2.5rem, 6vw, 5rem);
-      line-height: 0.96;
-      letter-spacing: -0.05em;
+      font-size: clamp(1.85rem, 4vw, 2.65rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
     }
 
     .lead {
       max-width: 720px;
       margin: 18px 0 0;
-      font-size: clamp(1rem, 2.3vw, 1.24rem);
-      line-height: 1.65;
+      font-size: 1rem;
+      line-height: 1.6;
       color: rgba(255, 255, 255, 0.82);
     }
 
@@ -8240,13 +8241,13 @@ BITRIX_PAGE_HTML = """<!doctype html>
 
     .card h2 {
       margin: 0 0 12px;
-      font-size: 1.08rem;
+      font-size: 1.15rem;
     }
 
     .card p,
     .card li {
       color: var(--muted);
-      line-height: 1.65;
+      line-height: 1.6;
     }
 
     .card ul {
@@ -9162,21 +9163,36 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <style>
     :root {
-      --ink: #10293d;
-      --muted: #5d7487;
-      --paper: #f4f8fb;
-      --line: rgba(16, 41, 61, 0.12);
+      color-scheme: light;
+      --ink: #16324a;
+      --muted: #64798d;
+      --paper: #ffffff;
+      --line: #d9e5eb;
       --blue: #375d77;
       --yellow: #ffc600;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: "Golos", "Segoe UI", Tahoma, sans-serif;
+      font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
       color: var(--ink);
-      background: linear-gradient(180deg, #ffffff 0%, var(--paper) 100%);
+      background: var(--paper);
     }
     main { width: 100%; max-width: none; margin: 0 auto; padding: 28px 18px 48px; }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 220px;
+      height: 72px;
+      margin-bottom: 14px;
+      text-decoration: none;
+    }
+    .brand img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
     header {
       display: flex;
       justify-content: space-between;
@@ -9185,8 +9201,8 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
       flex-wrap: wrap;
       margin-bottom: 20px;
     }
-    h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.4rem); letter-spacing: -0.04em; }
-    p { color: var(--muted); line-height: 1.6; }
+    h1 { margin: 18px 0 12px; font-size: clamp(1.85rem, 4vw, 2.65rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }
+    p { color: var(--muted); line-height: 1.6; margin: 0 0 24px; }
     a, button {
       color: inherit;
       font: inherit;
@@ -9270,6 +9286,9 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
 </head>
 <body>
   <main>
+    <a class="brand" href="/" aria-label="На главную">
+      <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+    </a>
     <header>
       <div>
         <h1>Сравнение срезов сделок</h1>
@@ -11816,21 +11835,36 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <style>
     :root {
-      --ink: #10293d;
-      --muted: #5d7487;
-      --paper: #f4f8fb;
-      --line: rgba(16, 41, 61, 0.12);
+      color-scheme: light;
+      --ink: #16324a;
+      --muted: #64798d;
+      --paper: #ffffff;
+      --line: #d9e5eb;
       --yellow: #ffc600;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: "Golos", "Segoe UI", Tahoma, sans-serif;
+      font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
       color: var(--ink);
-      background: linear-gradient(180deg, #ffffff 0%, var(--paper) 100%);
+      background: var(--paper);
     }
     main { max-width: 1280px; margin: 0 auto; padding: 28px 18px 52px; }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 220px;
+      height: 72px;
+      margin-bottom: 14px;
+      text-decoration: none;
+    }
+    .brand img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
     header {
       display: flex;
       align-items: center;
@@ -11843,8 +11877,8 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
       background: #ffffff;
       box-shadow: 0 14px 34px rgba(16, 41, 61, 0.08);
     }
-    h1 { margin: 0; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0.04em; }
-    p { color: var(--muted); line-height: 1.55; }
+    h1 { margin: 18px 0 12px; font-size: clamp(1.85rem, 4vw, 2.65rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }
+    p { color: var(--muted); line-height: 1.6; margin: 0 0 24px; }
     .button {
       display: inline-flex;
       align-items: center;
@@ -11906,6 +11940,9 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
 </head>
 <body>
   <main>
+    <a class="brand" href="/" aria-label="На главную">
+      <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+    </a>
     <header>
       <div>
         <h1>__PAGE_TITLE__</h1>

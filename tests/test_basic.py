@@ -80,6 +80,8 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert "min-width: 1040px" not in body
     assert "button-muted" in body
     assert 'data-bitrix-filter="currency_id"' not in body
+    assert 'font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif' in body
+    assert "font-weight: 400" in body
 
 
 def testReadBitrixPageMasksCredential(monkeypatch) -> None:
@@ -118,6 +120,10 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
     assert 'data-compare-filter="updated_time"' not in body
     assert 'colspan="${2 + getSelectedCompareFields().length}"' in body
     assert 'colspan="8"' not in body
+    assert '<a class="brand" href="/"' in body
+    assert "smsit_template/images/logo.svg" in body
+    assert 'font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif' in body
+    assert "font-weight: 400" in body
     assert "compare-col-title" in body
     assert "width: 178ch; min-width: 178ch; max-width: 178ch" in body
     assert "table-layout: fixed" in body
@@ -132,6 +138,10 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
 
     assert "Счета Bitrix" in body
     assert "/api/bitrix/invoice-snapshots" in body
+    assert '<a class="brand" href="/"' in body
+    assert "smsit_template/images/logo.svg" in body
+    assert 'font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif' in body
+    assert "font-weight: 400" in body
     assert "crm-table-invoice" in body
     assert ".crm-table-invoice { --crm-table-width: 418ch" in body
     assert "crm-col-id { width: 8ch" in body
@@ -257,6 +267,10 @@ def testReadBitrixLeadsPageReturnsDropdownFiltersWithoutPlaceholder() -> None:
 
     assert "Лиды Bitrix" in body
     assert "Получить срез по лидам" in body
+    assert '<a class="brand" href="/"' in body
+    assert "smsit_template/images/logo.svg" in body
+    assert 'font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif' in body
+    assert "font-weight: 400" in body
     assert body.index('id="reloadButton"') < body.index('id="captureSnapshotButton"')
     assert '<select data-filter="status_name">' in body
     assert '<select data-filter="assigned_by_name">' in body
