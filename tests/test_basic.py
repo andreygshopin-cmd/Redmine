@@ -119,8 +119,10 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
     assert 'colspan="${2 + getSelectedCompareFields().length}"' in body
     assert 'colspan="8"' not in body
     assert "compare-col-title" in body
-    assert "width: max(100%, 178ch)" in body
+    assert "width: 175ch; min-width: 175ch; max-width: 175ch" in body
     assert "table-layout: fixed" in body
+    assert "th:first-child, td:first-child { padding-left: 6px" in body
+    assert 'compare-filter[data-compare-filter="deal_id"]' in body
     assert "buildChangedCompareContent" in body
     assert "<th>Валюта</th>" not in body
 
@@ -131,6 +133,7 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert "Счета Bitrix" in body
     assert "/api/bitrix/invoice-snapshots" in body
     assert "crm-table-invoice" in body
+    assert ".crm-table-invoice { --crm-table-width: 415ch" in body
     assert "crm-col-id { width: 5ch" in body
     assert "crm-col-title { width: 50ch" in body
     assert "crm-col-deal { width: 50ch" in body
@@ -169,6 +172,7 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert "entities=${encodeURIComponent(entityKey)}" in body
     assert "overflow-x: auto; overflow-y: visible; position: relative" in body
     assert "th input, th select { width: 100%; min-width: 0" in body
+    assert 'th input[data-filter="item_id"]' in body
     assert "viewport-sticky-table-header" in body
     assert 'setupViewportStickyTableHeader(".table-wrap", "table")' in body
     assert "buildPipelineStageInvoice" not in body

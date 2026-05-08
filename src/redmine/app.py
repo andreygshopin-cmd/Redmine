@@ -9235,7 +9235,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     .status { color: var(--muted); margin: 12px 0; }
     .status.is-error { color: #b63d00; }
     .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: visible; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
-    table { width: max(100%, 178ch); min-width: 178ch; border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
+    table { width: 175ch; min-width: 175ch; max-width: 175ch; border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
     .compare-col-id { width: 5ch; }
     .compare-col-type { width: 12ch; }
     .compare-col-title { width: 50ch; }
@@ -9245,10 +9245,12 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     .compare-col-company { width: 30ch; }
     .compare-col-category { width: 20ch; }
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+    th:first-child, td:first-child { padding-left: 6px; padding-right: 6px; }
     thead { position: sticky; top: 0; z-index: 20; }
     th { background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
     .filter-row th { padding-top: 8px; background: #f8fbfd; }
     .compare-filter { width: 100%; min-width: 0; min-height: 36px; padding: 0 8px; border-radius: 10px; font-size: 0.88rem; }
+    .compare-filter[data-compare-filter="deal_id"] { padding-left: 4px; padding-right: 4px; }
     .compare-field-selector { display: flex; flex-wrap: wrap; gap: 8px 14px; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: #f8fbfd; }
     .compare-field-selector > span { width: 100%; color: var(--muted); font-weight: 700; }
     .compare-field-option { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 600; }
@@ -11873,9 +11875,9 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     .status { margin: 14px 0; color: var(--muted); }
     .status.is-error { color: #b63d00; }
     .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: visible; position: relative; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
-    table { width: max(100%, var(--crm-table-min-width, 166ch)); min-width: var(--crm-table-min-width, 166ch); border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
-    .crm-table-standard { --crm-table-min-width: 166ch; }
-    .crm-table-invoice { --crm-table-min-width: 420ch; }
+    table { width: var(--crm-table-width, 167ch); min-width: var(--crm-table-width, 167ch); max-width: var(--crm-table-width, 167ch); border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
+    .crm-table-standard { --crm-table-width: 167ch; }
+    .crm-table-invoice { --crm-table-width: 415ch; }
     .crm-col-id { width: 5ch; }
     .crm-col-title { width: 50ch; }
     .crm-col-status { width: 20ch; }
@@ -11890,9 +11892,11 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     .crm-col-product { width: 24ch; }
     .crm-col-datetime { width: 18ch; }
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+    th:first-child, td:first-child { padding-left: 6px; padding-right: 6px; }
     thead { position: sticky; top: 0; z-index: 20; }
     th { background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
     th input, th select { width: 100%; min-width: 0; margin-top: 6px; padding: 7px 8px; }
+    th input[data-filter="item_id"] { padding-left: 4px; padding-right: 4px; }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
     .amount-cell, .amount-header { text-align: right; }
     .pager { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
