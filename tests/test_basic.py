@@ -82,6 +82,9 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert 'data-bitrix-filter="currency_id"' not in body
     assert 'font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif' in body
     assert "font-weight: 400" in body
+    assert "width: 100vw" in body
+    assert "margin-left: calc(50% - 50vw)" in body
+    assert "padding-left: max(28px, calc((100vw - 1180px) / 2 + 20px))" in body
 
 
 def testReadBitrixPageMasksCredential(monkeypatch) -> None:

@@ -8069,8 +8069,12 @@ BITRIX_PAGE_HTML = """<!doctype html>
     .hero {
       position: relative;
       overflow: hidden;
+      width: 100vw;
+      margin-left: calc(50% - 50vw);
       padding: 28px;
-      border-radius: 28px;
+      padding-left: max(28px, calc((100vw - 1180px) / 2 + 20px));
+      padding-right: max(28px, calc((100vw - 1180px) / 2 + 20px));
+      border-radius: 0;
       border: 1px solid rgba(255, 255, 255, 0.7);
       background:
         linear-gradient(135deg, rgba(55, 93, 119, 0.96), rgba(16, 41, 61, 0.94)),
@@ -8503,7 +8507,9 @@ BITRIX_PAGE_HTML = """<!doctype html>
 
       .hero {
         padding: 22px 18px;
-        border-radius: 24px;
+        width: 100vw;
+        margin-left: calc(50% - 50vw);
+        border-radius: 0;
       }
 
       .brand img {
