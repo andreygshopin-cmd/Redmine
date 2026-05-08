@@ -191,6 +191,7 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "summary-cell-added" in body
     assert "summary-cell-removed" in body
     assert "previous-amount" in body
+    assert "background: #e9edf1" not in body
     assert "filter-stack" in body
     assert "filter-card" in body
     assert "filter-row" in body
@@ -202,8 +203,15 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "col.month-col, col.total-col { width: 15ch" in body
     assert "min-width: 231ch" in body
     assert "th:first-child, td:first-child" in body
-    assert "max-height: calc(100vh - 260px)" in body
+    assert "height: calc(100vh - 300px)" in body
+    assert "min-height: 360px" in body
     assert "overflow: auto" in body
+    assert "highlight-legend" in body
+    assert "legend-swatch moved-from" in body
+    assert "legend-swatch moved-to" in body
+    assert "legend-swatch added" in body
+    assert "legend-swatch removed" in body
+    assert "function isComparisonActive()" in body
     assert ".filter-actions { align-self: flex-end" in body
     assert "/api/bitrix/invoice-snapshots/items" in body
     assert "compareSnapshotSelect.value !== reportSnapshotSelect.value" in body

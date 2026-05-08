@@ -12140,7 +12140,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
     select[multiple] { min-width: min(70vw, 520px); min-height: 90px; padding: 8px 10px; }
     .status { margin: 14px 0; color: var(--muted); }
     .status.is-error { color: #b63d00; }
-    .table-wrap { width: 100%; max-width: 100%; max-height: calc(100vh - 260px); overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
+    .table-wrap { width: 100%; max-width: 100%; height: calc(100vh - 300px); min-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: max(100%, 231ch); min-width: 231ch; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
     col.hierarchy-col { width: 36ch; }
     col.month-col, col.total-col { width: 15ch; }
@@ -12162,11 +12162,31 @@ def buildBitrixInvoiceSummaryPage() -> str:
     .summary-cell-removed { background: #ffd6d6; }
     .previous-amount {
       display: inline-block;
-      padding: 2px 6px;
-      border-radius: 7px;
-      background: #e9edf1;
       color: #66717c;
     }
+    .highlight-legend {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 10px 0 14px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .legend-swatch {
+      width: 18px;
+      height: 18px;
+      border: 1px solid rgba(16, 41, 61, 0.14);
+      border-radius: 5px;
+    }
+    .legend-swatch.moved-from { background: #fff8c9; }
+    .legend-swatch.moved-to { background: #ffd92e; }
+    .legend-swatch.added { background: #ffb347; }
+    .legend-swatch.removed { background: #ffd6d6; }
     .product-row td { font-weight: 800; }
     .deal-row td:first-child { padding-left: 42px; }
     .toggle-button {
@@ -12232,6 +12252,12 @@ def buildBitrixInvoiceSummaryPage() -> str:
         </div>
       </div>
       <div class="status" id="summaryStatus">Загружаю сводный отчет...</div>
+      <div class="highlight-legend" aria-label="Легенда подсветки">
+        <span class="legend-item"><span class="legend-swatch moved-from"></span>Сумма была в этом месяце</span>
+        <span class="legend-item"><span class="legend-swatch moved-to"></span>Сумма переместилась сюда</span>
+        <span class="legend-item"><span class="legend-swatch added"></span>Сумма добавилась</span>
+        <span class="legend-item"><span class="legend-swatch removed"></span>Сумма исчезла</span>
+      </div>
       <div class="table-wrap">
         <table>
           <colgroup>
@@ -12482,6 +12508,9 @@ def buildBitrixInvoiceSummaryPage() -> str:
       return Array.from(groups.values());
     }
     function getCellClass(currentValue, previousValue, currentTotal, previousTotal) {
+      if (!isComparisonActive()) {
+        return "";
+      }
       if (previousValue === null || previousValue === undefined) {
         return "";
       }
@@ -12508,6 +12537,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
       return "";
     }
     function renderComparedAmountCell(currentValue, previousValue, currentTotal, previousTotal) {
+      const comparisonActive = isComparisonActive();
       const cellClass = getCellClass(currentValue, previousValue, currentTotal, previousTotal);
       const currentAmount = roundedAmountNumber(currentValue);
       const previousAmount = roundedAmountNumber(previousValue);
@@ -12515,7 +12545,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
       if (cellClass === "summary-cell-moved-from" && currentAmount === 0) {
         content = formatAmount(previousValue);
       }
-      if (cellClass === "summary-cell-removed") {
+      if (comparisonActive && cellClass === "summary-cell-removed") {
         const previousContent = `<span class="previous-amount">${formatAmount(previousValue)}</span>`;
         content = currentAmount > 0 ? `${formatAmount(currentValue)} ${previousContent}` : previousContent;
       }
@@ -12528,7 +12558,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
     }
     function renderSummary(payload, comparePayload = null) {
       const rows = Array.isArray(payload.rows) ? payload.rows : [];
-      const compareRows = Array.isArray(comparePayload?.rows) ? comparePayload.rows : [];
+      const compareRows = isComparisonActive() && Array.isArray(comparePayload?.rows) ? comparePayload.rows : [];
       if (!rows.length && !compareRows.length) {
         tableBody.innerHTML = '<tr><td colspan="14">Строки не найдены.</td></tr>';
       } else {
@@ -12557,7 +12587,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
         }).join("");
       }
       const totals = payload.totals || { months: {}, year_total: 0 };
-      const compareTotals = comparePayload?.totals || null;
+      const compareTotals = isComparisonActive() ? (comparePayload?.totals || null) : null;
       const totalMonthCells = renderAmountCells(totals.months, compareTotals?.months, totals.year_total, compareTotals?.year_total);
       tableFoot.innerHTML = `
         <tr>
@@ -12601,6 +12631,14 @@ def buildBitrixInvoiceSummaryPage() -> str:
         reloadButton.disabled = false;
         exportButton.disabled = false;
       }
+    }
+    function isComparisonActive() {
+      return Boolean(
+        currentComparePayload
+        && compareSnapshotSelect.value
+        && reportSnapshotSelect.value
+        && compareSnapshotSelect.value !== reportSnapshotSelect.value
+      );
     }
     reloadButton.addEventListener("click", loadSummary);
     exportButton.addEventListener("click", () => {
