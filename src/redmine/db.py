@@ -489,6 +489,7 @@ def ensureBitrixDealSnapshotTables() -> None:
                         assigned_by_name TEXT,
                         opportunity DOUBLE PRECISION,
                         currency_id TEXT,
+                        deal_id BIGINT,
                         company_id BIGINT,
                         company_name TEXT,
                         category_id BIGINT,
@@ -553,6 +554,7 @@ def ensureBitrixDealSnapshotTables() -> None:
             )
             connection.execute(text("ALTER TABLE bitrix_crm_snapshot_items ADD COLUMN IF NOT EXISTS category_id BIGINT"))
             connection.execute(text("ALTER TABLE bitrix_crm_snapshot_items ADD COLUMN IF NOT EXISTS category_name TEXT"))
+            connection.execute(text("ALTER TABLE bitrix_crm_snapshot_items ADD COLUMN IF NOT EXISTS deal_id BIGINT"))
             connection.execute(text("ALTER TABLE bitrix_crm_snapshot_items ADD COLUMN IF NOT EXISTS begin_date DATE NULL"))
             connection.execute(text("ALTER TABLE bitrix_crm_snapshot_items ADD COLUMN IF NOT EXISTS close_date DATE NULL"))
             connection.execute(text("ALTER TABLE bitrix_crm_snapshot_items ADD COLUMN IF NOT EXISTS kot_products TEXT"))
@@ -4949,6 +4951,7 @@ def _normalizeBitrixCrmSnapshotItems(
             continue
         statusId = str(item.get("statusId") or item.get("stageId") or item.get("STATUS_ID") or item.get("STAGE_ID") or "")
         assignedById = _toIntOrNone(item.get("assignedById") or item.get("ASSIGNED_BY_ID") or item.get("RESPONSIBLE_ID"))
+        dealId = _toIntOrNone(item.get("parentId2") or item.get("PARENT_ID_2") or item.get("dealId") or item.get("DEAL_ID"))
         companyId = _toIntOrNone(item.get("companyId") or item.get("COMPANY_ID") or item.get("UF_COMPANY_ID"))
         categoryId = _toIntOrNone(item.get("categoryId") or item.get("CATEGORY_ID"))
         normalizedItems.append(
@@ -4962,6 +4965,7 @@ def _normalizeBitrixCrmSnapshotItems(
                 "assigned_by_name": assignedByNames.get(assignedById or 0),
                 "opportunity": _toFloatOrNone(item.get("opportunity") or item.get("OPPORTUNITY") or item.get("PRICE")),
                 "currency_id": item.get("currencyId") or item.get("CURRENCY_ID") or item.get("CURRENCY"),
+                "deal_id": dealId,
                 "company_id": companyId,
                 "company_name": companyNames.get(companyId or 0),
                 "category_id": categoryId,
@@ -5045,13 +5049,13 @@ def createBitrixCrmSnapshot(
             """
             INSERT INTO bitrix_crm_snapshot_items (
                 snapshot_run_id, entity_type, item_id, title, status_id, status_name,
-                assigned_by_id, assigned_by_name, opportunity, currency_id, company_id,
+                assigned_by_id, assigned_by_name, opportunity, currency_id, deal_id, company_id,
                 company_name, category_id, category_name, begin_date, close_date,
                 kot_products, products, energy_products, stage_group, pipeline_stage_invoice,
                 created_time, updated_time, raw_payload
             ) VALUES (
                 :snapshot_run_id, :entity_type, :item_id, :title, :status_id, :status_name,
-                :assigned_by_id, :assigned_by_name, :opportunity, :currency_id, :company_id,
+                :assigned_by_id, :assigned_by_name, :opportunity, :currency_id, :deal_id, :company_id,
                 :company_name, :category_id, :category_name, :begin_date, :close_date,
                 :kot_products, :products, :energy_products, :stage_group, :pipeline_stage_invoice,
                 :created_time, :updated_time, CAST(:raw_payload AS JSONB)
@@ -5154,6 +5158,7 @@ def _getBitrixCrmSnapshotFilterOptions(
         "assigned_by_name": "COALESCE(assigned_by_name, CAST(assigned_by_id AS TEXT))",
     }
     if entityType == "invoice":
+        optionExpressions["pipeline_stage_invoice"] = "pipeline_stage_invoice"
         optionExpressions["stage_group"] = "stage_group"
         optionExpressions["kot_products"] = "kot_products"
         optionExpressions["products"] = "products"
@@ -5262,6 +5267,7 @@ def getBitrixCrmSnapshotItems(
             "opportunity": "CAST(opportunity AS TEXT)",
             "company_id": "CAST(company_id AS TEXT)",
             "company_name": "company_name",
+            "deal_id": "CAST(deal_id AS TEXT)",
             "category_id": "CAST(category_id AS TEXT)",
             "category_name": "category_name",
             "pipeline_stage_invoice": "pipeline_stage_invoice",
@@ -5292,7 +5298,7 @@ def getBitrixCrmSnapshotItems(
             text(
                 f"""
                 SELECT id, snapshot_run_id, entity_type, item_id, title, status_id, status_name,
-                       assigned_by_id, assigned_by_name, opportunity, currency_id, company_id,
+                       assigned_by_id, assigned_by_name, opportunity, currency_id, deal_id, company_id,
                        company_name, category_id, category_name, begin_date, close_date,
                        kot_products, products, energy_products, stage_group, pipeline_stage_invoice,
                        {BITRIX_INVOICE_PRODUCT_SQL} AS product,

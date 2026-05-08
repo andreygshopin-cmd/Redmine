@@ -43,6 +43,7 @@ BITRIX_INVOICE_SELECT_FIELDS = [
     "categoryId",
     "begindate",
     "closedate",
+    "parentId2",
 ]
 BITRIX_INVOICE_EXTRA_FIELD_LABELS = {
     "kot_products": "КОТ ПРОДУКТЫ",

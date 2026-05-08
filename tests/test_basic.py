@@ -93,12 +93,17 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
     assert '<select class="compare-filter" data-compare-filter="change_type">' in body
     assert '<select class="compare-filter" data-compare-filter="stage">' in body
     assert '<select class="compare-filter" data-compare-filter="category">' in body
+    assert 'data-compare-column-toggle="title" checked' in body
+    assert 'data-compare-column-toggle="stage" checked' in body
+    assert 'data-compare-column-toggle="opportunity" checked' in body
+    assert "isCompareRowRelevant" in body
+    assert "Поля для сравнения и отображения" in body
     assert 'placeholder="Фильтр"' not in body
     assert "thead { position: sticky; top: 0" in body
     assert 'data-compare-sort="updated_time"' not in body
     assert 'data-compare-filter="updated_time"' not in body
-    assert 'colspan="8"' in body
-    assert 'colspan="9"' not in body
+    assert 'colspan="${2 + getSelectedCompareFields().length}"' in body
+    assert 'colspan="8"' not in body
     assert "compare-col-title" in body
     assert "width: max(100%, 178ch)" in body
     assert "table-layout: fixed" in body
@@ -116,8 +121,12 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert "crm-col-responsible { width: 20ch" in body
     assert "crm-col-begin-date { width: 20ch" in body
     assert "Воронка/стадия/счет" in body
+    assert '<select data-filter="pipeline_stage_invoice">' in body
     assert 'data-filter="pipeline_stage_invoice"' in body
-    assert "Группа стадий" in body
+    assert "Сделка" in body
+    assert 'data-filter="deal_id"' in body
+    assert "Группа стадий" not in body
+    assert "Стадия" in body
     assert '<select data-filter="stage_group">' in body
     assert "Дата выставления" in body
     assert 'data-filter="begin_date"' in body
@@ -129,7 +138,7 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert 'data-filter="products"' in body
     assert "Продукты (энергетика)" in body
     assert 'data-filter="energy_products"' in body
-    assert "Продукт" in body
+    assert "Продукт (для отчета)" in body
     assert 'data-filter="product"' in body
     assert '<select data-filter="status_name">' in body
     assert '<select data-filter="assigned_by_name">' in body
@@ -140,7 +149,7 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert "buildPipelineStageInvoice" not in body
     assert 'placeholder="Фильтр"' not in body
     assert '<option value="">Фильтр</option>' not in body
-    assert 'colspan="16"' in body
+    assert 'colspan="17"' in body
 
 
 def testReadBitrixLeadsPageReturnsDropdownFiltersWithoutPlaceholder() -> None:
@@ -185,6 +194,7 @@ def testResolveBitrixInvoiceSelectFieldsAddsNamedFields(monkeypatch) -> None:
     assert "ufCrmKotProducts" in selectFields
     assert "ufCrmProducts" in selectFields
     assert "ufCrmEnergyProducts" in selectFields
+    assert "parentId2" in selectFields
     assert "ufCrmStageGroup" in selectFields
     assert "ufCrmPipelineStageInvoice" in selectFields
     assert extraFieldInfo["invoice_extra_field_names"]["kot_products"] == "ufCrmKotProducts"
