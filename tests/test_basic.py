@@ -82,9 +82,9 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert 'data-bitrix-filter="currency_id"' not in body
     assert 'font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif' in body
     assert "font-weight: 400" in body
-    assert "width: 100vw" in body
-    assert "margin-left: calc(50% - 50vw)" in body
-    assert "padding-left: max(28px, calc((100vw - 1180px) / 2 + 20px))" in body
+    assert "width: calc(100vw - 40px)" in body
+    assert "margin-left: calc(50% - 50vw + 20px)" in body
+    assert "padding: 42px 24px 38px" in body
 
 
 def testReadBitrixPageMasksCredential(monkeypatch) -> None:
@@ -249,6 +249,9 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "tfoot td { background: #ffffff" in body
     assert "viewport-sticky-table-header" in body
     assert 'setupViewportStickyTableHeader(".table-wrap", "table")' in body
+    assert "viewport-sticky-table-footer" in body
+    assert 'setupViewportStickyTableFooter(".table-wrap", "table")' in body
+    assert "const footerObserver = new MutationObserver" in body
     assert "background: #fff8d7" not in body
     assert "highlight-legend" in body
     assert "legend-swatch moved-from" in body

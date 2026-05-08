@@ -8069,12 +8069,10 @@ BITRIX_PAGE_HTML = """<!doctype html>
     .hero {
       position: relative;
       overflow: hidden;
-      width: 100vw;
-      margin-left: calc(50% - 50vw);
-      padding: 28px;
-      padding-left: max(28px, calc((100vw - 1180px) / 2 + 20px));
-      padding-right: max(28px, calc((100vw - 1180px) / 2 + 20px));
-      border-radius: 0;
+      width: calc(100vw - 40px);
+      margin-left: calc(50% - 50vw + 20px);
+      padding: 42px 24px 38px;
+      border-radius: 24px;
       border: 1px solid rgba(255, 255, 255, 0.7);
       background:
         linear-gradient(135deg, rgba(55, 93, 119, 0.96), rgba(16, 41, 61, 0.94)),
@@ -8506,10 +8504,10 @@ BITRIX_PAGE_HTML = """<!doctype html>
       }
 
       .hero {
+        width: calc(100vw - 28px);
+        margin-left: calc(50% - 50vw + 14px);
         padding: 22px 18px;
-        width: 100vw;
-        margin-left: calc(50% - 50vw);
-        border-radius: 0;
+        border-radius: 22px;
       }
 
       .brand img {
@@ -12435,6 +12433,9 @@ def buildBitrixInvoiceSummaryPage() -> str:
     tfoot td:first-child { background: #ffffff; z-index: 9; }
     .viewport-sticky-table-header { position: fixed; top: 0; z-index: 1000; display: none; overflow: hidden; pointer-events: none; border: 1px solid var(--line); border-bottom: 0; border-radius: 0 0 14px 14px; background: #ffffff; box-shadow: 0 14px 26px rgba(16, 41, 61, 0.12); }
     .viewport-sticky-table-header table { margin: 0; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
+    .viewport-sticky-table-footer { position: fixed; bottom: 0; z-index: 1000; display: none; overflow: hidden; pointer-events: none; border: 1px solid var(--line); border-top: 2px solid rgba(16, 41, 61, 0.14); border-radius: 14px 14px 0 0; background: #ffffff; box-shadow: 0 -14px 26px rgba(16, 41, 61, 0.12); }
+    .viewport-sticky-table-footer table { margin: 0; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
+    .viewport-sticky-table-footer tfoot { position: static; }
     .nav { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
   </style>
 </head>
@@ -12552,6 +12553,66 @@ def buildBitrixInvoiceSummaryPage() -> str:
     let currentComparePayload = null;
 
     yearInput.value = String(new Date().getFullYear());
+
+    function setupViewportStickyTableFooter(wrapperSelector, tableSelector) {
+      const wrapper = document.querySelector(wrapperSelector);
+      const table = wrapper?.querySelector(tableSelector);
+      const tfoot = table?.querySelector("tfoot");
+      if (!(wrapper instanceof HTMLElement) || !(table instanceof HTMLTableElement) || !(tfoot instanceof HTMLTableSectionElement)) {
+        return;
+      }
+      const stickyWrap = document.createElement("div");
+      stickyWrap.className = "viewport-sticky-table-footer";
+      const stickyTable = table.cloneNode(false);
+      const colgroup = table.querySelector("colgroup");
+      if (colgroup) {
+        stickyTable.appendChild(colgroup.cloneNode(true));
+      }
+      stickyWrap.appendChild(stickyTable);
+      document.body.appendChild(stickyWrap);
+
+      function syncStickyFooterContent() {
+        const previousFoot = stickyTable.querySelector("tfoot");
+        previousFoot?.remove();
+        stickyTable.appendChild(tfoot.cloneNode(true));
+      }
+
+      function syncStickyFooter() {
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const tableRect = table.getBoundingClientRect();
+        const footerHeight = Math.ceil(tfoot.getBoundingClientRect().height || 1);
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+        const shouldShow = Boolean(tfoot.rows.length)
+          && wrapperRect.top < viewportHeight - footerHeight
+          && wrapperRect.bottom > viewportHeight
+          && tableRect.bottom > viewportHeight;
+        stickyWrap.style.display = shouldShow ? "block" : "none";
+        if (!shouldShow) {
+          return;
+        }
+        const left = Math.max(wrapperRect.left, 0);
+        const right = Math.min(wrapperRect.right, viewportWidth);
+        const width = Math.max(0, right - left);
+        stickyWrap.style.left = `${left}px`;
+        stickyWrap.style.width = `${width}px`;
+        stickyWrap.style.height = `${footerHeight}px`;
+        stickyTable.style.width = `${table.offsetWidth}px`;
+        stickyTable.style.minWidth = `${table.offsetWidth}px`;
+        stickyTable.style.transform = `translateX(${-wrapper.scrollLeft}px)`;
+      }
+
+      const footerObserver = new MutationObserver(() => {
+        syncStickyFooterContent();
+        syncStickyFooter();
+      });
+      footerObserver.observe(tfoot, { childList: true, subtree: true });
+      wrapper.addEventListener("scroll", syncStickyFooter, { passive: true });
+      window.addEventListener("scroll", syncStickyFooter, { passive: true });
+      window.addEventListener("resize", syncStickyFooter);
+      syncStickyFooterContent();
+      syncStickyFooter();
+    }
 
     function setupViewportStickyTableHeader(wrapperSelector, tableSelector) {
       const wrapper = document.querySelector(wrapperSelector);
@@ -12944,6 +13005,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
     compareSnapshotSelect.addEventListener("change", clearSummaryTable);
     pipelineStageSelect.addEventListener("change", clearSummaryTable);
     setupViewportStickyTableHeader(".table-wrap", "table");
+    setupViewportStickyTableFooter(".table-wrap", "table");
     loadSummaryOptions();
   </script>
 </body>
