@@ -170,6 +170,11 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "summaryYearInput" in body
     assert "summaryPipelineStageSelect" in body
     assert "summaryDateFieldSelect" in body
+    assert "summaryReportSnapshotSelect" in body
+    assert "summaryCompareSnapshotSelect" in body
+    assert "Даты счетов" in body
+    assert "Срез для отчета" in body
+    assert "Срез для сравнения" in body
     assert "Дата выставления" in body
     assert "Срок оплаты" in body
     assert "Продукт (для отчета)" in body
@@ -179,8 +184,13 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "summaryExportButton" in body
     assert "groupRowsByProduct" in body
     assert "toggle-button" in body
-    assert "hierarchy-col { width: 50ch" in body
-    assert "col.month-col, col.total-col { width: 10ch" in body
+    assert "hierarchy-col { width: 30ch" in body
+    assert "col.month-col, col.total-col { width: 15ch" in body
+    assert "th:first-child, td:first-child" in body
+    assert "/api/bitrix/invoice-snapshots/items" in body
+    assert "yearInput.addEventListener(\"change\", clearSummaryTable)" in body
+    assert "dateFieldSelect.addEventListener(\"change\", clearSummaryTable)" in body
+    assert "pipelineStageSelect.addEventListener(\"change\", clearSummaryTable)" in body
     assert "colspan=\"14\"" in body
 
 
@@ -465,14 +475,16 @@ def testBitrixInvoiceSummaryEndpointPassesFilters(monkeypatch) -> None:
     monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
     captured: dict[str, object] = {}
 
-    def fakeGetBitrixInvoiceSummary(year, *, dateField, pipelineStages):
+    def fakeGetBitrixInvoiceSummary(year, *, dateField, capturedForDate, pipelineStages):
         captured["year"] = year
         captured["dateField"] = dateField
+        captured["capturedForDate"] = capturedForDate
         captured["pipelineStages"] = pipelineStages
         return {
             "snapshot_run": {"captured_for_date": "2026-05-08"},
             "year": year,
             "date_field": dateField,
+            "available_dates": ["2026-05-08", "2026-05-07"],
             "pipeline_stage_options": ["КОТ/Договор", "АСУРЭО/Оплата"],
             "selected_pipeline_stages": pipelineStages,
             "rows": [],
@@ -483,6 +495,7 @@ def testBitrixInvoiceSummaryEndpointPassesFilters(monkeypatch) -> None:
 
     response = client.get(
         "/api/bitrix/invoice-snapshots/summary?year=2026&date_field=close_date"
+        "&captured_for_date=2026-05-08"
         "&pipeline_stage_invoice=КОТ/Договор"
         "&pipeline_stage_invoice=АСУРЭО/Оплата"
     )
@@ -490,6 +503,7 @@ def testBitrixInvoiceSummaryEndpointPassesFilters(monkeypatch) -> None:
     assert response.status_code == 200
     assert captured["year"] == 2026
     assert captured["dateField"] == "close_date"
+    assert captured["capturedForDate"] == "2026-05-08"
     assert captured["pipelineStages"] == ["КОТ/Договор", "АСУРЭО/Оплата"]
 
 
@@ -501,10 +515,11 @@ def testBitrixInvoiceSummaryExportEndpointReturnsAnsiCsv(monkeypatch) -> None:
     monkeypatch.setattr(
         app_module,
         "getBitrixInvoiceSummary",
-        lambda year, *, dateField, pipelineStages: {
+        lambda year, *, dateField, capturedForDate, pipelineStages: {
             "snapshot_run": {"captured_for_date": "2026-05-08"},
             "year": year,
             "date_field": dateField,
+            "available_dates": ["2026-05-08"],
             "pipeline_stage_options": ["КОТ/Договор"],
             "selected_pipeline_stages": pipelineStages,
             "rows": [

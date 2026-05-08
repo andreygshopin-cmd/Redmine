@@ -5346,6 +5346,7 @@ def getBitrixInvoiceSummary(
     year: int,
     *,
     dateField: str = "begin_date",
+    capturedForDate: str | None = None,
     pipelineStages: Sequence[str] | None = None,
 ) -> dict[str, object]:
     if engine is None:
@@ -5367,24 +5368,41 @@ def getBitrixInvoiceSummary(
     }
 
     with engine.connect() as connection:
-        run = connection.execute(
-            text(
-                """
-                SELECT id, entity_type, captured_for_date, captured_at, total_items
-                FROM bitrix_crm_snapshot_runs
-                WHERE entity_type = :entity_type
-                ORDER BY captured_for_date DESC, captured_at DESC, id DESC
-                LIMIT 1
-                """
-            ),
-            params,
-        ).mappings().first()
+        if capturedForDate:
+            params["captured_for_date"] = capturedForDate
+            run = connection.execute(
+                text(
+                    """
+                    SELECT id, entity_type, captured_for_date, captured_at, total_items
+                    FROM bitrix_crm_snapshot_runs
+                    WHERE entity_type = :entity_type
+                      AND captured_for_date = CAST(:captured_for_date AS DATE)
+                    ORDER BY captured_at DESC, id DESC
+                    LIMIT 1
+                    """
+                ),
+                params,
+            ).mappings().first()
+        else:
+            run = connection.execute(
+                text(
+                    """
+                    SELECT id, entity_type, captured_for_date, captured_at, total_items
+                    FROM bitrix_crm_snapshot_runs
+                    WHERE entity_type = :entity_type
+                    ORDER BY captured_for_date DESC, captured_at DESC, id DESC
+                    LIMIT 1
+                    """
+                ),
+                params,
+            ).mappings().first()
 
         if run is None:
             return {
                 "snapshot_run": None,
                 "year": safeYear,
                 "date_field": dateField,
+                "available_dates": listBitrixCrmSnapshotDates("invoice"),
                 "pipeline_stage_options": [],
                 "selected_pipeline_stages": selectedPipelineStages,
                 "rows": [],
@@ -5470,6 +5488,7 @@ def getBitrixInvoiceSummary(
         "snapshot_run": dict(run),
         "year": safeYear,
         "date_field": dateField,
+        "available_dates": listBitrixCrmSnapshotDates("invoice"),
         "pipeline_stage_options": pipelineStageOptions,
         "selected_pipeline_stages": selectedPipelineStages,
         "rows": list(summaryRowsByKey.values()),

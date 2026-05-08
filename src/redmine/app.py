@@ -12125,18 +12125,26 @@ def buildBitrixInvoiceSummaryPage() -> str:
       background: #ffffff;
       color: var(--ink);
     }
-    select[multiple] { min-width: min(70vw, 520px); min-height: 150px; padding: 8px 10px; }
+    select[multiple] { min-width: min(70vw, 520px); min-height: 90px; padding: 8px 10px; }
     .status { margin: 14px 0; color: var(--muted); }
     .status.is-error { color: #b63d00; }
     .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
-    table { width: max(100%, 180ch); min-width: 180ch; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
-    col.hierarchy-col { width: 50ch; }
-    col.month-col, col.total-col { width: 10ch; }
+    table { width: max(100%, 225ch); min-width: 225ch; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
+    col.hierarchy-col { width: 30ch; }
+    col.month-col, col.total-col { width: 15ch; }
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
-    th { position: sticky; top: 0; z-index: 5; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
+    th { position: sticky; top: 0; z-index: 8; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
+    th:first-child, td:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 7;
+      background: #ffffff;
+      box-shadow: 1px 0 0 rgba(16, 41, 61, 0.12);
+    }
+    th:first-child { z-index: 12; background: #f3f7fa; }
     .amount-cell, .amount-header { text-align: right; font-variant-numeric: tabular-nums; }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; }
-    .product-row td { background: #fff8d7; font-weight: 800; }
+    .product-row td { font-weight: 800; }
     .deal-row td:first-child { padding-left: 42px; }
     .toggle-button {
       width: 26px;
@@ -12151,6 +12159,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
       cursor: pointer;
     }
     tfoot td { position: sticky; bottom: 0; z-index: 4; background: #fff8d7; font-weight: 800; }
+    tfoot td:first-child { background: #fff8d7; z-index: 9; }
     .nav { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
   </style>
 </head>
@@ -12171,14 +12180,20 @@ def buildBitrixInvoiceSummaryPage() -> str:
         <label>Год
           <input id="summaryYearInput" type="number" min="2000" max="2100" step="1">
         </label>
-        <label>Дата для года и месяца
+        <label>Даты счетов
           <select id="summaryDateFieldSelect">
             <option value="begin_date">Дата выставления</option>
             <option value="close_date">Срок оплаты</option>
           </select>
         </label>
+        <label>Срез для отчета
+          <select id="summaryReportSnapshotSelect"></select>
+        </label>
+        <label>Срез для сравнения
+          <select id="summaryCompareSnapshotSelect"></select>
+        </label>
         <label>Воронка/стадия/счет
-          <select id="summaryPipelineStageSelect" multiple size="8"></select>
+          <select id="summaryPipelineStageSelect" multiple size="5"></select>
         </label>
         <button class="button button-primary" id="summaryReloadButton" type="button">Показать</button>
         <button class="button" id="summaryExportButton" type="button">Выгрузить в Excel</button>
@@ -12229,6 +12244,8 @@ def buildBitrixInvoiceSummaryPage() -> str:
   <script>
     const yearInput = document.getElementById("summaryYearInput");
     const dateFieldSelect = document.getElementById("summaryDateFieldSelect");
+    const reportSnapshotSelect = document.getElementById("summaryReportSnapshotSelect");
+    const compareSnapshotSelect = document.getElementById("summaryCompareSnapshotSelect");
     const pipelineStageSelect = document.getElementById("summaryPipelineStageSelect");
     const reloadButton = document.getElementById("summaryReloadButton");
     const exportButton = document.getElementById("summaryExportButton");
@@ -12269,10 +12286,33 @@ def buildBitrixInvoiceSummaryPage() -> str:
     function getSelectedPipelineStages() {
       return Array.from(pipelineStageSelect.selectedOptions).map((option) => option.value);
     }
+    function clearSummaryTable() {
+      currentSummaryPayload = null;
+      tableBody.innerHTML = "";
+      tableFoot.innerHTML = "";
+      setStatus("Выберите параметры и нажмите «Показать».");
+    }
+    function syncSnapshotDates(dates, reportSelected = "", compareSelected = "") {
+      const safeDates = Array.isArray(dates) ? dates.map((dateValue) => String(dateValue || "")).filter(Boolean) : [];
+      const previousReportDate = reportSnapshotSelect.value;
+      const previousCompareDate = compareSnapshotSelect.value;
+      const optionsHtml = safeDates
+        .map((dateValue) => `<option value="${escapeHtml(dateValue)}">${escapeHtml(dateValue)}</option>`)
+        .join("");
+      reportSnapshotSelect.innerHTML = optionsHtml;
+      compareSnapshotSelect.innerHTML = optionsHtml;
+      reportSnapshotSelect.value = safeDates.includes(previousReportDate)
+        ? previousReportDate
+        : (safeDates.includes(reportSelected) ? reportSelected : (safeDates[0] || ""));
+      compareSnapshotSelect.value = safeDates.includes(previousCompareDate)
+        ? previousCompareDate
+        : (safeDates.includes(compareSelected) ? compareSelected : (safeDates[1] || safeDates[0] || ""));
+    }
     function syncPipelineStageOptions(values) {
       const previousValues = new Set(getSelectedPipelineStages());
-      const shouldSelectAll = pipelineStageSelect.options.length === 0 || previousValues.size === 0;
       const safeValues = Array.isArray(values) ? values : [];
+      const hasMatchingPreviousValue = safeValues.some((value) => previousValues.has(String(value)));
+      const shouldSelectAll = pipelineStageSelect.options.length === 0 || previousValues.size === 0 || !hasMatchingPreviousValue;
       pipelineStageSelect.innerHTML = safeValues
         .map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
         .join("");
@@ -12284,10 +12324,39 @@ def buildBitrixInvoiceSummaryPage() -> str:
       const params = new URLSearchParams();
       params.set("year", String(yearInput.value || new Date().getFullYear()));
       params.set("date_field", dateFieldSelect.value || "begin_date");
+      if (reportSnapshotSelect.value) {
+        params.set("captured_for_date", reportSnapshotSelect.value);
+      }
       getSelectedPipelineStages().forEach((value) => {
         params.append("pipeline_stage_invoice", value);
       });
       return params;
+    }
+    async function loadSummaryOptions() {
+      currentSummaryPayload = null;
+      tableBody.innerHTML = "";
+      tableFoot.innerHTML = "";
+      setStatus("Загружаю параметры отчета...");
+      const params = new URLSearchParams();
+      params.set("page", "1");
+      params.set("page_size", "1");
+      if (reportSnapshotSelect.value) {
+        params.set("captured_for_date", reportSnapshotSelect.value);
+      }
+      try {
+        const response = await fetch(`/api/bitrix/invoice-snapshots/items?${params.toString()}`);
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось загрузить параметры отчета.");
+        }
+        const selectedReportDate = String(payload.snapshot_run?.captured_for_date || "");
+        const availableDates = payload.available_dates || [];
+        syncSnapshotDates(availableDates, selectedReportDate);
+        syncPipelineStageOptions(payload.filter_options?.pipeline_stage_invoice || []);
+        clearSummaryTable();
+      } catch (error) {
+        setStatus(String(error.message || error), true);
+      }
     }
     function formatDealLink(row) {
       const dealId = row.deal_id;
@@ -12372,6 +12441,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
         if (!response.ok) {
           throw new Error(payload.detail || "Не удалось загрузить сводный отчет.");
         }
+        syncSnapshotDates(payload.available_dates || [], String(payload.snapshot_run?.captured_for_date || ""));
         syncPipelineStageOptions(payload.pipeline_stage_options || []);
         currentSummaryPayload = payload;
         renderSummary(payload);
@@ -12406,10 +12476,12 @@ def buildBitrixInvoiceSummaryPage() -> str:
         renderSummary(currentSummaryPayload);
       }
     });
-    yearInput.addEventListener("change", loadSummary);
-    dateFieldSelect.addEventListener("change", loadSummary);
-    pipelineStageSelect.addEventListener("change", loadSummary);
-    loadSummary();
+    yearInput.addEventListener("change", clearSummaryTable);
+    dateFieldSelect.addEventListener("change", clearSummaryTable);
+    reportSnapshotSelect.addEventListener("change", loadSummaryOptions);
+    compareSnapshotSelect.addEventListener("change", clearSummaryTable);
+    pipelineStageSelect.addEventListener("change", clearSummaryTable);
+    loadSummaryOptions();
   </script>
 </body>
 </html>"""
@@ -14760,6 +14832,7 @@ def getBitrixInvoiceSnapshotItemsApi(
 def getBitrixInvoiceSummaryApi(
     year: int | None = Query(None, ge=2000, le=2100),
     date_field: str = Query("begin_date"),
+    captured_for_date: str | None = Query(None),
     pipeline_stage_invoice: list[str] | None = Query(None),
 ) -> dict[str, object]:
     if not config.databaseUrl:
@@ -14770,6 +14843,7 @@ def getBitrixInvoiceSummaryApi(
         return getBitrixInvoiceSummary(
             safeYear,
             dateField=date_field,
+            capturedForDate=captured_for_date,
             pipelineStages=pipeline_stage_invoice or [],
         )
     except ValueError as error:
@@ -14780,6 +14854,7 @@ def getBitrixInvoiceSummaryApi(
 def exportBitrixInvoiceSummaryApi(
     year: int | None = Query(None, ge=2000, le=2100),
     date_field: str = Query("begin_date"),
+    captured_for_date: str | None = Query(None),
     pipeline_stage_invoice: list[str] | None = Query(None),
 ) -> Response:
     if not config.databaseUrl:
@@ -14790,6 +14865,7 @@ def exportBitrixInvoiceSummaryApi(
         payload = getBitrixInvoiceSummary(
             safeYear,
             dateField=date_field,
+            capturedForDate=captured_for_date,
             pipelineStages=pipeline_stage_invoice or [],
         )
     except ValueError as error:
