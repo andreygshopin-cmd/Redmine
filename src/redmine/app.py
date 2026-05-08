@@ -12609,12 +12609,16 @@ def buildBitrixInvoiceSummaryPage() -> str:
           throw new Error(payload.detail || "Не удалось загрузить сводный отчет.");
         }
         let comparePayload = null;
-        if (compareSnapshotSelect.value && compareSnapshotSelect.value !== reportSnapshotSelect.value) {
-          const compareParams = buildParamsForSnapshot(compareSnapshotSelect.value);
-          const compareResponse = await fetch(`/api/bitrix/invoice-snapshots/summary?${compareParams.toString()}`);
-          comparePayload = await compareResponse.json();
-          if (!compareResponse.ok) {
-            throw new Error(comparePayload.detail || "Не удалось загрузить срез для сравнения.");
+        if (compareSnapshotSelect.value) {
+          if (compareSnapshotSelect.value === reportSnapshotSelect.value) {
+            comparePayload = payload;
+          } else {
+            const compareParams = buildParamsForSnapshot(compareSnapshotSelect.value);
+            const compareResponse = await fetch(`/api/bitrix/invoice-snapshots/summary?${compareParams.toString()}`);
+            comparePayload = await compareResponse.json();
+            if (!compareResponse.ok) {
+              throw new Error(comparePayload.detail || "Не удалось загрузить срез для сравнения.");
+            }
           }
         }
         syncSnapshotDates(payload.available_dates || [], String(payload.snapshot_run?.captured_for_date || ""));
@@ -12633,12 +12637,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
       }
     }
     function isComparisonActive() {
-      return Boolean(
-        currentComparePayload
-        && compareSnapshotSelect.value
-        && reportSnapshotSelect.value
-        && compareSnapshotSelect.value !== reportSnapshotSelect.value
-      );
+      return Boolean(currentComparePayload);
     }
     reloadButton.addEventListener("click", loadSummary);
     exportButton.addEventListener("click", () => {

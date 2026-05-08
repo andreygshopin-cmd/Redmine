@@ -212,9 +212,11 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "legend-swatch added" in body
     assert "legend-swatch removed" in body
     assert "function isComparisonActive()" in body
+    assert "return Boolean(currentComparePayload)" in body
     assert ".filter-actions { align-self: flex-end" in body
     assert "/api/bitrix/invoice-snapshots/items" in body
-    assert "compareSnapshotSelect.value !== reportSnapshotSelect.value" in body
+    assert "compareSnapshotSelect.value === reportSnapshotSelect.value" in body
+    assert "comparePayload = payload" in body
     assert "yearInput.addEventListener(\"change\", clearSummaryTable)" in body
     assert "dateFieldSelect.addEventListener(\"change\", clearSummaryTable)" in body
     assert "pipelineStageSelect.addEventListener(\"change\", clearSummaryTable)" in body
