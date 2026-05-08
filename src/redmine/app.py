@@ -11753,7 +11753,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     }
     .status { margin: 14px 0; color: var(--muted); }
     .status.is-error { color: #b63d00; }
-    .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: visible; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
+    .table-wrap { width: 100%; max-width: 100%; max-height: calc(100vh - 320px); overflow: auto; position: relative; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: max(100%, var(--crm-table-min-width, 166ch)); min-width: var(--crm-table-min-width, 166ch); border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
     .crm-table-standard { --crm-table-min-width: 166ch; }
     .crm-table-invoice { --crm-table-min-width: 420ch; }
@@ -11797,11 +11797,11 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
         <label>Дата среза
           <select id="snapshotDateSelect"></select>
         </label>
-        <button class="button" id="captureSnapshotButton" type="button">__CAPTURE_BUTTON_LABEL__</button>
         <label>Размер страницы
           <input id="pageSizeInput" type="number" min="1" max="5000" value="1000">
         </label>
         <button class="button" id="reloadButton" type="button">Показать</button>
+        <button class="button" id="captureSnapshotButton" type="button">__CAPTURE_BUTTON_LABEL__</button>
         <button class="button" id="resetFiltersButton" type="button">Сбросить фильтры</button>
       </div>
       <div class="status" id="statusBox">Загружаю срез...</div>
@@ -12075,15 +12075,14 @@ def buildBitrixInvoiceSummaryPage() -> str:
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      height: 100vh;
-      overflow: hidden;
+      min-height: 100vh;
       font-family: "Golos", "Segoe UI", Tahoma, sans-serif;
       color: var(--ink);
       background:
         radial-gradient(circle at top right, rgba(255, 198, 0, 0.18), transparent 34rem),
         linear-gradient(180deg, #ffffff 0%, var(--paper) 100%);
     }
-    main { max-width: 1440px; height: 100vh; margin: 0 auto; padding: 28px 18px 18px; display: flex; flex-direction: column; }
+    main { max-width: 1440px; min-height: 100vh; margin: 0 auto; padding: 28px 18px 18px; display: flex; flex-direction: column; }
     header {
       display: flex;
       align-items: center;
@@ -12141,7 +12140,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
     select[multiple] { min-width: min(70vw, 520px); min-height: 90px; padding: 8px 10px; }
     .status { margin: 14px 0; color: var(--muted); }
     .status.is-error { color: #b63d00; }
-    .table-wrap { width: 100%; max-width: 100%; flex: 1 1 auto; min-height: 0; overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
+    .table-wrap { width: 100%; max-width: 100%; height: 100vh; min-height: 100vh; flex: 0 0 100vh; overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: max(100%, 231ch); min-width: 231ch; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
     col.hierarchy-col { width: 36ch; }
     col.month-col, col.total-col { width: 15ch; }
@@ -12512,16 +12511,13 @@ def buildBitrixInvoiceSummaryPage() -> str:
       if (!isComparisonActive()) {
         return "";
       }
-      if (previousValue === null || previousValue === undefined) {
-        return "";
-      }
       const currentAmount = roundedAmountNumber(currentValue);
-      const previousAmount = roundedAmountNumber(previousValue);
+      const previousAmount = previousValue === null || previousValue === undefined ? 0 : roundedAmountNumber(previousValue);
       if (currentAmount === previousAmount) {
         return "";
       }
       const currentTotalAmount = roundedAmountNumber(currentTotal);
-      const previousTotalAmount = roundedAmountNumber(previousTotal);
+      const previousTotalAmount = previousTotal === null || previousTotal === undefined ? 0 : roundedAmountNumber(previousTotal);
       const isMoved = currentTotalAmount > 0 && previousTotalAmount > 0 && currentTotalAmount === previousTotalAmount;
       if (isMoved && previousAmount > currentAmount) {
         return "summary-cell-moved-from";
@@ -12588,12 +12584,12 @@ def buildBitrixInvoiceSummaryPage() -> str:
         }).join("");
       }
       const totals = payload.totals || { months: {}, year_total: 0 };
-      const totalMonthCells = renderAmountCells(totals.months);
+      const totalMonthCells = renderAmountCells(totals.months, totals.months, totals.year_total, totals.year_total);
       tableFoot.innerHTML = `
         <tr>
           <td>Итого</td>
           ${totalMonthCells}
-          ${renderComparedAmountCell(totals.year_total)}
+          ${renderComparedAmountCell(totals.year_total, totals.year_total, totals.year_total, totals.year_total)}
         </tr>
       `;
     }

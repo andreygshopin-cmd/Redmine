@@ -155,7 +155,10 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert '<select data-filter="energy_products">' in body
     assert '<select data-filter="product">' in body
     assert "Получить срез по счетам" in body
+    assert body.index('id="reloadButton"') < body.index('id="captureSnapshotButton"')
     assert "entities=${encodeURIComponent(entityKey)}" in body
+    assert "max-height: calc(100vh - 320px)" in body
+    assert "overflow: auto; position: relative" in body
     assert "buildPipelineStageInvoice" not in body
     assert 'placeholder="Фильтр"' not in body
     assert '<option value="">Фильтр</option>' not in body
@@ -203,9 +206,9 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "col.month-col, col.total-col { width: 15ch" in body
     assert "min-width: 231ch" in body
     assert "th:first-child, td:first-child" in body
-    assert "main { max-width: 1440px; height: 100vh" in body
+    assert "main { max-width: 1440px; min-height: 100vh" in body
     assert "display: flex; flex-direction: column" in body
-    assert "flex: 1 1 auto; min-height: 0" in body
+    assert "height: 100vh; min-height: 100vh; flex: 0 0 100vh" in body
     assert "overflow: auto" in body
     assert "highlight-legend" in body
     assert "legend-swatch moved-from" in body
@@ -218,8 +221,10 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "/api/bitrix/invoice-snapshots/items" in body
     assert "compareSnapshotSelect.value === reportSnapshotSelect.value" in body
     assert "comparePayload = payload" in body
-    assert "const totalMonthCells = renderAmountCells(totals.months);" in body
-    assert "renderComparedAmountCell(totals.year_total)" in body
+    assert "previousValue === null || previousValue === undefined ? 0" in body
+    assert "previousTotal === null || previousTotal === undefined ? 0" in body
+    assert "const totalMonthCells = renderAmountCells(totals.months, totals.months, totals.year_total, totals.year_total);" in body
+    assert "renderComparedAmountCell(totals.year_total, totals.year_total, totals.year_total, totals.year_total)" in body
     assert "yearInput.addEventListener(\"change\", clearSummaryTable)" in body
     assert "dateFieldSelect.addEventListener(\"change\", clearSummaryTable)" in body
     assert "pipelineStageSelect.addEventListener(\"change\", clearSummaryTable)" in body
@@ -231,8 +236,11 @@ def testReadBitrixLeadsPageReturnsDropdownFiltersWithoutPlaceholder() -> None:
 
     assert "Лиды Bitrix" in body
     assert "Получить срез по лидам" in body
+    assert body.index('id="reloadButton"') < body.index('id="captureSnapshotButton"')
     assert '<select data-filter="status_name">' in body
     assert '<select data-filter="assigned_by_name">' in body
+    assert "max-height: calc(100vh - 320px)" in body
+    assert "overflow: auto; position: relative" in body
     assert 'placeholder="Фильтр"' not in body
     assert '<option value="">Фильтр</option>' not in body
 
