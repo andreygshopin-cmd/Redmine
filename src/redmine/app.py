@@ -8391,8 +8391,10 @@ BITRIX_PAGE_HTML = """<!doctype html>
 
     .snapshot-table-wrap {
       max-width: 100%;
+      max-height: calc(100vh - 320px);
+      overflow: auto;
       overflow-x: auto;
-      overflow-y: visible;
+      position: relative;
       margin-top: 16px;
       border: 1px solid var(--line);
       border-radius: 16px;
@@ -8432,10 +8434,13 @@ BITRIX_PAGE_HTML = """<!doctype html>
       overflow-wrap: anywhere;
     }
 
-    .snapshot-table th {
+    .snapshot-table thead {
       position: sticky;
       top: 0;
-      z-index: 6;
+      z-index: 20;
+    }
+
+    .snapshot-table th {
       background: #f3f7fa;
       box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12);
       color: var(--ink);
@@ -11771,7 +11776,8 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     .crm-col-product { width: 24ch; }
     .crm-col-datetime { width: 18ch; }
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
-    th { position: sticky; top: 0; z-index: 6; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
+    thead { position: sticky; top: 0; z-index: 20; }
+    th { background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
     th input, th select { width: 100%; min-width: 90px; margin-top: 6px; padding: 7px 8px; }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
     .amount-cell, .amount-header { text-align: right; }
@@ -12145,7 +12151,8 @@ def buildBitrixInvoiceSummaryPage() -> str:
     col.hierarchy-col { width: 36ch; }
     col.month-col, col.total-col { width: 15ch; }
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
-    th { position: sticky; top: 0; z-index: 8; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
+    thead { position: sticky; top: 0; z-index: 20; }
+    th { background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
     th:first-child, td:first-child {
       position: sticky;
       left: 0;
@@ -12201,8 +12208,9 @@ def buildBitrixInvoiceSummaryPage() -> str:
       font-weight: 900;
       cursor: pointer;
     }
-    tfoot td { position: sticky; bottom: 0; z-index: 4; background: #fff8d7; font-weight: 800; }
-    tfoot td:first-child { background: #fff8d7; z-index: 9; }
+    tfoot { position: sticky; bottom: 0; z-index: 20; }
+    tfoot td { background: #ffffff; font-weight: 800; border-top: 2px solid rgba(16, 41, 61, 0.14); }
+    tfoot td:first-child { background: #ffffff; z-index: 9; }
     .nav { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
   </style>
 </head>

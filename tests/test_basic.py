@@ -69,6 +69,10 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert "table-layout: fixed" in body
     assert "width: calc(100vw - 40px)" in body
     assert "overflow-x: auto" in body
+    assert "position: relative" in body
+    assert "max-height: calc(100vh - 320px)" in body
+    assert ".snapshot-table thead" in body
+    assert "position: sticky" in body
     assert "min-width: 190ch" in body
     assert "width: 50ch" in body
     assert "deal-col-fixed" in body
@@ -159,6 +163,7 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert "entities=${encodeURIComponent(entityKey)}" in body
     assert "max-height: calc(100vh - 320px)" in body
     assert "overflow: auto; position: relative" in body
+    assert "thead { position: sticky; top: 0; z-index: 20; }" in body
     assert "buildPipelineStageInvoice" not in body
     assert 'placeholder="Фильтр"' not in body
     assert '<option value="">Фильтр</option>' not in body
@@ -210,6 +215,10 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "display: flex; flex-direction: column" in body
     assert "height: 100vh; min-height: 100vh; flex: 0 0 100vh" in body
     assert "overflow: auto" in body
+    assert "thead { position: sticky; top: 0; z-index: 20; }" in body
+    assert "tfoot { position: sticky; bottom: 0; z-index: 20; }" in body
+    assert "tfoot td { background: #ffffff" in body
+    assert "background: #fff8d7" not in body
     assert "highlight-legend" in body
     assert "legend-swatch moved-from" in body
     assert "legend-swatch moved-to" in body
@@ -241,6 +250,7 @@ def testReadBitrixLeadsPageReturnsDropdownFiltersWithoutPlaceholder() -> None:
     assert '<select data-filter="assigned_by_name">' in body
     assert "max-height: calc(100vh - 320px)" in body
     assert "overflow: auto; position: relative" in body
+    assert "thead { position: sticky; top: 0; z-index: 20; }" in body
     assert 'placeholder="Фильтр"' not in body
     assert '<option value="">Фильтр</option>' not in body
 
