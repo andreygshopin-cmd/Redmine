@@ -12312,7 +12312,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
     select[multiple] { min-width: min(70vw, 520px); min-height: 90px; padding: 8px 10px; }
     .status { margin: 14px 0; color: var(--muted); }
     .status.is-error { color: #b63d00; }
-    .table-wrap { width: 100%; max-width: 100%; height: 100vh; min-height: 100vh; flex: 0 0 100vh; overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
+    .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: visible; position: relative; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: max(100%, 231ch); min-width: 231ch; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
     col.hierarchy-col { width: 36ch; }
     col.month-col, col.total-col { width: 15ch; }
@@ -12377,6 +12377,8 @@ def buildBitrixInvoiceSummaryPage() -> str:
     tfoot { position: sticky; bottom: 0; z-index: 20; }
     tfoot td { background: #ffffff; font-weight: 800; border-top: 2px solid rgba(16, 41, 61, 0.14); }
     tfoot td:first-child { background: #ffffff; z-index: 9; }
+    .viewport-sticky-table-header { position: fixed; top: 0; z-index: 1000; display: none; overflow: hidden; pointer-events: none; border: 1px solid var(--line); border-bottom: 0; border-radius: 0 0 14px 14px; background: #ffffff; box-shadow: 0 14px 26px rgba(16, 41, 61, 0.12); }
+    .viewport-sticky-table-header table { margin: 0; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
     .nav { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
   </style>
 </head>
@@ -12491,6 +12493,51 @@ def buildBitrixInvoiceSummaryPage() -> str:
     let currentComparePayload = null;
 
     yearInput.value = String(new Date().getFullYear());
+
+    function setupViewportStickyTableHeader(wrapperSelector, tableSelector) {
+      const wrapper = document.querySelector(wrapperSelector);
+      const table = wrapper?.querySelector(tableSelector);
+      const thead = table?.querySelector("thead");
+      if (!(wrapper instanceof HTMLElement) || !(table instanceof HTMLTableElement) || !(thead instanceof HTMLTableSectionElement)) {
+        return;
+      }
+      const stickyWrap = document.createElement("div");
+      stickyWrap.className = "viewport-sticky-table-header";
+      const stickyTable = table.cloneNode(false);
+      const colgroup = table.querySelector("colgroup");
+      if (colgroup) {
+        stickyTable.appendChild(colgroup.cloneNode(true));
+      }
+      stickyTable.appendChild(thead.cloneNode(true));
+      stickyWrap.appendChild(stickyTable);
+      document.body.appendChild(stickyWrap);
+
+      function syncStickyHeader() {
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const tableRect = table.getBoundingClientRect();
+        const headerHeight = Math.ceil(thead.getBoundingClientRect().height || 1);
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const shouldShow = wrapperRect.top < 0 && wrapperRect.bottom > headerHeight && tableRect.bottom > headerHeight;
+        stickyWrap.style.display = shouldShow ? "block" : "none";
+        if (!shouldShow) {
+          return;
+        }
+        const left = Math.max(wrapperRect.left, 0);
+        const right = Math.min(wrapperRect.right, viewportWidth);
+        const width = Math.max(0, right - left);
+        stickyWrap.style.left = `${left}px`;
+        stickyWrap.style.width = `${width}px`;
+        stickyWrap.style.height = `${headerHeight}px`;
+        stickyTable.style.width = `${table.offsetWidth}px`;
+        stickyTable.style.minWidth = `${table.offsetWidth}px`;
+        stickyTable.style.transform = `translateX(${-wrapper.scrollLeft}px)`;
+      }
+
+      wrapper.addEventListener("scroll", syncStickyHeader, { passive: true });
+      window.addEventListener("scroll", syncStickyHeader, { passive: true });
+      window.addEventListener("resize", syncStickyHeader);
+      syncStickyHeader();
+    }
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -12837,6 +12884,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
     reportSnapshotSelect.addEventListener("change", loadSummaryOptions);
     compareSnapshotSelect.addEventListener("change", clearSummaryTable);
     pipelineStageSelect.addEventListener("change", clearSummaryTable);
+    setupViewportStickyTableHeader(".table-wrap", "table");
     loadSummaryOptions();
   </script>
 </body>

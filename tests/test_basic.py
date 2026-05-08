@@ -224,11 +224,12 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "th:first-child, td:first-child" in body
     assert "main { max-width: 1440px; min-height: 100vh" in body
     assert "display: flex; flex-direction: column" in body
-    assert "height: 100vh; min-height: 100vh; flex: 0 0 100vh" in body
-    assert "overflow: auto" in body
+    assert "overflow-x: auto; overflow-y: visible; position: relative" in body
     assert "thead { position: sticky; top: 0; z-index: 20; }" in body
     assert "tfoot { position: sticky; bottom: 0; z-index: 20; }" in body
     assert "tfoot td { background: #ffffff" in body
+    assert "viewport-sticky-table-header" in body
+    assert 'setupViewportStickyTableHeader(".table-wrap", "table")' in body
     assert "background: #fff8d7" not in body
     assert "highlight-legend" in body
     assert "legend-swatch moved-from" in body
