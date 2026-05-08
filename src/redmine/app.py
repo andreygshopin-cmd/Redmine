@@ -8391,9 +8391,8 @@ BITRIX_PAGE_HTML = """<!doctype html>
 
     .snapshot-table-wrap {
       max-width: 100%;
-      max-height: calc(100vh - 320px);
-      overflow: auto;
       overflow-x: auto;
+      overflow-y: visible;
       position: relative;
       margin-top: 16px;
       border: 1px solid var(--line);
@@ -8450,6 +8449,27 @@ BITRIX_PAGE_HTML = """<!doctype html>
     .snapshot-table .amount-cell,
     .snapshot-table .amount-header {
       text-align: right;
+    }
+
+    .viewport-sticky-table-header {
+      position: fixed;
+      top: 0;
+      z-index: 1000;
+      display: none;
+      overflow: hidden;
+      pointer-events: none;
+      border: 1px solid var(--line);
+      border-bottom: 0;
+      border-radius: 0 0 16px 16px;
+      background: #ffffff;
+      box-shadow: 0 14px 26px rgba(16, 41, 61, 0.12);
+    }
+
+    .viewport-sticky-table-header table {
+      margin: 0;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 0.92rem;
     }
 
     .snapshot-table input,
@@ -8600,6 +8620,51 @@ BITRIX_PAGE_HTML = """<!doctype html>
         return "—";
       }
       return String(value);
+    }
+
+    function setupViewportStickyTableHeader(wrapperSelector, tableSelector) {
+      const wrapper = document.querySelector(wrapperSelector);
+      const table = wrapper?.querySelector(tableSelector);
+      const thead = table?.querySelector("thead");
+      if (!(wrapper instanceof HTMLElement) || !(table instanceof HTMLTableElement) || !(thead instanceof HTMLTableSectionElement)) {
+        return;
+      }
+      const stickyWrap = document.createElement("div");
+      stickyWrap.className = "viewport-sticky-table-header";
+      const stickyTable = table.cloneNode(false);
+      const colgroup = table.querySelector("colgroup");
+      if (colgroup) {
+        stickyTable.appendChild(colgroup.cloneNode(true));
+      }
+      stickyTable.appendChild(thead.cloneNode(true));
+      stickyWrap.appendChild(stickyTable);
+      document.body.appendChild(stickyWrap);
+
+      function syncStickyHeader() {
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const tableRect = table.getBoundingClientRect();
+        const headerHeight = Math.ceil(thead.getBoundingClientRect().height || 1);
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const shouldShow = wrapperRect.top < 0 && wrapperRect.bottom > headerHeight && tableRect.bottom > headerHeight;
+        stickyWrap.style.display = shouldShow ? "block" : "none";
+        if (!shouldShow) {
+          return;
+        }
+        const left = Math.max(wrapperRect.left, 0);
+        const right = Math.min(wrapperRect.right, viewportWidth);
+        const width = Math.max(0, right - left);
+        stickyWrap.style.left = `${left}px`;
+        stickyWrap.style.width = `${width}px`;
+        stickyWrap.style.height = `${headerHeight}px`;
+        stickyTable.style.width = `${table.offsetWidth}px`;
+        stickyTable.style.minWidth = `${table.offsetWidth}px`;
+        stickyTable.style.transform = `translateX(${-wrapper.scrollLeft}px)`;
+      }
+
+      wrapper.addEventListener("scroll", syncStickyHeader, { passive: true });
+      window.addEventListener("scroll", syncStickyHeader, { passive: true });
+      window.addEventListener("resize", syncStickyHeader);
+      syncStickyHeader();
     }
 
     function renderBitrixDeals(items) {
@@ -9081,6 +9146,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
       bitrixDealSnapshotPage += 1;
       safeLoadBitrixDealSnapshotItems();
     });
+    setupViewportStickyTableHeader(".snapshot-table-wrap", ".snapshot-table");
     safeLoadBitrixDealSnapshotItems();
   </script>
 </body>
@@ -11758,7 +11824,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     }
     .status { margin: 14px 0; color: var(--muted); }
     .status.is-error { color: #b63d00; }
-    .table-wrap { width: 100%; max-width: 100%; max-height: calc(100vh - 320px); overflow: auto; position: relative; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
+    .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: visible; position: relative; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: max(100%, var(--crm-table-min-width, 166ch)); min-width: var(--crm-table-min-width, 166ch); border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
     .crm-table-standard { --crm-table-min-width: 166ch; }
     .crm-table-invoice { --crm-table-min-width: 420ch; }
@@ -11782,6 +11848,8 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
     .amount-cell, .amount-header { text-align: right; }
     .pager { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+    .viewport-sticky-table-header { position: fixed; top: 0; z-index: 1000; display: none; overflow: hidden; pointer-events: none; border: 1px solid var(--line); border-bottom: 0; border-radius: 0 0 14px 14px; background: #ffffff; box-shadow: 0 14px 26px rgba(16, 41, 61, 0.12); }
+    .viewport-sticky-table-header table { margin: 0; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
   </style>
 </head>
 <body>
@@ -11851,6 +11919,51 @@ __EXTRA_HEADER_CELLS__
     const dropdownFilterInputs = Array.from(document.querySelectorAll("select[data-filter]"));
     let currentPage = 1;
     let totalCount = 0;
+
+    function setupViewportStickyTableHeader(wrapperSelector, tableSelector) {
+      const wrapper = document.querySelector(wrapperSelector);
+      const table = wrapper?.querySelector(tableSelector);
+      const thead = table?.querySelector("thead");
+      if (!(wrapper instanceof HTMLElement) || !(table instanceof HTMLTableElement) || !(thead instanceof HTMLTableSectionElement)) {
+        return;
+      }
+      const stickyWrap = document.createElement("div");
+      stickyWrap.className = "viewport-sticky-table-header";
+      const stickyTable = table.cloneNode(false);
+      const colgroup = table.querySelector("colgroup");
+      if (colgroup) {
+        stickyTable.appendChild(colgroup.cloneNode(true));
+      }
+      stickyTable.appendChild(thead.cloneNode(true));
+      stickyWrap.appendChild(stickyTable);
+      document.body.appendChild(stickyWrap);
+
+      function syncStickyHeader() {
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const tableRect = table.getBoundingClientRect();
+        const headerHeight = Math.ceil(thead.getBoundingClientRect().height || 1);
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const shouldShow = wrapperRect.top < 0 && wrapperRect.bottom > headerHeight && tableRect.bottom > headerHeight;
+        stickyWrap.style.display = shouldShow ? "block" : "none";
+        if (!shouldShow) {
+          return;
+        }
+        const left = Math.max(wrapperRect.left, 0);
+        const right = Math.min(wrapperRect.right, viewportWidth);
+        const width = Math.max(0, right - left);
+        stickyWrap.style.left = `${left}px`;
+        stickyWrap.style.width = `${width}px`;
+        stickyWrap.style.height = `${headerHeight}px`;
+        stickyTable.style.width = `${table.offsetWidth}px`;
+        stickyTable.style.minWidth = `${table.offsetWidth}px`;
+        stickyTable.style.transform = `translateX(${-wrapper.scrollLeft}px)`;
+      }
+
+      wrapper.addEventListener("scroll", syncStickyHeader, { passive: true });
+      window.addEventListener("scroll", syncStickyHeader, { passive: true });
+      window.addEventListener("resize", syncStickyHeader);
+      syncStickyHeader();
+    }
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -12056,6 +12169,7 @@ __EXTRA_ROW_CELLS__
       currentPage += 1;
       safeLoadItems();
     });
+    setupViewportStickyTableHeader(".table-wrap", "table");
     safeLoadItems();
   </script>
 </body>

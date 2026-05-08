@@ -69,10 +69,11 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert "table-layout: fixed" in body
     assert "width: calc(100vw - 40px)" in body
     assert "overflow-x: auto" in body
+    assert "overflow-y: visible" in body
     assert "position: relative" in body
-    assert "max-height: calc(100vh - 320px)" in body
-    assert ".snapshot-table thead" in body
-    assert "position: sticky" in body
+    assert "viewport-sticky-table-header" in body
+    assert 'setupViewportStickyTableHeader(".snapshot-table-wrap", ".snapshot-table")' in body
+    assert "translateX(${-wrapper.scrollLeft}px)" in body
     assert "min-width: 190ch" in body
     assert "width: 50ch" in body
     assert "deal-col-fixed" in body
@@ -161,9 +162,9 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert "Получить срез по счетам" in body
     assert body.index('id="reloadButton"') < body.index('id="captureSnapshotButton"')
     assert "entities=${encodeURIComponent(entityKey)}" in body
-    assert "max-height: calc(100vh - 320px)" in body
-    assert "overflow: auto; position: relative" in body
-    assert "thead { position: sticky; top: 0; z-index: 20; }" in body
+    assert "overflow-x: auto; overflow-y: visible; position: relative" in body
+    assert "viewport-sticky-table-header" in body
+    assert 'setupViewportStickyTableHeader(".table-wrap", "table")' in body
     assert "buildPipelineStageInvoice" not in body
     assert 'placeholder="Фильтр"' not in body
     assert '<option value="">Фильтр</option>' not in body
@@ -248,9 +249,9 @@ def testReadBitrixLeadsPageReturnsDropdownFiltersWithoutPlaceholder() -> None:
     assert body.index('id="reloadButton"') < body.index('id="captureSnapshotButton"')
     assert '<select data-filter="status_name">' in body
     assert '<select data-filter="assigned_by_name">' in body
-    assert "max-height: calc(100vh - 320px)" in body
-    assert "overflow: auto; position: relative" in body
-    assert "thead { position: sticky; top: 0; z-index: 20; }" in body
+    assert "overflow-x: auto; overflow-y: visible; position: relative" in body
+    assert "viewport-sticky-table-header" in body
+    assert 'setupViewportStickyTableHeader(".table-wrap", "table")' in body
     assert 'placeholder="Фильтр"' not in body
     assert '<option value="">Фильтр</option>' not in body
 
