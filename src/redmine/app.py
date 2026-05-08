@@ -9236,7 +9236,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     .status.is-error { color: #b63d00; }
     .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: visible; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: max(100%, 178ch); min-width: 178ch; border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
-    .compare-col-id { width: 4ch; }
+    .compare-col-id { width: 5ch; }
     .compare-col-type { width: 12ch; }
     .compare-col-title { width: 50ch; }
     .compare-col-stage { width: 20ch; }
@@ -11876,7 +11876,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     table { width: max(100%, var(--crm-table-min-width, 166ch)); min-width: var(--crm-table-min-width, 166ch); border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
     .crm-table-standard { --crm-table-min-width: 166ch; }
     .crm-table-invoice { --crm-table-min-width: 420ch; }
-    .crm-col-id { width: 4ch; }
+    .crm-col-id { width: 5ch; }
     .crm-col-title { width: 50ch; }
     .crm-col-status { width: 20ch; }
     .crm-col-responsible { width: 20ch; }

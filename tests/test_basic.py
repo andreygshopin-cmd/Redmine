@@ -110,7 +110,7 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
     assert "Поля для сравнения и отображения" in body
     assert 'placeholder="Фильтр"' not in body
     assert "thead { position: sticky; top: 0" in body
-    assert "compare-col-id { width: 4ch" in body
+    assert "compare-col-id { width: 5ch" in body
     assert "compare-filter { width: 100%; min-width: 0" in body
     assert "viewport-sticky-table-header" in body
     assert 'setupViewportStickyTableHeader(".table-wrap", "table")' in body
@@ -131,7 +131,7 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert "Счета Bitrix" in body
     assert "/api/bitrix/invoice-snapshots" in body
     assert "crm-table-invoice" in body
-    assert "crm-col-id { width: 4ch" in body
+    assert "crm-col-id { width: 5ch" in body
     assert "crm-col-title { width: 50ch" in body
     assert "crm-col-deal { width: 50ch" in body
     assert "crm-col-responsible { width: 20ch" in body
