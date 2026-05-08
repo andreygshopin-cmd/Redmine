@@ -12115,18 +12115,17 @@ def buildBitrixInvoiceSummaryPage() -> str:
     .button-primary { background: var(--accent); border-color: rgba(16, 41, 61, 0.18); }
     .panel { margin-top: 18px; padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: #ffffff; }
     .toolbar { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
-    .filter-stack { display: grid; gap: 12px; }
+    .filter-stack { display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap; }
     .filter-card {
       display: grid;
       gap: 12px;
-      padding: 14px;
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      background: #f8fbfd;
+      padding: 0;
+      border: 0;
+      background: transparent;
     }
     .filter-row { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
     .filter-row label { min-width: 210px; }
-    .filter-card-wide label { width: min(100%, 680px); }
+    .filter-card-wide label { width: min(38vw, 520px); min-width: min(70vw, 420px); }
     .filter-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     label { display: grid; gap: 6px; color: var(--muted); font-weight: 600; }
     input, select {

@@ -188,6 +188,9 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "filter-card" in body
     assert "filter-row" in body
     assert "filter-actions" in body
+    assert ".filter-stack { display: flex" in body
+    assert "border: 0" in body
+    assert "background: transparent" in body
     assert "hierarchy-col { width: 36ch" in body
     assert "col.month-col, col.total-col { width: 15ch" in body
     assert "min-width: 231ch" in body
