@@ -12126,7 +12126,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
     .filter-row { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
     .filter-row label { min-width: 210px; }
     .filter-card-wide label { width: min(38vw, 520px); min-width: min(70vw, 420px); }
-    .filter-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .filter-actions { align-self: flex-end; display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
     label { display: grid; gap: 6px; color: var(--muted); font-weight: 600; }
     input, select {
       min-height: 42px;
@@ -12140,7 +12140,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
     select[multiple] { min-width: min(70vw, 520px); min-height: 90px; padding: 8px 10px; }
     .status { margin: 14px 0; color: var(--muted); }
     .status.is-error { color: #b63d00; }
-    .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
+    .table-wrap { width: 100%; max-width: 100%; max-height: calc(100vh - 260px); overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: max(100%, 231ch); min-width: 231ch; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
     col.hierarchy-col { width: 36ch; }
     col.month-col, col.total-col { width: 15ch; }
@@ -12156,6 +12156,17 @@ def buildBitrixInvoiceSummaryPage() -> str:
     th:first-child { z-index: 12; background: #f3f7fa; }
     .amount-cell, .amount-header { text-align: right; font-variant-numeric: tabular-nums; }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; }
+    .summary-cell-moved-from { background: #fff8c9; }
+    .summary-cell-moved-to { background: #ffd92e; }
+    .summary-cell-added { background: #ffb347; }
+    .summary-cell-removed { background: #ffd6d6; }
+    .previous-amount {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 7px;
+      background: #e9edf1;
+      color: #66717c;
+    }
     .product-row td { font-weight: 800; }
     .deal-row td:first-child { padding-left: 42px; }
     .toggle-button {
@@ -12277,6 +12288,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
     const monthNumbers = Array.from({ length: 12 }, (_, index) => String(index + 1));
     const collapsedProducts = new Set();
     let currentSummaryPayload = null;
+    let currentComparePayload = null;
 
     yearInput.value = String(new Date().getFullYear());
 
@@ -12310,6 +12322,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
     }
     function clearSummaryTable() {
       currentSummaryPayload = null;
+      currentComparePayload = null;
       tableBody.innerHTML = "";
       tableFoot.innerHTML = "";
       setStatus("Выберите параметры и нажмите «Показать».");
@@ -12343,11 +12356,14 @@ def buildBitrixInvoiceSummaryPage() -> str:
       });
     }
     function buildParams() {
+      return buildParamsForSnapshot(reportSnapshotSelect.value);
+    }
+    function buildParamsForSnapshot(snapshotDate = "") {
       const params = new URLSearchParams();
       params.set("year", String(yearInput.value || new Date().getFullYear()));
       params.set("date_field", dateFieldSelect.value || "begin_date");
-      if (reportSnapshotSelect.value) {
-        params.set("captured_for_date", reportSnapshotSelect.value);
+      if (snapshotDate) {
+        params.set("captured_for_date", snapshotDate);
       }
       getSelectedPipelineStages().forEach((value) => {
         params.append("pipeline_stage_invoice", value);
@@ -12356,6 +12372,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
     }
     async function loadSummaryOptions() {
       currentSummaryPayload = null;
+      currentComparePayload = null;
       tableBody.innerHTML = "";
       tableFoot.innerHTML = "";
       setStatus("Загружаю параметры отчета...");
@@ -12391,44 +12408,139 @@ def buildBitrixInvoiceSummaryPage() -> str:
     function createEmptyMonths() {
       return Object.fromEntries(monthNumbers.map((month) => [month, 0]));
     }
+    function normalizeAmount(value) {
+      const numericValue = Number(value || 0);
+      return Number.isFinite(numericValue) ? numericValue : 0;
+    }
+    function roundedAmountNumber(value) {
+      return Math.round(normalizeAmount(value));
+    }
+    function getDealKey(row) {
+      const dealId = row?.deal_id;
+      if (dealId !== null && dealId !== undefined && dealId !== "") {
+        return `id:${dealId}`;
+      }
+      return `title:${row?.deal_title || "—"}`;
+    }
+    function getSummaryRowKey(row) {
+      return `${row?.product || "—"}||${getDealKey(row)}`;
+    }
+    function buildRowsByKey(rows) {
+      const map = new Map();
+      (Array.isArray(rows) ? rows : []).forEach((row) => {
+        map.set(getSummaryRowKey(row), row);
+      });
+      return map;
+    }
     function addRowAmounts(target, row) {
       monthNumbers.forEach((month) => {
         target.months[month] = Number(target.months[month] || 0) + Number(row.months?.[month] || 0);
       });
       target.year_total = Number(target.year_total || 0) + Number(row.year_total || 0);
     }
-    function groupRowsByProduct(rows) {
+    function addCompareRowAmounts(target, row) {
+      monthNumbers.forEach((month) => {
+        target.compareMonths[month] = Number(target.compareMonths[month] || 0) + Number(row.months?.[month] || 0);
+      });
+      target.compareYearTotal = Number(target.compareYearTotal || 0) + Number(row.year_total || 0);
+    }
+    function mergeSummaryRows(reportRows, compareRows) {
+      const compareRowsByKey = buildRowsByKey(compareRows);
+      const reportRowsByKey = buildRowsByKey(reportRows);
+      const mergedRows = (Array.isArray(reportRows) ? reportRows : []).map((row) => ({
+        ...row,
+        compareRow: compareRowsByKey.get(getSummaryRowKey(row)) || null,
+      }));
+      (Array.isArray(compareRows) ? compareRows : []).forEach((row) => {
+        if (reportRowsByKey.has(getSummaryRowKey(row))) {
+          return;
+        }
+        mergedRows.push({
+          ...row,
+          months: createEmptyMonths(),
+          year_total: 0,
+          compareRow: row,
+          isRemovedDeal: true,
+        });
+      });
+      return mergedRows;
+    }
+    function groupRowsByProduct(rows, compareRows = []) {
       const groups = new Map();
-      rows.forEach((row) => {
+      mergeSummaryRows(rows, compareRows).forEach((row) => {
         const product = String(row.product || "—");
         if (!groups.has(product)) {
-          groups.set(product, { product, months: createEmptyMonths(), year_total: 0, deals: [] });
+          groups.set(product, { product, months: createEmptyMonths(), compareMonths: createEmptyMonths(), year_total: 0, compareYearTotal: 0, deals: [] });
         }
         const group = groups.get(product);
         group.deals.push(row);
         addRowAmounts(group, row);
+        if (row.compareRow) {
+          addCompareRowAmounts(group, row.compareRow);
+        }
       });
       return Array.from(groups.values());
     }
-    function renderAmountCells(months) {
+    function getCellClass(currentValue, previousValue, currentTotal, previousTotal) {
+      if (previousValue === null || previousValue === undefined) {
+        return "";
+      }
+      const currentAmount = roundedAmountNumber(currentValue);
+      const previousAmount = roundedAmountNumber(previousValue);
+      if (currentAmount === previousAmount) {
+        return "";
+      }
+      const currentTotalAmount = roundedAmountNumber(currentTotal);
+      const previousTotalAmount = roundedAmountNumber(previousTotal);
+      const isMoved = currentTotalAmount > 0 && previousTotalAmount > 0 && currentTotalAmount === previousTotalAmount;
+      if (isMoved && previousAmount > currentAmount) {
+        return "summary-cell-moved-from";
+      }
+      if (isMoved && currentAmount > previousAmount) {
+        return "summary-cell-moved-to";
+      }
+      if (currentAmount > previousAmount) {
+        return "summary-cell-added";
+      }
+      if (previousAmount > currentAmount) {
+        return "summary-cell-removed";
+      }
+      return "";
+    }
+    function renderComparedAmountCell(currentValue, previousValue, currentTotal, previousTotal) {
+      const cellClass = getCellClass(currentValue, previousValue, currentTotal, previousTotal);
+      const currentAmount = roundedAmountNumber(currentValue);
+      const previousAmount = roundedAmountNumber(previousValue);
+      let content = formatAmount(currentValue);
+      if (cellClass === "summary-cell-moved-from" && currentAmount === 0) {
+        content = formatAmount(previousValue);
+      }
+      if (cellClass === "summary-cell-removed") {
+        const previousContent = `<span class="previous-amount">${formatAmount(previousValue)}</span>`;
+        content = currentAmount > 0 ? `${formatAmount(currentValue)} ${previousContent}` : previousContent;
+      }
+      return `<td class="amount-cell mono ${cellClass}">${content}</td>`;
+    }
+    function renderAmountCells(months, compareMonths = null, yearTotal = 0, compareYearTotal = 0) {
       return monthNumbers
-        .map((month) => `<td class="amount-cell mono">${formatAmount(months?.[month])}</td>`)
+        .map((month) => renderComparedAmountCell(months?.[month], compareMonths?.[month], yearTotal, compareYearTotal))
         .join("");
     }
-    function renderSummary(payload) {
+    function renderSummary(payload, comparePayload = null) {
       const rows = Array.isArray(payload.rows) ? payload.rows : [];
-      if (!rows.length) {
+      const compareRows = Array.isArray(comparePayload?.rows) ? comparePayload.rows : [];
+      if (!rows.length && !compareRows.length) {
         tableBody.innerHTML = '<tr><td colspan="14">Строки не найдены.</td></tr>';
       } else {
-        tableBody.innerHTML = groupRowsByProduct(rows).map((group) => {
+        tableBody.innerHTML = groupRowsByProduct(rows, compareRows).map((group) => {
           const productKey = group.product;
           const isCollapsed = collapsedProducts.has(productKey);
-          const productCells = renderAmountCells(group.months);
+          const productCells = renderAmountCells(group.months, group.compareMonths, group.year_total, group.compareYearTotal);
           const dealRows = isCollapsed ? "" : group.deals.map((row) => `
             <tr class="deal-row" data-product-key="${escapeHtml(productKey)}">
               <td>${formatDealLink(row)}</td>
-              ${renderAmountCells(row.months)}
-              <td class="amount-cell mono">${formatAmount(row.year_total)}</td>
+              ${renderAmountCells(row.months, row.compareRow?.months, row.year_total, row.compareRow?.year_total)}
+              ${renderComparedAmountCell(row.year_total, row.compareRow?.year_total, row.year_total, row.compareRow?.year_total)}
             </tr>
           `).join("");
           return `
@@ -12438,41 +12550,56 @@ def buildBitrixInvoiceSummaryPage() -> str:
                 ${formatValue(group.product)}
               </td>
               ${productCells}
-              <td class="amount-cell mono">${formatAmount(group.year_total)}</td>
+              ${renderComparedAmountCell(group.year_total, group.compareYearTotal, group.year_total, group.compareYearTotal)}
             </tr>
             ${dealRows}
           `;
         }).join("");
       }
       const totals = payload.totals || { months: {}, year_total: 0 };
-      const totalMonthCells = renderAmountCells(totals.months);
+      const compareTotals = comparePayload?.totals || null;
+      const totalMonthCells = renderAmountCells(totals.months, compareTotals?.months, totals.year_total, compareTotals?.year_total);
       tableFoot.innerHTML = `
         <tr>
           <td>Итого</td>
           ${totalMonthCells}
-          <td class="amount-cell mono">${formatAmount(totals.year_total)}</td>
+          ${renderComparedAmountCell(totals.year_total, compareTotals?.year_total, totals.year_total, compareTotals?.year_total)}
         </tr>
       `;
     }
     async function loadSummary() {
       reloadButton.disabled = true;
+      exportButton.disabled = true;
       setStatus("Загружаю сводный отчет...");
       try {
-        const response = await fetch(`/api/bitrix/invoice-snapshots/summary?${buildParams().toString()}`);
+        const reportParams = buildParamsForSnapshot(reportSnapshotSelect.value);
+        const response = await fetch(`/api/bitrix/invoice-snapshots/summary?${reportParams.toString()}`);
         const payload = await response.json();
         if (!response.ok) {
           throw new Error(payload.detail || "Не удалось загрузить сводный отчет.");
         }
+        let comparePayload = null;
+        if (compareSnapshotSelect.value && compareSnapshotSelect.value !== reportSnapshotSelect.value) {
+          const compareParams = buildParamsForSnapshot(compareSnapshotSelect.value);
+          const compareResponse = await fetch(`/api/bitrix/invoice-snapshots/summary?${compareParams.toString()}`);
+          comparePayload = await compareResponse.json();
+          if (!compareResponse.ok) {
+            throw new Error(comparePayload.detail || "Не удалось загрузить срез для сравнения.");
+          }
+        }
         syncSnapshotDates(payload.available_dates || [], String(payload.snapshot_run?.captured_for_date || ""));
         syncPipelineStageOptions(payload.pipeline_stage_options || []);
         currentSummaryPayload = payload;
-        renderSummary(payload);
+        currentComparePayload = comparePayload;
+        renderSummary(payload, comparePayload);
         const snapshotDate = payload.snapshot_run?.captured_for_date || "нет";
-        setStatus(`Срез счетов: ${snapshotDate}. Год: ${payload.year}. Строк: ${(payload.rows || []).length}.`);
+        const compareDate = comparePayload?.snapshot_run?.captured_for_date || compareSnapshotSelect.value || "нет";
+        setStatus(`Срез счетов: ${snapshotDate}. Сравнение: ${compareDate}. Год: ${payload.year}. Строк: ${(payload.rows || []).length}.`);
       } catch (error) {
         setStatus(String(error.message || error), true);
       } finally {
         reloadButton.disabled = false;
+        exportButton.disabled = false;
       }
     }
     reloadButton.addEventListener("click", loadSummary);
@@ -12495,7 +12622,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
         collapsedProducts.add(productKey);
       }
       if (currentSummaryPayload) {
-        renderSummary(currentSummaryPayload);
+        renderSummary(currentSummaryPayload, currentComparePayload);
       }
     });
     yearInput.addEventListener("change", clearSummaryTable);

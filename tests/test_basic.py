@@ -183,7 +183,14 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "/api/bitrix/invoice-snapshots/summary/export.csv" in body
     assert "summaryExportButton" in body
     assert "groupRowsByProduct" in body
+    assert "mergeSummaryRows" in body
+    assert "renderComparedAmountCell" in body
     assert "toggle-button" in body
+    assert "summary-cell-moved-from" in body
+    assert "summary-cell-moved-to" in body
+    assert "summary-cell-added" in body
+    assert "summary-cell-removed" in body
+    assert "previous-amount" in body
     assert "filter-stack" in body
     assert "filter-card" in body
     assert "filter-row" in body
@@ -195,7 +202,11 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "col.month-col, col.total-col { width: 15ch" in body
     assert "min-width: 231ch" in body
     assert "th:first-child, td:first-child" in body
+    assert "max-height: calc(100vh - 260px)" in body
+    assert "overflow: auto" in body
+    assert ".filter-actions { align-self: flex-end" in body
     assert "/api/bitrix/invoice-snapshots/items" in body
+    assert "compareSnapshotSelect.value !== reportSnapshotSelect.value" in body
     assert "yearInput.addEventListener(\"change\", clearSummaryTable)" in body
     assert "dateFieldSelect.addEventListener(\"change\", clearSummaryTable)" in body
     assert "pipelineStageSelect.addEventListener(\"change\", clearSummaryTable)" in body
