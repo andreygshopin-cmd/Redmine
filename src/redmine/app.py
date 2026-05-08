@@ -12275,23 +12275,36 @@ def buildBitrixInvoiceSummaryPage() -> str:
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
   <style>
     :root {
-      --ink: #10293d;
-      --muted: #5d7487;
-      --paper: #f4f8fb;
-      --line: rgba(16, 41, 61, 0.12);
+      color-scheme: light;
+      --ink: #16324a;
+      --muted: #64798d;
+      --paper: #ffffff;
+      --line: #d9e5eb;
       --accent: #ffc600;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: "Golos", "Segoe UI", Tahoma, sans-serif;
+      font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
       color: var(--ink);
-      background:
-        radial-gradient(circle at top right, rgba(255, 198, 0, 0.18), transparent 34rem),
-        linear-gradient(180deg, #ffffff 0%, var(--paper) 100%);
+      background: var(--paper);
     }
     main { max-width: 1440px; min-height: 100vh; margin: 0 auto; padding: 28px 18px 18px; display: flex; flex-direction: column; }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 220px;
+      height: 72px;
+      margin-bottom: 14px;
+      text-decoration: none;
+    }
+    .brand img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
     header {
       display: flex;
       align-items: center;
@@ -12304,8 +12317,8 @@ def buildBitrixInvoiceSummaryPage() -> str:
       background: rgba(255, 255, 255, 0.92);
       box-shadow: 0 14px 34px rgba(16, 41, 61, 0.08);
     }
-    h1 { margin: 0; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0.04em; }
-    p { color: var(--muted); line-height: 1.55; }
+    h1 { margin: 18px 0 12px; font-size: clamp(1.85rem, 4vw, 2.65rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }
+    p { color: var(--muted); line-height: 1.6; margin: 0 0 24px; }
     .button {
       display: inline-flex;
       align-items: center;
@@ -12421,6 +12434,9 @@ def buildBitrixInvoiceSummaryPage() -> str:
 </head>
 <body>
   <main>
+    <a class="brand" href="/" aria-label="На главную">
+      <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+    </a>
     <header>
       <div>
         <h1>Сводный отчет по счетам</h1>

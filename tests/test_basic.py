@@ -196,6 +196,12 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
 
     assert "Сводный отчет по счетам" in body
     assert "/api/bitrix/invoice-snapshots/summary" in body
+    assert '<a class="brand" href="/"' in body
+    assert "smsit_template/images/logo.svg" in body
+    assert 'font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif' in body
+    assert "font-weight: 400" in body
+    assert "--ink: #16324a" in body
+    assert "--muted: #64798d" in body
     assert "summaryYearInput" in body
     assert "summaryPipelineStageSelect" in body
     assert "summaryDateFieldSelect" in body
