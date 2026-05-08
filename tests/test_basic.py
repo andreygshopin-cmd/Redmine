@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from src.redmine import app as app_module
 from src.redmine import bitrix_client as bitrix_client_module
-from src.redmine.app import app, getTime, readBitrixDealSnapshotComparePage, readBitrixInvoicesPage, readBitrixLeadsPage, readBitrixPage, readRoot
+from src.redmine.app import app, getTime, readBitrixDealSnapshotComparePage, readBitrixInvoiceSummaryPage, readBitrixInvoicesPage, readBitrixLeadsPage, readBitrixPage, readRoot
 from src.redmine.bitrix_client import fetchBitrixUserNames, fetchBitrixUsers
 from src.redmine.config import loadConfig
 from src.redmine.db import chunkSequence, normalizeDatabaseUrl
@@ -123,8 +123,10 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert "/api/bitrix/invoice-snapshots" in body
     assert "crm-table-invoice" in body
     assert "crm-col-title { width: 50ch" in body
+    assert "crm-col-deal { width: 50ch" in body
     assert "crm-col-responsible { width: 20ch" in body
     assert "crm-col-begin-date { width: 20ch" in body
+    assert 'href="/Bitrix/invoices/summary"' in body
     assert "Воронка/стадия/счет" in body
     assert '<select data-filter="pipeline_stage_invoice">' in body
     assert 'data-filter="pipeline_stage_invoice"' in body
@@ -158,6 +160,22 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert 'placeholder="Фильтр"' not in body
     assert '<option value="">Фильтр</option>' not in body
     assert 'colspan="17"' in body
+
+
+def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
+    body = readBitrixInvoiceSummaryPage().body.decode("utf-8")
+
+    assert "Сводный отчет по счетам" in body
+    assert "/api/bitrix/invoice-snapshots/summary" in body
+    assert "summaryYearInput" in body
+    assert "summaryPipelineStageSelect" in body
+    assert "summaryDateFieldSelect" in body
+    assert "Дата выставления" in body
+    assert "Срок оплаты" in body
+    assert "Продукт (для отчета)" in body
+    assert "Сумма за год" in body
+    assert "pipeline_stage_invoice" in body
+    assert "colspan=\"15\"" in body
 
 
 def testReadBitrixLeadsPageReturnsDropdownFiltersWithoutPlaceholder() -> None:
@@ -433,6 +451,40 @@ def testGetBitrixDealSnapshotFilterOptionsEndpointReturnsOptions(monkeypatch) ->
     assert response.status_code == 200
     assert response.json()["options"]["category_name"] == ["КОТ"]
     assert response.json()["snapshot_run"]["captured_for_date"] == "2026-05-06"
+
+
+def testBitrixInvoiceSummaryEndpointPassesFilters(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+    captured: dict[str, object] = {}
+
+    def fakeGetBitrixInvoiceSummary(year, *, dateField, pipelineStages):
+        captured["year"] = year
+        captured["dateField"] = dateField
+        captured["pipelineStages"] = pipelineStages
+        return {
+            "snapshot_run": {"captured_for_date": "2026-05-08"},
+            "year": year,
+            "date_field": dateField,
+            "pipeline_stage_options": ["КОТ/Договор", "АСУРЭО/Оплата"],
+            "selected_pipeline_stages": pipelineStages,
+            "rows": [],
+            "totals": {"months": {str(month): 0 for month in range(1, 13)}, "year_total": 0},
+        }
+
+    monkeypatch.setattr(app_module, "getBitrixInvoiceSummary", fakeGetBitrixInvoiceSummary)
+
+    response = client.get(
+        "/api/bitrix/invoice-snapshots/summary?year=2026&date_field=close_date"
+        "&pipeline_stage_invoice=КОТ/Договор"
+        "&pipeline_stage_invoice=АСУРЭО/Оплата"
+    )
+
+    assert response.status_code == 200
+    assert captured["year"] == 2026
+    assert captured["dateField"] == "close_date"
+    assert captured["pipelineStages"] == ["КОТ/Договор", "АСУРЭО/Оплата"]
 
 
 def testDeleteBitrixDealSnapshotByDateEndpointDeletesRows(monkeypatch) -> None:

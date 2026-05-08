@@ -61,6 +61,7 @@ from src.redmine.db import (
     getBitrixDealSnapshotItems,
     getBitrixDealSnapshotFilterOptions,
     getBitrixCrmSnapshotItems,
+    getBitrixInvoiceSummary,
     getBitrixCompanyNamesByIds,
     getBitrixUserNamesByIds,
     getSnapshotRunsWithIssuesForProjectYear,
@@ -11604,8 +11605,56 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     isInvoicePage = entityType == "invoice"
     captureButtonLabel = "Получить срез по счетам" if isInvoicePage else "Получить срез по лидам"
     entityLabel = "счета" if isInvoicePage else "лиды"
-    extraColumnGroups = """
+    extraNavButtons = '<a class="button" href="/Bitrix/invoices/summary">Сводный отчет по счетам</a>' if isInvoicePage else ""
+    baseColumnGroups = """
+            <col class="crm-col-id">
             <col class="crm-col-deal">
+            <col class="crm-col-title">
+            <col class="crm-col-amount">
+            <col class="crm-col-status">
+            <col class="crm-col-responsible">
+            <col class="crm-col-company">
+""" if isInvoicePage else """
+            <col class="crm-col-id">
+            <col class="crm-col-title">
+            <col class="crm-col-status">
+            <col class="crm-col-responsible">
+            <col class="crm-col-amount">
+            <col class="crm-col-company">
+"""
+    baseHeaderCells = """
+              <th>ID<br><input data-filter="item_id"></th>
+              <th>Сделка<br><input data-filter="deal_id"></th>
+              <th>Название<br><input data-filter="title"></th>
+              <th class="amount-header">Сумма<br><input data-filter="opportunity"></th>
+              <th>Статус<br><select data-filter="status_name"><option value=""></option></select></th>
+              <th>Ответственный<br><select data-filter="assigned_by_name"><option value=""></option></select></th>
+              <th>Компания<br><input data-filter="company_name"></th>
+""" if isInvoicePage else """
+              <th>ID<br><input data-filter="item_id"></th>
+              <th>Название<br><input data-filter="title"></th>
+              <th>Статус<br><select data-filter="status_name"><option value=""></option></select></th>
+              <th>Ответственный<br><select data-filter="assigned_by_name"><option value=""></option></select></th>
+              <th class="amount-header">Сумма<br><input data-filter="opportunity"></th>
+              <th>Компания<br><input data-filter="company_name"></th>
+"""
+    baseRowCells = """
+          <td class="mono"><a href="https://sms-it.bitrix24.ru/crm/${bitrixPath}/details/${encodeURIComponent(item.item_id ?? "")}/" target="_blank" rel="noreferrer">${formatValue(item.item_id)}</a></td>
+          <td class="mono">${formatDealLink(item.deal_id, item.deal_title)}</td>
+          <td>${formatValue(item.title)}</td>
+          <td class="mono amount-cell">${formatIntegerAmount(item.opportunity)}</td>
+          <td>${formatValue(item.status_name || item.status_id)}</td>
+          <td>${formatValue(item.assigned_by_name || item.assigned_by_id)}</td>
+          <td>${formatValue(item.company_name || item.company_id)}</td>
+""" if isInvoicePage else """
+          <td class="mono"><a href="https://sms-it.bitrix24.ru/crm/${bitrixPath}/details/${encodeURIComponent(item.item_id ?? "")}/" target="_blank" rel="noreferrer">${formatValue(item.item_id)}</a></td>
+          <td>${formatValue(item.title)}</td>
+          <td>${formatValue(item.status_name || item.status_id)}</td>
+          <td>${formatValue(item.assigned_by_name || item.assigned_by_id)}</td>
+          <td class="mono amount-cell">${formatIntegerAmount(item.opportunity)}</td>
+          <td>${formatValue(item.company_name || item.company_id)}</td>
+"""
+    extraColumnGroups = """
             <col class="crm-col-pipeline">
             <col class="crm-col-stage-group">
             <col class="crm-col-begin-date">
@@ -11616,7 +11665,6 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
             <col class="crm-col-product">
 """ if isInvoicePage else ""
     extraHeaderCells = """
-              <th>Сделка<br><input data-filter="deal_id"></th>
               <th>Воронка/стадия/счет<br><select data-filter="pipeline_stage_invoice"><option value=""></option></select></th>
               <th>Стадия<br><select data-filter="invoice_stage"><option value=""></option></select></th>
               <th>Дата выставления<br><input data-filter="begin_date"></th>
@@ -11627,7 +11675,6 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
               <th>Продукт (для отчета)<br><select data-filter="product"><option value=""></option></select></th>
 """ if isInvoicePage else ""
     extraRowCells = """
-          <td class="mono">${formatDealLink(item.deal_id, item.deal_title)}</td>
           <td>${formatValue(item.pipeline_stage_invoice)}</td>
           <td>${formatValue(item.invoice_stage)}</td>
           <td class="mono">${formatValue(item.begin_date)}</td>
@@ -11709,14 +11756,14 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: visible; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: max(100%, var(--crm-table-min-width, 166ch)); min-width: var(--crm-table-min-width, 166ch); border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
     .crm-table-standard { --crm-table-min-width: 166ch; }
-    .crm-table-invoice { --crm-table-min-width: 360ch; }
+    .crm-table-invoice { --crm-table-min-width: 420ch; }
     .crm-col-id { width: 8ch; }
     .crm-col-title { width: 50ch; }
     .crm-col-status { width: 20ch; }
     .crm-col-responsible { width: 20ch; }
     .crm-col-amount { width: 12ch; }
     .crm-col-company { width: 24ch; }
-    .crm-col-deal { width: 14ch; }
+    .crm-col-deal { width: 50ch; }
     .crm-col-pipeline { width: 48ch; }
     .crm-col-stage-group { width: 20ch; }
     .crm-col-begin-date { width: 20ch; }
@@ -11742,6 +11789,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
         <a class="button" href="/Bitrix">Сделки</a>
         <a class="button" href="/Bitrix/leads">Лиды</a>
         <a class="button" href="/Bitrix/invoices">Счета</a>
+        __EXTRA_NAV_BUTTONS__
       </div>
     </header>
     <section class="panel">
@@ -11760,23 +11808,13 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
       <div class="table-wrap">
         <table class="__TABLE_CLASS__">
           <colgroup>
-            <col class="crm-col-id">
-            <col class="crm-col-title">
-            <col class="crm-col-status">
-            <col class="crm-col-responsible">
-            <col class="crm-col-amount">
-            <col class="crm-col-company">
+__BASE_COLUMN_GROUPS__
 __EXTRA_COLUMN_GROUPS__            <col class="crm-col-datetime">
             <col class="crm-col-datetime">
           </colgroup>
           <thead>
             <tr>
-              <th>ID<br><input data-filter="item_id"></th>
-              <th>Название<br><input data-filter="title"></th>
-              <th>Статус<br><select data-filter="status_name"><option value=""></option></select></th>
-              <th>Ответственный<br><select data-filter="assigned_by_name"><option value=""></option></select></th>
-              <th class="amount-header">Сумма<br><input data-filter="opportunity"></th>
-              <th>Компания<br><input data-filter="company_name"></th>
+__BASE_HEADER_CELLS__
 __EXTRA_HEADER_CELLS__
               <th>Создан<br><input data-filter="created_time"></th>
               <th>Обновлен<br><input data-filter="updated_time"></th>
@@ -11888,12 +11926,7 @@ __EXTRA_HEADER_CELLS__
       }
       tableBody.innerHTML = items.map((item) => `
         <tr>
-          <td class="mono"><a href="https://sms-it.bitrix24.ru/crm/${bitrixPath}/details/${encodeURIComponent(item.item_id ?? "")}/" target="_blank" rel="noreferrer">${formatValue(item.item_id)}</a></td>
-          <td>${formatValue(item.title)}</td>
-          <td>${formatValue(item.status_name || item.status_id)}</td>
-          <td>${formatValue(item.assigned_by_name || item.assigned_by_id)}</td>
-          <td class="mono amount-cell">${formatIntegerAmount(item.opportunity)}</td>
-          <td>${formatValue(item.company_name || item.company_id)}</td>
+__BASE_ROW_CELLS__
 __EXTRA_ROW_CELLS__
           <td class="mono">${formatValue(item.created_time)}</td>
           <td class="mono">${formatValue(item.updated_time)}</td>
@@ -12020,7 +12053,294 @@ __EXTRA_ROW_CELLS__
     safeLoadItems();
   </script>
 </body>
-</html>""".replace("__PAGE_TITLE__", pageTitle).replace("__API_BASE_PATH__", apiBasePath).replace("__BITRIX_PATH__", bitrixPath).replace("__ENTITY_KEY__", entityType).replace("__ENTITY_LABEL__", entityLabel).replace("__CAPTURE_BUTTON_LABEL__", captureButtonLabel).replace("__TABLE_CLASS__", tableClass).replace("__EXTRA_COLUMN_GROUPS__", extraColumnGroups).replace("__EXTRA_HEADER_CELLS__", extraHeaderCells).replace("__EXTRA_ROW_CELLS__", extraRowCells).replace("__EMPTY_COLSPAN__", emptyColspan)
+</html>""".replace("__PAGE_TITLE__", pageTitle).replace("__API_BASE_PATH__", apiBasePath).replace("__BITRIX_PATH__", bitrixPath).replace("__ENTITY_KEY__", entityType).replace("__ENTITY_LABEL__", entityLabel).replace("__CAPTURE_BUTTON_LABEL__", captureButtonLabel).replace("__TABLE_CLASS__", tableClass).replace("__EXTRA_NAV_BUTTONS__", extraNavButtons).replace("__BASE_COLUMN_GROUPS__", baseColumnGroups).replace("__BASE_HEADER_CELLS__", baseHeaderCells).replace("__BASE_ROW_CELLS__", baseRowCells).replace("__EXTRA_COLUMN_GROUPS__", extraColumnGroups).replace("__EXTRA_HEADER_CELLS__", extraHeaderCells).replace("__EXTRA_ROW_CELLS__", extraRowCells).replace("__EMPTY_COLSPAN__", emptyColspan)
+
+
+def buildBitrixInvoiceSummaryPage() -> str:
+    return """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Сводный отчет по счетам</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+    :root {
+      --ink: #10293d;
+      --muted: #5d7487;
+      --paper: #f4f8fb;
+      --line: rgba(16, 41, 61, 0.12);
+      --accent: #ffc600;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Golos", "Segoe UI", Tahoma, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, rgba(255, 198, 0, 0.18), transparent 34rem),
+        linear-gradient(180deg, #ffffff 0%, var(--paper) 100%);
+    }
+    main { max-width: 1440px; margin: 0 auto; padding: 28px 18px 52px; }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: 0 14px 34px rgba(16, 41, 61, 0.08);
+    }
+    h1 { margin: 0; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0.04em; }
+    p { color: var(--muted); line-height: 1.55; }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #e6ebef;
+      color: var(--ink);
+      font: inherit;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .button-primary { background: var(--accent); border-color: rgba(16, 41, 61, 0.18); }
+    .panel { margin-top: 18px; padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: #ffffff; }
+    .toolbar { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+    label { display: grid; gap: 6px; color: var(--muted); font-weight: 600; }
+    input, select {
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0 10px;
+      font: inherit;
+      background: #ffffff;
+      color: var(--ink);
+    }
+    select[multiple] { min-width: min(70vw, 520px); min-height: 150px; padding: 8px 10px; }
+    .status { margin: 14px 0; color: var(--muted); }
+    .status.is-error { color: #b63d00; }
+    .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
+    table { width: max(100%, 178ch); min-width: 178ch; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
+    col.product-col { width: 34ch; }
+    col.deal-col { width: 50ch; }
+    col.month-col { width: 7ch; }
+    col.total-col { width: 12ch; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+    th { position: sticky; top: 0; z-index: 5; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
+    .amount-cell, .amount-header { text-align: right; font-variant-numeric: tabular-nums; }
+    .mono { font-family: "Cascadia Mono", Consolas, monospace; }
+    tfoot td { position: sticky; bottom: 0; z-index: 4; background: #fff8d7; font-weight: 800; }
+    .nav { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Сводный отчет по счетам</h1>
+        <p>Суммирование счетов по продукту, сделке и месяцам выбранного года на основе последнего сохраненного среза счетов.</p>
+      </div>
+      <div class="nav">
+        <a class="button" href="/Bitrix">Сделки</a>
+        <a class="button" href="/Bitrix/invoices">Счета Bitrix</a>
+      </div>
+    </header>
+    <section class="panel">
+      <div class="toolbar">
+        <label>Год
+          <input id="summaryYearInput" type="number" min="2000" max="2100" step="1">
+        </label>
+        <label>Дата для года и месяца
+          <select id="summaryDateFieldSelect">
+            <option value="begin_date">Дата выставления</option>
+            <option value="close_date">Срок оплаты</option>
+          </select>
+        </label>
+        <label>Воронка/стадия/счет
+          <select id="summaryPipelineStageSelect" multiple size="8"></select>
+        </label>
+        <button class="button button-primary" id="summaryReloadButton" type="button">Показать</button>
+      </div>
+      <div class="status" id="summaryStatus">Загружаю сводный отчет...</div>
+      <div class="table-wrap">
+        <table>
+          <colgroup>
+            <col class="product-col">
+            <col class="deal-col">
+            <col class="month-col">
+            <col class="month-col">
+            <col class="month-col">
+            <col class="month-col">
+            <col class="month-col">
+            <col class="month-col">
+            <col class="month-col">
+            <col class="month-col">
+            <col class="month-col">
+            <col class="month-col">
+            <col class="month-col">
+            <col class="month-col">
+            <col class="total-col">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Продукт (для отчета)</th>
+              <th>Сделка</th>
+              <th class="amount-header">Янв</th>
+              <th class="amount-header">Фев</th>
+              <th class="amount-header">Мар</th>
+              <th class="amount-header">Апр</th>
+              <th class="amount-header">Май</th>
+              <th class="amount-header">Июн</th>
+              <th class="amount-header">Июл</th>
+              <th class="amount-header">Авг</th>
+              <th class="amount-header">Сен</th>
+              <th class="amount-header">Окт</th>
+              <th class="amount-header">Ноя</th>
+              <th class="amount-header">Дек</th>
+              <th class="amount-header">Сумма за год</th>
+            </tr>
+          </thead>
+          <tbody id="summaryTableBody"></tbody>
+          <tfoot id="summaryTableFoot"></tfoot>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script>
+    const yearInput = document.getElementById("summaryYearInput");
+    const dateFieldSelect = document.getElementById("summaryDateFieldSelect");
+    const pipelineStageSelect = document.getElementById("summaryPipelineStageSelect");
+    const reloadButton = document.getElementById("summaryReloadButton");
+    const statusBox = document.getElementById("summaryStatus");
+    const tableBody = document.getElementById("summaryTableBody");
+    const tableFoot = document.getElementById("summaryTableFoot");
+    const monthNumbers = Array.from({ length: 12 }, (_, index) => String(index + 1));
+
+    yearInput.value = String(new Date().getFullYear());
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+    function formatValue(value) {
+      if (value === null || value === undefined || value === "") {
+        return "—";
+      }
+      return escapeHtml(value);
+    }
+    function formatAmount(value) {
+      const numericValue = Number(value || 0);
+      if (!Number.isFinite(numericValue) || numericValue === 0) {
+        return "";
+      }
+      return escapeHtml(Math.round(numericValue).toLocaleString("ru-RU"));
+    }
+    function setStatus(message, isError = false) {
+      statusBox.textContent = message;
+      statusBox.classList.toggle("is-error", Boolean(isError));
+    }
+    function getSelectedPipelineStages() {
+      return Array.from(pipelineStageSelect.selectedOptions).map((option) => option.value);
+    }
+    function syncPipelineStageOptions(values) {
+      const previousValues = new Set(getSelectedPipelineStages());
+      const shouldSelectAll = pipelineStageSelect.options.length === 0 || previousValues.size === 0;
+      const safeValues = Array.isArray(values) ? values : [];
+      pipelineStageSelect.innerHTML = safeValues
+        .map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
+        .join("");
+      Array.from(pipelineStageSelect.options).forEach((option) => {
+        option.selected = shouldSelectAll || previousValues.has(option.value);
+      });
+    }
+    function buildParams() {
+      const params = new URLSearchParams();
+      params.set("year", String(yearInput.value || new Date().getFullYear()));
+      params.set("date_field", dateFieldSelect.value || "begin_date");
+      getSelectedPipelineStages().forEach((value) => {
+        params.append("pipeline_stage_invoice", value);
+      });
+      return params;
+    }
+    function formatDealLink(row) {
+      const dealId = row.deal_id;
+      const title = row.deal_title || dealId;
+      if (!dealId) {
+        return formatValue(title);
+      }
+      return `<a href="https://sms-it.bitrix24.ru/crm/deal/details/${encodeURIComponent(dealId)}/" target="_blank" rel="noreferrer">${formatValue(title)}</a>`;
+    }
+    function renderSummary(payload) {
+      const rows = Array.isArray(payload.rows) ? payload.rows : [];
+      if (!rows.length) {
+        tableBody.innerHTML = '<tr><td colspan="15">Строки не найдены.</td></tr>';
+      } else {
+        tableBody.innerHTML = rows.map((row) => {
+          const monthCells = monthNumbers
+            .map((month) => `<td class="amount-cell mono">${formatAmount(row.months?.[month])}</td>`)
+            .join("");
+          return `
+            <tr>
+              <td>${formatValue(row.product)}</td>
+              <td>${formatDealLink(row)}</td>
+              ${monthCells}
+              <td class="amount-cell mono">${formatAmount(row.year_total)}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+      const totals = payload.totals || { months: {}, year_total: 0 };
+      const totalMonthCells = monthNumbers
+        .map((month) => `<td class="amount-cell mono">${formatAmount(totals.months?.[month])}</td>`)
+        .join("");
+      tableFoot.innerHTML = `
+        <tr>
+          <td colspan="2">Итого</td>
+          ${totalMonthCells}
+          <td class="amount-cell mono">${formatAmount(totals.year_total)}</td>
+        </tr>
+      `;
+    }
+    async function loadSummary() {
+      reloadButton.disabled = true;
+      setStatus("Загружаю сводный отчет...");
+      try {
+        const response = await fetch(`/api/bitrix/invoice-snapshots/summary?${buildParams().toString()}`);
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось загрузить сводный отчет.");
+        }
+        syncPipelineStageOptions(payload.pipeline_stage_options || []);
+        renderSummary(payload);
+        const snapshotDate = payload.snapshot_run?.captured_for_date || "нет";
+        setStatus(`Срез счетов: ${snapshotDate}. Год: ${payload.year}. Строк: ${(payload.rows || []).length}.`);
+      } catch (error) {
+        setStatus(String(error.message || error), true);
+      } finally {
+        reloadButton.disabled = false;
+      }
+    }
+    reloadButton.addEventListener("click", loadSummary);
+    yearInput.addEventListener("change", loadSummary);
+    dateFieldSelect.addEventListener("change", loadSummary);
+    pipelineStageSelect.addEventListener("change", loadSummary);
+    loadSummary();
+  </script>
+</body>
+</html>"""
 
 
 @app.get("/Bitrix/leads", response_class=HTMLResponse)
@@ -12031,6 +12351,11 @@ def readBitrixLeadsPage() -> HTMLResponse:
 @app.get("/Bitrix/invoices", response_class=HTMLResponse)
 def readBitrixInvoicesPage() -> HTMLResponse:
     return _renderHtmlPage(buildBitrixCrmSnapshotPage("invoice", "Счета Bitrix", "/api/bitrix/invoice-snapshots", "type/31"))
+
+
+@app.get("/Bitrix/invoices/summary", response_class=HTMLResponse)
+def readBitrixInvoiceSummaryPage() -> HTMLResponse:
+    return _renderHtmlPage(buildBitrixInvoiceSummaryPage())
 
 
 @app.get("/Bitrix/deal-snapshots/compare", response_class=HTMLResponse)
@@ -14357,6 +14682,26 @@ def getBitrixInvoiceSnapshotItemsApi(
             updated_time=updated_time,
         ),
     )
+
+
+@app.get("/api/bitrix/invoice-snapshots/summary")
+def getBitrixInvoiceSummaryApi(
+    year: int | None = Query(None, ge=2000, le=2100),
+    date_field: str = Query("begin_date"),
+    pipeline_stage_invoice: list[str] | None = Query(None),
+) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    safeYear = int(year or datetime.now(UTC).year)
+    try:
+        return getBitrixInvoiceSummary(
+            safeYear,
+            dateField=date_field,
+            pipelineStages=pipeline_stage_invoice or [],
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @app.get("/api/bitrix/deal-snapshots/compare")

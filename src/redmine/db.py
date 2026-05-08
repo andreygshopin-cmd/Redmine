@@ -5342,6 +5342,141 @@ def getBitrixCrmSnapshotItems(
     }
 
 
+def getBitrixInvoiceSummary(
+    year: int,
+    *,
+    dateField: str = "begin_date",
+    pipelineStages: Sequence[str] | None = None,
+) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    safeYear = int(year)
+    if dateField not in {"begin_date", "close_date"}:
+        raise ValueError("dateField must be begin_date or close_date")
+
+    selectedPipelineStages = [
+        str(value).strip()
+        for value in pipelineStages or []
+        if str(value).strip()
+    ]
+    params: dict[str, object] = {
+        "entity_type": "invoice",
+        "year_value": safeYear,
+    }
+
+    with engine.connect() as connection:
+        run = connection.execute(
+            text(
+                """
+                SELECT id, entity_type, captured_for_date, captured_at, total_items
+                FROM bitrix_crm_snapshot_runs
+                WHERE entity_type = :entity_type
+                ORDER BY captured_for_date DESC, captured_at DESC, id DESC
+                LIMIT 1
+                """
+            ),
+            params,
+        ).mappings().first()
+
+        if run is None:
+            return {
+                "snapshot_run": None,
+                "year": safeYear,
+                "date_field": dateField,
+                "pipeline_stage_options": [],
+                "selected_pipeline_stages": selectedPipelineStages,
+                "rows": [],
+                "totals": {"months": {str(month): 0 for month in range(1, 13)}, "year_total": 0},
+            }
+
+        snapshotRunId = int(run["id"])
+        filterOptions = _getBitrixCrmSnapshotFilterOptions(
+            connection,
+            snapshotRunId=snapshotRunId,
+            entityType="invoice",
+        )
+        pipelineStageOptions = filterOptions.get("pipeline_stage_invoice") or []
+        params["snapshot_run_id"] = snapshotRunId
+        whereClauses = [
+            "snapshot_run_id = :snapshot_run_id",
+            "entity_type = :entity_type",
+            f"{dateField} IS NOT NULL",
+            f"EXTRACT(YEAR FROM {dateField}) = :year_value",
+        ]
+        bindParams = []
+        if selectedPipelineStages:
+            whereClauses.append("pipeline_stage_invoice IN :pipeline_stages")
+            params["pipeline_stages"] = selectedPipelineStages
+            bindParams.append(bindparam("pipeline_stages", expanding=True))
+
+        whereSql = " AND ".join(whereClauses)
+        monthExpression = f"CAST(EXTRACT(MONTH FROM {dateField}) AS INTEGER)"
+        productExpression = f"COALESCE({BITRIX_INVOICE_PRODUCT_SQL}, '—')"
+        dealTitleExpression = f"COALESCE({BITRIX_INVOICE_DEAL_TITLE_SQL}, CAST(deal_id AS TEXT), '—')"
+        query = text(
+            f"""
+            SELECT
+                {productExpression} AS product,
+                deal_id,
+                {dealTitleExpression} AS deal_title,
+                {monthExpression} AS month_number,
+                SUM(COALESCE(opportunity, 0)) AS amount
+            FROM bitrix_crm_snapshot_items
+            WHERE {whereSql}
+            GROUP BY
+                {productExpression},
+                deal_id,
+                {dealTitleExpression},
+                {monthExpression}
+            ORDER BY product ASC, deal_title ASC, deal_id ASC, month_number ASC
+            """
+        )
+        if bindParams:
+            query = query.bindparams(*bindParams)
+        rows = [dict(row) for row in connection.execute(query, params).mappings()]
+
+    summaryRowsByKey: dict[tuple[str, object, str], dict[str, object]] = {}
+    totals = {"months": {str(month): 0.0 for month in range(1, 13)}, "year_total": 0.0}
+    for row in rows:
+        product = str(row["product"] or "—")
+        dealId = row["deal_id"]
+        dealTitle = str(row["deal_title"] or dealId or "—")
+        key = (product, dealId, dealTitle)
+        summaryRow = summaryRowsByKey.setdefault(
+            key,
+            {
+                "product": product,
+                "deal_id": dealId,
+                "deal_title": dealTitle,
+                "months": {str(month): 0.0 for month in range(1, 13)},
+                "year_total": 0.0,
+            },
+        )
+        monthNumber = int(row["month_number"] or 0)
+        if monthNumber < 1 or monthNumber > 12:
+            continue
+        amount = float(row["amount"] or 0)
+        monthKey = str(monthNumber)
+        months = summaryRow["months"]
+        if isinstance(months, dict):
+            months[monthKey] = float(months.get(monthKey) or 0) + amount
+        summaryRow["year_total"] = float(summaryRow["year_total"] or 0) + amount
+        totals["months"][monthKey] = float(totals["months"].get(monthKey) or 0) + amount
+        totals["year_total"] = float(totals["year_total"] or 0) + amount
+
+    return {
+        "snapshot_run": dict(run),
+        "year": safeYear,
+        "date_field": dateField,
+        "pipeline_stage_options": pipelineStageOptions,
+        "selected_pipeline_stages": selectedPipelineStages,
+        "rows": list(summaryRowsByKey.values()),
+        "totals": totals,
+    }
+
+
 def compareBitrixDealSnapshots(leftDate: str | None = None, rightDate: str | None = None) -> dict[str, object]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
