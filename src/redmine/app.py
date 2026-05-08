@@ -12129,15 +12129,27 @@ def buildBitrixInvoiceSummaryPage() -> str:
     .status { margin: 14px 0; color: var(--muted); }
     .status.is-error { color: #b63d00; }
     .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
-    table { width: max(100%, 178ch); min-width: 178ch; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
-    col.product-col { width: 34ch; }
-    col.deal-col { width: 50ch; }
-    col.month-col { width: 7ch; }
-    col.total-col { width: 12ch; }
+    table { width: max(100%, 180ch); min-width: 180ch; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
+    col.hierarchy-col { width: 50ch; }
+    col.month-col, col.total-col { width: 10ch; }
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
     th { position: sticky; top: 0; z-index: 5; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
     .amount-cell, .amount-header { text-align: right; font-variant-numeric: tabular-nums; }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; }
+    .product-row td { background: #fff8d7; font-weight: 800; }
+    .deal-row td:first-child { padding-left: 42px; }
+    .toggle-button {
+      width: 26px;
+      height: 26px;
+      margin-right: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      color: var(--ink);
+      font: inherit;
+      font-weight: 900;
+      cursor: pointer;
+    }
     tfoot td { position: sticky; bottom: 0; z-index: 4; background: #fff8d7; font-weight: 800; }
     .nav { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
   </style>
@@ -12169,13 +12181,13 @@ def buildBitrixInvoiceSummaryPage() -> str:
           <select id="summaryPipelineStageSelect" multiple size="8"></select>
         </label>
         <button class="button button-primary" id="summaryReloadButton" type="button">Показать</button>
+        <button class="button" id="summaryExportButton" type="button">Выгрузить в Excel</button>
       </div>
       <div class="status" id="summaryStatus">Загружаю сводный отчет...</div>
       <div class="table-wrap">
         <table>
           <colgroup>
-            <col class="product-col">
-            <col class="deal-col">
+            <col class="hierarchy-col">
             <col class="month-col">
             <col class="month-col">
             <col class="month-col">
@@ -12192,8 +12204,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
           </colgroup>
           <thead>
             <tr>
-              <th>Продукт (для отчета)</th>
-              <th>Сделка</th>
+              <th>Продукт (для отчета) / Сделка</th>
               <th class="amount-header">Янв</th>
               <th class="amount-header">Фев</th>
               <th class="amount-header">Мар</th>
@@ -12220,10 +12231,13 @@ def buildBitrixInvoiceSummaryPage() -> str:
     const dateFieldSelect = document.getElementById("summaryDateFieldSelect");
     const pipelineStageSelect = document.getElementById("summaryPipelineStageSelect");
     const reloadButton = document.getElementById("summaryReloadButton");
+    const exportButton = document.getElementById("summaryExportButton");
     const statusBox = document.getElementById("summaryStatus");
     const tableBody = document.getElementById("summaryTableBody");
     const tableFoot = document.getElementById("summaryTableFoot");
     const monthNumbers = Array.from({ length: 12 }, (_, index) => String(index + 1));
+    const collapsedProducts = new Set();
+    let currentSummaryPayload = null;
 
     yearInput.value = String(new Date().getFullYear());
 
@@ -12283,32 +12297,67 @@ def buildBitrixInvoiceSummaryPage() -> str:
       }
       return `<a href="https://sms-it.bitrix24.ru/crm/deal/details/${encodeURIComponent(dealId)}/" target="_blank" rel="noreferrer">${formatValue(title)}</a>`;
     }
+    function createEmptyMonths() {
+      return Object.fromEntries(monthNumbers.map((month) => [month, 0]));
+    }
+    function addRowAmounts(target, row) {
+      monthNumbers.forEach((month) => {
+        target.months[month] = Number(target.months[month] || 0) + Number(row.months?.[month] || 0);
+      });
+      target.year_total = Number(target.year_total || 0) + Number(row.year_total || 0);
+    }
+    function groupRowsByProduct(rows) {
+      const groups = new Map();
+      rows.forEach((row) => {
+        const product = String(row.product || "—");
+        if (!groups.has(product)) {
+          groups.set(product, { product, months: createEmptyMonths(), year_total: 0, deals: [] });
+        }
+        const group = groups.get(product);
+        group.deals.push(row);
+        addRowAmounts(group, row);
+      });
+      return Array.from(groups.values());
+    }
+    function renderAmountCells(months) {
+      return monthNumbers
+        .map((month) => `<td class="amount-cell mono">${formatAmount(months?.[month])}</td>`)
+        .join("");
+    }
     function renderSummary(payload) {
       const rows = Array.isArray(payload.rows) ? payload.rows : [];
       if (!rows.length) {
-        tableBody.innerHTML = '<tr><td colspan="15">Строки не найдены.</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="14">Строки не найдены.</td></tr>';
       } else {
-        tableBody.innerHTML = rows.map((row) => {
-          const monthCells = monthNumbers
-            .map((month) => `<td class="amount-cell mono">${formatAmount(row.months?.[month])}</td>`)
-            .join("");
-          return `
-            <tr>
-              <td>${formatValue(row.product)}</td>
+        tableBody.innerHTML = groupRowsByProduct(rows).map((group) => {
+          const productKey = group.product;
+          const isCollapsed = collapsedProducts.has(productKey);
+          const productCells = renderAmountCells(group.months);
+          const dealRows = isCollapsed ? "" : group.deals.map((row) => `
+            <tr class="deal-row" data-product-key="${escapeHtml(productKey)}">
               <td>${formatDealLink(row)}</td>
-              ${monthCells}
+              ${renderAmountCells(row.months)}
               <td class="amount-cell mono">${formatAmount(row.year_total)}</td>
             </tr>
+          `).join("");
+          return `
+            <tr class="product-row" data-product-key="${escapeHtml(productKey)}">
+              <td>
+                <button class="toggle-button" type="button" data-toggle-product="${escapeHtml(productKey)}" aria-label="${isCollapsed ? "Раскрыть" : "Скрыть"} сделки">${isCollapsed ? "+" : "−"}</button>
+                ${formatValue(group.product)}
+              </td>
+              ${productCells}
+              <td class="amount-cell mono">${formatAmount(group.year_total)}</td>
+            </tr>
+            ${dealRows}
           `;
         }).join("");
       }
       const totals = payload.totals || { months: {}, year_total: 0 };
-      const totalMonthCells = monthNumbers
-        .map((month) => `<td class="amount-cell mono">${formatAmount(totals.months?.[month])}</td>`)
-        .join("");
+      const totalMonthCells = renderAmountCells(totals.months);
       tableFoot.innerHTML = `
         <tr>
-          <td colspan="2">Итого</td>
+          <td>Итого</td>
           ${totalMonthCells}
           <td class="amount-cell mono">${formatAmount(totals.year_total)}</td>
         </tr>
@@ -12324,6 +12373,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
           throw new Error(payload.detail || "Не удалось загрузить сводный отчет.");
         }
         syncPipelineStageOptions(payload.pipeline_stage_options || []);
+        currentSummaryPayload = payload;
         renderSummary(payload);
         const snapshotDate = payload.snapshot_run?.captured_for_date || "нет";
         setStatus(`Срез счетов: ${snapshotDate}. Год: ${payload.year}. Строк: ${(payload.rows || []).length}.`);
@@ -12334,6 +12384,28 @@ def buildBitrixInvoiceSummaryPage() -> str:
       }
     }
     reloadButton.addEventListener("click", loadSummary);
+    exportButton.addEventListener("click", () => {
+      window.location.href = `/api/bitrix/invoice-snapshots/summary/export.csv?${buildParams().toString()}`;
+    });
+    tableBody.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      const button = target.closest("[data-toggle-product]");
+      if (!button) {
+        return;
+      }
+      const productKey = String(button.getAttribute("data-toggle-product") || "");
+      if (collapsedProducts.has(productKey)) {
+        collapsedProducts.delete(productKey);
+      } else {
+        collapsedProducts.add(productKey);
+      }
+      if (currentSummaryPayload) {
+        renderSummary(currentSummaryPayload);
+      }
+    });
     yearInput.addEventListener("change", loadSummary);
     dateFieldSelect.addEventListener("change", loadSummary);
     pipelineStageSelect.addEventListener("change", loadSummary);
@@ -14702,6 +14774,96 @@ def getBitrixInvoiceSummaryApi(
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get("/api/bitrix/invoice-snapshots/summary/export.csv")
+def exportBitrixInvoiceSummaryApi(
+    year: int | None = Query(None, ge=2000, le=2100),
+    date_field: str = Query("begin_date"),
+    pipeline_stage_invoice: list[str] | None = Query(None),
+) -> Response:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    safeYear = int(year or datetime.now(UTC).year)
+    try:
+        payload = getBitrixInvoiceSummary(
+            safeYear,
+            dateField=date_field,
+            pipelineStages=pipeline_stage_invoice or [],
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    monthKeys = [str(month) for month in range(1, 13)]
+    monthHeaders = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"]
+
+    def roundedAmount(value: object) -> str:
+        try:
+            numericValue = float(value or 0)
+        except (TypeError, ValueError):
+            return str(value or "")
+        if numericValue == 0:
+            return ""
+        return str(round(numericValue))
+
+    groupedRows: dict[str, dict[str, object]] = {}
+    for row in payload.get("rows") or []:
+        if not isinstance(row, dict):
+            continue
+        product = str(row.get("product") or "—")
+        group = groupedRows.setdefault(
+            product,
+            {
+                "product": product,
+                "months": {month: 0.0 for month in monthKeys},
+                "year_total": 0.0,
+                "deals": [],
+            },
+        )
+        months = row.get("months") if isinstance(row.get("months"), dict) else {}
+        groupMonths = group["months"] if isinstance(group.get("months"), dict) else {}
+        for month in monthKeys:
+            groupMonths[month] = float(groupMonths.get(month) or 0) + float(months.get(month) or 0)
+        group["year_total"] = float(group.get("year_total") or 0) + float(row.get("year_total") or 0)
+        deals = group["deals"]
+        if isinstance(deals, list):
+            deals.append(row)
+
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";", lineterminator="\r\n")
+    writer.writerow(["Продукт (для отчета) / Сделка", *monthHeaders, "Сумма за год"])
+    for group in groupedRows.values():
+        groupMonths = group.get("months") if isinstance(group.get("months"), dict) else {}
+        writer.writerow([
+            group.get("product") or "—",
+            *[roundedAmount(groupMonths.get(month)) for month in monthKeys],
+            roundedAmount(group.get("year_total")),
+        ])
+        for row in group.get("deals") or []:
+            if not isinstance(row, dict):
+                continue
+            rowMonths = row.get("months") if isinstance(row.get("months"), dict) else {}
+            writer.writerow([
+                f"  {row.get('deal_title') or row.get('deal_id') or '—'}",
+                *[roundedAmount(rowMonths.get(month)) for month in monthKeys],
+                roundedAmount(row.get("year_total")),
+            ])
+
+    totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
+    totalMonths = totals.get("months") if isinstance(totals.get("months"), dict) else {}
+    writer.writerow([
+        "Итого",
+        *[roundedAmount(totalMonths.get(month)) for month in monthKeys],
+        roundedAmount(totals.get("year_total")),
+    ])
+
+    content = output.getvalue().encode("cp1251", errors="replace")
+    return Response(
+        content=content,
+        media_type="text/csv; charset=windows-1251",
+        headers={"Content-Disposition": f'attachment; filename="bitrix-invoice-summary-{safeYear}.csv"'},
+    )
 
 
 @app.get("/api/bitrix/deal-snapshots/compare")

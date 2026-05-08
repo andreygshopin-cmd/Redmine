@@ -175,7 +175,13 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "Продукт (для отчета)" in body
     assert "Сумма за год" in body
     assert "pipeline_stage_invoice" in body
-    assert "colspan=\"15\"" in body
+    assert "/api/bitrix/invoice-snapshots/summary/export.csv" in body
+    assert "summaryExportButton" in body
+    assert "groupRowsByProduct" in body
+    assert "toggle-button" in body
+    assert "hierarchy-col { width: 50ch" in body
+    assert "col.month-col, col.total-col { width: 10ch" in body
+    assert "colspan=\"14\"" in body
 
 
 def testReadBitrixLeadsPageReturnsDropdownFiltersWithoutPlaceholder() -> None:
@@ -485,6 +491,47 @@ def testBitrixInvoiceSummaryEndpointPassesFilters(monkeypatch) -> None:
     assert captured["year"] == 2026
     assert captured["dateField"] == "close_date"
     assert captured["pipelineStages"] == ["КОТ/Договор", "АСУРЭО/Оплата"]
+
+
+def testBitrixInvoiceSummaryExportEndpointReturnsAnsiCsv(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+
+    monkeypatch.setattr(
+        app_module,
+        "getBitrixInvoiceSummary",
+        lambda year, *, dateField, pipelineStages: {
+            "snapshot_run": {"captured_for_date": "2026-05-08"},
+            "year": year,
+            "date_field": dateField,
+            "pipeline_stage_options": ["КОТ/Договор"],
+            "selected_pipeline_stages": pipelineStages,
+            "rows": [
+                {
+                    "product": "Сервис",
+                    "deal_id": 501,
+                    "deal_title": "Договор поддержки",
+                    "months": {"1": 1000.4, "2": 2000.6},
+                    "year_total": 3001.0,
+                }
+            ],
+            "totals": {
+                "months": {"1": 1000.4, "2": 2000.6},
+                "year_total": 3001.0,
+            },
+        },
+    )
+
+    response = client.get("/api/bitrix/invoice-snapshots/summary/export.csv?year=2026")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/csv; charset=windows-1251"
+    assert "bitrix-invoice-summary-2026.csv" in response.headers["content-disposition"]
+    body = response.content.decode("cp1251")
+    assert "Продукт (для отчета) / Сделка" in body
+    assert "Сервис;1000;2001" in body
+    assert "  Договор поддержки;1000;2001" in body
 
 
 def testDeleteBitrixDealSnapshotByDateEndpointDeletesRows(monkeypatch) -> None:
