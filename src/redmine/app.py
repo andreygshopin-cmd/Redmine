@@ -12075,14 +12075,15 @@ def buildBitrixInvoiceSummaryPage() -> str:
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
       font-family: "Golos", "Segoe UI", Tahoma, sans-serif;
       color: var(--ink);
       background:
         radial-gradient(circle at top right, rgba(255, 198, 0, 0.18), transparent 34rem),
         linear-gradient(180deg, #ffffff 0%, var(--paper) 100%);
     }
-    main { max-width: 1440px; margin: 0 auto; padding: 28px 18px 52px; }
+    main { max-width: 1440px; height: 100vh; margin: 0 auto; padding: 28px 18px 18px; display: flex; flex-direction: column; }
     header {
       display: flex;
       align-items: center;
@@ -12113,7 +12114,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
       cursor: pointer;
     }
     .button-primary { background: var(--accent); border-color: rgba(16, 41, 61, 0.18); }
-    .panel { margin-top: 18px; padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: #ffffff; }
+    .panel { margin-top: 18px; padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: #ffffff; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
     .toolbar { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
     .filter-stack { display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap; }
     .filter-card {
@@ -12140,7 +12141,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
     select[multiple] { min-width: min(70vw, 520px); min-height: 90px; padding: 8px 10px; }
     .status { margin: 14px 0; color: var(--muted); }
     .status.is-error { color: #b63d00; }
-    .table-wrap { width: 100%; max-width: 100%; height: calc(100vh - 300px); min-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
+    .table-wrap { width: 100%; max-width: 100%; flex: 1 1 auto; min-height: 0; overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: max(100%, 231ch); min-width: 231ch; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
     col.hierarchy-col { width: 36ch; }
     col.month-col, col.total-col { width: 15ch; }
@@ -12587,13 +12588,12 @@ def buildBitrixInvoiceSummaryPage() -> str:
         }).join("");
       }
       const totals = payload.totals || { months: {}, year_total: 0 };
-      const compareTotals = isComparisonActive() ? (comparePayload?.totals || null) : null;
-      const totalMonthCells = renderAmountCells(totals.months, compareTotals?.months, totals.year_total, compareTotals?.year_total);
+      const totalMonthCells = renderAmountCells(totals.months);
       tableFoot.innerHTML = `
         <tr>
           <td>Итого</td>
           ${totalMonthCells}
-          ${renderComparedAmountCell(totals.year_total, compareTotals?.year_total, totals.year_total, compareTotals?.year_total)}
+          ${renderComparedAmountCell(totals.year_total)}
         </tr>
       `;
     }

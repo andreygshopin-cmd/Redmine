@@ -203,8 +203,9 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "col.month-col, col.total-col { width: 15ch" in body
     assert "min-width: 231ch" in body
     assert "th:first-child, td:first-child" in body
-    assert "height: calc(100vh - 300px)" in body
-    assert "min-height: 360px" in body
+    assert "main { max-width: 1440px; height: 100vh" in body
+    assert "display: flex; flex-direction: column" in body
+    assert "flex: 1 1 auto; min-height: 0" in body
     assert "overflow: auto" in body
     assert "highlight-legend" in body
     assert "legend-swatch moved-from" in body
@@ -217,6 +218,8 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "/api/bitrix/invoice-snapshots/items" in body
     assert "compareSnapshotSelect.value === reportSnapshotSelect.value" in body
     assert "comparePayload = payload" in body
+    assert "const totalMonthCells = renderAmountCells(totals.months);" in body
+    assert "renderComparedAmountCell(totals.year_total)" in body
     assert "yearInput.addEventListener(\"change\", clearSummaryTable)" in body
     assert "dateFieldSelect.addEventListener(\"change\", clearSummaryTable)" in body
     assert "pipelineStageSelect.addEventListener(\"change\", clearSummaryTable)" in body
