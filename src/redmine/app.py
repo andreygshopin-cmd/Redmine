@@ -9236,7 +9236,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     .status.is-error { color: #b63d00; }
     .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: visible; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
     table { width: max(100%, 178ch); min-width: 178ch; border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
-    .compare-col-id { width: 8ch; }
+    .compare-col-id { width: 4ch; }
     .compare-col-type { width: 12ch; }
     .compare-col-title { width: 50ch; }
     .compare-col-stage { width: 20ch; }
@@ -9248,7 +9248,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     thead { position: sticky; top: 0; z-index: 20; }
     th { background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
     .filter-row th { padding-top: 8px; background: #f8fbfd; }
-    .compare-filter { width: 100%; min-width: 90px; min-height: 36px; padding: 0 8px; border-radius: 10px; font-size: 0.88rem; }
+    .compare-filter { width: 100%; min-width: 0; min-height: 36px; padding: 0 8px; border-radius: 10px; font-size: 0.88rem; }
     .compare-field-selector { display: flex; flex-wrap: wrap; gap: 8px 14px; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: #f8fbfd; }
     .compare-field-selector > span { width: 100%; color: var(--muted); font-weight: 700; }
     .compare-field-option { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 600; }
@@ -9262,6 +9262,8 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     .amount-cell,
     .amount-header { text-align: right; }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+    .viewport-sticky-table-header { position: fixed; top: 0; z-index: 1000; display: none; overflow: hidden; pointer-events: none; border: 1px solid var(--line); border-bottom: 0; border-radius: 0 0 14px 14px; background: #ffffff; box-shadow: 0 14px 26px rgba(16, 41, 61, 0.12); }
+    .viewport-sticky-table-header table { margin: 0; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
   </style>
 </head>
 <body>
@@ -9379,6 +9381,51 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     function setStatus(message, isError = false) {
       compareStatus.textContent = message;
       compareStatus.classList.toggle("is-error", Boolean(isError));
+    }
+
+    function setupViewportStickyTableHeader(wrapperSelector, tableSelector) {
+      const wrapper = document.querySelector(wrapperSelector);
+      const table = wrapper?.querySelector(tableSelector);
+      const thead = table?.querySelector("thead");
+      if (!(wrapper instanceof HTMLElement) || !(table instanceof HTMLTableElement) || !(thead instanceof HTMLTableSectionElement)) {
+        return;
+      }
+      const stickyWrap = document.createElement("div");
+      stickyWrap.className = "viewport-sticky-table-header";
+      const stickyTable = table.cloneNode(false);
+      const colgroup = table.querySelector("colgroup");
+      if (colgroup) {
+        stickyTable.appendChild(colgroup.cloneNode(true));
+      }
+      stickyTable.appendChild(thead.cloneNode(true));
+      stickyWrap.appendChild(stickyTable);
+      document.body.appendChild(stickyWrap);
+
+      function syncStickyHeader() {
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const tableRect = table.getBoundingClientRect();
+        const headerHeight = Math.ceil(thead.getBoundingClientRect().height || 1);
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const shouldShow = wrapperRect.top < 0 && wrapperRect.bottom > headerHeight && tableRect.bottom > headerHeight;
+        stickyWrap.style.display = shouldShow ? "block" : "none";
+        if (!shouldShow) {
+          return;
+        }
+        const left = Math.max(wrapperRect.left, 0);
+        const right = Math.min(wrapperRect.right, viewportWidth);
+        const width = Math.max(0, right - left);
+        stickyWrap.style.left = `${left}px`;
+        stickyWrap.style.width = `${width}px`;
+        stickyWrap.style.height = `${headerHeight}px`;
+        stickyTable.style.width = `${table.offsetWidth}px`;
+        stickyTable.style.minWidth = `${table.offsetWidth}px`;
+        stickyTable.style.transform = `translateX(${-wrapper.scrollLeft}px)`;
+      }
+
+      wrapper.addEventListener("scroll", syncStickyHeader, { passive: true });
+      window.addEventListener("scroll", syncStickyHeader, { passive: true });
+      window.addEventListener("resize", syncStickyHeader);
+      syncStickyHeader();
     }
 
     function syncDateOptions(dates) {
@@ -9739,6 +9786,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
       comparePage += 1;
       applyCompareView();
     });
+    setupViewportStickyTableHeader(".table-wrap", "table");
     loadCompare();
   </script>
 </body>
@@ -11828,7 +11876,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     table { width: max(100%, var(--crm-table-min-width, 166ch)); min-width: var(--crm-table-min-width, 166ch); border-collapse: collapse; font-size: 0.92rem; table-layout: fixed; }
     .crm-table-standard { --crm-table-min-width: 166ch; }
     .crm-table-invoice { --crm-table-min-width: 420ch; }
-    .crm-col-id { width: 8ch; }
+    .crm-col-id { width: 4ch; }
     .crm-col-title { width: 50ch; }
     .crm-col-status { width: 20ch; }
     .crm-col-responsible { width: 20ch; }
@@ -11844,7 +11892,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
     thead { position: sticky; top: 0; z-index: 20; }
     th { background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
-    th input, th select { width: 100%; min-width: 90px; margin-top: 6px; padding: 7px 8px; }
+    th input, th select { width: 100%; min-width: 0; margin-top: 6px; padding: 7px 8px; }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
     .amount-cell, .amount-header { text-align: right; }
     .pager { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
