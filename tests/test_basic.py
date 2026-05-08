@@ -184,8 +184,13 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "summaryExportButton" in body
     assert "groupRowsByProduct" in body
     assert "toggle-button" in body
-    assert "hierarchy-col { width: 30ch" in body
+    assert "filter-stack" in body
+    assert "filter-card" in body
+    assert "filter-row" in body
+    assert "filter-actions" in body
+    assert "hierarchy-col { width: 36ch" in body
     assert "col.month-col, col.total-col { width: 15ch" in body
+    assert "min-width: 231ch" in body
     assert "th:first-child, td:first-child" in body
     assert "/api/bitrix/invoice-snapshots/items" in body
     assert "yearInput.addEventListener(\"change\", clearSummaryTable)" in body

@@ -12115,6 +12115,19 @@ def buildBitrixInvoiceSummaryPage() -> str:
     .button-primary { background: var(--accent); border-color: rgba(16, 41, 61, 0.18); }
     .panel { margin-top: 18px; padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: #ffffff; }
     .toolbar { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+    .filter-stack { display: grid; gap: 12px; }
+    .filter-card {
+      display: grid;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #f8fbfd;
+    }
+    .filter-row { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+    .filter-row label { min-width: 210px; }
+    .filter-card-wide label { width: min(100%, 680px); }
+    .filter-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     label { display: grid; gap: 6px; color: var(--muted); font-weight: 600; }
     input, select {
       min-height: 42px;
@@ -12129,8 +12142,8 @@ def buildBitrixInvoiceSummaryPage() -> str:
     .status { margin: 14px 0; color: var(--muted); }
     .status.is-error { color: #b63d00; }
     .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: #ffffff; }
-    table { width: max(100%, 225ch); min-width: 225ch; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
-    col.hierarchy-col { width: 30ch; }
+    table { width: max(100%, 231ch); min-width: 231ch; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
+    col.hierarchy-col { width: 36ch; }
     col.month-col, col.total-col { width: 15ch; }
     th, td { padding: 10px 12px; border-bottom: 1px solid rgba(16, 41, 61, 0.08); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
     th { position: sticky; top: 0; z-index: 8; background: #f3f7fa; box-shadow: 0 1px 0 rgba(16, 41, 61, 0.12); }
@@ -12176,27 +12189,37 @@ def buildBitrixInvoiceSummaryPage() -> str:
       </div>
     </header>
     <section class="panel">
-      <div class="toolbar">
-        <label>Год
-          <input id="summaryYearInput" type="number" min="2000" max="2100" step="1">
-        </label>
-        <label>Даты счетов
-          <select id="summaryDateFieldSelect">
-            <option value="begin_date">Дата выставления</option>
-            <option value="close_date">Срок оплаты</option>
-          </select>
-        </label>
-        <label>Срез для отчета
-          <select id="summaryReportSnapshotSelect"></select>
-        </label>
-        <label>Срез для сравнения
-          <select id="summaryCompareSnapshotSelect"></select>
-        </label>
-        <label>Воронка/стадия/счет
-          <select id="summaryPipelineStageSelect" multiple size="5"></select>
-        </label>
-        <button class="button button-primary" id="summaryReloadButton" type="button">Показать</button>
-        <button class="button" id="summaryExportButton" type="button">Выгрузить в Excel</button>
+      <div class="filter-stack">
+        <div class="filter-card">
+          <div class="filter-row">
+            <label>Год
+              <input id="summaryYearInput" type="number" min="2000" max="2100" step="1">
+            </label>
+            <label>Даты счетов
+              <select id="summaryDateFieldSelect">
+                <option value="begin_date">Дата выставления</option>
+                <option value="close_date">Срок оплаты</option>
+              </select>
+            </label>
+          </div>
+          <div class="filter-row">
+            <label>Срез для отчета
+              <select id="summaryReportSnapshotSelect"></select>
+            </label>
+            <label>Срез для сравнения
+              <select id="summaryCompareSnapshotSelect"></select>
+            </label>
+          </div>
+        </div>
+        <div class="filter-card filter-card-wide">
+          <label>Воронка/стадия/счет
+            <select id="summaryPipelineStageSelect" multiple size="5"></select>
+          </label>
+        </div>
+        <div class="filter-card filter-actions">
+          <button class="button button-primary" id="summaryReloadButton" type="button">Показать</button>
+          <button class="button" id="summaryExportButton" type="button">Выгрузить в Excel</button>
+        </div>
       </div>
       <div class="status" id="summaryStatus">Загружаю сводный отчет...</div>
       <div class="table-wrap">
