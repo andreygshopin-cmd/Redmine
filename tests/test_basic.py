@@ -43,6 +43,11 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert "Получить срез по сделкам" in body
     assert "Удалить выбранный срез" in body
     assert "Показать сделки" in body
+    assert "Вернуться на главную" not in body
+    assert "Открыть главную страницу" not in body
+    assert body.index('href="/Bitrix/deal-snapshots/compare"') < body.index("<h2>Срезы сделок</h2>")
+    assert body.index('href="/Bitrix/leads"') < body.index("<h2>Срезы сделок</h2>")
+    assert body.index('href="/Bitrix/invoices"') < body.index("<h2>Срезы сделок</h2>")
     assert "до 500 строк" in body
     assert "до 1000 строк" not in body
     assert "Выгрузить в Excel" in body

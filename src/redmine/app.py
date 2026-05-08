@@ -8527,7 +8527,6 @@ BITRIX_PAGE_HTML = """<!doctype html>
             <span>Маршрут /Bitrix уже доступен на сайте</span>
           </span>
         </a>
-        <a class="back-link" href="/">Вернуться на главную</a>
       </div>
 
       <p class="eyebrow">Bitrix / Test Route</p>
@@ -8537,7 +8536,9 @@ BITRIX_PAGE_HTML = """<!doctype html>
       </p>
 
       <div class="hero-actions">
-        <a class="button button-primary" href="/">Открыть главную страницу</a>
+        <a class="button button-primary" href="/Bitrix/deal-snapshots/compare">Сравнение срезов сделок</a>
+        <a class="button button-secondary" href="/Bitrix/leads">Лиды</a>
+        <a class="button button-secondary" href="/Bitrix/invoices">Счета</a>
         <a class="button button-secondary" href="/health">Проверить health endpoint</a>
       </div>
 
@@ -8550,9 +8551,6 @@ BITRIX_PAGE_HTML = """<!doctype html>
         <div class="hero-actions">
           <button class="button button-primary" id="captureBitrixDealSnapshotButton" type="button">Получить срез по сделкам, лидам, счетам</button>
           <button class="button" id="captureBitrixDealsOnlySnapshotButton" type="button">Получить срез по сделкам</button>
-          <a class="button button-muted" href="/Bitrix/deal-snapshots/compare">Сравнение срезов сделок</a>
-          <a class="button button-muted" href="/Bitrix/leads">Лиды</a>
-          <a class="button button-muted" href="/Bitrix/invoices">Счета</a>
         </div>
         <div class="status-note" id="bitrixDealSnapshotStatus">Срезы сделок еще не загружены.</div>
         <div class="snapshot-toolbar snapshot-toolbar-primary">
