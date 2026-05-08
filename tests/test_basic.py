@@ -110,7 +110,7 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
     assert "Поля для сравнения и отображения" in body
     assert 'placeholder="Фильтр"' not in body
     assert "thead { position: sticky; top: 0" in body
-    assert "compare-col-id { width: 5ch" in body
+    assert "compare-col-id { width: 8ch" in body
     assert "compare-filter { width: 100%; min-width: 0" in body
     assert "viewport-sticky-table-header" in body
     assert 'setupViewportStickyTableHeader(".table-wrap", "table")' in body
@@ -119,7 +119,7 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
     assert 'colspan="${2 + getSelectedCompareFields().length}"' in body
     assert 'colspan="8"' not in body
     assert "compare-col-title" in body
-    assert "width: 175ch; min-width: 175ch; max-width: 175ch" in body
+    assert "width: 178ch; min-width: 178ch; max-width: 178ch" in body
     assert "table-layout: fixed" in body
     assert "th:first-child, td:first-child { padding-left: 6px" in body
     assert 'compare-filter[data-compare-filter="deal_id"]' in body
@@ -133,8 +133,8 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert "Счета Bitrix" in body
     assert "/api/bitrix/invoice-snapshots" in body
     assert "crm-table-invoice" in body
-    assert ".crm-table-invoice { --crm-table-width: 415ch" in body
-    assert "crm-col-id { width: 5ch" in body
+    assert ".crm-table-invoice { --crm-table-width: 418ch" in body
+    assert "crm-col-id { width: 8ch" in body
     assert "crm-col-title { width: 50ch" in body
     assert "crm-col-deal { width: 50ch" in body
     assert "crm-col-responsible { width: 20ch" in body
@@ -259,6 +259,8 @@ def testReadBitrixLeadsPageReturnsDropdownFiltersWithoutPlaceholder() -> None:
     assert body.index('id="reloadButton"') < body.index('id="captureSnapshotButton"')
     assert '<select data-filter="status_name">' in body
     assert '<select data-filter="assigned_by_name">' in body
+    assert ".crm-table-standard { --crm-table-width: 170ch" in body
+    assert "crm-col-id { width: 8ch" in body
     assert "overflow-x: auto; overflow-y: visible; position: relative" in body
     assert "viewport-sticky-table-header" in body
     assert 'setupViewportStickyTableHeader(".table-wrap", "table")' in body
