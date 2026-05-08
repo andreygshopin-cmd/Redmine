@@ -40,13 +40,18 @@ def testReadBitrixPageReturnsHtmlPage() -> None:
     assert "Анализ сделок Bitrix" in body
     assert "Анализ изменений по сделкам Bitrix за интервалы времени. Формирование отчетности" in body
     assert "Получить срез по сделкам, лидам, счетам" in body
+    assert "Получить срез по сделкам" in body
     assert "Удалить выбранный срез" in body
     assert "Показать сделки" in body
     assert "до 500 строк" in body
     assert "до 1000 строк" not in body
     assert "Выгрузить в Excel" in body
     assert "/api/bitrix/snapshots/capture/start" in body
+    assert 'startParams.set("entities", entityKeys.join(","))' in body
     assert "/api/bitrix/snapshots/capture/page" in body
+    assert "is-capture-deal" in body
+    assert "is-capture-lead" in body
+    assert "is-capture-invoice" in body
     assert "/api/bitrix/deal-snapshots?limit=500" in body
     assert "/api/bitrix/responsibles?limit=1000" in body
     assert "Скачиваю все сделки из Bitrix24" not in body
@@ -125,9 +130,10 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert 'data-filter="pipeline_stage_invoice"' in body
     assert "Сделка" in body
     assert 'data-filter="deal_id"' in body
+    assert "item.deal_title" in body
     assert "Группа стадий" not in body
     assert "Стадия" in body
-    assert '<select data-filter="stage_group">' in body
+    assert '<select data-filter="invoice_stage">' in body
     assert "Дата выставления" in body
     assert 'data-filter="begin_date"' in body
     assert "Срок оплаты" in body
@@ -146,6 +152,8 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert '<select data-filter="products">' in body
     assert '<select data-filter="energy_products">' in body
     assert '<select data-filter="product">' in body
+    assert "Получить срез по счетам" in body
+    assert "entities=${encodeURIComponent(entityKey)}" in body
     assert "buildPipelineStageInvoice" not in body
     assert 'placeholder="Фильтр"' not in body
     assert '<option value="">Фильтр</option>' not in body
@@ -156,6 +164,7 @@ def testReadBitrixLeadsPageReturnsDropdownFiltersWithoutPlaceholder() -> None:
     body = readBitrixLeadsPage().body.decode("utf-8")
 
     assert "Лиды Bitrix" in body
+    assert "Получить срез по лидам" in body
     assert '<select data-filter="status_name">' in body
     assert '<select data-filter="assigned_by_name">' in body
     assert 'placeholder="Фильтр"' not in body

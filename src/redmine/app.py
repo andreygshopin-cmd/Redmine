@@ -8264,6 +8264,21 @@ BITRIX_PAGE_HTML = """<!doctype html>
       color: #b63d00;
     }
 
+    .status-note.is-capture-deal {
+      color: #c49000;
+      font-weight: 700;
+    }
+
+    .status-note.is-capture-lead {
+      color: #00a6b2;
+      font-weight: 700;
+    }
+
+    .status-note.is-capture-invoice {
+      color: #10293d;
+      font-weight: 700;
+    }
+
     .deal-list {
       display: grid;
       gap: 12px;
@@ -8503,10 +8518,12 @@ BITRIX_PAGE_HTML = """<!doctype html>
         <p>Скачивает все сделки из Bitrix24, сохраняет срез в базу и показывает сохраненные строки по выбранной дате.</p>
         <div class="hero-actions">
           <button class="button button-primary" id="captureBitrixDealSnapshotButton" type="button">Получить срез по сделкам, лидам, счетам</button>
+          <button class="button" id="captureBitrixDealsOnlySnapshotButton" type="button">Получить срез по сделкам</button>
           <a class="button button-muted" href="/Bitrix/deal-snapshots/compare">Сравнение срезов сделок</a>
           <a class="button button-muted" href="/Bitrix/leads">Лиды</a>
           <a class="button button-muted" href="/Bitrix/invoices">Счета</a>
         </div>
+        <div class="status-note" id="bitrixDealSnapshotStatus">Срезы сделок еще не загружены.</div>
         <div class="snapshot-toolbar snapshot-toolbar-primary">
           <label>Дата среза
             <select id="bitrixDealSnapshotDateSelect"></select>
@@ -8522,7 +8539,6 @@ BITRIX_PAGE_HTML = """<!doctype html>
           <button class="button" id="exportBitrixDealSnapshotButton" type="button">Выгрузить в Excel</button>
           <button class="button" id="loadBitrixResponsiblesButton" type="button">Показать ответственных</button>
         </div>
-        <div class="status-note" id="bitrixDealSnapshotStatus">Срезы сделок еще не загружены.</div>
         <div class="status-note" id="bitrixResponsiblesStatus"></div>
         <div class="deal-list" id="bitrixResponsiblesList"></div>
         <div class="snapshot-table-wrap">
@@ -8667,6 +8683,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
     checkBitrixProfileButton?.addEventListener("click", checkBitrixProfile);
 
     const captureBitrixDealSnapshotButton = document.getElementById("captureBitrixDealSnapshotButton");
+    const captureBitrixDealsOnlySnapshotButton = document.getElementById("captureBitrixDealsOnlySnapshotButton");
     const reloadBitrixDealSnapshotButton = document.getElementById("reloadBitrixDealSnapshotButton");
     const resetBitrixDealFiltersButton = document.getElementById("resetBitrixDealFiltersButton");
     const deleteBitrixDealSnapshotButton = document.getElementById("deleteBitrixDealSnapshotButton");
@@ -8710,9 +8727,18 @@ BITRIX_PAGE_HTML = """<!doctype html>
       return escapeHtml(Math.round(numericValue).toLocaleString("ru-RU"));
     }
 
-    function setSnapshotStatus(message, isError = false) {
+    function setSnapshotStatus(message, isError = false, captureEntity = "") {
       bitrixDealSnapshotStatus.textContent = message;
+      bitrixDealSnapshotStatus.classList.remove("is-capture-deal", "is-capture-lead", "is-capture-invoice");
       bitrixDealSnapshotStatus.classList.toggle("is-error", Boolean(isError));
+      if (!isError && captureEntity) {
+        bitrixDealSnapshotStatus.classList.add(`is-capture-${captureEntity}`);
+      }
+    }
+
+    function setBitrixCaptureButtonsDisabled(isDisabled) {
+      captureBitrixDealSnapshotButton.disabled = Boolean(isDisabled);
+      captureBitrixDealsOnlySnapshotButton.disabled = Boolean(isDisabled);
     }
 
     function setResponsiblesStatus(message, isError = false) {
@@ -8853,12 +8879,17 @@ BITRIX_PAGE_HTML = """<!doctype html>
       }
     }
 
-    async function captureBitrixDealSnapshot() {
-      captureBitrixDealSnapshotButton.disabled = true;
+    async function captureBitrixDealSnapshot(entityKeys = [], initialMessage = "Готовлю новый срез: сделки, лиды, счета/оплаты...") {
+      setBitrixCaptureButtonsDisabled(true);
       deleteBitrixDealSnapshotButton.disabled = true;
-      setSnapshotStatus("Готовлю новый срез: сделки, лиды, счета/оплаты...");
+      setSnapshotStatus(initialMessage);
       try {
-        const startResponse = await fetch("/api/bitrix/snapshots/capture/start", { method: "POST" });
+        const startParams = new URLSearchParams();
+        if (Array.isArray(entityKeys) && entityKeys.length) {
+          startParams.set("entities", entityKeys.join(","));
+        }
+        const startQuery = startParams.toString();
+        const startResponse = await fetch(`/api/bitrix/snapshots/capture/start${startQuery ? `?${startQuery}` : ""}`, { method: "POST" });
         const startPayload = await startResponse.json();
         if (!startResponse.ok) {
           throw new Error(startPayload.detail || "Не удалось начать получение среза.");
@@ -8872,7 +8903,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
             let pagePayload = null;
             for (let attempt = 1; attempt <= 3; attempt += 1) {
               const packageStartedAt = new Date();
-              setSnapshotStatus(`Начат пакет: ${entity.label}, позиция ${nextStart}, до 500 строк, попытка ${attempt}/3, время ${packageStartedAt.toLocaleTimeString("ru-RU")}.`);
+              setSnapshotStatus(`Начат пакет: ${entity.label}, позиция ${nextStart}, до 500 строк, попытка ${attempt}/3, время ${packageStartedAt.toLocaleTimeString("ru-RU")}.`, false, entity.key);
               try {
                 const pageResponse = await fetchWithTimeout("/api/bitrix/snapshots/capture/page", {
                   method: "POST",
@@ -8925,7 +8956,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
           : String(error.message || error);
         setSnapshotStatus(message, true);
       } finally {
-        captureBitrixDealSnapshotButton.disabled = false;
+        setBitrixCaptureButtonsDisabled(false);
         deleteBitrixDealSnapshotButton.disabled = false;
       }
     }
@@ -8941,7 +8972,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
       }
 
       deleteBitrixDealSnapshotButton.disabled = true;
-      captureBitrixDealSnapshotButton.disabled = true;
+      setBitrixCaptureButtonsDisabled(true);
       setSnapshotStatus(`Удаляю срез сделок, лидов и оплат за ${selectedDate}...`);
       try {
         const response = await fetch(`/api/bitrix/deal-snapshots/by-date?captured_for_date=${encodeURIComponent(selectedDate)}`, { method: "DELETE" });
@@ -8960,7 +8991,7 @@ BITRIX_PAGE_HTML = """<!doctype html>
         setSnapshotStatus(String(error.message || error), true);
       } finally {
         deleteBitrixDealSnapshotButton.disabled = false;
-        captureBitrixDealSnapshotButton.disabled = false;
+        setBitrixCaptureButtonsDisabled(false);
       }
     }
 
@@ -9008,7 +9039,8 @@ BITRIX_PAGE_HTML = """<!doctype html>
       }
     }
 
-    captureBitrixDealSnapshotButton?.addEventListener("click", captureBitrixDealSnapshot);
+    captureBitrixDealSnapshotButton?.addEventListener("click", () => captureBitrixDealSnapshot());
+    captureBitrixDealsOnlySnapshotButton?.addEventListener("click", () => captureBitrixDealSnapshot(["deal"], "Готовлю новый срез: сделки..."));
     deleteBitrixDealSnapshotButton?.addEventListener("click", deleteSelectedBitrixDealSnapshot);
     exportBitrixDealSnapshotButton?.addEventListener("click", exportBitrixDealSnapshot);
     loadBitrixResponsiblesButton?.addEventListener("click", loadBitrixResponsibles);
@@ -11570,6 +11602,8 @@ def readBitrixPage() -> HTMLResponse:
 
 def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str, bitrixPath: str) -> str:
     isInvoicePage = entityType == "invoice"
+    captureButtonLabel = "Получить срез по счетам" if isInvoicePage else "Получить срез по лидам"
+    entityLabel = "счета" if isInvoicePage else "лиды"
     extraColumnGroups = """
             <col class="crm-col-deal">
             <col class="crm-col-pipeline">
@@ -11584,7 +11618,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     extraHeaderCells = """
               <th>Сделка<br><input data-filter="deal_id"></th>
               <th>Воронка/стадия/счет<br><select data-filter="pipeline_stage_invoice"><option value=""></option></select></th>
-              <th>Стадия<br><select data-filter="stage_group"><option value=""></option></select></th>
+              <th>Стадия<br><select data-filter="invoice_stage"><option value=""></option></select></th>
               <th>Дата выставления<br><input data-filter="begin_date"></th>
               <th>Срок оплаты<br><input data-filter="close_date"></th>
               <th>КОТ ПРОДУКТЫ<br><select data-filter="kot_products"><option value=""></option></select></th>
@@ -11593,9 +11627,9 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
               <th>Продукт (для отчета)<br><select data-filter="product"><option value=""></option></select></th>
 """ if isInvoicePage else ""
     extraRowCells = """
-          <td class="mono">${formatDealLink(item.deal_id)}</td>
+          <td class="mono">${formatDealLink(item.deal_id, item.deal_title)}</td>
           <td>${formatValue(item.pipeline_stage_invoice)}</td>
-          <td>${formatValue(item.stage_group)}</td>
+          <td>${formatValue(item.invoice_stage)}</td>
           <td class="mono">${formatValue(item.begin_date)}</td>
           <td class="mono">${formatValue(item.close_date)}</td>
           <td>${formatValue(item.kot_products)}</td>
@@ -11715,6 +11749,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
         <label>Дата среза
           <select id="snapshotDateSelect"></select>
         </label>
+        <button class="button" id="captureSnapshotButton" type="button">__CAPTURE_BUTTON_LABEL__</button>
         <label>Размер страницы
           <input id="pageSizeInput" type="number" min="1" max="5000" value="1000">
         </label>
@@ -11759,7 +11794,10 @@ __EXTRA_HEADER_CELLS__
   <script>
     const apiBasePath = "__API_BASE_PATH__";
     const bitrixPath = "__BITRIX_PATH__";
+    const entityKey = "__ENTITY_KEY__";
+    const entityLabel = "__ENTITY_LABEL__";
     const dateSelect = document.getElementById("snapshotDateSelect");
+    const captureButton = document.getElementById("captureSnapshotButton");
     const pageSizeInput = document.getElementById("pageSizeInput");
     const statusBox = document.getElementById("statusBox");
     const tableBody = document.getElementById("tableBody");
@@ -11791,11 +11829,11 @@ __EXTRA_HEADER_CELLS__
       }
       return escapeHtml(Math.round(numericValue).toLocaleString("ru-RU"));
     }
-    function formatDealLink(dealId) {
+    function formatDealLink(dealId, dealTitle = "") {
       if (dealId === null || dealId === undefined || dealId === "") {
         return "—";
       }
-      return `<a href="https://sms-it.bitrix24.ru/crm/deal/details/${encodeURIComponent(dealId)}/" target="_blank" rel="noreferrer">${formatValue(dealId)}</a>`;
+      return `<a href="https://sms-it.bitrix24.ru/crm/deal/details/${encodeURIComponent(dealId)}/" target="_blank" rel="noreferrer">${formatValue(dealTitle || dealId)}</a>`;
     }
     function setStatus(message, isError = false) {
       statusBox.textContent = message;
@@ -11818,6 +11856,15 @@ __EXTRA_HEADER_CELLS__
           .join("");
         select.value = values.includes(previousValue) ? previousValue : "";
       });
+    }
+    async function fetchWithTimeout(url, options = {}, timeoutMs = 180000) {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
     }
     function buildParams() {
       const params = new URLSearchParams();
@@ -11878,6 +11925,69 @@ __EXTRA_ROW_CELLS__
         setStatus(String(error.message || error), true);
       }
     }
+    async function captureCurrentEntitySnapshot() {
+      captureButton.disabled = true;
+      setStatus(`Готовлю новый срез: ${entityLabel}...`);
+      try {
+        const startResponse = await fetch(`/api/bitrix/snapshots/capture/start?entities=${encodeURIComponent(entityKey)}`, { method: "POST" });
+        const startPayload = await startResponse.json();
+        if (!startResponse.ok) {
+          throw new Error(startPayload.detail || "Не удалось начать получение среза.");
+        }
+        const entity = (startPayload.entities || [])[0] || { key: entityKey, label: entityLabel };
+        let nextStart = 0;
+        let done = false;
+        let pagePayload = null;
+        while (!done) {
+          for (let attempt = 1; attempt <= 3; attempt += 1) {
+            setStatus(`Начат пакет: ${entity.label}, позиция ${nextStart}, до 500 строк, попытка ${attempt}/3.`);
+            try {
+              const pageResponse = await fetchWithTimeout("/api/bitrix/snapshots/capture/page", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  session_id: startPayload.session_id,
+                  entity: entity.key,
+                  start: nextStart,
+                }),
+              });
+              pagePayload = await pageResponse.json();
+              if (!pageResponse.ok) {
+                throw new Error(pagePayload.detail || `Не удалось скачать ${entity.label}.`);
+              }
+              setStatus(`Завершен пакет: ${entity.label}, позиция ${nextStart}, получено ${pagePayload.page_count || 0}.`);
+              break;
+            } catch (error) {
+              if (attempt >= 3) {
+                throw error;
+              }
+              const retryMessage = error?.name === "AbortError" ? "таймаут Bitrix" : String(error.message || error);
+              setStatus(`Скачиваю ${entity.label}: ${retryMessage}. Повторяю пакет с позиции ${nextStart}...`, true);
+              await new Promise((resolve) => window.setTimeout(resolve, 1500));
+            }
+          }
+          const total = Number(pagePayload.total || 0);
+          const fetched = Number(pagePayload.fetched || 0);
+          const remaining = Number(pagePayload.remaining || 0);
+          const progressText = total ? `${fetched} из ${total}, осталось ${remaining}` : `${fetched} строк`;
+          setStatus(`Скачиваю ${entity.label}: ${progressText}.`);
+          done = Boolean(pagePayload.done);
+          nextStart = pagePayload.next;
+        }
+        currentPage = 1;
+        dateSelect.value = startPayload.captured_for_date || "";
+        setStatus(`Срез сохранен: ${entity.label}, строк ${pagePayload?.fetched || 0}.`);
+        await loadItems();
+      } catch (error) {
+        const message = error?.name === "AbortError"
+          ? "Пакет Bitrix не ответил за 3 минуты. Последняя позиция на экране показывает сущность и место зависания."
+          : String(error.message || error);
+        setStatus(message, true);
+      } finally {
+        captureButton.disabled = false;
+      }
+    }
+    captureButton?.addEventListener("click", captureCurrentEntitySnapshot);
     document.getElementById("reloadButton")?.addEventListener("click", () => {
       currentPage = 1;
       safeLoadItems();
@@ -11910,7 +12020,7 @@ __EXTRA_ROW_CELLS__
     safeLoadItems();
   </script>
 </body>
-</html>""".replace("__PAGE_TITLE__", pageTitle).replace("__API_BASE_PATH__", apiBasePath).replace("__BITRIX_PATH__", bitrixPath).replace("__TABLE_CLASS__", tableClass).replace("__EXTRA_COLUMN_GROUPS__", extraColumnGroups).replace("__EXTRA_HEADER_CELLS__", extraHeaderCells).replace("__EXTRA_ROW_CELLS__", extraRowCells).replace("__EMPTY_COLSPAN__", emptyColspan)
+</html>""".replace("__PAGE_TITLE__", pageTitle).replace("__API_BASE_PATH__", apiBasePath).replace("__BITRIX_PATH__", bitrixPath).replace("__ENTITY_KEY__", entityType).replace("__ENTITY_LABEL__", entityLabel).replace("__CAPTURE_BUTTON_LABEL__", captureButtonLabel).replace("__TABLE_CLASS__", tableClass).replace("__EXTRA_COLUMN_GROUPS__", extraColumnGroups).replace("__EXTRA_HEADER_CELLS__", extraHeaderCells).replace("__EXTRA_ROW_CELLS__", extraRowCells).replace("__EMPTY_COLSPAN__", emptyColspan)
 
 
 @app.get("/Bitrix/leads", response_class=HTMLResponse)
@@ -13386,6 +13496,34 @@ def refreshBitrixCompaniesDictionary(limit: int = 20000) -> dict[str, object]:
     }
 
 
+BITRIX_CAPTURE_ENTITY_CONFIG = [
+    {"key": "deal", "label": "сделки"},
+    {"key": "lead", "label": "лиды"},
+    {"key": "invoice", "label": "счета"},
+]
+BITRIX_CAPTURE_ENTITY_KEYS = {str(entity["key"]) for entity in BITRIX_CAPTURE_ENTITY_CONFIG}
+
+
+def parseBitrixCaptureEntities(value: str | None = None) -> list[dict[str, str]]:
+    requestedKeys = [
+        item.strip()
+        for item in str(value or "").split(",")
+        if item.strip()
+    ]
+    if not requestedKeys:
+        return [dict(entity) for entity in BITRIX_CAPTURE_ENTITY_CONFIG]
+
+    unknownKeys = [key for key in requestedKeys if key not in BITRIX_CAPTURE_ENTITY_KEYS]
+    if unknownKeys:
+        raise HTTPException(status_code=400, detail=f"Unknown Bitrix capture entity: {', '.join(unknownKeys)}")
+
+    uniqueKeys: list[str] = []
+    for key in requestedKeys:
+        if key not in uniqueKeys:
+            uniqueKeys.append(key)
+    return [dict(entity) for entity in BITRIX_CAPTURE_ENTITY_CONFIG if str(entity["key"]) in uniqueKeys]
+
+
 def finalizeBitrixCaptureEntity(session: dict[str, object], entity: str) -> dict[str, object]:
     capturedForDate = str(session["captured_for_date"])
     itemsByEntity = session.setdefault("items", {})
@@ -13430,12 +13568,14 @@ def finalizeBitrixCaptureEntity(session: dict[str, object], entity: str) -> dict
 
 
 @app.post("/api/bitrix/snapshots/capture/start")
-def startBitrixSnapshotCapture() -> dict[str, object]:
+def startBitrixSnapshotCapture(entities: str | None = Query(None)) -> dict[str, object]:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
     requireBitrixConfig()
 
     capturedForDate = datetime.now(UTC).date().isoformat()
+    selectedEntities = parseBitrixCaptureEntities(entities)
+    selectedEntityKeys = {str(entity["key"]) for entity in selectedEntities}
     try:
         usersDictionary = refreshBitrixUsersDictionary()
         companiesDictionary = refreshBitrixCompaniesDictionary()
@@ -13447,24 +13587,23 @@ def startBitrixSnapshotCapture() -> dict[str, object]:
     except RuntimeError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
 
-    deleteBitrixDealSnapshotForDate(capturedForDate)
-    deleteBitrixCrmSnapshotForDate("lead", capturedForDate)
-    deleteBitrixCrmSnapshotForDate("invoice", capturedForDate)
+    if "deal" in selectedEntityKeys:
+        deleteBitrixDealSnapshotForDate(capturedForDate)
+    if "lead" in selectedEntityKeys:
+        deleteBitrixCrmSnapshotForDate("lead", capturedForDate)
+    if "invoice" in selectedEntityKeys:
+        deleteBitrixCrmSnapshotForDate("invoice", capturedForDate)
 
     sessionId = uuid.uuid4().hex
     _bitrixCaptureSessions[sessionId] = {
         "captured_for_date": capturedForDate,
-        "items": {"deal": [], "lead": [], "invoice": []},
+        "items": {entityKey: [] for entityKey in selectedEntityKeys},
         "snapshots": {},
     }
     return {
         "session_id": sessionId,
         "captured_for_date": capturedForDate,
-        "entities": [
-            {"key": "deal", "label": "сделки"},
-            {"key": "lead", "label": "лиды"},
-            {"key": "invoice", "label": "счета"},
-        ],
+        "entities": selectedEntities,
         "users_dictionary": usersDictionary,
         "companies_dictionary": companiesDictionary,
     }
@@ -13503,6 +13642,8 @@ def captureBitrixSnapshotPage(payload: BitrixCapturePagePayload) -> dict[str, ob
     itemsByEntity = session.setdefault("items", {})
     if not isinstance(itemsByEntity, dict):
         raise HTTPException(status_code=500, detail="Bitrix capture session is corrupted")
+    if entity not in itemsByEntity:
+        raise HTTPException(status_code=400, detail="Bitrix capture entity was not requested for this session")
     entityItems = itemsByEntity.setdefault(entity, [])
     if not isinstance(entityItems, list):
         raise HTTPException(status_code=500, detail="Bitrix capture session is corrupted")
@@ -14037,6 +14178,7 @@ def buildBitrixCrmSnapshotFilters(
     category_name: str | None = None,
     pipeline_stage_invoice: str | None = None,
     stage_group: str | None = None,
+    invoice_stage: str | None = None,
     begin_date: str | None = None,
     close_date: str | None = None,
     kot_products: str | None = None,
@@ -14061,6 +14203,7 @@ def buildBitrixCrmSnapshotFilters(
         "category_name": category_name,
         "pipeline_stage_invoice": pipeline_stage_invoice,
         "stage_group": stage_group,
+        "invoice_stage": invoice_stage,
         "begin_date": begin_date,
         "close_date": close_date,
         "kot_products": kot_products,
@@ -14107,6 +14250,7 @@ def getBitrixLeadSnapshotItemsApi(
     category_name: str | None = Query(None),
     pipeline_stage_invoice: str | None = Query(None),
     stage_group: str | None = Query(None),
+    invoice_stage: str | None = Query(None),
     begin_date: str | None = Query(None),
     close_date: str | None = Query(None),
     kot_products: str | None = Query(None),
@@ -14138,6 +14282,7 @@ def getBitrixLeadSnapshotItemsApi(
             category_name=category_name,
             pipeline_stage_invoice=pipeline_stage_invoice,
             stage_group=stage_group,
+            invoice_stage=invoice_stage,
             begin_date=begin_date,
             close_date=close_date,
             kot_products=kot_products,
@@ -14169,6 +14314,7 @@ def getBitrixInvoiceSnapshotItemsApi(
     category_name: str | None = Query(None),
     pipeline_stage_invoice: str | None = Query(None),
     stage_group: str | None = Query(None),
+    invoice_stage: str | None = Query(None),
     begin_date: str | None = Query(None),
     close_date: str | None = Query(None),
     kot_products: str | None = Query(None),
@@ -14200,6 +14346,7 @@ def getBitrixInvoiceSnapshotItemsApi(
             category_name=category_name,
             pipeline_stage_invoice=pipeline_stage_invoice,
             stage_group=stage_group,
+            invoice_stage=invoice_stage,
             begin_date=begin_date,
             close_date=close_date,
             kot_products=kot_products,

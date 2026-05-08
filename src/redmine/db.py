@@ -21,6 +21,22 @@ CASE
     ELSE NULLIF(energy_products, '')
 END
 """
+BITRIX_INVOICE_STAGE_SQL = """
+COALESCE(
+    NULLIF(TRIM(SPLIT_PART(COALESCE(pipeline_stage_invoice, ''), '/', 2)), ''),
+    NULLIF(status_name, ''),
+    NULLIF(status_id, '')
+)
+"""
+BITRIX_INVOICE_DEAL_TITLE_SQL = """
+(
+    SELECT deal_items.title
+    FROM bitrix_deal_snapshot_items deal_items
+    WHERE deal_items.deal_id = bitrix_crm_snapshot_items.deal_id
+    ORDER BY deal_items.snapshot_run_id DESC, deal_items.id DESC
+    LIMIT 1
+)
+"""
 
 
 def normalizeDatabaseUrl(databaseUrl: str) -> str:
@@ -489,7 +505,6 @@ def ensureBitrixDealSnapshotTables() -> None:
                         assigned_by_name TEXT,
                         opportunity DOUBLE PRECISION,
                         currency_id TEXT,
-                        deal_id BIGINT,
                         company_id BIGINT,
                         company_name TEXT,
                         category_id BIGINT,
@@ -534,6 +549,7 @@ def ensureBitrixDealSnapshotTables() -> None:
                         assigned_by_name TEXT,
                         opportunity DOUBLE PRECISION,
                         currency_id TEXT,
+                        deal_id BIGINT,
                         company_id BIGINT,
                         company_name TEXT,
                         category_id BIGINT,
@@ -5159,7 +5175,7 @@ def _getBitrixCrmSnapshotFilterOptions(
     }
     if entityType == "invoice":
         optionExpressions["pipeline_stage_invoice"] = "pipeline_stage_invoice"
-        optionExpressions["stage_group"] = "stage_group"
+        optionExpressions["invoice_stage"] = BITRIX_INVOICE_STAGE_SQL
         optionExpressions["kot_products"] = "kot_products"
         optionExpressions["products"] = "products"
         optionExpressions["energy_products"] = "energy_products"
@@ -5267,11 +5283,12 @@ def getBitrixCrmSnapshotItems(
             "opportunity": "CAST(opportunity AS TEXT)",
             "company_id": "CAST(company_id AS TEXT)",
             "company_name": "company_name",
-            "deal_id": "CAST(deal_id AS TEXT)",
+            "deal_id": f"CONCAT_WS(' ', CAST(deal_id AS TEXT), {BITRIX_INVOICE_DEAL_TITLE_SQL})",
             "category_id": "CAST(category_id AS TEXT)",
             "category_name": "category_name",
             "pipeline_stage_invoice": "pipeline_stage_invoice",
             "stage_group": "stage_group",
+            "invoice_stage": BITRIX_INVOICE_STAGE_SQL,
             "begin_date": "CAST(begin_date AS TEXT)",
             "close_date": "CAST(close_date AS TEXT)",
             "kot_products": "kot_products",
@@ -5301,6 +5318,8 @@ def getBitrixCrmSnapshotItems(
                        assigned_by_id, assigned_by_name, opportunity, currency_id, deal_id, company_id,
                        company_name, category_id, category_name, begin_date, close_date,
                        kot_products, products, energy_products, stage_group, pipeline_stage_invoice,
+                       {BITRIX_INVOICE_STAGE_SQL} AS invoice_stage,
+                       {BITRIX_INVOICE_DEAL_TITLE_SQL} AS deal_title,
                        {BITRIX_INVOICE_PRODUCT_SQL} AS product,
                        created_time, updated_time
                 FROM bitrix_crm_snapshot_items
