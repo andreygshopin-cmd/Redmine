@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from html import escape
 import csv
+from functools import cmp_to_key
 import hashlib
 import hmac
 import io
@@ -4572,6 +4573,68 @@ def enrichSnapshotPayloadWithFeatureForecasts(
         planningP2Percent,
     )
     return snapshotPayload
+
+
+def getSnapshotIssueSortBucketPy(issue: dict[str, object]) -> int:
+    trackerName = normalizeBurndownText(issue.get("tracker_name"))
+    if trackerName == "разработка":
+        return 1
+    if trackerName == "процессы разработки":
+        return 2
+    if trackerName == "ошибка":
+        return 3
+    return 4
+
+
+def compareSnapshotIssuesForTreePy(left: dict[str, object], right: dict[str, object]) -> int:
+    bucketDiff = getSnapshotIssueSortBucketPy(left) - getSnapshotIssueSortBucketPy(right)
+    if bucketDiff != 0:
+        return bucketDiff
+    return int(left.get("issue_redmine_id") or 0) - int(right.get("issue_redmine_id") or 0)
+
+
+def buildSnapshotTreeOrderPy(groupIssues: list[dict[str, object]]) -> list[dict[str, object]]:
+    issues = list(groupIssues or [])
+    issueById = {
+        str(issue.get("issue_redmine_id") or ""): issue
+        for issue in issues
+        if issue.get("issue_redmine_id") not in (None, "")
+    }
+    childrenByParentId: dict[str, list[dict[str, object]]] = {}
+    roots: list[dict[str, object]] = []
+
+    for issue in issues:
+        parentId = issue.get("parent_issue_redmine_id")
+        parentKey = "" if parentId is None else str(parentId)
+        if parentKey and parentKey in issueById:
+            childrenByParentId.setdefault(parentKey, []).append(issue)
+        else:
+            roots.append(issue)
+
+    sortKey = cmp_to_key(compareSnapshotIssuesForTreePy)
+    roots.sort(key=sortKey)
+    for children in childrenByParentId.values():
+        children.sort(key=sortKey)
+
+    ordered: list[dict[str, object]] = []
+    visited: set[str] = set()
+
+    def visit(issue: dict[str, object], depth: int) -> None:
+        issueKey = str(issue.get("issue_redmine_id") or "")
+        if not issueKey or issueKey in visited:
+            return
+        visited.add(issueKey)
+        ordered.append({**issue, "__treeDepth": depth})
+        for child in childrenByParentId.get(issueKey, []):
+            visit(child, depth + 1)
+
+    for root in roots:
+        visit(root, 0)
+
+    for issue in sorted(issues, key=sortKey):
+        visit(issue, 0)
+
+    return ordered
 
 
 def buildBurndownDateLabels(dateFrom: date, dateTo: date) -> list[str]:
@@ -16303,56 +16366,78 @@ def exportProjectLatestSnapshotIssuesCsv(
             "Версия",
         ]
     )
-    virtualForecastRowWritten = False
+    groupedIssues: dict[str, dict[str, object]] = {}
     for issue in exportPayload.get("issues") or []:
-        if bool(issue.get("feature_group_is_virtual")) and not virtualForecastRowWritten:
-            writer.writerow(
-                [
-                    "",
-                    str(issue.get("feature_group_subject") or "без Feature"),
-                    "—",
-                    "—",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    formatPageHours(issue.get("feature_forecast_hours")),
-                    formatPageHours(issue.get("feature_risk_forecast_hours")),
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                ]
-            )
-            virtualForecastRowWritten = True
+        groupId = issue.get("feature_group_issue_redmine_id")
+        groupKey = f"feature-{groupId}" if groupId else "virtual-feature"
+        groupEntry = groupedIssues.setdefault(
+            groupKey,
+            {
+                "group_issue": issue,
+                "child_issues": [],
+            },
+        )
+        if not issue.get("is_feature_group_root"):
+            castChildIssues = groupEntry["child_issues"]
+            if isinstance(castChildIssues, list):
+                castChildIssues.append(issue)
+
+    for groupEntry in groupedIssues.values():
+        issue = groupEntry.get("group_issue") or {}
+        isVirtualGroup = bool(issue.get("feature_group_is_virtual"))
+        groupId = issue.get("feature_group_issue_redmine_id")
         writer.writerow(
             [
-                issue.get("issue_redmine_id") or "",
-                str(issue.get("subject") or "—"),
-                str(issue.get("tracker_name") or "—"),
-                str(issue.get("status_name") or "—"),
-                issue.get("done_ratio") if issue.get("done_ratio") is not None else 0,
-                formatPageHours(issue.get("baseline_estimate_hours")),
-                formatPageHours(issue.get("estimated_hours")),
-                formatPageHours(issue.get("risk_estimate_hours")),
-                formatPageHours(issue.get("volume_hours")),
-                formatPageHours(issue.get("risk_volume_hours")),
-                formatPageHours(issue.get("remaining_hours")),
-                formatPageHours(issue.get("risk_remaining_hours")),
-                formatPageHours(issue.get("feature_forecast_hours")) if issue.get("is_feature_group_root") else "",
-                formatPageHours(issue.get("feature_risk_forecast_hours")) if issue.get("is_feature_group_root") else "",
-                formatPageHours(issue.get("spent_hours")),
-                formatPageHours(issue.get("spent_hours_year")),
-                formatSnapshotPageDateTime(issue.get("closed_on")),
-                str(issue.get("assigned_to_name") or "—"),
-                str(issue.get("fixed_version_name") or "—"),
+                "" if isVirtualGroup else groupId or "",
+                str(issue.get("feature_group_subject") or "без Feature"),
+                "—" if isVirtualGroup else str(issue.get("feature_group_tracker_name") or "Feature"),
+                "—" if isVirtualGroup else str(issue.get("feature_group_status_name") or "—"),
+                "—" if isVirtualGroup else (issue.get("feature_group_done_ratio") if issue.get("feature_group_done_ratio") is not None else 0),
+                "—" if isVirtualGroup else formatPageHours(issue.get("feature_group_baseline_estimate_hours")),
+                "—" if isVirtualGroup else formatPageHours(issue.get("feature_group_estimated_hours")),
+                "—" if isVirtualGroup else formatPageHours(issue.get("feature_group_risk_estimate_hours")),
+                "—",
+                "—",
+                "—",
+                "—",
+                formatPageHours(issue.get("feature_forecast_hours")),
+                formatPageHours(issue.get("feature_risk_forecast_hours")),
+                "—" if isVirtualGroup else formatPageHours(issue.get("feature_group_spent_hours")),
+                "—" if isVirtualGroup else formatPageHours(issue.get("feature_group_spent_hours_year")),
+                "—" if isVirtualGroup else formatSnapshotPageDateTime(issue.get("feature_group_closed_on")),
+                "—" if isVirtualGroup else str(issue.get("feature_group_assigned_to_name") or "—"),
+                "—" if isVirtualGroup else str(issue.get("feature_group_fixed_version_name") or "—"),
             ]
         )
+
+        childIssues = groupEntry.get("child_issues")
+        orderedIssues = buildSnapshotTreeOrderPy(childIssues if isinstance(childIssues, list) else [])
+        for orderedIssue in orderedIssues:
+            treeDepth = int(orderedIssue.get("__treeDepth") or 0)
+            indentedSubject = f"{'  ' * treeDepth}{str(orderedIssue.get('subject') or '—')}"
+            writer.writerow(
+                [
+                    orderedIssue.get("issue_redmine_id") or "",
+                    indentedSubject,
+                    str(orderedIssue.get("tracker_name") or "—"),
+                    str(orderedIssue.get("status_name") or "—"),
+                    orderedIssue.get("done_ratio") if orderedIssue.get("done_ratio") is not None else 0,
+                    formatPageHours(orderedIssue.get("baseline_estimate_hours")),
+                    formatPageHours(orderedIssue.get("estimated_hours")),
+                    formatPageHours(orderedIssue.get("risk_estimate_hours")),
+                    formatPageHours(orderedIssue.get("volume_hours")),
+                    formatPageHours(orderedIssue.get("risk_volume_hours")),
+                    formatPageHours(orderedIssue.get("remaining_hours")),
+                    formatPageHours(orderedIssue.get("risk_remaining_hours")),
+                    "",
+                    "",
+                    formatPageHours(orderedIssue.get("spent_hours")),
+                    formatPageHours(orderedIssue.get("spent_hours_year")),
+                    formatSnapshotPageDateTime(orderedIssue.get("closed_on")),
+                    str(orderedIssue.get("assigned_to_name") or "—"),
+                    str(orderedIssue.get("fixed_version_name") or "—"),
+                ]
+            )
 
     fileIdentifier = str(snapshotRun.get("project_identifier") or f"project_{project_redmine_id}")
     safeIdentifier = "".join(character if character.isalnum() or character in {"-", "_"} else "_" for character in fileIdentifier)
