@@ -4492,12 +4492,13 @@ def applyFeatureForecastsToSnapshotIssues(
 
     for issue in issues:
         featureGroupId = issue.get("feature_group_issue_redmine_id")
-        if not featureGroupId or bool(issue.get("feature_group_is_virtual")):
+        isVirtualGroup = bool(issue.get("feature_group_is_virtual"))
+        if not featureGroupId and not isVirtualGroup:
             issue["feature_forecast_hours"] = None
             issue["feature_risk_forecast_hours"] = None
             continue
 
-        groupKey = str(featureGroupId)
+        groupKey = "virtual" if isVirtualGroup else str(featureGroupId)
         group = groupsByFeatureId.setdefault(
             groupKey,
             {
@@ -4511,7 +4512,7 @@ def applyFeatureForecastsToSnapshotIssues(
         )
         group["rows"].append(issue)
 
-        if bool(issue.get("is_feature_group_root")):
+        if not isVirtualGroup and bool(issue.get("is_feature_group_root")):
             group["is_ready"] = isBurndownReadyFeatureStatus(issue.get("status_name") or issue.get("feature_group_status_name"))
             group["status_known"] = True
             continue
@@ -7034,8 +7035,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             const groupRiskVolume = "—";
             const groupRemaining = "—";
             const groupRiskRemaining = "—";
-            const groupForecast = !isVirtualGroup ? formatFilterHours(issue?.feature_forecast_hours) : "—";
-            const groupRiskForecast = !isVirtualGroup ? formatFilterHours(issue?.feature_risk_forecast_hours) : "—";
+            const groupForecast = formatFilterHours(issue?.feature_forecast_hours);
+            const groupRiskForecast = formatFilterHours(issue?.feature_risk_forecast_hours);
             const groupSpent = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_spent_hours);
             const groupSpentYear = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_spent_hours_year);
             const groupClosedOn = isVirtualGroup ? "—" : escapeHtml(formatSnapshotDateTime(issue?.feature_group_closed_on));
@@ -16317,8 +16318,12 @@ def exportProjectLatestSnapshotIssuesCsv(
                 formatPageHours(issue.get("risk_volume_hours")),
                 formatPageHours(issue.get("remaining_hours")),
                 formatPageHours(issue.get("risk_remaining_hours")),
-                formatPageHours(issue.get("feature_forecast_hours")) if issue.get("is_feature_group_root") else "",
-                formatPageHours(issue.get("feature_risk_forecast_hours")) if issue.get("is_feature_group_root") else "",
+                formatPageHours(issue.get("feature_forecast_hours"))
+                if issue.get("is_feature_group_root") or issue.get("feature_group_is_virtual")
+                else "",
+                formatPageHours(issue.get("feature_risk_forecast_hours"))
+                if issue.get("is_feature_group_root") or issue.get("feature_group_is_virtual")
+                else "",
                 formatPageHours(issue.get("spent_hours")),
                 formatPageHours(issue.get("spent_hours_year")),
                 formatSnapshotPageDateTime(issue.get("closed_on")),
