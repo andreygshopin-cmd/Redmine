@@ -3361,6 +3361,7 @@ def getSnapshotRunsWithIssuesForProjectDateRange(
                     parent_issue_redmine_id,
                     baseline_estimate_hours,
                     estimated_hours,
+                    risk_estimate_hours,
                     spent_hours,
                     spent_hours_year,
                     closed_on
