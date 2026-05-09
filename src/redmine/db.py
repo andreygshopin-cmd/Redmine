@@ -839,6 +839,7 @@ def ensurePlanningProjectsTable() -> None:
                         baseline_estimate_hours DOUBLE PRECISION NULL,
                         p1 DOUBLE PRECISION NULL,
                         p2 DOUBLE PRECISION NULL,
+                        use_risk_plan BOOLEAN NOT NULL DEFAULT FALSE,
                         estimate_doc_url TEXT,
                         bitrix_url TEXT,
                         comment_text TEXT,
@@ -877,6 +878,7 @@ def ensurePlanningProjectsTable() -> None:
                         baseline_estimate_hours DOUBLE PRECISION NULL,
                         p1 DOUBLE PRECISION NULL,
                         p2 DOUBLE PRECISION NULL,
+                        use_risk_plan BOOLEAN NOT NULL DEFAULT FALSE,
                         estimate_doc_url TEXT,
                         bitrix_url TEXT,
                         comment_text TEXT,
@@ -1018,6 +1020,24 @@ def ensurePlanningProjectsTable() -> None:
                 text(
                     """
                     ALTER TABLE planning_projects
+                    ADD COLUMN IF NOT EXISTS use_risk_plan BOOLEAN NOT NULL DEFAULT FALSE
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE planning_project_versions
+                    ADD COLUMN IF NOT EXISTS use_risk_plan BOOLEAN NOT NULL DEFAULT FALSE
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE planning_projects
                     ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL
                     """
                 )
@@ -1083,6 +1103,7 @@ def ensurePlanningProjectsTable() -> None:
                         baseline_estimate_hours,
                         p1,
                         p2,
+                        use_risk_plan,
                         estimate_doc_url,
                         bitrix_url,
                         comment_text,
@@ -1113,6 +1134,7 @@ def ensurePlanningProjectsTable() -> None:
                         p.baseline_estimate_hours,
                         p.p1,
                         p.p2,
+                        p.use_risk_plan,
                         p.estimate_doc_url,
                         p.bitrix_url,
                         p.comment_text,
@@ -1160,6 +1182,7 @@ def _buildPlanningProjectVersionPayload(
         "baseline_estimate_hours": projectRow.get("baseline_estimate_hours"),
         "p1": projectRow.get("p1"),
         "p2": projectRow.get("p2"),
+        "use_risk_plan": bool(projectRow.get("use_risk_plan")),
         "estimate_doc_url": projectRow.get("estimate_doc_url"),
         "bitrix_url": projectRow.get("bitrix_url"),
         "comment_text": projectRow.get("comment_text"),
@@ -1196,6 +1219,7 @@ def _insertPlanningProjectVersion(connection: Connection, projectRow: Mapping[st
                 baseline_estimate_hours,
                 p1,
                 p2,
+                use_risk_plan,
                 estimate_doc_url,
                 bitrix_url,
                 comment_text,
@@ -1225,6 +1249,7 @@ def _insertPlanningProjectVersion(connection: Connection, projectRow: Mapping[st
                 :baseline_estimate_hours,
                 :p1,
                 :p2,
+                :use_risk_plan,
                 :estimate_doc_url,
                 :bitrix_url,
                 :comment_text,
@@ -1704,6 +1729,7 @@ def listPlanningProjects(
                     baseline_estimate_hours,
                     p1,
                     p2,
+                    use_risk_plan,
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
@@ -2228,6 +2254,7 @@ def getPlanningProjectByRedmineIdentifier(redmineIdentifier: str) -> dict[str, o
                     baseline_estimate_hours,
                     p1,
                     p2,
+                    use_risk_plan,
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
@@ -2279,6 +2306,7 @@ def listPlanningProjectsByRedmineIdentifier(redmineIdentifier: str) -> list[dict
                     baseline_estimate_hours,
                     p1,
                     p2,
+                    use_risk_plan,
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
@@ -3686,6 +3714,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     baseline_estimate_hours,
                     p1,
                     p2,
+                    use_risk_plan,
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
@@ -3710,6 +3739,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     :baseline_estimate_hours,
                     :p1,
                     :p2,
+                    :use_risk_plan,
                     :estimate_doc_url,
                     :bitrix_url,
                     :comment_text,
@@ -3736,6 +3766,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     baseline_estimate_hours,
                     p1,
                     p2,
+                    use_risk_plan,
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
@@ -3779,6 +3810,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     baseline_estimate_hours = :baseline_estimate_hours,
                     p1 = :p1,
                     p2 = :p2,
+                    use_risk_plan = :use_risk_plan,
                     estimate_doc_url = :estimate_doc_url,
                     bitrix_url = :bitrix_url,
                     comment_text = :comment_text,
@@ -3806,6 +3838,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     baseline_estimate_hours,
                     p1,
                     p2,
+                    use_risk_plan,
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,
@@ -3861,6 +3894,7 @@ def deletePlanningProject(projectId: int) -> bool:
                     baseline_estimate_hours,
                     p1,
                     p2,
+                    use_risk_plan,
                     estimate_doc_url,
                     bitrix_url,
                     comment_text,

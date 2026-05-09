@@ -368,6 +368,7 @@ class PlanningProjectPayload(BaseModel):
     baseline_estimate_hours: float | None = None
     p1: float | None = None
     p2: float | None = None
+    use_risk_plan: bool = False
     estimate_doc_url: str | None = None
     bitrix_url: str | None = None
     comment_text: str | None = None
@@ -4471,7 +4472,7 @@ def buildBurndownPage(
     endDateValue: str | None = None,
     p1Value: str | None = None,
     p2Value: str | None = None,
-    useRiskPlan: bool = False,
+    useRiskPlan: bool | None = None,
 ) -> str:
     ensurePlanningProjectsTable()
     storedProjects = listStoredProjects()
@@ -4581,12 +4582,14 @@ def buildBurndownPage(
     planningP2Mixed = len(planningP2Unique) > 1
     planningP1Percent = planningP1Unique[0] if len(planningP1Unique) == 1 else 150.0
     planningP2Percent = planningP2Unique[0] if len(planningP2Unique) == 1 else 150.0
+    planningUseRiskPlan = bool(planningProjects) and all(bool(project.get("use_risk_plan")) for project in planningProjects)
     totalPlanningBaseline = sum(float(project.get("baseline_estimate_hours") or 0) for project in planningProjects)
     totalPlanningDevelopmentHours = sum(float(project.get("development_hours") or 0) for project in planningProjects)
     planningBaselineText = escape(formatPlanningMetric(totalPlanningBaseline))
     planningDevelopmentHoursText = escape(formatPlanningMetric(totalPlanningDevelopmentHours))
     selectedP1Raw = str(p1Value or formatPageHours(planningP1Percent)).strip() or formatPageHours(planningP1Percent)
     selectedP2Raw = str(p2Value or formatPageHours(planningP2Percent)).strip() or formatPageHours(planningP2Percent)
+    selectedUseRiskPlan = planningUseRiskPlan if useRiskPlan is None else bool(useRiskPlan)
     planningP1Value = escape(selectedP1Raw)
     planningP2Value = escape(selectedP2Raw)
     planningP1InputClass = " planning-input-warning" if planningP1Mixed else ""
@@ -5050,7 +5053,8 @@ def buildBurndownPage(
       <div class="controls-row">
       <div class="field field-checkbox">
         <label class="field-checkbox-label" for="useRiskPlanCheckbox">
-          <input id="useRiskPlanCheckbox" type="checkbox" name="use_risk_plan" value="1"{" checked" if useRiskPlan else ""}>
+          <input type="hidden" name="use_risk_plan_present" value="1">
+          <input id="useRiskPlanCheckbox" type="checkbox" name="use_risk_plan" value="1"{" checked" if selectedUseRiskPlan else ""}>
           <span>Использовать План с рисками</span>
         </label>
       </div>
@@ -9855,6 +9859,7 @@ def normalizePlanningProjectPayload(payload: PlanningProjectPayload) -> dict[str
         "baseline_estimate_hours": payload.baseline_estimate_hours,
         "p1": payload.p1,
         "p2": payload.p2,
+        "use_risk_plan": bool(payload.use_risk_plan),
         "estimate_doc_url": _normalizePlanningProjectText(payload.estimate_doc_url),
         "bitrix_url": _normalizePlanningProjectText(payload.bitrix_url),
         "comment_text": _normalizePlanningProjectText(payload.comment_text),
@@ -11085,6 +11090,10 @@ def buildPlanningProjectsPage() -> str:
               <label for="planningProjectP2">P2 (факт с багами / факт), %</label>
               <input id="planningProjectP2" type="number" step="0.1" inputmode="decimal">
             </div>
+            <label class="checkbox-field" for="planningProjectUseRiskPlan">
+              <input id="planningProjectUseRiskPlan" type="checkbox">
+              <span>Использовать План с рисками</span>
+            </label>
           </div>
           <div class="form-panels">
             <section class="subpanel">
@@ -11168,6 +11177,7 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectBaselineEstimate = document.getElementById("planningProjectBaselineEstimate");
     const planningProjectP1 = document.getElementById("planningProjectP1");
     const planningProjectP2 = document.getElementById("planningProjectP2");
+    const planningProjectUseRiskPlan = document.getElementById("planningProjectUseRiskPlan");
     const planningProjectYear1 = document.getElementById("planningProjectYear1");
     const planningProjectHours1 = document.getElementById("planningProjectHours1");
     const planningProjectYear2 = document.getElementById("planningProjectYear2");
@@ -11395,6 +11405,7 @@ def buildPlanningProjectsPage() -> str:
       planningProjectId.value = "";
       planningProjectForm.reset();
       planningProjectQuestionFlag.checked = false;
+      planningProjectUseRiskPlan.checked = false;
       planningFormTitle.textContent = "Новая запись";
       setPlanningProjectsStatus("");
     }
@@ -11427,6 +11438,7 @@ def buildPlanningProjectsPage() -> str:
       planningProjectBaselineEstimate.value = project.baseline_estimate_hours ?? "";
       planningProjectP1.value = project.p1 ?? "";
       planningProjectP2.value = project.p2 ?? "";
+      planningProjectUseRiskPlan.checked = Boolean(project.use_risk_plan);
       planningProjectEstimateDoc.value = project.estimate_doc_url ?? "";
       planningProjectBitrix.value = project.bitrix_url ?? "";
       planningProjectComment.value = project.comment_text ?? "";
@@ -11564,6 +11576,7 @@ def buildPlanningProjectsPage() -> str:
         baseline_estimate_hours: planningProjectBaselineEstimate.value === "" ? null : Number(planningProjectBaselineEstimate.value),
         p1: planningProjectP1.value === "" ? null : Number(planningProjectP1.value),
         p2: planningProjectP2.value === "" ? null : Number(planningProjectP2.value),
+        use_risk_plan: Boolean(planningProjectUseRiskPlan.checked),
         estimate_doc_url: planningProjectEstimateDoc.value.trim(),
         bitrix_url: planningProjectBitrix.value.trim(),
         comment_text: planningProjectComment.value.trim(),
@@ -16101,7 +16114,8 @@ def getProjectBurndownPage(
     end_date: str | None = Query(None),
     p1: str | None = Query(None),
     p2: str | None = Query(None),
-    use_risk_plan: int = Query(0),
+    use_risk_plan: int | None = Query(None),
+    use_risk_plan_present: int | None = Query(None),
 ) -> HTMLResponse:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
@@ -16115,7 +16129,7 @@ def getProjectBurndownPage(
             end_date,
             p1,
             p2,
-            bool(use_risk_plan),
+            None if use_risk_plan_present is None and use_risk_plan is None else bool(use_risk_plan),
         )
     )
 
