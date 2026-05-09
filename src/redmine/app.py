@@ -4584,6 +4584,9 @@ def buildBurndownPage(
     planningP2Percent = planningP2Unique[0] if len(planningP2Unique) == 1 else 150.0
     planningUseRiskPlan = bool(planningProjects) and all(bool(project.get("use_risk_plan")) for project in planningProjects)
     planningUseRiskPlanAny = any(bool(project.get("use_risk_plan")) for project in planningProjects)
+    planningP1DefaultUsed = len(planningP1Unique) != 1
+    planningP2DefaultUsed = len(planningP2Unique) != 1
+    planningUseRiskPlanDefaultUsed = planningUseRiskPlanAny and not planningUseRiskPlan
     totalPlanningBaseline = sum(float(project.get("baseline_estimate_hours") or 0) for project in planningProjects)
     totalPlanningDevelopmentHours = sum(float(project.get("development_hours") or 0) for project in planningProjects)
     planningBaselineText = escape(formatPlanningMetric(totalPlanningBaseline))
@@ -4613,17 +4616,23 @@ def buildBurndownPage(
         )
         for project in planningProjects
     )
+    planningP1SummaryText = f"{formatPageHours(planningP1Percent)}{' (по умолч.)' if planningP1DefaultUsed else ''}"
+    planningP2SummaryText = f"{formatPageHours(planningP2Percent)}{' (по умолч.)' if planningP2DefaultUsed else ''}"
     planningUseRiskPlanSummaryText = (
-        "Да" if planningUseRiskPlan else "Смешано" if planningUseRiskPlanAny else "Нет"
+        "Да"
+        if planningUseRiskPlan
+        else "Нет (по умолч.)"
+        if planningUseRiskPlanDefaultUsed
+        else "Нет"
     )
     planningProjectTotalsRowHtml = (
         "<tr class=\"planning-projects-total-row\">"
         "<td>Итого</td>"
         f"<td>{planningBaselineText}</td>"
         f"<td>{planningDevelopmentHoursText}</td>"
-        f"<td>{escape(formatPageHours(planningP1Percent))}</td>"
-        f"<td>{escape(formatPageHours(planningP2Percent))}</td>"
-        f"<td>{planningUseRiskPlanSummaryText}</td>"
+        f"<td>{escape(planningP1SummaryText)}</td>"
+        f"<td>{escape(planningP2SummaryText)}</td>"
+        f'<td class="{"planning-projects-default-value" if planningUseRiskPlanDefaultUsed else ""}">{escape(planningUseRiskPlanSummaryText)}</td>'
         "</tr>"
         if len(planningProjects) > 1
         else ""
@@ -4779,6 +4788,10 @@ def buildBurndownPage(
       font-weight: 700;
       background: #f8fbfd;
       border-top: 2px solid var(--line);
+    }}
+
+    .planning-projects-default-value {{
+      color: #d9534f;
     }}
 
     .planning-projects-empty {{
