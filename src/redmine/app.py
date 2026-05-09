@@ -4389,7 +4389,8 @@ def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str
         trackerName = normalizeBurndownText(issue.get("tracker_name"))
         statusName = issue.get("status_name")
         planHours = float(issue.get("estimated_hours") or 0)
-        riskPlanHours = float(issue.get("risk_estimate_hours") or 0)
+        riskPlanHoursRaw = issue.get("risk_estimate_hours")
+        riskPlanHours = float(riskPlanHoursRaw) if riskPlanHoursRaw not in (None, "") else planHours
         factHours = float(issue.get("spent_hours") or 0)
 
         if featureId is not None and featureId == issueId and trackerName == "feature":
@@ -5178,7 +5179,7 @@ def buildBurndownPage(
 
     <section class="legend-panel">
       <h2 class="legend-title">Легенда и правила расчета</h2>
-      <div class="legend-callout">При выборе "Использовать План с рисками" во всех формулах вместо "План" используется "План с рисками".</div>
+      <div class="legend-callout">При выборе "Использовать План с рисками" во всех формулах вместо "План" используется "План с рисками", если он задан. Если не задан, то используется "План".</div>
       <div class="legend-grid">
         <div>
           <ul class="legend-list">
@@ -5440,7 +5441,9 @@ def buildBurndownPage(
       const p1Factor = p1Percent / 100;
       const p2Factor = p2Percent / 100;
       const datasets = buildBurndownDatasets(p1Factor, p2Factor, useRiskPlan);
-      const planModeText = useRiskPlan ? "Используется План с рисками." : "Используется обычный План.";
+      const planModeText = useRiskPlan
+        ? "Используется План с рисками, если он задан. Иначе используется обычный План."
+        : "Используется обычный План.";
       statusNode.textContent = `P1 = ${{formatHours(p1Percent)}}%, P2 = ${{formatHours(p2Percent)}}%. Срезов в расчете: ${{burndownSnapshots.length}}. ${{planModeText}}`;
       const allChartValues = [
         ...datasets.budgetData,
