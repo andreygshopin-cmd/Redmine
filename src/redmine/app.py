@@ -16346,6 +16346,7 @@ def exportProjectLatestSnapshotIssuesCsv(
     writer.writerow(
         [
             "ID",
+            "Группа Feature",
             "Тема",
             "Трекер",
             "Статус",
@@ -16390,6 +16391,7 @@ def exportProjectLatestSnapshotIssuesCsv(
             [
                 "" if isVirtualGroup else groupId or "",
                 str(issue.get("feature_group_subject") or "без Feature"),
+                str(issue.get("feature_group_subject") or "без Feature"),
                 "—" if isVirtualGroup else str(issue.get("feature_group_tracker_name") or "Feature"),
                 "—" if isVirtualGroup else str(issue.get("feature_group_status_name") or "—"),
                 "—" if isVirtualGroup else (issue.get("feature_group_done_ratio") if issue.get("feature_group_done_ratio") is not None else 0),
@@ -16418,6 +16420,7 @@ def exportProjectLatestSnapshotIssuesCsv(
             writer.writerow(
                 [
                     orderedIssue.get("issue_redmine_id") or "",
+                    str(orderedIssue.get("feature_group_subject") or "без Feature"),
                     indentedSubject,
                     str(orderedIssue.get("tracker_name") or "—"),
                     str(orderedIssue.get("status_name") or "—"),
