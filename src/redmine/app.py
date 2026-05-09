@@ -4594,23 +4594,36 @@ def buildBurndownPage(
     planningP2Value = escape(selectedP2Raw)
     planningP1InputClass = " planning-input-warning" if planningP1Mixed else ""
     planningP2InputClass = " planning-input-warning" if planningP2Mixed else ""
-    planningProjectLinesHtml = "".join(
+    planningProjectsUrl = (
+        f"/planning-projects?redmine_identifier={quote(projectIdentifierRaw)}&project_name={quote(projectNameRaw)}&open_mode=auto"
+        if projectIdentifierRaw
+        else "/planning-projects"
+    )
+    planningProjectRowsHtml = "".join(
         (
-            '<div class="planning-project-line">'
-            f'{escape(str(project.get("customer") or "—"))} - {escape(str(project.get("project_name") or "Без названия"))}'
-            f' <span class="planning-project-metrics">({escape(formatPlanningMetric(project.get("baseline_estimate_hours")))} / '
-            f'{escape(formatPlanningMetric(project.get("development_hours")))} / '
-            f'{escape(formatPageHours(project.get("p1")))} / '
-            f'{escape(formatPageHours(project.get("p2")))})</span>'
-            "</div>"
+            "<tr>"
+            f'<td>{escape(str(project.get("customer") or "—"))} - {escape(str(project.get("project_name") or "Без названия"))}</td>'
+            f'<td>{escape(formatPlanningMetric(project.get("baseline_estimate_hours")))}</td>'
+            f'<td>{escape(formatPlanningMetric(project.get("development_hours")))}</td>'
+            f'<td>{escape(formatPlanningPercent(project.get("p1")))}</td>'
+            f'<td>{escape(formatPlanningPercent(project.get("p2")))}</td>'
+            f'<td>{"Да" if bool(project.get("use_risk_plan")) else "Нет"}</td>'
+            "</tr>"
         )
         for project in planningProjects
     )
-    planningProjectsTextHtml = (
-        f'<div class="planning-project-lines">{planningProjectLinesHtml}</div>'
-        if planningProjectLinesHtml
-        else ""
-    )
+    planningProjectsTextHtml = f"""
+    <section class="planning-projects-panel">
+      <h2 class="planning-projects-title">Параметры <a href="{escape(planningProjectsUrl)}">проектов</a></h2>
+      {
+        '<div class="planning-projects-table-wrap"><table class="planning-projects-table"><thead><tr><th>Имя</th><th>Базовая оценка</th><th>Лимит разработки с багфиксом</th><th>P1 = факт / база, %</th><th>P2 = факт с багами / факт, %</th><th>Использовать План с рисками</th></tr></thead><tbody>'
+        + planningProjectRowsHtml
+        + '</tbody></table></div>'
+        if planningProjectRowsHtml
+        else '<div class="planning-projects-empty">Для этого идентификатора в Планировании проектов пока нет записей.</div>'
+      }
+    </section>
+    """
     snapshotIssuesUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
     navPanelHtml = buildProjectContextNavPanel(
         projectRedmineId,
@@ -4683,15 +4696,71 @@ def buildBurndownPage(
       font-weight: 400;
     }}
 
-    .planning-project-lines {{
-      margin: -4px 0 18px;
-      color: var(--muted);
-      font-size: 0.98rem;
-      line-height: 1.65;
+    .planning-projects-panel {{
+      margin: -2px 0 18px;
+      padding: 14px 16px 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: var(--shadow-soft);
     }}
-    .planning-project-metrics {{
-      color: #426179;
+
+    .planning-projects-title {{
+      margin: 0 0 12px;
+      font-size: 1rem;
+      color: var(--text);
+    }}
+
+    .planning-projects-title a {{
+      color: inherit;
+      text-decoration: none;
+      border-bottom: 1px dashed rgba(55, 93, 119, 0.55);
+    }}
+
+    .planning-projects-title a:hover {{
+      border-bottom-style: solid;
+    }}
+
+    .planning-projects-table-wrap {{
+      overflow-x: auto;
+    }}
+
+    .planning-projects-table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.94rem;
+    }}
+
+    .planning-projects-table th,
+    .planning-projects-table td {{
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
       white-space: nowrap;
+    }}
+
+    .planning-projects-table th:first-child,
+    .planning-projects-table td:first-child {{
+      white-space: normal;
+      min-width: 260px;
+    }}
+
+    .planning-projects-table th {{
+      color: #426179;
+      background: #eef6f7;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      line-height: 1.25;
+    }}
+
+    .planning-projects-table tbody tr:last-child td {{
+      border-bottom: 0;
+    }}
+
+    .planning-projects-empty {{
+      color: var(--muted);
+      line-height: 1.5;
     }}
 
     .controls-panel,
@@ -5014,7 +5083,7 @@ def buildBurndownPage(
   <main>
     {navPanelHtml}
     <h1>Диаграмма сгорания</h1>
-    <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Период диаграммы: {chartStartDate.strftime("%d.%m.%Y")} — {chartEndDate.strftime("%d.%m.%Y")}. Срезов в диапазоне: {len(chartSeeds)}.</p>
+    <p class="meta">Проект в Redmine: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Период диаграммы: {chartStartDate.strftime("%d.%m.%Y")} — {chartEndDate.strftime("%d.%m.%Y")}. Срезов в диапазоне: {len(chartSeeds)}.</p>
     {planningProjectsTextHtml}
 
     <form class="controls-panel" method="get" id="burndownForm">
