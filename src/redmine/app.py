@@ -5131,16 +5131,6 @@ def buildBurndownPage(
         <input id="p2Input" class="{planningP2InputClass.strip()}" type="text" inputmode="decimal" name="p2" value="{planningP2Value}">
         <div class="field-note">Изменения применяются после нажатия кнопки «Показать».</div>
       </div>
-      <div class="field field-value">
-        <label>Базовая оценка</label>
-        <input type="text" value="{planningBaselineText}" readonly>
-        <div class="field-note">Значение подтянуто из формы «Планирование проектов».</div>
-      </div>
-      <div class="field field-value">
-        <label>Лимит разработки с багфиксом</label>
-        <input type="text" value="{planningDevelopmentHoursText}" readonly>
-        <div class="field-note">Значение подтянуто из формы «Планирование проектов».</div>
-      </div>
       </div>
       <div class="controls-row">
       <div class="field field-checkbox">
