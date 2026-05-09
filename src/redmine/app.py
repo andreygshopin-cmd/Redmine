@@ -4627,7 +4627,7 @@ def buildBurndownPage(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Диаграмма сгорания</title>
   <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="/static/vendor/chart.umd.min.js"></script>
   <style>
     :root {{
       color-scheme: light;
