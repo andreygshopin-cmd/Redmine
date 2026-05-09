@@ -2764,6 +2764,7 @@ def _normalizeSnapshotIssueFilters(filters: dict[str, object] | None) -> dict[st
         "risk": "risk",
         "volume": "volume",
         "risk_volume": "risk_volume",
+        "risk_remaining": "risk_remaining",
         "spent": "spent",
         "spent_year": "spent_year",
     }
@@ -2893,7 +2894,7 @@ def _buildSnapshotIssueFilterParts(filters: dict[str, object] | None) -> tuple[l
         params["status_names"] = statusNames
         bindParams.append(bindparam("status_names", expanding=True))
 
-    volumeSql, riskVolumeSql, remainingSql, _riskRemainingSql = _buildSnapshotIssueMetricsSql()
+    volumeSql, riskVolumeSql, remainingSql, riskRemainingSql = _buildSnapshotIssueMetricsSql()
     numericMappings = {
         "done_ratio": "COALESCE(done_ratio, 0)",
         "baseline": "COALESCE(baseline_estimate_hours, 0)",
@@ -2902,6 +2903,7 @@ def _buildSnapshotIssueFilterParts(filters: dict[str, object] | None) -> tuple[l
         "volume": f"COALESCE(({volumeSql}), 0)",
         "risk_volume": f"COALESCE(({riskVolumeSql}), 0)",
         "remaining": f"COALESCE(({remainingSql}), 0)",
+        "risk_remaining": f"COALESCE(({riskRemainingSql}), 0)",
         "spent": "COALESCE(spent_hours, 0)",
         "spent_year": "COALESCE(spent_hours_year, 0)",
     }
@@ -2947,7 +2949,7 @@ def _getSnapshotIssueFilterOptions(connection, snapshotRunId: int) -> dict[str, 
 
 def _buildSnapshotIssueHierarchyQuery(baseWhereSql: str, paginated: bool) -> str:
     paginationSql = "\n            LIMIT :limit OFFSET :offset" if paginated else ""
-    volumeSql, riskVolumeSql, remainingSql, _riskRemainingSql = _buildSnapshotIssueMetricsSql("filtered_items")
+    volumeSql, riskVolumeSql, remainingSql, riskRemainingSql = _buildSnapshotIssueMetricsSql("filtered_items")
     return f"""
             WITH RECURSIVE snapshot_items AS (
                 SELECT
@@ -3043,6 +3045,7 @@ def _buildSnapshotIssueHierarchyQuery(baseWhereSql: str, paginated: bool) -> str
                 {volumeSql} AS volume_hours,
                 {riskVolumeSql} AS risk_volume_hours,
                 {remainingSql} AS remaining_hours,
+                {riskRemainingSql} AS risk_remaining_hours,
                 filtered_items.spent_hours,
                 filtered_items.spent_hours_year,
                 filtered_items.start_date,

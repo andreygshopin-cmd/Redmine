@@ -3553,6 +3553,8 @@ def buildSnapshotIssueFiltersPayload(
     riskVolumeValue: str | None = None,
     remainingOp: str | None = None,
     remainingValue: str | None = None,
+    riskRemainingOp: str | None = None,
+    riskRemainingValue: str | None = None,
     spentOp: str | None = None,
     spentValue: str | None = None,
     spentYearOp: str | None = None,
@@ -3580,6 +3582,8 @@ def buildSnapshotIssueFiltersPayload(
         "risk_volume_value": riskVolumeValue or "",
         "remaining_op": remainingOp or "",
         "remaining_value": remainingValue or "",
+        "risk_remaining_op": riskRemainingOp or "",
+        "risk_remaining_value": riskRemainingValue or "",
         "spent_op": spentOp or "",
         "spent_value": spentValue or "",
         "spent_year_op": spentYearOp or "",
@@ -5994,7 +5998,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
   </body>
 </html>"""
 
-    issueRowsHtml = ['<tr><td colspan="16">Загружаем задачи...</td></tr>']
+    issueRowsHtml = ['<tr><td colspan="17">Загружаем задачи...</td></tr>']
 
     summaryView = buildSnapshotSummaryView(snapshotPayload.get("summary"))
     totalBaselineEstimateHours = summaryView["baseline_estimate_hours"]
@@ -6215,7 +6219,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         to {{ transform: rotate(360deg); }}
       }}
       table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); }}
-      #snapshotIssuesTable {{ min-width: 2140px; table-layout: auto; }}
+      #snapshotIssuesTable {{ min-width: 2290px; table-layout: auto; }}
       th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }}
       th {{ position: sticky; top: 0; z-index: 4; background: #eef6f7; color: #426179; text-transform: uppercase; font-size: 0.74rem; line-height: 1.15; }}
       #snapshotIssuesTable thead th {{ top: 0; }}
@@ -6230,6 +6234,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .volume-col {{ width: 118px; min-width: 118px; max-width: 118px; white-space: normal; word-break: break-word; }}
       .risk-volume-col {{ width: 154px; min-width: 154px; max-width: 154px; white-space: normal; word-break: break-word; }}
       .remaining-col {{ width: 118px; min-width: 118px; max-width: 118px; white-space: normal; word-break: break-word; }}
+      .risk-remaining-col {{ width: 154px; min-width: 154px; max-width: 154px; white-space: normal; word-break: break-word; }}
       .spent-col {{ width: 94px; min-width: 94px; max-width: 94px; white-space: normal; word-break: break-word; }}
       .spent-year-col {{ width: 94px; min-width: 94px; max-width: 94px; white-space: normal; word-break: break-word; }}
       .closed-col {{ width: 190px; min-width: 190px; max-width: 190px; white-space: normal; word-break: break-word; }}
@@ -6431,6 +6436,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <th class="volume-col">Объем, ч</th>
             <th class="risk-volume-col">Объем (для Плана с рисками), ч</th>
             <th class="remaining-col">Остаток, ч</th>
+            <th class="risk-remaining-col">Остаток (для Плана с рисками), ч</th>
             <th class="spent-col">Факт всего, ч</th>
             <th class="spent-year-col">Факт за год, ч</th>
             <th class="closed-col">Закрыта</th>
@@ -6449,6 +6455,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <th class="volume-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="volume" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="volume" data-filter-role="value"></div></th>
             <th class="risk-volume-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="riskVolume" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="riskVolume" data-filter-role="value"></div></th>
             <th class="remaining-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="remaining" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="remaining" data-filter-role="value"></div></th>
+            <th class="risk-remaining-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="riskRemaining" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="riskRemaining" data-filter-role="value"></div></th>
             <th class="spent-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spent" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spent" data-filter-role="value"></div></th>
             <th class="spent-year-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spentYear" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spentYear" data-filter-role="value"></div></th>
             <th class="closed-col"><input class="filter-input-table" type="text" data-filter-key="closedOn" data-filter-role="text"></th>
@@ -6879,7 +6886,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           return;
         }}
         if (!Array.isArray(issues) || !issues.length) {{
-          snapshotIssuesTableBody.innerHTML = '<tr><td colspan="16">По текущему фильтру задач нет.</td></tr>';
+          snapshotIssuesTableBody.innerHTML = '<tr><td colspan="17">По текущему фильтру задач нет.</td></tr>';
           return;
         }}
         const groupMap = new Map();
@@ -6916,6 +6923,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             const groupVolume = "—";
             const groupRiskVolume = "—";
             const groupRemaining = "—";
+            const groupRiskRemaining = "—";
             const groupSpent = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_spent_hours);
             const groupSpentYear = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_spent_hours_year);
             const groupClosedOn = isVirtualGroup ? "—" : escapeHtml(formatSnapshotDateTime(issue?.feature_group_closed_on));
@@ -6937,6 +6945,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="snapshot-group-cell snapshot-group-metric volume-col">${{groupVolume}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric risk-volume-col">${{groupRiskVolume}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric remaining-col">${{groupRemaining}}</td>
+                <td class="snapshot-group-cell snapshot-group-metric risk-remaining-col">${{groupRiskRemaining}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupSpent}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupSpentYear}}</td>
                 <td class="snapshot-group-cell closed-col">${{groupClosedOn}}</td>
@@ -6963,6 +6972,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="volume-col">${{formatFilterHours(orderedIssue?.volume_hours)}}</td>
                 <td class="risk-volume-col">${{formatFilterHours(orderedIssue?.risk_volume_hours)}}</td>
                 <td class="remaining-col">${{formatFilterHours(orderedIssue?.remaining_hours)}}</td>
+                <td class="risk-remaining-col">${{formatFilterHours(orderedIssue?.risk_remaining_hours)}}</td>
                 <td class="spent-col">${{formatFilterHours(orderedIssue?.spent_hours)}}</td>
                 <td class="spent-year-col">${{formatFilterHours(orderedIssue?.spent_hours_year)}}</td>
                 <td class="closed-col">${{escapeHtml(formatSnapshotDateTime(orderedIssue?.closed_on))}}</td>
@@ -6998,6 +7008,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           risk_volume_value: "",
           remaining_op: "",
           remaining_value: "",
+          risk_remaining_op: "",
+          risk_remaining_value: "",
           spent_op: "",
           spent_value: "",
           spent_year_op: "",
@@ -7012,6 +7024,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           ["volume_op", "volume_value"],
           ["risk_volume_op", "risk_volume_value"],
           ["remaining_op", "remaining_value"],
+          ["risk_remaining_op", "risk_remaining_value"],
           ["spent_op", "spent_value"],
           ["spent_year_op", "spent_year_value"],
         ];
@@ -7047,6 +7060,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           filters.risk_volume_value ||
           filters.remaining_op ||
           filters.remaining_value ||
+          filters.risk_remaining_op ||
+          filters.risk_remaining_value ||
           filters.spent_op ||
           filters.spent_value ||
           filters.spent_year_op ||
@@ -7105,6 +7120,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           risk_volume_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="riskVolume"][data-filter-role="value"]')?.value || ""),
           remaining_op: String(document.querySelector('[data-filter-key="remaining"][data-filter-role="op"]')?.value || ""),
           remaining_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="remaining"][data-filter-role="value"]')?.value || ""),
+          risk_remaining_op: String(document.querySelector('[data-filter-key="riskRemaining"][data-filter-role="op"]')?.value || ""),
+          risk_remaining_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="riskRemaining"][data-filter-role="value"]')?.value || ""),
           spent_op: String(document.querySelector('[data-filter-key="spent"][data-filter-role="op"]')?.value || ""),
           spent_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="spent"][data-filter-role="value"]')?.value || ""),
           spent_year_op: String(document.querySelector('[data-filter-key="spentYear"][data-filter-role="op"]')?.value || ""),
@@ -7143,6 +7160,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if (filters.risk_volume_value) params.set("risk_volume_value", filters.risk_volume_value);
         if (filters.remaining_op) params.set("remaining_op", filters.remaining_op);
         if (filters.remaining_value) params.set("remaining_value", filters.remaining_value);
+        if (filters.risk_remaining_op) params.set("risk_remaining_op", filters.risk_remaining_op);
+        if (filters.risk_remaining_value) params.set("risk_remaining_value", filters.risk_remaining_value);
         if (filters.spent_op) params.set("spent_op", filters.spent_op);
         if (filters.spent_value) params.set("spent_value", filters.spent_value);
         if (filters.spent_year_op) params.set("spent_year_op", filters.spent_year_op);
@@ -16013,6 +16032,8 @@ def getProjectLatestSnapshotIssuesData(
     risk_volume_value: str | None = Query(None),
     remaining_op: str | None = Query(None),
     remaining_value: str | None = Query(None),
+    risk_remaining_op: str | None = Query(None),
+    risk_remaining_value: str | None = Query(None),
     spent_op: str | None = Query(None),
     spent_value: str | None = Query(None),
     spent_year_op: str | None = Query(None),
@@ -16044,6 +16065,8 @@ def getProjectLatestSnapshotIssuesData(
         riskVolumeValue=risk_volume_value,
         remainingOp=remaining_op,
         remainingValue=remaining_value,
+        riskRemainingOp=risk_remaining_op,
+        riskRemainingValue=risk_remaining_value,
         spentOp=spent_op,
         spentValue=spent_value,
         spentYearOp=spent_year_op,
@@ -16083,6 +16106,8 @@ def exportProjectLatestSnapshotIssuesCsv(
     risk_volume_value: str | None = Query(None),
     remaining_op: str | None = Query(None),
     remaining_value: str | None = Query(None),
+    risk_remaining_op: str | None = Query(None),
+    risk_remaining_value: str | None = Query(None),
     spent_op: str | None = Query(None),
     spent_value: str | None = Query(None),
     spent_year_op: str | None = Query(None),
@@ -16114,6 +16139,8 @@ def exportProjectLatestSnapshotIssuesCsv(
         riskVolumeValue=risk_volume_value,
         remainingOp=remaining_op,
         remainingValue=remaining_value,
+        riskRemainingOp=risk_remaining_op,
+        riskRemainingValue=risk_remaining_value,
         spentOp=spent_op,
         spentValue=spent_value,
         spentYearOp=spent_year_op,
@@ -16147,6 +16174,7 @@ def exportProjectLatestSnapshotIssuesCsv(
             "Объем, ч",
             "Объем (для Плана с рисками), ч",
             "Остаток, ч",
+            "Остаток (для Плана с рисками), ч",
             "Факт всего, ч",
             "Факт за год, ч",
             "Закрыта",
@@ -16168,6 +16196,7 @@ def exportProjectLatestSnapshotIssuesCsv(
                 formatPageHours(issue.get("volume_hours")),
                 formatPageHours(issue.get("risk_volume_hours")),
                 formatPageHours(issue.get("remaining_hours")),
+                formatPageHours(issue.get("risk_remaining_hours")),
                 formatPageHours(issue.get("spent_hours")),
                 formatPageHours(issue.get("spent_hours_year")),
                 formatSnapshotPageDateTime(issue.get("closed_on")),
