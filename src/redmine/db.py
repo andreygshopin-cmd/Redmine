@@ -2762,6 +2762,8 @@ def _normalizeSnapshotIssueFilters(filters: dict[str, object] | None) -> dict[st
         "baseline": "baseline",
         "estimated": "estimated",
         "risk": "risk",
+        "volume": "volume",
+        "risk_volume": "risk_volume",
         "spent": "spent",
         "spent_year": "spent_year",
     }
@@ -2771,6 +2773,58 @@ def _normalizeSnapshotIssueFilters(filters: dict[str, object] | None) -> dict[st
         normalized[f"{paramPrefix}_value"] = normalizeNumeric(payload.get(f"{paramPrefix}_value"))
 
     return normalized
+
+
+def _snapshotIssueFieldSql(alias: str, fieldName: str) -> str:
+    return f"{alias}.{fieldName}" if alias else fieldName
+
+
+def _buildSnapshotIssueVolumeSql(alias: str = "") -> tuple[str, str]:
+    trackerSql = f"LOWER(TRIM(COALESCE({_snapshotIssueFieldSql(alias, 'tracker_name')}, '')))"
+    statusSql = f"LOWER(TRIM(COALESCE({_snapshotIssueFieldSql(alias, 'status_name')}, '')))"
+    baselineSql = f"COALESCE({_snapshotIssueFieldSql(alias, 'baseline_estimate_hours')}, 0)"
+    estimatedSql = f"COALESCE({_snapshotIssueFieldSql(alias, 'estimated_hours')}, 0)"
+    riskEstimatedSql = f"COALESCE({_snapshotIssueFieldSql(alias, 'risk_estimate_hours')}, {_snapshotIssueFieldSql(alias, 'estimated_hours')}, 0)"
+    spentSql = f"COALESCE({_snapshotIssueFieldSql(alias, 'spent_hours')}, 0)"
+    closedStatusesSql = "('закрыта', 'решена', 'отказ')"
+
+    volumeSql = f"""
+        CASE
+            WHEN {trackerSql} = 'разработка' THEN
+                CASE
+                    WHEN {statusSql} IN {closedStatusesSql} THEN {spentSql}
+                    ELSE GREATEST({baselineSql}, {estimatedSql}, {spentSql})
+                END
+            WHEN {trackerSql} = 'процессы разработки' THEN
+                GREATEST({estimatedSql}, {spentSql})
+            WHEN {trackerSql} = 'ошибка' THEN
+                CASE
+                    WHEN {statusSql} IN {closedStatusesSql} THEN {spentSql}
+                    ELSE GREATEST({estimatedSql}, {spentSql})
+                END
+            ELSE NULL
+        END
+    """.strip()
+
+    riskVolumeSql = f"""
+        CASE
+            WHEN {trackerSql} = 'разработка' THEN
+                CASE
+                    WHEN {statusSql} IN {closedStatusesSql} THEN {spentSql}
+                    ELSE GREATEST({baselineSql}, {riskEstimatedSql}, {spentSql})
+                END
+            WHEN {trackerSql} = 'процессы разработки' THEN
+                GREATEST({riskEstimatedSql}, {spentSql})
+            WHEN {trackerSql} = 'ошибка' THEN
+                CASE
+                    WHEN {statusSql} IN {closedStatusesSql} THEN {spentSql}
+                    ELSE GREATEST({riskEstimatedSql}, {spentSql})
+                END
+            ELSE NULL
+        END
+    """.strip()
+
+    return volumeSql, riskVolumeSql
 
 
 def _buildSnapshotIssueFilterParts(filters: dict[str, object] | None) -> tuple[list[str], dict[str, object], list[object]]:
@@ -2805,11 +2859,14 @@ def _buildSnapshotIssueFilterParts(filters: dict[str, object] | None) -> tuple[l
         params["status_names"] = statusNames
         bindParams.append(bindparam("status_names", expanding=True))
 
+    volumeSql, riskVolumeSql = _buildSnapshotIssueVolumeSql()
     numericMappings = {
         "done_ratio": "COALESCE(done_ratio, 0)",
         "baseline": "COALESCE(baseline_estimate_hours, 0)",
         "estimated": "COALESCE(estimated_hours, 0)",
         "risk": "COALESCE(risk_estimate_hours, 0)",
+        "volume": f"COALESCE(({volumeSql}), 0)",
+        "risk_volume": f"COALESCE(({riskVolumeSql}), 0)",
         "spent": "COALESCE(spent_hours, 0)",
         "spent_year": "COALESCE(spent_hours_year, 0)",
     }
@@ -2855,6 +2912,7 @@ def _getSnapshotIssueFilterOptions(connection, snapshotRunId: int) -> dict[str, 
 
 def _buildSnapshotIssueHierarchyQuery(baseWhereSql: str, paginated: bool) -> str:
     paginationSql = "\n            LIMIT :limit OFFSET :offset" if paginated else ""
+    volumeSql, riskVolumeSql = _buildSnapshotIssueVolumeSql("filtered_items")
     return f"""
             WITH RECURSIVE snapshot_items AS (
                 SELECT
@@ -2947,6 +3005,8 @@ def _buildSnapshotIssueHierarchyQuery(baseWhereSql: str, paginated: bool) -> str
                 filtered_items.baseline_estimate_hours,
                 filtered_items.estimated_hours,
                 filtered_items.risk_estimate_hours,
+                {volumeSql} AS volume_hours,
+                {riskVolumeSql} AS risk_volume_hours,
                 filtered_items.spent_hours,
                 filtered_items.spent_hours_year,
                 filtered_items.start_date,

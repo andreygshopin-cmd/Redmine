@@ -3547,6 +3547,10 @@ def buildSnapshotIssueFiltersPayload(
     estimatedValue: str | None = None,
     riskOp: str | None = None,
     riskValue: str | None = None,
+    volumeOp: str | None = None,
+    volumeValue: str | None = None,
+    riskVolumeOp: str | None = None,
+    riskVolumeValue: str | None = None,
     spentOp: str | None = None,
     spentValue: str | None = None,
     spentYearOp: str | None = None,
@@ -3568,6 +3572,10 @@ def buildSnapshotIssueFiltersPayload(
         "estimated_value": estimatedValue or "",
         "risk_op": riskOp or "",
         "risk_value": riskValue or "",
+        "volume_op": volumeOp or "",
+        "volume_value": volumeValue or "",
+        "risk_volume_op": riskVolumeOp or "",
+        "risk_volume_value": riskVolumeValue or "",
         "spent_op": spentOp or "",
         "spent_value": spentValue or "",
         "spent_year_op": spentYearOp or "",
@@ -5982,7 +5990,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
   </body>
 </html>"""
 
-    issueRowsHtml = ['<tr><td colspan="13">Загружаем задачи...</td></tr>']
+    issueRowsHtml = ['<tr><td colspan="15">Загружаем задачи...</td></tr>']
 
     summaryView = buildSnapshotSummaryView(snapshotPayload.get("summary"))
     totalBaselineEstimateHours = summaryView["baseline_estimate_hours"]
@@ -6203,7 +6211,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         to {{ transform: rotate(360deg); }}
       }}
       table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); }}
-      #snapshotIssuesTable {{ min-width: 1800px; table-layout: auto; }}
+      #snapshotIssuesTable {{ min-width: 2020px; table-layout: auto; }}
       th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }}
       th {{ position: sticky; top: 0; z-index: 4; background: #eef6f7; color: #426179; text-transform: uppercase; font-size: 0.74rem; line-height: 1.15; }}
       #snapshotIssuesTable thead th {{ top: 0; }}
@@ -6215,6 +6223,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .tracker-col {{ width: 170px; min-width: 170px; max-width: 170px; white-space: normal; word-break: break-word; }}
       .status-col {{ width: 170px; min-width: 170px; max-width: 170px; white-space: normal; word-break: break-word; }}
       .baseline-col {{ width: 94px; min-width: 94px; max-width: 94px; white-space: normal; word-break: break-word; }}
+      .volume-col {{ width: 118px; min-width: 118px; max-width: 118px; white-space: normal; word-break: break-word; }}
+      .risk-volume-col {{ width: 154px; min-width: 154px; max-width: 154px; white-space: normal; word-break: break-word; }}
       .spent-col {{ width: 94px; min-width: 94px; max-width: 94px; white-space: normal; word-break: break-word; }}
       .spent-year-col {{ width: 94px; min-width: 94px; max-width: 94px; white-space: normal; word-break: break-word; }}
       .closed-col {{ width: 190px; min-width: 190px; max-width: 190px; white-space: normal; word-break: break-word; }}
@@ -6413,6 +6423,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <th class="baseline-col">Базовая оценка, ч</th>
             <th>План, ч</th>
             <th>План с рисками, ч</th>
+            <th class="volume-col">Объем, ч</th>
+            <th class="risk-volume-col">Объем (для Плана с рисками), ч</th>
             <th class="spent-col">Факт всего, ч</th>
             <th class="spent-year-col">Факт за год, ч</th>
             <th class="closed-col">Закрыта</th>
@@ -6428,6 +6440,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <th class="baseline-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="baseline" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="baseline" data-filter-role="value"></div></th>
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="estimated" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="estimated" data-filter-role="value"></div></th>
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="risk" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="risk" data-filter-role="value"></div></th>
+            <th class="volume-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="volume" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="volume" data-filter-role="value"></div></th>
+            <th class="risk-volume-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="riskVolume" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="riskVolume" data-filter-role="value"></div></th>
             <th class="spent-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spent" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spent" data-filter-role="value"></div></th>
             <th class="spent-year-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spentYear" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spentYear" data-filter-role="value"></div></th>
             <th class="closed-col"><input class="filter-input-table" type="text" data-filter-key="closedOn" data-filter-role="text"></th>
@@ -6858,7 +6872,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           return;
         }}
         if (!Array.isArray(issues) || !issues.length) {{
-          snapshotIssuesTableBody.innerHTML = '<tr><td colspan="13">По текущему фильтру задач нет.</td></tr>';
+          snapshotIssuesTableBody.innerHTML = '<tr><td colspan="15">По текущему фильтру задач нет.</td></tr>';
           return;
         }}
         const groupMap = new Map();
@@ -6892,6 +6906,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             const groupBaseline = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_baseline_estimate_hours);
             const groupEstimated = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_estimated_hours);
             const groupRisk = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_risk_estimate_hours);
+            const groupVolume = "—";
+            const groupRiskVolume = "—";
             const groupSpent = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_spent_hours);
             const groupSpentYear = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_spent_hours_year);
             const groupClosedOn = isVirtualGroup ? "—" : escapeHtml(formatSnapshotDateTime(issue?.feature_group_closed_on));
@@ -6910,6 +6926,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupBaseline}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupEstimated}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupRisk}}</td>
+                <td class="snapshot-group-cell snapshot-group-metric volume-col">${{groupVolume}}</td>
+                <td class="snapshot-group-cell snapshot-group-metric risk-volume-col">${{groupRiskVolume}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupSpent}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupSpentYear}}</td>
                 <td class="snapshot-group-cell closed-col">${{groupClosedOn}}</td>
@@ -6933,6 +6951,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="baseline-col">${{formatFilterHours(orderedIssue?.baseline_estimate_hours)}}</td>
                 <td>${{formatFilterHours(orderedIssue?.estimated_hours)}}</td>
                 <td>${{formatFilterHours(orderedIssue?.risk_estimate_hours)}}</td>
+                <td class="volume-col">${{formatFilterHours(orderedIssue?.volume_hours)}}</td>
+                <td class="risk-volume-col">${{formatFilterHours(orderedIssue?.risk_volume_hours)}}</td>
                 <td class="spent-col">${{formatFilterHours(orderedIssue?.spent_hours)}}</td>
                 <td class="spent-year-col">${{formatFilterHours(orderedIssue?.spent_hours_year)}}</td>
                 <td class="closed-col">${{escapeHtml(formatSnapshotDateTime(orderedIssue?.closed_on))}}</td>
@@ -6962,6 +6982,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           estimated_value: "",
           risk_op: "",
           risk_value: "",
+          volume_op: "",
+          volume_value: "",
+          risk_volume_op: "",
+          risk_volume_value: "",
           spent_op: "",
           spent_value: "",
           spent_year_op: "",
@@ -6973,6 +6997,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           ["baseline_op", "baseline_value"],
           ["estimated_op", "estimated_value"],
           ["risk_op", "risk_value"],
+          ["volume_op", "volume_value"],
+          ["risk_volume_op", "risk_volume_value"],
           ["spent_op", "spent_value"],
           ["spent_year_op", "spent_year_value"],
         ];
@@ -7002,6 +7028,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           filters.estimated_value ||
           filters.risk_op ||
           filters.risk_value ||
+          filters.volume_op ||
+          filters.volume_value ||
+          filters.risk_volume_op ||
+          filters.risk_volume_value ||
           filters.spent_op ||
           filters.spent_value ||
           filters.spent_year_op ||
@@ -7054,6 +7084,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           estimated_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="estimated"][data-filter-role="value"]')?.value || ""),
           risk_op: String(document.querySelector('[data-filter-key="risk"][data-filter-role="op"]')?.value || ""),
           risk_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="risk"][data-filter-role="value"]')?.value || ""),
+          volume_op: String(document.querySelector('[data-filter-key="volume"][data-filter-role="op"]')?.value || ""),
+          volume_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="volume"][data-filter-role="value"]')?.value || ""),
+          risk_volume_op: String(document.querySelector('[data-filter-key="riskVolume"][data-filter-role="op"]')?.value || ""),
+          risk_volume_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="riskVolume"][data-filter-role="value"]')?.value || ""),
           spent_op: String(document.querySelector('[data-filter-key="spent"][data-filter-role="op"]')?.value || ""),
           spent_value: normalizeNumericFilterValue(document.querySelector('[data-filter-key="spent"][data-filter-role="value"]')?.value || ""),
           spent_year_op: String(document.querySelector('[data-filter-key="spentYear"][data-filter-role="op"]')?.value || ""),
@@ -7086,6 +7120,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if (filters.estimated_value) params.set("estimated_value", filters.estimated_value);
         if (filters.risk_op) params.set("risk_op", filters.risk_op);
         if (filters.risk_value) params.set("risk_value", filters.risk_value);
+        if (filters.volume_op) params.set("volume_op", filters.volume_op);
+        if (filters.volume_value) params.set("volume_value", filters.volume_value);
+        if (filters.risk_volume_op) params.set("risk_volume_op", filters.risk_volume_op);
+        if (filters.risk_volume_value) params.set("risk_volume_value", filters.risk_volume_value);
         if (filters.spent_op) params.set("spent_op", filters.spent_op);
         if (filters.spent_value) params.set("spent_value", filters.spent_value);
         if (filters.spent_year_op) params.set("spent_year_op", filters.spent_year_op);
@@ -10974,6 +11012,7 @@ def buildPlanningProjectsPage() -> str:
     th.baseline-col, td.baseline-col { width: 140px; }
     th.p-col, td.p-col { width: 10ch; min-width: 10ch; max-width: 10ch; }
     th.p2-col, td.p2-col { width: 18ch; min-width: 18ch; max-width: 18ch; }
+    th.use-risk-plan-col, td.use-risk-plan-col { width: 14ch; min-width: 14ch; max-width: 14ch; white-space: nowrap; text-align: center; }
     th.doc-col, td.doc-col,
     th.bitrix-col, td.bitrix-col,
     th.comment-col, td.comment-col { width: 30ch; min-width: 30ch; max-width: 30ch; white-space: nowrap; }
@@ -11102,6 +11141,7 @@ def buildPlanningProjectsPage() -> str:
               <th class="baseline-col" data-sort-key="baseline_estimate_hours">Базовая оценка<span class="sort-indicator"></span></th>
               <th class="p-col" data-sort-key="p1">P1 (факт / база), %<span class="sort-indicator"></span></th>
               <th class="p2-col" data-sort-key="p2">P2 (факт с багами / факт), %<span class="sort-indicator"></span></th>
+              <th class="use-risk-plan-col" data-sort-key="use_risk_plan">Использовать План с рисками<span class="sort-indicator"></span></th>
               <th class="doc-col" data-sort-key="estimate_doc_url">Док с оценкой<span class="sort-indicator"></span></th>
               <th class="bitrix-col" data-sort-key="bitrix_url">Bitrix<span class="sort-indicator"></span></th>
               <th class="comment-col" data-sort-key="comment_text">Комментарий<span class="sort-indicator"></span></th>
@@ -11132,13 +11172,20 @@ def buildPlanningProjectsPage() -> str:
               <th class="baseline-col"><input class="planning-filter-input" data-filter-key="baseline_estimate_hours" type="text" placeholder="Фильтр"></th>
               <th class="p-col"><input class="planning-filter-input" data-filter-key="p1" type="text" placeholder="Фильтр"></th>
               <th class="p2-col"><input class="planning-filter-input" data-filter-key="p2" type="text" placeholder="Фильтр"></th>
+              <th class="use-risk-plan-col">
+                <select class="planning-filter-select" data-filter-key="use_risk_plan">
+                  <option value="">Все</option>
+                  <option value="true">Да</option>
+                  <option value="false">Нет</option>
+                </select>
+              </th>
               <th class="doc-col"><input class="planning-filter-input" data-filter-key="estimate_doc_url" type="text" placeholder="Фильтр"></th>
               <th class="bitrix-col"><input class="planning-filter-input" data-filter-key="bitrix_url" type="text" placeholder="Фильтр"></th>
               <th class="comment-col"><input class="planning-filter-input" data-filter-key="comment_text" type="text" placeholder="Фильтр"></th>
             </tr>
           </thead>
           <tbody id="planningProjectsTableBody">
-            <tr><td colspan="22" class="empty-state">Загружаем записи...</td></tr>
+            <tr><td colspan="23" class="empty-state">Загружаем записи...</td></tr>
           </tbody>
         </table>
       </div>
@@ -11363,6 +11410,9 @@ def buildPlanningProjectsPage() -> str:
     function getPlanningProjectFieldValue(project, key) {
       if (key === "is_closed") {
         return project?.is_closed ? "true" : "false";
+      }
+      if (key === "use_risk_plan") {
+        return project?.use_risk_plan ? "true" : "false";
       }
       if (["year_1", "year_2", "year_3"].includes(key)) {
         const hoursKey = `hours_${key.slice(-1)}`;
@@ -11612,7 +11662,7 @@ def buildPlanningProjectsPage() -> str:
       const totalProjects = Number(window.__planningProjectsTotal || currentPlanningProjects.length || 0);
       planningProjectsCount.textContent = `Показано: ${projects.length} из ${currentPlanningProjects.length || 0} (в выборке ${totalProjects}, лимит 100)`;
       if (!projects.length) {
-        planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Пока нет ни одной записи.</td></tr>';
+        planningProjectsTableBody.innerHTML = '<tr><td colspan="23" class="empty-state">Пока нет ни одной записи.</td></tr>';
         return;
       }
 
@@ -11648,7 +11698,8 @@ def buildPlanningProjectsPage() -> str:
           <td class="year-hours-col">${formatOptionalNumber(project.hours_3)}</td>
           <td class="baseline-col">${formatOptionalNumber(project.baseline_estimate_hours)}</td>
           <td class="p-col">${formatOptionalNumber(project.p1)}</td>
-          <td class="p-col">${formatOptionalNumber(project.p2)}</td>
+          <td class="p2-col">${formatOptionalNumber(project.p2)}</td>
+          <td class="use-risk-plan-col">${project.use_risk_plan ? "Да" : "Нет"}</td>
           <td class="doc-col link-cell">${buildOptionalLink(project.estimate_doc_url)}</td>
           <td class="bitrix-col link-cell">${buildOptionalLink(project.bitrix_url)}</td>
           <td class="comment-col" title="${escapeHtml(project.comment_text ?? "")}">${truncateDisplay(project.comment_text)}</td>
@@ -11657,7 +11708,7 @@ def buildPlanningProjectsPage() -> str:
     }
 
     async function loadPlanningProjects() {
-      planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Загружаем записи...</td></tr>';
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="23" class="empty-state">Загружаем записи...</td></tr>';
       const params = new URLSearchParams();
       params.set("include_closed", "true");
       params.set("limit", "100");
@@ -11825,7 +11876,7 @@ def buildPlanningProjectsPage() -> str:
 
     loadPlanningProjects().catch((error) => {
       planningProjectsCount.textContent = "Ошибка";
-      planningProjectsTableBody.innerHTML = '<tr><td colspan="22" class="empty-state">Не удалось загрузить записи.</td></tr>';
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="23" class="empty-state">Не удалось загрузить записи.</td></tr>';
       setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
     });
 
@@ -15831,6 +15882,7 @@ def exportPlanningProjectsCsv(
             "Базовая оценка",
             "P1 (факт / база), %",
             "P2 (факт с багами / факт), %",
+            "Использовать План с рисками",
             "Док с оценкой",
             "Bitrix",
             "Комментарий",
@@ -15857,6 +15909,7 @@ def exportPlanningProjectsCsv(
                 formatPageHours(project.get("baseline_estimate_hours")) if project.get("baseline_estimate_hours") not in (None, "") else "",
                 formatPageHours(project.get("p1")) if project.get("p1") not in (None, "") else "",
                 formatPageHours(project.get("p2")) if project.get("p2") not in (None, "") else "",
+                "Да" if bool(project.get("use_risk_plan")) else "Нет",
                 str(project.get("estimate_doc_url") or ""),
                 str(project.get("bitrix_url") or ""),
                 str(project.get("comment_text") or ""),
@@ -15935,6 +15988,10 @@ def getProjectLatestSnapshotIssuesData(
     estimated_value: str | None = Query(None),
     risk_op: str | None = Query(None),
     risk_value: str | None = Query(None),
+    volume_op: str | None = Query(None),
+    volume_value: str | None = Query(None),
+    risk_volume_op: str | None = Query(None),
+    risk_volume_value: str | None = Query(None),
     spent_op: str | None = Query(None),
     spent_value: str | None = Query(None),
     spent_year_op: str | None = Query(None),
@@ -15960,6 +16017,10 @@ def getProjectLatestSnapshotIssuesData(
         estimatedValue=estimated_value,
         riskOp=risk_op,
         riskValue=risk_value,
+        volumeOp=volume_op,
+        volumeValue=volume_value,
+        riskVolumeOp=risk_volume_op,
+        riskVolumeValue=risk_volume_value,
         spentOp=spent_op,
         spentValue=spent_value,
         spentYearOp=spent_year_op,
@@ -15993,6 +16054,10 @@ def exportProjectLatestSnapshotIssuesCsv(
     estimated_value: str | None = Query(None),
     risk_op: str | None = Query(None),
     risk_value: str | None = Query(None),
+    volume_op: str | None = Query(None),
+    volume_value: str | None = Query(None),
+    risk_volume_op: str | None = Query(None),
+    risk_volume_value: str | None = Query(None),
     spent_op: str | None = Query(None),
     spent_value: str | None = Query(None),
     spent_year_op: str | None = Query(None),
@@ -16018,6 +16083,10 @@ def exportProjectLatestSnapshotIssuesCsv(
         estimatedValue=estimated_value,
         riskOp=risk_op,
         riskValue=risk_value,
+        volumeOp=volume_op,
+        volumeValue=volume_value,
+        riskVolumeOp=risk_volume_op,
+        riskVolumeValue=risk_volume_value,
         spentOp=spent_op,
         spentValue=spent_value,
         spentYearOp=spent_year_op,
@@ -16048,6 +16117,8 @@ def exportProjectLatestSnapshotIssuesCsv(
             "Базовая оценка, ч",
             "План, ч",
             "План с рисками, ч",
+            "Объем, ч",
+            "Объем (для Плана с рисками), ч",
             "Факт всего, ч",
             "Факт за год, ч",
             "Закрыта",
@@ -16066,6 +16137,8 @@ def exportProjectLatestSnapshotIssuesCsv(
                 formatPageHours(issue.get("baseline_estimate_hours")),
                 formatPageHours(issue.get("estimated_hours")),
                 formatPageHours(issue.get("risk_estimate_hours")),
+                formatPageHours(issue.get("volume_hours")),
+                formatPageHours(issue.get("risk_volume_hours")),
                 formatPageHours(issue.get("spent_hours")),
                 formatPageHours(issue.get("spent_hours_year")),
                 formatSnapshotPageDateTime(issue.get("closed_on")),
