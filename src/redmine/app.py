@@ -4594,6 +4594,7 @@ def buildBurndownPage(
     selectedP1Raw = str(p1Value or formatPageHours(planningP1Percent)).strip() or formatPageHours(planningP1Percent)
     selectedP2Raw = str(p2Value or formatPageHours(planningP2Percent)).strip() or formatPageHours(planningP2Percent)
     selectedUseRiskPlan = planningUseRiskPlan if useRiskPlan is None else bool(useRiskPlan)
+    useRiskPlanDefaultLabelClass = " planning-checkbox-default" if planningUseRiskPlanDefaultUsed and useRiskPlan is None else ""
     planningP1Value = escape(selectedP1Raw)
     planningP2Value = escape(selectedP2Raw)
     planningP1InputClass = " planning-input-warning" if planningP1Mixed else ""
@@ -4632,7 +4633,7 @@ def buildBurndownPage(
         f"<td>{planningDevelopmentHoursText}</td>"
         f"<td>{escape(planningP1SummaryText)}</td>"
         f"<td>{escape(planningP2SummaryText)}</td>"
-        f'<td class="{"planning-projects-default-value" if planningUseRiskPlanDefaultUsed else ""}">{escape(planningUseRiskPlanSummaryText)}</td>'
+        f"<td>{escape(planningUseRiskPlanSummaryText)}</td>"
         "</tr>"
         if len(planningProjects) > 1
         else ""
@@ -4790,10 +4791,6 @@ def buildBurndownPage(
       border-top: 2px solid var(--line);
     }}
 
-    .planning-projects-default-value {{
-      color: #d9534f;
-    }}
-
     .planning-projects-empty {{
       color: var(--muted);
       line-height: 1.5;
@@ -4872,6 +4869,10 @@ def buildBurndownPage(
       gap: 10px;
       font-weight: 700;
       min-height: 44px;
+    }}
+
+    .field-checkbox-label.planning-checkbox-default {{
+      color: #d9534f;
     }}
 
     .planning-input-warning {{
@@ -5147,7 +5148,7 @@ def buildBurndownPage(
       </div>
       <div class="controls-row">
       <div class="field field-checkbox">
-        <label class="field-checkbox-label" for="useRiskPlanCheckbox">
+        <label class="field-checkbox-label{useRiskPlanDefaultLabelClass}" for="useRiskPlanCheckbox">
           <input type="hidden" name="use_risk_plan_present" value="1">
           <input id="useRiskPlanCheckbox" type="checkbox" name="use_risk_plan" value="1"{" checked" if selectedUseRiskPlan else ""}>
           <span>Использовать План с рисками</span>
