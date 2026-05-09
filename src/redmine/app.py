@@ -4323,7 +4323,7 @@ def isBurndownClosedTaskStatus(statusName: object) -> bool:
 
 def isBurndownReadyFeatureStatus(statusName: object) -> bool:
     normalized = normalizeBurndownText(statusName)
-    return normalized.startswith("готов") or normalized in {"закрыта", "решена"}
+    return normalized.startswith("готов") or normalized in {"закрыта", "решена", "отказ"}
 
 
 def calculateBurndownBudgetBaselineTotal(issues: list[dict[str, object]]) -> float:
@@ -5382,7 +5382,7 @@ def buildBurndownPage(
             <li>
               <div>
                 <div class="legend-name">Feature и виртуальная Feature</div>
-                <div class="formula-text">Для каждой Feature отдельно собираются объем/остаток по разработке и по ошибкам. Если Feature в статусе «Готов*», «Закрыта» или «Решена», прогноз = разработка + ошибки. Иначе прогноз = max(текущий объем, сумма базовых оценок задач Feature × P1/100 × P2/100). Для задач без Feature считается отдельная виртуальная Feature по тем же правилам.</div>
+                <div class="formula-text">Для каждой Feature отдельно собираются объем/остаток по разработке и по ошибкам. Если Feature в статусе «Готов*», «Закрыта», «Решена» или «Отказ», прогноз = разработка + ошибки. Иначе прогноз = max(текущий объем, сумма базовых оценок задач Feature × P1/100 × P2/100). Для задач без Feature считается отдельная виртуальная Feature по тем же правилам.</div>
               </div>
             </li>
           </ul>
