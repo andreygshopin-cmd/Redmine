@@ -16303,7 +16303,33 @@ def exportProjectLatestSnapshotIssuesCsv(
             "Версия",
         ]
     )
+    virtualForecastRowWritten = False
     for issue in exportPayload.get("issues") or []:
+        if bool(issue.get("feature_group_is_virtual")) and not virtualForecastRowWritten:
+            writer.writerow(
+                [
+                    "",
+                    str(issue.get("feature_group_subject") or "без Feature"),
+                    "—",
+                    "—",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    formatPageHours(issue.get("feature_forecast_hours")),
+                    formatPageHours(issue.get("feature_risk_forecast_hours")),
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                ]
+            )
+            virtualForecastRowWritten = True
         writer.writerow(
             [
                 issue.get("issue_redmine_id") or "",
@@ -16318,12 +16344,8 @@ def exportProjectLatestSnapshotIssuesCsv(
                 formatPageHours(issue.get("risk_volume_hours")),
                 formatPageHours(issue.get("remaining_hours")),
                 formatPageHours(issue.get("risk_remaining_hours")),
-                formatPageHours(issue.get("feature_forecast_hours"))
-                if issue.get("is_feature_group_root") or issue.get("feature_group_is_virtual")
-                else "",
-                formatPageHours(issue.get("feature_risk_forecast_hours"))
-                if issue.get("is_feature_group_root") or issue.get("feature_group_is_virtual")
-                else "",
+                formatPageHours(issue.get("feature_forecast_hours")) if issue.get("is_feature_group_root") else "",
+                formatPageHours(issue.get("feature_risk_forecast_hours")) if issue.get("is_feature_group_root") else "",
                 formatPageHours(issue.get("spent_hours")),
                 formatPageHours(issue.get("spent_hours_year")),
                 formatSnapshotPageDateTime(issue.get("closed_on")),
