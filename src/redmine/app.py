@@ -3344,6 +3344,16 @@ def formatSnapshotPageDateTime(value: object) -> str:
     return str(value).replace("T", " ").replace("+00:00", " UTC")
 
 
+def normalizePlanningPercentValue(value: object, defaultPercent: float = 150.0) -> float:
+    if value in (None, ""):
+        return defaultPercent
+    try:
+        numericValue = float(value)
+    except (TypeError, ValueError):
+        return defaultPercent
+    return numericValue * 100 if abs(numericValue) <= 10 else numericValue
+
+
 def buildProjectRedmineIssuesUrl(projectIdentifier: object) -> str:
     projectIdentifierRaw = str(projectIdentifier or "").strip()
     if not projectIdentifierRaw:
@@ -4469,6 +4479,98 @@ def buildBurndownChartSeeds(snapshotRuns: list[dict[str, object]]) -> list[dict[
         )
 
     return chartSeeds
+
+
+def applyFeatureForecastsToSnapshotIssues(
+    issues: list[dict[str, object]],
+    p1Percent: float,
+    p2Percent: float,
+) -> list[dict[str, object]]:
+    p1Factor = p1Percent / 100
+    p2Factor = p2Percent / 100
+    groupsByFeatureId: dict[str, dict[str, object]] = {}
+
+    for issue in issues:
+        featureGroupId = issue.get("feature_group_issue_redmine_id")
+        if not featureGroupId or bool(issue.get("feature_group_is_virtual")):
+            issue["feature_forecast_hours"] = None
+            issue["feature_risk_forecast_hours"] = None
+            continue
+
+        groupKey = str(featureGroupId)
+        group = groupsByFeatureId.setdefault(
+            groupKey,
+            {
+                "rows": [],
+                "baseline_total": 0.0,
+                "current_total": 0.0,
+                "risk_current_total": 0.0,
+                "is_ready": False,
+                "status_known": False,
+            },
+        )
+        group["rows"].append(issue)
+
+        if bool(issue.get("is_feature_group_root")):
+            group["is_ready"] = isBurndownReadyFeatureStatus(issue.get("status_name") or issue.get("feature_group_status_name"))
+            group["status_known"] = True
+            continue
+
+        group["baseline_total"] = float(group["baseline_total"]) + float(issue.get("baseline_estimate_hours") or 0)
+        group["current_total"] = float(group["current_total"]) + float(issue.get("volume_hours") or 0)
+        group["risk_current_total"] = float(group["risk_current_total"]) + float(issue.get("risk_volume_hours") or 0)
+
+        if not bool(group["status_known"]):
+            group["is_ready"] = isBurndownReadyFeatureStatus(issue.get("feature_group_status_name"))
+
+    for group in groupsByFeatureId.values():
+        baselineTotal = float(group["baseline_total"])
+        currentTotal = float(group["current_total"])
+        riskCurrentTotal = float(group["risk_current_total"])
+        forecastFloor = baselineTotal * p1Factor * p2Factor
+        forecast = currentTotal if bool(group["is_ready"]) else max(currentTotal, forecastFloor)
+        riskForecast = riskCurrentTotal if bool(group["is_ready"]) else max(riskCurrentTotal, forecastFloor)
+        for issue in group["rows"]:
+            issue["feature_forecast_hours"] = forecast
+            issue["feature_risk_forecast_hours"] = riskForecast
+
+    return issues
+
+
+def enrichSnapshotPayloadWithFeatureForecasts(
+    snapshotPayload: dict[str, object],
+    fallbackProjectIdentifier: str = "",
+) -> dict[str, object]:
+    issues = snapshotPayload.get("issues")
+    if not isinstance(issues, list) or not issues:
+        return snapshotPayload
+
+    snapshotRun = snapshotPayload.get("snapshot_run")
+    snapshotRunMapping = snapshotRun if isinstance(snapshotRun, dict) else {}
+    projectIdentifierRaw = str(snapshotRunMapping.get("project_identifier") or fallbackProjectIdentifier or "").strip()
+    planningProjects = listPlanningProjectsByRedmineIdentifier(projectIdentifierRaw) if projectIdentifierRaw else []
+
+    planningP1Values = [
+        normalizePlanningPercentValue(project.get("p1"), 150.0)
+        for project in planningProjects
+        if project.get("p1") not in (None, "")
+    ]
+    planningP2Values = [
+        normalizePlanningPercentValue(project.get("p2"), 150.0)
+        for project in planningProjects
+        if project.get("p2") not in (None, "")
+    ]
+    planningP1Unique = sorted({round(value, 6) for value in planningP1Values})
+    planningP2Unique = sorted({round(value, 6) for value in planningP2Values})
+    planningP1Percent = planningP1Unique[0] if len(planningP1Unique) == 1 else 150.0
+    planningP2Percent = planningP2Unique[0] if len(planningP2Unique) == 1 else 150.0
+
+    snapshotPayload["issues"] = applyFeatureForecastsToSnapshotIssues(
+        [dict(issue) for issue in issues],
+        planningP1Percent,
+        planningP2Percent,
+    )
+    return snapshotPayload
 
 
 def buildBurndownDateLabels(dateFrom: date, dateTo: date) -> list[str]:
@@ -5998,7 +6100,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
   </body>
 </html>"""
 
-    issueRowsHtml = ['<tr><td colspan="17">Загружаем задачи...</td></tr>']
+    issueRowsHtml = ['<tr><td colspan="19">Загружаем задачи...</td></tr>']
 
     summaryView = buildSnapshotSummaryView(snapshotPayload.get("summary"))
     totalBaselineEstimateHours = summaryView["baseline_estimate_hours"]
@@ -6033,6 +6135,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         snapshotRun.get("project_identifier")
         or (storedProject.get("identifier") if storedProject else "")
     ).strip()
+    snapshotPayload = enrichSnapshotPayloadWithFeatureForecasts(snapshotPayload, projectIdentifierRaw)
+    issues = snapshotPayload["issues"]
     projectIdentifier = escape(projectIdentifierRaw or "—")
     snapshotPageUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
     if selectedDate:
@@ -6219,7 +6323,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         to {{ transform: rotate(360deg); }}
       }}
       table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); }}
-      #snapshotIssuesTable {{ min-width: 2290px; table-layout: auto; }}
+      #snapshotIssuesTable {{ min-width: 2550px; table-layout: auto; }}
       th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }}
       th {{ position: sticky; top: 0; z-index: 4; background: #eef6f7; color: #426179; text-transform: uppercase; font-size: 0.74rem; line-height: 1.15; }}
       #snapshotIssuesTable thead th {{ top: 0; }}
@@ -6235,6 +6339,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .risk-volume-col {{ width: 154px; min-width: 154px; max-width: 154px; white-space: normal; word-break: break-word; }}
       .remaining-col {{ width: 118px; min-width: 118px; max-width: 118px; white-space: normal; word-break: break-word; }}
       .risk-remaining-col {{ width: 154px; min-width: 154px; max-width: 154px; white-space: normal; word-break: break-word; }}
+      .forecast-col {{ width: 118px; min-width: 118px; max-width: 118px; white-space: normal; word-break: break-word; }}
+      .risk-forecast-col {{ width: 154px; min-width: 154px; max-width: 154px; white-space: normal; word-break: break-word; }}
       .spent-col {{ width: 94px; min-width: 94px; max-width: 94px; white-space: normal; word-break: break-word; }}
       .spent-year-col {{ width: 94px; min-width: 94px; max-width: 94px; white-space: normal; word-break: break-word; }}
       .closed-col {{ width: 190px; min-width: 190px; max-width: 190px; white-space: normal; word-break: break-word; }}
@@ -6437,6 +6543,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <th class="risk-volume-col">Объем (для Плана с рисками), ч</th>
             <th class="remaining-col">Остаток, ч</th>
             <th class="risk-remaining-col">Остаток (для Плана с рисками), ч</th>
+            <th class="forecast-col">Прогноз, ч</th>
+            <th class="risk-forecast-col">Прогноз (для Плана с рисками), ч</th>
             <th class="spent-col">Факт всего, ч</th>
             <th class="spent-year-col">Факт за год, ч</th>
             <th class="closed-col">Закрыта</th>
@@ -6456,6 +6564,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <th class="risk-volume-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="riskVolume" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="riskVolume" data-filter-role="value"></div></th>
             <th class="remaining-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="remaining" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="remaining" data-filter-role="value"></div></th>
             <th class="risk-remaining-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="riskRemaining" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="riskRemaining" data-filter-role="value"></div></th>
+            <th class="forecast-col"></th>
+            <th class="risk-forecast-col"></th>
             <th class="spent-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spent" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spent" data-filter-role="value"></div></th>
             <th class="spent-year-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spentYear" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spentYear" data-filter-role="value"></div></th>
             <th class="closed-col"><input class="filter-input-table" type="text" data-filter-key="closedOn" data-filter-role="text"></th>
@@ -6886,7 +6996,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           return;
         }}
         if (!Array.isArray(issues) || !issues.length) {{
-          snapshotIssuesTableBody.innerHTML = '<tr><td colspan="17">По текущему фильтру задач нет.</td></tr>';
+          snapshotIssuesTableBody.innerHTML = '<tr><td colspan="19">По текущему фильтру задач нет.</td></tr>';
           return;
         }}
         const groupMap = new Map();
@@ -6924,6 +7034,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             const groupRiskVolume = "—";
             const groupRemaining = "—";
             const groupRiskRemaining = "—";
+            const groupForecast = !isVirtualGroup ? formatFilterHours(issue?.feature_forecast_hours) : "—";
+            const groupRiskForecast = !isVirtualGroup ? formatFilterHours(issue?.feature_risk_forecast_hours) : "—";
             const groupSpent = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_spent_hours);
             const groupSpentYear = isVirtualGroup ? "—" : formatFilterHours(issue?.feature_group_spent_hours_year);
             const groupClosedOn = isVirtualGroup ? "—" : escapeHtml(formatSnapshotDateTime(issue?.feature_group_closed_on));
@@ -6946,6 +7058,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="snapshot-group-cell snapshot-group-metric risk-volume-col">${{groupRiskVolume}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric remaining-col">${{groupRemaining}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric risk-remaining-col">${{groupRiskRemaining}}</td>
+                <td class="snapshot-group-cell snapshot-group-metric forecast-col">${{groupForecast}}</td>
+                <td class="snapshot-group-cell snapshot-group-metric risk-forecast-col">${{groupRiskForecast}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupSpent}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupSpentYear}}</td>
                 <td class="snapshot-group-cell closed-col">${{groupClosedOn}}</td>
@@ -6973,6 +7087,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="risk-volume-col">${{formatFilterHours(orderedIssue?.risk_volume_hours)}}</td>
                 <td class="remaining-col">${{formatFilterHours(orderedIssue?.remaining_hours)}}</td>
                 <td class="risk-remaining-col">${{formatFilterHours(orderedIssue?.risk_remaining_hours)}}</td>
+                <td class="forecast-col">—</td>
+                <td class="risk-forecast-col">—</td>
                 <td class="spent-col">${{formatFilterHours(orderedIssue?.spent_hours)}}</td>
                 <td class="spent-year-col">${{formatFilterHours(orderedIssue?.spent_hours_year)}}</td>
                 <td class="closed-col">${{escapeHtml(formatSnapshotDateTime(orderedIssue?.closed_on))}}</td>
@@ -16075,13 +16191,14 @@ def getProjectLatestSnapshotIssuesData(
         assignedTo=assigned_to,
         fixedVersion=fixed_version,
     )
-    return getFilteredSnapshotIssuesForProjectByDate(
+    payload = getFilteredSnapshotIssuesForProjectByDate(
         project_redmine_id,
         captured_for_date,
         filters=filters,
         page=page,
         pageSize=page_size,
     )
+    return enrichSnapshotPayloadWithFeatureForecasts(payload)
 
 
 @app.get("/projects/{project_redmine_id}/latest-snapshot-issues/export.csv")
@@ -16154,6 +16271,7 @@ def exportProjectLatestSnapshotIssuesCsv(
         captured_for_date,
         filters=filters,
     )
+    exportPayload = enrichSnapshotPayloadWithFeatureForecasts(exportPayload)
     snapshotRun = exportPayload.get("snapshot_run")
     if snapshotRun is None:
         raise HTTPException(status_code=404, detail="Срез проекта не найден")
@@ -16175,6 +16293,8 @@ def exportProjectLatestSnapshotIssuesCsv(
             "Объем (для Плана с рисками), ч",
             "Остаток, ч",
             "Остаток (для Плана с рисками), ч",
+            "Прогноз, ч",
+            "Прогноз (для Плана с рисками), ч",
             "Факт всего, ч",
             "Факт за год, ч",
             "Закрыта",
@@ -16197,6 +16317,8 @@ def exportProjectLatestSnapshotIssuesCsv(
                 formatPageHours(issue.get("risk_volume_hours")),
                 formatPageHours(issue.get("remaining_hours")),
                 formatPageHours(issue.get("risk_remaining_hours")),
+                formatPageHours(issue.get("feature_forecast_hours")) if issue.get("is_feature_group_root") else "",
+                formatPageHours(issue.get("feature_risk_forecast_hours")) if issue.get("is_feature_group_root") else "",
                 formatPageHours(issue.get("spent_hours")),
                 formatPageHours(issue.get("spent_hours_year")),
                 formatSnapshotPageDateTime(issue.get("closed_on")),
