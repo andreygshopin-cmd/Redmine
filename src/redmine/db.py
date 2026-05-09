@@ -2779,7 +2779,7 @@ def _snapshotIssueFieldSql(alias: str, fieldName: str) -> str:
     return f"{alias}.{fieldName}" if alias else fieldName
 
 
-def _buildSnapshotIssueVolumeSql(alias: str = "") -> tuple[str, str]:
+def _buildSnapshotIssueMetricsSql(alias: str = "") -> tuple[str, str, str, str]:
     trackerSql = f"LOWER(TRIM(COALESCE({_snapshotIssueFieldSql(alias, 'tracker_name')}, '')))"
     statusSql = f"LOWER(TRIM(COALESCE({_snapshotIssueFieldSql(alias, 'status_name')}, '')))"
     baselineSql = f"COALESCE({_snapshotIssueFieldSql(alias, 'baseline_estimate_hours')}, 0)"
@@ -2824,7 +2824,41 @@ def _buildSnapshotIssueVolumeSql(alias: str = "") -> tuple[str, str]:
         END
     """.strip()
 
-    return volumeSql, riskVolumeSql
+    remainingSql = f"""
+        CASE
+            WHEN {trackerSql} = 'разработка' THEN
+                CASE
+                    WHEN {statusSql} IN {closedStatusesSql} THEN 0
+                    ELSE GREATEST(0, GREATEST({baselineSql}, {estimatedSql}) - {spentSql})
+                END
+            WHEN {trackerSql} = 'процессы разработки' THEN 0
+            WHEN {trackerSql} = 'ошибка' THEN
+                CASE
+                    WHEN {statusSql} IN {closedStatusesSql} THEN 0
+                    ELSE GREATEST(0, {estimatedSql} - {spentSql})
+                END
+            ELSE NULL
+        END
+    """.strip()
+
+    riskRemainingSql = f"""
+        CASE
+            WHEN {trackerSql} = 'разработка' THEN
+                CASE
+                    WHEN {statusSql} IN {closedStatusesSql} THEN 0
+                    ELSE GREATEST(0, GREATEST({baselineSql}, {riskEstimatedSql}) - {spentSql})
+                END
+            WHEN {trackerSql} = 'процессы разработки' THEN 0
+            WHEN {trackerSql} = 'ошибка' THEN
+                CASE
+                    WHEN {statusSql} IN {closedStatusesSql} THEN 0
+                    ELSE GREATEST(0, {riskEstimatedSql} - {spentSql})
+                END
+            ELSE NULL
+        END
+    """.strip()
+
+    return volumeSql, riskVolumeSql, remainingSql, riskRemainingSql
 
 
 def _buildSnapshotIssueFilterParts(filters: dict[str, object] | None) -> tuple[list[str], dict[str, object], list[object]]:
@@ -2859,7 +2893,7 @@ def _buildSnapshotIssueFilterParts(filters: dict[str, object] | None) -> tuple[l
         params["status_names"] = statusNames
         bindParams.append(bindparam("status_names", expanding=True))
 
-    volumeSql, riskVolumeSql = _buildSnapshotIssueVolumeSql()
+    volumeSql, riskVolumeSql, remainingSql, _riskRemainingSql = _buildSnapshotIssueMetricsSql()
     numericMappings = {
         "done_ratio": "COALESCE(done_ratio, 0)",
         "baseline": "COALESCE(baseline_estimate_hours, 0)",
@@ -2867,6 +2901,7 @@ def _buildSnapshotIssueFilterParts(filters: dict[str, object] | None) -> tuple[l
         "risk": "COALESCE(risk_estimate_hours, 0)",
         "volume": f"COALESCE(({volumeSql}), 0)",
         "risk_volume": f"COALESCE(({riskVolumeSql}), 0)",
+        "remaining": f"COALESCE(({remainingSql}), 0)",
         "spent": "COALESCE(spent_hours, 0)",
         "spent_year": "COALESCE(spent_hours_year, 0)",
     }
@@ -2912,7 +2947,7 @@ def _getSnapshotIssueFilterOptions(connection, snapshotRunId: int) -> dict[str, 
 
 def _buildSnapshotIssueHierarchyQuery(baseWhereSql: str, paginated: bool) -> str:
     paginationSql = "\n            LIMIT :limit OFFSET :offset" if paginated else ""
-    volumeSql, riskVolumeSql = _buildSnapshotIssueVolumeSql("filtered_items")
+    volumeSql, riskVolumeSql, remainingSql, _riskRemainingSql = _buildSnapshotIssueMetricsSql("filtered_items")
     return f"""
             WITH RECURSIVE snapshot_items AS (
                 SELECT
@@ -3007,6 +3042,7 @@ def _buildSnapshotIssueHierarchyQuery(baseWhereSql: str, paginated: bool) -> str
                 filtered_items.risk_estimate_hours,
                 {volumeSql} AS volume_hours,
                 {riskVolumeSql} AS risk_volume_hours,
+                {remainingSql} AS remaining_hours,
                 filtered_items.spent_hours,
                 filtered_items.spent_hours_year,
                 filtered_items.start_date,
