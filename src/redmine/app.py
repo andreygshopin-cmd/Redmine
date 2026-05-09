@@ -10649,7 +10649,13 @@ def buildPlanningProjectsPage() -> str:
       align-items: end;
     }
     .form-row.metrics-row {
-      grid-template-columns: minmax(180px, 1.15fr) auto minmax(180px, 1fr) minmax(170px, 1fr) minmax(220px, 1fr);
+      grid-template-columns:
+        minmax(190px, 1.15fr)
+        minmax(150px, 0.95fr)
+        minmax(150px, 0.9fr)
+        minmax(185px, 1fr)
+        auto;
+      gap: 12px 14px;
     }
     .form-panels {
       display: grid;
@@ -10762,6 +10768,17 @@ def buildPlanningProjectsPage() -> str:
       min-height: 42px;
       font-weight: 600;
       color: var(--text);
+    }
+    .metrics-row .checkbox-field {
+      align-self: end;
+      min-height: 44px;
+      padding-bottom: 10px;
+      white-space: nowrap;
+    }
+    .links-grid .checkbox-field {
+      min-height: 0;
+      padding: 0;
+      white-space: nowrap;
     }
     .table-action-button {
       background: #eef2f5;
@@ -11074,10 +11091,6 @@ def buildPlanningProjectsPage() -> str:
               <label for="planningProjectDevelopmentHours">Часы разработки с багфиксом</label>
               <input id="planningProjectDevelopmentHours" type="number" step="0.1" inputmode="decimal">
             </div>
-            <label class="checkbox-field" for="planningProjectQuestionFlag">
-              <input id="planningProjectQuestionFlag" type="checkbox">
-              <span>?</span>
-            </label>
             <div class="field">
               <label for="planningProjectBaselineEstimate">Базовая оценка</label>
               <input id="planningProjectBaselineEstimate" type="number" step="0.1" inputmode="decimal">
@@ -11133,14 +11146,18 @@ def buildPlanningProjectsPage() -> str:
                   <label for="planningProjectEstimateDoc">Док с оценкой</label>
                   <input id="planningProjectEstimateDoc" type="url" placeholder="https://">
                 </div>
-                <div class="field">
-                  <label for="planningProjectBitrix">Bitrix</label>
-                  <input id="planningProjectBitrix" type="url" placeholder="https://">
-                </div>
-                <div class="field">
-                  <label for="planningProjectComment">Комментарий</label>
-                  <textarea id="planningProjectComment"></textarea>
-                </div>
+              <div class="field">
+                <label for="planningProjectBitrix">Bitrix</label>
+                <input id="planningProjectBitrix" type="url" placeholder="https://">
+              </div>
+              <label class="checkbox-field" for="planningProjectQuestionFlag">
+                <input id="planningProjectQuestionFlag" type="checkbox">
+                <span>Есть вопросы</span>
+              </label>
+              <div class="field">
+                <label for="planningProjectComment">Комментарий</label>
+                <textarea id="planningProjectComment"></textarea>
+              </div>
               </div>
             </section>
           </div>
