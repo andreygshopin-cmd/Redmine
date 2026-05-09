@@ -4637,6 +4637,179 @@ def buildSnapshotTreeOrderPy(groupIssues: list[dict[str, object]]) -> list[dict[
     return ordered
 
 
+def buildPlanningProjectsPanelCss() -> str:
+    return """
+    .planning-projects-panel {
+      margin: -2px 0 18px;
+      padding: 14px 16px 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .planning-projects-title {
+      margin: 0 0 12px;
+      font-size: 1rem;
+      color: var(--text);
+    }
+
+    .planning-projects-title a {
+      color: inherit;
+      text-decoration: none;
+      border-bottom: 1px dashed rgba(55, 93, 119, 0.55);
+    }
+
+    .planning-projects-title a:hover {
+      border-bottom-style: solid;
+    }
+
+    .planning-projects-table-wrap {
+      overflow-x: auto;
+    }
+
+    .planning-projects-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.94rem;
+    }
+
+    .planning-projects-table th,
+    .planning-projects-table td {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    .planning-projects-table th:first-child,
+    .planning-projects-table td:first-child {
+      white-space: normal;
+      min-width: 260px;
+    }
+
+    .planning-projects-table th {
+      color: #426179;
+      background: #eef6f7;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      line-height: 1.25;
+    }
+
+    .planning-projects-table tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .planning-projects-total-row td {
+      font-weight: 700;
+      background: #f8fbfd;
+      border-top: 2px solid var(--line);
+    }
+
+    .planning-projects-empty {
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    """
+
+
+def buildPlanningProjectsPanelHtml(
+    projectIdentifierRaw: str,
+    projectNameRaw: str,
+    planningProjects: list[dict[str, object]],
+) -> str:
+    def formatPlanningMetric(value: object) -> str:
+        if value in (None, ""):
+            return "—"
+        try:
+            numericValue = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+        return formatPageHours(numericValue)
+
+    def formatPlanningPercent(value: object) -> str:
+        if value in (None, ""):
+            return "—"
+        normalizedValue = normalizePlanningPercentValue(value, 150.0)
+        return formatPageHours(normalizedValue)
+
+    totalPlanningBaseline = sum(float(project.get("baseline_estimate_hours") or 0) for project in planningProjects)
+    totalPlanningDevelopmentHours = sum(float(project.get("development_hours") or 0) for project in planningProjects)
+
+    planningP1Values = [
+        normalizePlanningPercentValue(project.get("p1"), 150.0)
+        for project in planningProjects
+        if project.get("p1") not in (None, "")
+    ]
+    planningP2Values = [
+        normalizePlanningPercentValue(project.get("p2"), 150.0)
+        for project in planningProjects
+        if project.get("p2") not in (None, "")
+    ]
+    planningP1Unique = sorted({round(value, 6) for value in planningP1Values})
+    planningP2Unique = sorted({round(value, 6) for value in planningP2Values})
+    planningP1Percent = planningP1Unique[0] if len(planningP1Unique) == 1 else 150.0
+    planningP2Percent = planningP2Unique[0] if len(planningP2Unique) == 1 else 150.0
+    planningP1DefaultUsed = len(planningP1Unique) != 1
+    planningP2DefaultUsed = len(planningP2Unique) != 1
+    planningUseRiskPlan = bool(planningProjects) and all(bool(project.get("use_risk_plan")) for project in planningProjects)
+    planningUseRiskPlanAny = any(bool(project.get("use_risk_plan")) for project in planningProjects)
+    planningUseRiskPlanDefaultUsed = planningUseRiskPlanAny and not planningUseRiskPlan
+    planningProjectsUrl = (
+        f"/planning-projects?redmine_identifier={quote(projectIdentifierRaw)}&project_name={quote(projectNameRaw)}&open_mode=auto"
+        if projectIdentifierRaw
+        else "/planning-projects"
+    )
+    planningProjectRowsHtml = "".join(
+        (
+            "<tr>"
+            f'<td>{escape(str(project.get("customer") or "—"))} - {escape(str(project.get("project_name") or "Без названия"))}</td>'
+            f'<td>{escape(formatPlanningMetric(project.get("baseline_estimate_hours")))}</td>'
+            f'<td>{escape(formatPlanningMetric(project.get("development_hours")))}</td>'
+            f'<td>{escape(formatPlanningPercent(project.get("p1")))}</td>'
+            f'<td>{escape(formatPlanningPercent(project.get("p2")))}</td>'
+            f'<td>{"Да" if bool(project.get("use_risk_plan")) else "Нет"}</td>'
+            "</tr>"
+        )
+        for project in planningProjects
+    )
+    planningP1SummaryText = f"{formatPageHours(planningP1Percent)}{' (по умолч.)' if planningP1DefaultUsed else ''}"
+    planningP2SummaryText = f"{formatPageHours(planningP2Percent)}{' (по умолч.)' if planningP2DefaultUsed else ''}"
+    planningUseRiskPlanSummaryText = (
+        "Да"
+        if planningUseRiskPlan
+        else "Нет (по умолч.)"
+        if planningUseRiskPlanDefaultUsed
+        else "Нет"
+    )
+    planningProjectTotalsRowHtml = (
+        "<tr class=\"planning-projects-total-row\">"
+        "<td>Итого</td>"
+        f"<td>{escape(formatPlanningMetric(totalPlanningBaseline))}</td>"
+        f"<td>{escape(formatPlanningMetric(totalPlanningDevelopmentHours))}</td>"
+        f"<td>{escape(planningP1SummaryText)}</td>"
+        f"<td>{escape(planningP2SummaryText)}</td>"
+        f"<td>{escape(planningUseRiskPlanSummaryText)}</td>"
+        "</tr>"
+        if len(planningProjects) > 1
+        else ""
+    )
+    return f"""
+    <section class="planning-projects-panel">
+      <h2 class="planning-projects-title">Параметры <a href="{escape(planningProjectsUrl)}">проектов</a></h2>
+      {
+        '<div class="planning-projects-table-wrap"><table class="planning-projects-table"><thead><tr><th>Имя</th><th>Базовая оценка</th><th>Лимит разработки с багфиксом</th><th>P1 = факт / база, %</th><th>P2 = факт с багами / факт, %</th><th>Использовать План с рисками</th></tr></thead><tbody>'
+        + planningProjectRowsHtml
+        + planningProjectTotalsRowHtml
+        + '</tbody></table></div>'
+        if planningProjectRowsHtml
+        else '<div class="planning-projects-empty">Для этого идентификатора в Планировании проектов пока нет записей.</div>'
+      }
+    </section>
+    """
+
+
 def buildBurndownDateLabels(dateFrom: date, dateTo: date) -> list[str]:
     currentDate = dateFrom
     lastDate = dateTo
@@ -4721,15 +4894,6 @@ def buildBurndownPage(
     projectIdentifierRaw = str(projectInfo.get("project_identifier") or projectIdentifierRaw or "").strip()
     projectIdentifier = escape(projectIdentifierRaw or "—")
 
-    def formatPlanningMetric(value: object) -> str:
-        if value in (None, ""):
-            return "—"
-        try:
-            numericValue = float(value)
-        except (TypeError, ValueError):
-            return str(value)
-        return formatPageHours(numericValue)
-
     def normalizePlanningPercent(value: object, defaultPercent: float) -> float:
         if value in (None, ""):
             return defaultPercent
@@ -4738,16 +4902,6 @@ def buildBurndownPage(
         except (TypeError, ValueError):
             return defaultPercent
         return numericValue * 100 if abs(numericValue) <= 10 else numericValue
-
-    def formatPlanningPercent(value: object) -> str:
-        if value in (None, ""):
-            return "—"
-        try:
-            numericValue = float(value)
-        except (TypeError, ValueError):
-            return str(value)
-        normalizedValue = numericValue * 100 if abs(numericValue) <= 10 else numericValue
-        return formatPageHours(normalizedValue)
 
     planningP1Values = [
         normalizePlanningPercent(project.get("p1"), 150.0)
@@ -4770,10 +4924,7 @@ def buildBurndownPage(
     planningP1DefaultUsed = len(planningP1Unique) != 1
     planningP2DefaultUsed = len(planningP2Unique) != 1
     planningUseRiskPlanDefaultUsed = planningUseRiskPlanAny and not planningUseRiskPlan
-    totalPlanningBaseline = sum(float(project.get("baseline_estimate_hours") or 0) for project in planningProjects)
     totalPlanningDevelopmentHours = sum(float(project.get("development_hours") or 0) for project in planningProjects)
-    planningBaselineText = escape(formatPlanningMetric(totalPlanningBaseline))
-    planningDevelopmentHoursText = escape(formatPlanningMetric(totalPlanningDevelopmentHours))
     selectedP1Raw = str(p1Value or formatPageHours(planningP1Percent)).strip() or formatPageHours(planningP1Percent)
     selectedP2Raw = str(p2Value or formatPageHours(planningP2Percent)).strip() or formatPageHours(planningP2Percent)
     selectedUseRiskPlan = planningUseRiskPlan if useRiskPlan is None else bool(useRiskPlan)
@@ -4782,58 +4933,7 @@ def buildBurndownPage(
     planningP2Value = escape(selectedP2Raw)
     planningP1InputClass = " planning-input-warning" if planningP1Mixed else ""
     planningP2InputClass = " planning-input-warning" if planningP2Mixed else ""
-    planningProjectsUrl = (
-        f"/planning-projects?redmine_identifier={quote(projectIdentifierRaw)}&project_name={quote(projectNameRaw)}&open_mode=auto"
-        if projectIdentifierRaw
-        else "/planning-projects"
-    )
-    planningProjectRowsHtml = "".join(
-        (
-            "<tr>"
-            f'<td>{escape(str(project.get("customer") or "—"))} - {escape(str(project.get("project_name") or "Без названия"))}</td>'
-            f'<td>{escape(formatPlanningMetric(project.get("baseline_estimate_hours")))}</td>'
-            f'<td>{escape(formatPlanningMetric(project.get("development_hours")))}</td>'
-            f'<td>{escape(formatPlanningPercent(project.get("p1")))}</td>'
-            f'<td>{escape(formatPlanningPercent(project.get("p2")))}</td>'
-            f'<td>{"Да" if bool(project.get("use_risk_plan")) else "Нет"}</td>'
-            "</tr>"
-        )
-        for project in planningProjects
-    )
-    planningP1SummaryText = f"{formatPageHours(planningP1Percent)}{' (по умолч.)' if planningP1DefaultUsed else ''}"
-    planningP2SummaryText = f"{formatPageHours(planningP2Percent)}{' (по умолч.)' if planningP2DefaultUsed else ''}"
-    planningUseRiskPlanSummaryText = (
-        "Да"
-        if planningUseRiskPlan
-        else "Нет (по умолч.)"
-        if planningUseRiskPlanDefaultUsed
-        else "Нет"
-    )
-    planningProjectTotalsRowHtml = (
-        "<tr class=\"planning-projects-total-row\">"
-        "<td>Итого</td>"
-        f"<td>{planningBaselineText}</td>"
-        f"<td>{planningDevelopmentHoursText}</td>"
-        f"<td>{escape(planningP1SummaryText)}</td>"
-        f"<td>{escape(planningP2SummaryText)}</td>"
-        f"<td>{escape(planningUseRiskPlanSummaryText)}</td>"
-        "</tr>"
-        if len(planningProjects) > 1
-        else ""
-    )
-    planningProjectsTextHtml = f"""
-    <section class="planning-projects-panel">
-      <h2 class="planning-projects-title">Параметры <a href="{escape(planningProjectsUrl)}">проектов</a></h2>
-      {
-        '<div class="planning-projects-table-wrap"><table class="planning-projects-table"><thead><tr><th>Имя</th><th>Базовая оценка</th><th>Лимит разработки с багфиксом</th><th>P1 = факт / база, %</th><th>P2 = факт с багами / факт, %</th><th>Использовать План с рисками</th></tr></thead><tbody>'
-        + planningProjectRowsHtml
-        + planningProjectTotalsRowHtml
-        + '</tbody></table></div>'
-        if planningProjectRowsHtml
-        else '<div class="planning-projects-empty">Для этого идентификатора в Планировании проектов пока нет записей.</div>'
-      }
-    </section>
-    """
+    planningProjectsTextHtml = buildPlanningProjectsPanelHtml(projectIdentifierRaw, projectNameRaw, planningProjects)
     snapshotIssuesUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
     navPanelHtml = buildProjectContextNavPanel(
         projectRedmineId,
@@ -4906,78 +5006,7 @@ def buildBurndownPage(
       font-weight: 400;
     }}
 
-    .planning-projects-panel {{
-      margin: -2px 0 18px;
-      padding: 14px 16px 16px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #ffffff;
-      box-shadow: var(--shadow-soft);
-    }}
-
-    .planning-projects-title {{
-      margin: 0 0 12px;
-      font-size: 1rem;
-      color: var(--text);
-    }}
-
-    .planning-projects-title a {{
-      color: inherit;
-      text-decoration: none;
-      border-bottom: 1px dashed rgba(55, 93, 119, 0.55);
-    }}
-
-    .planning-projects-title a:hover {{
-      border-bottom-style: solid;
-    }}
-
-    .planning-projects-table-wrap {{
-      overflow-x: auto;
-    }}
-
-    .planning-projects-table {{
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.94rem;
-    }}
-
-    .planning-projects-table th,
-    .planning-projects-table td {{
-      padding: 9px 10px;
-      border-bottom: 1px solid var(--line);
-      text-align: left;
-      vertical-align: middle;
-      white-space: nowrap;
-    }}
-
-    .planning-projects-table th:first-child,
-    .planning-projects-table td:first-child {{
-      white-space: normal;
-      min-width: 260px;
-    }}
-
-    .planning-projects-table th {{
-      color: #426179;
-      background: #eef6f7;
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      line-height: 1.25;
-    }}
-
-    .planning-projects-table tbody tr:last-child td {{
-      border-bottom: 0;
-    }}
-
-    .planning-projects-total-row td {{
-      font-weight: 700;
-      background: #f8fbfd;
-      border-top: 2px solid var(--line);
-    }}
-
-    .planning-projects-empty {{
-      color: var(--muted);
-      line-height: 1.5;
-    }}
+    {buildPlanningProjectsPanelCss()}
 
     .controls-panel,
     .chart-panel {{
@@ -6192,6 +6221,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     featureSpentClass = "summary-feature-control-zero" if featureSpentHours == 0 else "summary-feature-control-alert"
 
     projectName = escape(str(snapshotRun.get("project_name") or "—"))
+    projectNameRaw = str(snapshotRun.get("project_name") or "—")
     capturedForDateRaw = str(snapshotRun.get("captured_for_date") or "")
     capturedForDate = escape(capturedForDateRaw or "—")
     selectedDate = capturedForDateRaw
@@ -6202,6 +6232,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     snapshotPayload = enrichSnapshotPayloadWithFeatureForecasts(snapshotPayload, projectIdentifierRaw)
     issues = snapshotPayload["issues"]
     projectIdentifier = escape(projectIdentifierRaw or "—")
+    planningProjects = (
+        listPlanningProjectsByRedmineIdentifier(projectIdentifierRaw) if projectIdentifierRaw else []
+    )
+    planningProjectsTextHtml = buildPlanningProjectsPanelHtml(projectIdentifierRaw, projectNameRaw, planningProjects)
     snapshotPageUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
     if selectedDate:
         snapshotPageUrl += f"?captured_for_date={quote(selectedDate)}"
@@ -6248,6 +6282,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       --muted: #64798d;
       --blue: #375d77;
       --orange: #ff6c0e;
+      --shadow-soft: 0 12px 24px rgba(22, 50, 74, 0.06);
     }}
       * {{ box-sizing: border-box; }}
       body {{ margin: 0; font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--text); }}
@@ -6284,6 +6319,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .secondary-button {{ background: #375d77; color: #ffffff; }}
       .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
       .meta-warning {{ color: #d54343; font-weight: 700; }}
+      {buildPlanningProjectsPanelCss()}
       .toolbar-row.primary form {{ display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }}
       .toolbar-row.primary > button {{ align-self: flex-end; }}
       .page-size-label {{
@@ -6500,7 +6536,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       </div>
       <div class="action-status" id="snapshotActionStatus"></div>
       <div class="status-history" id="snapshotActionStatusHistory" hidden></div>
-      <p class="meta">Проект: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Дата среза: {capturedForDate}. По фильтру: <span id="filteredIssuesCount">{initialFilteredIssues}</span> из {initialTotalIssues}. На странице: <span id="pageIssuesCount">{len(issues)}</span>.</p>
+      <p class="meta">Проект в Redmine: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Дата среза: {capturedForDate}. По фильтру: <span id="filteredIssuesCount">{initialFilteredIssues}</span> из {initialTotalIssues}. На странице: <span id="pageIssuesCount">{len(issues)}</span>.</p>
+      {planningProjectsTextHtml}
       <div class="summary-block">
         <table class="summary-table">
           <thead>
