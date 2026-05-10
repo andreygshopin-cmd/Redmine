@@ -3545,6 +3545,68 @@ def buildSnapshotSummaryView(summary: dict[str, object] | None) -> dict[str, flo
     }
 
 
+def buildSnapshotDynamicMetrics(
+    issues: list[dict[str, object]] | None,
+    useRiskPlan: bool,
+) -> dict[str, float]:
+    developmentRemaining = 0.0
+    bugRemaining = 0.0
+    developmentVolume = 0.0
+    bugVolume = 0.0
+    totalForecast = 0.0
+    seenGroupKeys: set[str] = set()
+
+    for issue in issues or []:
+        trackerName = normalizeBurndownText(issue.get("tracker_name"))
+        selectedRemaining = float(
+            (issue.get("risk_remaining_hours") if useRiskPlan else issue.get("remaining_hours")) or 0
+        )
+        selectedVolume = float(
+            (issue.get("risk_volume_hours") if useRiskPlan else issue.get("volume_hours")) or 0
+        )
+        if trackerName == "разработка":
+            developmentRemaining += selectedRemaining
+            developmentVolume += selectedVolume
+        elif trackerName == "ошибка":
+            bugRemaining += selectedRemaining
+            bugVolume += selectedVolume
+
+        featureGroupId = issue.get("feature_group_issue_redmine_id")
+        if bool(issue.get("feature_group_is_virtual")):
+            groupKey = "virtual"
+        elif featureGroupId not in (None, ""):
+            groupKey = f"feature:{featureGroupId}"
+        else:
+            groupKey = ""
+
+        if groupKey and groupKey not in seenGroupKeys:
+            seenGroupKeys.add(groupKey)
+            forecastValue = issue.get("feature_risk_forecast_hours") if useRiskPlan else issue.get("feature_forecast_hours")
+            if forecastValue not in (None, ""):
+                totalForecast += float(forecastValue or 0)
+
+    totalRemaining = developmentRemaining + bugRemaining
+    totalVolume = developmentVolume + bugVolume
+    return {
+        "development_remaining_hours": developmentRemaining,
+        "bug_remaining_hours": bugRemaining,
+        "development_total_remaining_hours": totalRemaining,
+        "development_volume_hours": developmentVolume,
+        "bug_volume_hours": bugVolume,
+        "development_total_volume_hours": totalVolume,
+        "development_total_forecast_hours": totalForecast,
+    }
+
+
+def buildSnapshotDynamicSummary(
+    issues: list[dict[str, object]] | None,
+) -> dict[str, dict[str, float]]:
+    return {
+        "default": buildSnapshotDynamicMetrics(issues, False),
+        "risk": buildSnapshotDynamicMetrics(issues, True),
+    }
+
+
 def buildSnapshotIssueFiltersPayload(
     issueId: str | None = None,
     subject: str | None = None,
@@ -6235,7 +6297,17 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     planningProjects = (
         listPlanningProjectsByRedmineIdentifier(projectIdentifierRaw) if projectIdentifierRaw else []
     )
+    planningUseRiskPlan = bool(planningProjects) and all(bool(project.get("use_risk_plan")) for project in planningProjects)
+    planningUseRiskPlanAny = any(bool(project.get("use_risk_plan")) for project in planningProjects)
+    selectedUseRiskPlan = planningUseRiskPlan
+    useRiskPlanDefaultLabelClass = " planning-checkbox-default" if planningUseRiskPlanAny and not planningUseRiskPlan else ""
     planningProjectsTextHtml = buildPlanningProjectsPanelHtml(projectIdentifierRaw, projectNameRaw, planningProjects)
+    snapshotDynamicSourcePayload = enrichSnapshotPayloadWithFeatureForecasts(
+        listFilteredSnapshotIssuesForProjectByDate(projectRedmineId, capturedForDateRaw),
+        projectIdentifierRaw,
+    )
+    snapshotDynamicSummary = buildSnapshotDynamicSummary(snapshotDynamicSourcePayload.get("issues"))
+    snapshotDynamicMetrics = snapshotDynamicSummary["risk" if selectedUseRiskPlan else "default"]
     snapshotPageUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
     if selectedDate:
         snapshotPageUrl += f"?captured_for_date={quote(selectedDate)}"
@@ -6251,6 +6323,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     )
     initialIssuesJson = json.dumps(issues, ensure_ascii=False, default=str)
     initialSummaryJson = json.dumps(summaryView, ensure_ascii=False, default=str)
+    initialSnapshotDynamicSummaryJson = json.dumps(snapshotDynamicSummary, ensure_ascii=False, default=str)
     initialFilterOptionsJson = json.dumps(snapshotPayload.get("filter_options") or {}, ensure_ascii=False, default=str)
     initialFilteredIssues = int(snapshotPayload.get("total_filtered_issues") or 0)
     initialTotalIssues = int(snapshotPayload.get("total_all_issues") or 0)
@@ -6320,6 +6393,19 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .meta {{ color: var(--muted); margin: 0 0 24px; font-size: 1rem; }}
       .meta-warning {{ color: #d54343; font-weight: 700; }}
       {buildPlanningProjectsPanelCss()}
+      .field-checkbox-label {{
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 700;
+        min-height: 44px;
+      }}
+      .field-checkbox-label.planning-checkbox-default {{
+        color: #d9534f;
+      }}
+      .snapshot-planning-option {{
+        margin: -4px 0 18px;
+      }}
       .toolbar-row.primary form {{ display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }}
       .toolbar-row.primary > button {{ align-self: flex-end; }}
       .page-size-label {{
@@ -6538,6 +6624,12 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       <div class="status-history" id="snapshotActionStatusHistory" hidden></div>
       <p class="meta">Проект в Redmine: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Дата среза: {capturedForDate}. По фильтру: <span id="filteredIssuesCount">{initialFilteredIssues}</span> из {initialTotalIssues}. На странице: <span id="pageIssuesCount">{len(issues)}</span>.</p>
       {planningProjectsTextHtml}
+      <div class="snapshot-planning-option">
+        <label class="field-checkbox-label{useRiskPlanDefaultLabelClass}" for="snapshotUseRiskPlanCheckbox">
+          <input id="snapshotUseRiskPlanCheckbox" type="checkbox"{" checked" if selectedUseRiskPlan else ""}>
+          <span>Использовать План с рисками</span>
+        </label>
+      </div>
       <div class="summary-block">
         <table class="summary-table">
           <thead>
@@ -6550,6 +6642,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <th>% (год)</th>
               <th colspan="2">Факт (всего)</th>
               <th>% (всего)</th>
+              <th>Остаток</th>
+              <th>Объем</th>
+              <th>Прогноз</th>
             </tr>
           </thead>
           <tbody>
@@ -6561,6 +6656,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="summary-metric" id="summarySpentYear" colspan="2">{formatPageHours(totalSpentHoursYear)}</td>
                 <td class="summary-empty"></td>
                 <td class="summary-metric" id="summarySpent" colspan="2">{formatPageHours(totalSpentHours)}</td>
+                <td class="summary-empty"></td>
+                <td class="summary-empty"></td>
+                <td class="summary-empty"></td>
                 <td class="summary-empty"></td>
             </tr>
             <tr>
@@ -6574,6 +6672,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-metric" id="summaryDevelopmentSpent">{formatPageHours(developmentSpentHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentCombinedSpent" rowspan="2">{formatPageHours(summaryView["development_combined_spent_hours"])}</td>
               <td class="summary-metric summary-percent" id="summaryDevelopmentCoverageAll" rowspan="2">{formatPageHours(summaryView["development_coverage_all_percent"])}%</td>
+              <td class="summary-metric" id="summaryDevelopmentRemaining">{formatPageHours(snapshotDynamicMetrics["development_remaining_hours"])}</td>
+              <td class="summary-metric" id="summaryDevelopmentVolume">{formatPageHours(snapshotDynamicMetrics["development_volume_hours"])}</td>
+              <td class="summary-empty"></td>
             </tr>
             <tr>
               <th>Процессы разработки, ч</th>
@@ -6581,6 +6682,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentProcessSpentYear">{formatPageHours(developmentProcessSpentHoursYear)}</td>
               <td class="summary-metric" id="summaryDevelopmentProcessSpent">{formatPageHours(developmentProcessSpentHours)}</td>
+              <td class="summary-empty"></td>
+              <td class="summary-empty"></td>
+              <td class="summary-empty"></td>
             </tr>
             <tr>
               <th>Ошибка, ч</th>
@@ -6591,6 +6695,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-metric summary-percent" id="summaryBugShareYear">{formatPageHours(summaryView["bug_share_year_percent"])}%</td>
               <td class="summary-metric" id="summaryBugSpent" colspan="2">{formatPageHours(bugSpentHours)}</td>
               <td class="summary-metric summary-percent" id="summaryBugShareAll">{formatPageHours(summaryView["bug_share_all_percent"])}%</td>
+              <td class="summary-metric" id="summaryBugRemaining">{formatPageHours(snapshotDynamicMetrics["bug_remaining_hours"])}</td>
+              <td class="summary-metric" id="summaryBugVolume">{formatPageHours(snapshotDynamicMetrics["bug_volume_hours"])}</td>
+              <td class="summary-empty"></td>
             </tr>
             <tr>
               <th>Итого по разработке</th>
@@ -6601,6 +6708,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentGrandSpent" colspan="2">{formatPageHours(summaryView["development_grand_spent_hours"])}</td>
               <td class="summary-empty"></td>
+              <td class="summary-metric" id="summaryDevelopmentTotalRemaining">{formatPageHours(snapshotDynamicMetrics["development_total_remaining_hours"])}</td>
+              <td class="summary-metric" id="summaryDevelopmentTotalVolume">{formatPageHours(snapshotDynamicMetrics["development_total_volume_hours"])}</td>
+              <td class="summary-metric" id="summaryDevelopmentTotalForecast">{formatPageHours(snapshotDynamicMetrics["development_total_forecast_hours"])}</td>
             </tr>
             <tr>
               <th>Контроль списания по фичам</th>
@@ -6610,6 +6720,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-metric {featureSpentYearClass}" id="summaryFeatureSpentYear" colspan="2">{formatPageHours(featureSpentHoursYear)}</td>
               <td class="summary-empty"></td>
               <td class="summary-metric {featureSpentClass}" id="summaryFeatureSpent" colspan="2">{formatPageHours(featureSpentHours)}</td>
+              <td class="summary-empty"></td>
+              <td class="summary-empty"></td>
+              <td class="summary-empty"></td>
               <td class="summary-empty"></td>
             </tr>
           </tbody>
@@ -6706,6 +6819,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const resetSnapshotFiltersButton = document.getElementById("resetSnapshotFiltersButton");
       const initialSnapshotIssues = {initialIssuesJson};
       const initialSnapshotSummary = {initialSummaryJson};
+      const initialSnapshotDynamicSummary = {initialSnapshotDynamicSummaryJson};
       const initialFilterOptions = {initialFilterOptionsJson};
       const selectedSnapshotDate = {json.dumps(selectedDate, ensure_ascii=False)};
       const snapshotPageSizeStorageKey = "latestSnapshotPageSize";
@@ -6726,6 +6840,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const summaryFeatureEstimated = document.getElementById("summaryFeatureEstimated");
       const summaryFeatureSpent = document.getElementById("summaryFeatureSpent");
       const summaryFeatureSpentYear = document.getElementById("summaryFeatureSpentYear");
+      const snapshotUseRiskPlanCheckbox = document.getElementById("snapshotUseRiskPlanCheckbox");
       const summaryEstimated = document.getElementById("summaryEstimated");
       const summarySpent = document.getElementById("summarySpent");
       const summarySpentYear = document.getElementById("summarySpentYear");
@@ -6747,6 +6862,16 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const summaryBugEstimated = document.getElementById("summaryBugEstimated");
       const summaryBugSpent = document.getElementById("summaryBugSpent");
       const summaryBugSpentYear = document.getElementById("summaryBugSpentYear");
+      const summaryDevelopmentRemaining = document.getElementById("summaryDevelopmentRemaining");
+      const summaryBugRemaining = document.getElementById("summaryBugRemaining");
+      const summaryDevelopmentTotalRemaining = document.getElementById("summaryDevelopmentTotalRemaining");
+      const summaryDevelopmentVolume = document.getElementById("summaryDevelopmentVolume");
+      const summaryBugVolume = document.getElementById("summaryBugVolume");
+      const summaryDevelopmentTotalVolume = document.getElementById("summaryDevelopmentTotalVolume");
+      const summaryDevelopmentTotalForecast = document.getElementById("summaryDevelopmentTotalForecast");
+      let currentSnapshotIssues = initialSnapshotIssues;
+      let currentSnapshotSummary = initialSnapshotSummary;
+      let currentSnapshotDynamicSummary = initialSnapshotDynamicSummary;
       let currentSnapshotFilterSignature = "";
 
       function isSnapshotCaptureErrorMessage(message) {{
@@ -7053,8 +7178,56 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         return ordered;
       }}
 
-      function renderSnapshotSummary(summary) {{
+      function buildSnapshotDynamicMetricsFromIssues(issues, useRiskPlan) {{
+        const sourceIssues = Array.isArray(issues) ? issues : [];
+        let developmentRemainingHours = 0;
+        let bugRemainingHours = 0;
+        let developmentVolumeHours = 0;
+        let bugVolumeHours = 0;
+        let developmentTotalForecastHours = 0;
+        const seenGroupKeys = new Set();
+
+        for (const issue of sourceIssues) {{
+          const trackerName = String(issue?.tracker_name || "").trim().toLowerCase();
+          const remainingValue = Number(useRiskPlan ? (issue?.risk_remaining_hours || 0) : (issue?.remaining_hours || 0));
+          const volumeValue = Number(useRiskPlan ? (issue?.risk_volume_hours || 0) : (issue?.volume_hours || 0));
+          if (trackerName === "разработка") {{
+            developmentRemainingHours += remainingValue;
+            developmentVolumeHours += volumeValue;
+          }} else if (trackerName === "ошибка") {{
+            bugRemainingHours += remainingValue;
+            bugVolumeHours += volumeValue;
+          }}
+
+          const groupKey = issue?.feature_group_is_virtual
+            ? "virtual"
+            : issue?.feature_group_issue_redmine_id
+            ? `feature:${{issue.feature_group_issue_redmine_id}}`
+            : "";
+          if (groupKey && !seenGroupKeys.has(groupKey)) {{
+            seenGroupKeys.add(groupKey);
+            developmentTotalForecastHours += Number(useRiskPlan ? (issue?.feature_risk_forecast_hours || 0) : (issue?.feature_forecast_hours || 0));
+          }}
+        }}
+
+        return {{
+          developmentRemainingHours,
+          bugRemainingHours,
+          developmentTotalRemainingHours: developmentRemainingHours + bugRemainingHours,
+          developmentVolumeHours,
+          bugVolumeHours,
+          developmentTotalVolumeHours: developmentVolumeHours + bugVolumeHours,
+          developmentTotalForecastHours,
+        }};
+      }}
+
+      function renderSnapshotSummary(summary, dynamicSummary = currentSnapshotDynamicSummary) {{
         const view = buildSummaryView(summary);
+        const useRiskPlan = Boolean(snapshotUseRiskPlanCheckbox?.checked);
+        const selectedDynamicSummary = dynamicSummary && typeof dynamicSummary === "object" ? dynamicSummary : {{}};
+        const dynamicMetrics = useRiskPlan
+          ? (selectedDynamicSummary.risk || {{}})
+          : (selectedDynamicSummary.default || {{}});
         const updateFeatureControlMetric = (node, value, highlightNonZero = true) => {{
           if (!node) {{
             return;
@@ -7090,6 +7263,13 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if (summaryDevelopmentGrandSpent) summaryDevelopmentGrandSpent.textContent = formatFilterHours(view.developmentGrandSpentHours);
         if (summaryBugShareYear) summaryBugShareYear.textContent = formatFilterPercent(view.bugShareYearPercent);
         if (summaryBugShareAll) summaryBugShareAll.textContent = formatFilterPercent(view.bugShareAllPercent);
+        if (summaryDevelopmentRemaining) summaryDevelopmentRemaining.textContent = formatFilterHours(dynamicMetrics.developmentRemainingHours);
+        if (summaryBugRemaining) summaryBugRemaining.textContent = formatFilterHours(dynamicMetrics.bugRemainingHours);
+        if (summaryDevelopmentTotalRemaining) summaryDevelopmentTotalRemaining.textContent = formatFilterHours(dynamicMetrics.developmentTotalRemainingHours);
+        if (summaryDevelopmentVolume) summaryDevelopmentVolume.textContent = formatFilterHours(dynamicMetrics.developmentVolumeHours);
+        if (summaryBugVolume) summaryBugVolume.textContent = formatFilterHours(dynamicMetrics.bugVolumeHours);
+        if (summaryDevelopmentTotalVolume) summaryDevelopmentTotalVolume.textContent = formatFilterHours(dynamicMetrics.developmentTotalVolumeHours);
+        if (summaryDevelopmentTotalForecast) summaryDevelopmentTotalForecast.textContent = formatFilterHours(dynamicMetrics.developmentTotalForecastHours);
       }}
 
       function renderSnapshotRows(issues) {{
@@ -7414,9 +7594,12 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           currentSnapshotTotalPages = Number(payload.total_pages || 1);
           currentSnapshotFilteredIssues = Number(payload.total_filtered_issues || 0);
           currentSnapshotTotalIssues = Number(payload.total_all_issues || 0);
-          renderSnapshotRows(payload.issues || []);
-          renderSnapshotSummary(payload.summary || {{}});
-          updateSnapshotCounts(Array.isArray(payload.issues) ? payload.issues.length : 0);
+          currentSnapshotIssues = Array.isArray(payload.issues) ? payload.issues : [];
+          currentSnapshotSummary = payload.summary || {{}};
+          currentSnapshotDynamicSummary = payload.dynamic_summary || initialSnapshotDynamicSummary;
+          renderSnapshotRows(currentSnapshotIssues);
+          renderSnapshotSummary(currentSnapshotSummary, currentSnapshotDynamicSummary);
+          updateSnapshotCounts(currentSnapshotIssues.length);
           updateSnapshotPaginationInfo();
           updateSnapshotFilterHeaderOffset();
           currentSnapshotFilterSignature = buildSnapshotFilterSignature();
@@ -7598,9 +7781,12 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }});
 
       resetSnapshotFiltersButton?.addEventListener("click", resetSnapshotTableFilters);
+      snapshotUseRiskPlanCheckbox?.addEventListener("change", () => {{
+        renderSnapshotSummary(currentSnapshotSummary, currentSnapshotDynamicSummary);
+      }});
       populateSnapshotMultiSelects();
       renderSnapshotRows(initialSnapshotIssues);
-      renderSnapshotSummary(initialSnapshotSummary);
+      renderSnapshotSummary(initialSnapshotSummary, initialSnapshotDynamicSummary);
       updateSnapshotCounts(initialSnapshotIssues.length);
       updateSnapshotFilterHeaderOffset();
       updateSnapshotTableViewportHeight();
@@ -16299,7 +16485,22 @@ def getProjectLatestSnapshotIssuesData(
         page=page,
         pageSize=page_size,
     )
-    return enrichSnapshotPayloadWithFeatureForecasts(payload)
+    payload = enrichSnapshotPayloadWithFeatureForecasts(payload)
+    snapshotRun = payload.get("snapshot_run") or {}
+    projectIdentifierRaw = str(
+        (snapshotRun.get("project_identifier") if isinstance(snapshotRun, dict) else "")
+        or ""
+    ).strip()
+    dynamicSourcePayload = enrichSnapshotPayloadWithFeatureForecasts(
+        listFilteredSnapshotIssuesForProjectByDate(
+            project_redmine_id,
+            captured_for_date,
+            filters=filters,
+        ),
+        projectIdentifierRaw,
+    )
+    payload["dynamic_summary"] = buildSnapshotDynamicSummary(dynamicSourcePayload.get("issues"))
+    return payload
 
 
 @app.get("/projects/{project_redmine_id}/latest-snapshot-issues/export.csv")
