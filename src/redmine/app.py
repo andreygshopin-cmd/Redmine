@@ -7228,6 +7228,13 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         const dynamicMetrics = useRiskPlan
           ? (selectedDynamicSummary.risk || {{}})
           : (selectedDynamicSummary.default || {{}});
+        const getDynamicMetric = (snakeName, camelName) => {{
+          const value = dynamicMetrics?.[snakeName];
+          if (value !== undefined && value !== null && value !== "") {{
+            return Number(value);
+          }}
+          return Number(dynamicMetrics?.[camelName] || 0);
+        }};
         const updateFeatureControlMetric = (node, value, highlightNonZero = true) => {{
           if (!node) {{
             return;
@@ -7263,13 +7270,13 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if (summaryDevelopmentGrandSpent) summaryDevelopmentGrandSpent.textContent = formatFilterHours(view.developmentGrandSpentHours);
         if (summaryBugShareYear) summaryBugShareYear.textContent = formatFilterPercent(view.bugShareYearPercent);
         if (summaryBugShareAll) summaryBugShareAll.textContent = formatFilterPercent(view.bugShareAllPercent);
-        if (summaryDevelopmentRemaining) summaryDevelopmentRemaining.textContent = formatFilterHours(dynamicMetrics.developmentRemainingHours);
-        if (summaryBugRemaining) summaryBugRemaining.textContent = formatFilterHours(dynamicMetrics.bugRemainingHours);
-        if (summaryDevelopmentTotalRemaining) summaryDevelopmentTotalRemaining.textContent = formatFilterHours(dynamicMetrics.developmentTotalRemainingHours);
-        if (summaryDevelopmentVolume) summaryDevelopmentVolume.textContent = formatFilterHours(dynamicMetrics.developmentVolumeHours);
-        if (summaryBugVolume) summaryBugVolume.textContent = formatFilterHours(dynamicMetrics.bugVolumeHours);
-        if (summaryDevelopmentTotalVolume) summaryDevelopmentTotalVolume.textContent = formatFilterHours(dynamicMetrics.developmentTotalVolumeHours);
-        if (summaryDevelopmentTotalForecast) summaryDevelopmentTotalForecast.textContent = formatFilterHours(dynamicMetrics.developmentTotalForecastHours);
+        if (summaryDevelopmentRemaining) summaryDevelopmentRemaining.textContent = formatFilterHours(getDynamicMetric("development_remaining_hours", "developmentRemainingHours"));
+        if (summaryBugRemaining) summaryBugRemaining.textContent = formatFilterHours(getDynamicMetric("bug_remaining_hours", "bugRemainingHours"));
+        if (summaryDevelopmentTotalRemaining) summaryDevelopmentTotalRemaining.textContent = formatFilterHours(getDynamicMetric("development_total_remaining_hours", "developmentTotalRemainingHours"));
+        if (summaryDevelopmentVolume) summaryDevelopmentVolume.textContent = formatFilterHours(getDynamicMetric("development_volume_hours", "developmentVolumeHours"));
+        if (summaryBugVolume) summaryBugVolume.textContent = formatFilterHours(getDynamicMetric("bug_volume_hours", "bugVolumeHours"));
+        if (summaryDevelopmentTotalVolume) summaryDevelopmentTotalVolume.textContent = formatFilterHours(getDynamicMetric("development_total_volume_hours", "developmentTotalVolumeHours"));
+        if (summaryDevelopmentTotalForecast) summaryDevelopmentTotalForecast.textContent = formatFilterHours(getDynamicMetric("development_total_forecast_hours", "developmentTotalForecastHours"));
       }}
 
       function renderSnapshotRows(issues) {{
