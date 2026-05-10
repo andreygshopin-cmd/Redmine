@@ -6443,6 +6443,15 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .summary-table .summary-empty {{ background: #ffffff; }}
       .summary-table .summary-feature-control-zero {{ color: #b8c3cf; }}
       .summary-table .summary-feature-control-alert {{ color: #d54343; font-weight: 700; }}
+      .summary-table .summary-section-row th {{
+        background: #f3f7fa;
+        color: #375d77;
+        font-size: 0.95rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        padding-top: 8px;
+        padding-bottom: 8px;
+      }}
       .filter-input-table,
       .filter-select-table,
       .filter-number-value,
@@ -6669,7 +6678,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="summary-empty"></td>
                 <td class="summary-empty"></td>
             </tr>
-            <tr>
+            <tr class="summary-section-row">
               <th colspan="13">2. Разработка</th>
             </tr>
             <tr>
@@ -6724,7 +6733,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-metric" id="summaryDevelopmentTotalForecast">{formatPageHours(snapshotDynamicMetrics["development_total_forecast_hours"])}</td>
             </tr>
             <tr>
-              <th>4. Фичи</th>
+              <th>3. Фичи</th>
               <td class="summary-metric {featureBaselineEstimateClass}" id="summaryFeatureBaselineEstimate">{formatPageHours(featureBaselineEstimateHours)}</td>
               <td class="summary-metric {featureEstimatedClass}" id="summaryFeatureEstimated">{formatPageHours(featureEstimatedHours)}</td>
               <td class="summary-empty"></td>
