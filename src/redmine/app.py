@@ -6443,7 +6443,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .summary-table .summary-empty {{ background: #ffffff; }}
       .summary-table .summary-feature-control-zero {{ color: #b8c3cf; }}
       .summary-table .summary-feature-control-alert {{ color: #d54343; font-weight: 700; }}
-      .summary-table .summary-section-row th {{
+      .summary-table .summary-section-row th,
+      .summary-table th.summary-section-row {{
         background: #f3f7fa;
         color: #375d77;
         font-size: 0.95rem;
@@ -6746,7 +6747,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-empty"></td>
             </tr>
             <tr>
-              <th>4. Ограничения проекта</th>
+              <th class="summary-section-row">4. Рамки (лимиты) проекта</th>
               <td class="summary-metric">{formatPageHours(totalPlanningBaselineEstimateHours)}</td>
               <td class="summary-empty"></td>
               <td class="summary-empty"></td>
