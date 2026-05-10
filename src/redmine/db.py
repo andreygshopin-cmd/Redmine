@@ -2764,6 +2764,7 @@ def _normalizeSnapshotIssueFilters(filters: dict[str, object] | None) -> dict[st
         "risk": "risk",
         "volume": "volume",
         "risk_volume": "risk_volume",
+        "remaining": "remaining",
         "risk_remaining": "risk_remaining",
         "spent": "spent",
         "spent_year": "spent_year",

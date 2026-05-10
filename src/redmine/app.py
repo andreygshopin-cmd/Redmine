@@ -6405,6 +6405,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }}
       .snapshot-planning-option {{
         margin: -4px 0 18px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
       }}
       .toolbar-row.primary form {{ display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }}
       .toolbar-row.primary > button {{ align-self: flex-end; }}
@@ -6428,6 +6432,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .summary-table {{ width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid var(--line); }}
       .summary-table th,
       .summary-table td {{ border: 1px solid var(--line); padding: 12px 10px; vertical-align: middle; }}
+      .summary-table th:first-child,
+      .summary-table td:first-child {{ width: 20%; }}
       .summary-table thead th {{ position: static; background: #ffffff; color: var(--text); text-transform: none; font-size: 0.98rem; letter-spacing: 0; }}
       .summary-table tbody th {{ background: #ffffff; color: var(--text); text-transform: none; font-size: 1rem; font-weight: 500; }}
       .summary-table .summary-metric {{ text-align: right; font-size: 1.02rem; font-weight: 400; color: #173b5a; white-space: nowrap; }}
@@ -6611,7 +6617,6 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           <label class="page-size-label" for="snapshotPageSizeInput">Задач на странице
             <input class="page-size-input" id="snapshotPageSizeInput" type="number" min="10" max="10000" step="10" value="{initialPageSize}">
           </label>
-          <button type="button" class="secondary-button" id="applySnapshotPageSizeButton">Показать</button>
           <button type="button" class="secondary-button" id="exportSnapshotCsvButton">Выгрузить CSV</button>
           <button type="button" class="secondary-button snapshot-time-entries-button" id="viewSnapshotTimeEntriesButton">Списание времени</button>
         </div>
@@ -6629,6 +6634,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           <input id="snapshotUseRiskPlanCheckbox" type="checkbox"{" checked" if selectedUseRiskPlan else ""}>
           <span>Использовать План с рисками</span>
         </label>
+        <button type="button" class="secondary-button" id="applySnapshotPageSizeButton">Показать</button>
       </div>
       <div class="summary-block">
         <table class="summary-table">
