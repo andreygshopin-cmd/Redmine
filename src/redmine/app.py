@@ -4780,6 +4780,7 @@ def buildPlanningProjectsPanelHtml(
     projectIdentifierRaw: str,
     projectNameRaw: str,
     planningProjects: list[dict[str, object]],
+    reportYear: int | None = None,
 ) -> str:
     def formatPlanningMetric(value: object) -> str:
         if value in (None, ""):
@@ -4796,8 +4797,34 @@ def buildPlanningProjectsPanelHtml(
         normalizedValue = normalizePlanningPercentValue(value, 150.0)
         return formatPageHours(normalizedValue)
 
+    def resolvePlanningProjectReportYearHours(project: dict[str, object]) -> float | None:
+        if reportYear is None:
+            return None
+        for suffix in ("1", "2", "3"):
+            yearValue = project.get(f"year_{suffix}")
+            hoursValue = project.get(f"hours_{suffix}")
+            if yearValue in (None, ""):
+                continue
+            try:
+                normalizedYear = int(yearValue)
+            except (TypeError, ValueError):
+                continue
+            if normalizedYear == reportYear:
+                try:
+                    return float(hoursValue) if hoursValue not in (None, "") else None
+                except (TypeError, ValueError):
+                    return None
+        return None
+
     totalPlanningBaseline = sum(float(project.get("baseline_estimate_hours") or 0) for project in planningProjects)
     totalPlanningDevelopmentHours = sum(float(project.get("development_hours") or 0) for project in planningProjects)
+    planningReportYearValues = [resolvePlanningProjectReportYearHours(project) for project in planningProjects]
+    planningReportYearHasValues = any(value not in (None, "") for value in planningReportYearValues)
+    totalPlanningReportYearHours = (
+        sum(float(value or 0) for value in planningReportYearValues)
+        if planningReportYearHasValues
+        else None
+    )
 
     planningP1Values = [
         normalizePlanningPercentValue(project.get("p1"), 150.0)
@@ -4823,19 +4850,26 @@ def buildPlanningProjectsPanelHtml(
         if projectIdentifierRaw
         else "/planning-projects"
     )
-    planningProjectRowsHtml = "".join(
-        (
+    planningProjectRowsHtmlParts: list[str] = []
+    for project in planningProjects:
+        reportYearHours = resolvePlanningProjectReportYearHours(project)
+        reportYearCellHtml = (
+            f'<td>{escape(formatPlanningMetric(reportYearHours))}</td>'
+            if reportYear is not None
+            else ""
+        )
+        planningProjectRowsHtmlParts.append(
             "<tr>"
             f'<td>{escape(str(project.get("customer") or "—"))} - {escape(str(project.get("project_name") or "Без названия"))}</td>'
             f'<td>{escape(formatPlanningMetric(project.get("baseline_estimate_hours")))}</td>'
             f'<td>{escape(formatPlanningMetric(project.get("development_hours")))}</td>'
+            f"{reportYearCellHtml}"
             f'<td>{escape(formatPlanningPercent(project.get("p1")))}</td>'
             f'<td>{escape(formatPlanningPercent(project.get("p2")))}</td>'
             f'<td>{"Да" if bool(project.get("use_risk_plan")) else "Нет"}</td>'
             "</tr>"
         )
-        for project in planningProjects
-    )
+    planningProjectRowsHtml = "".join(planningProjectRowsHtmlParts)
     planningP1SummaryText = f"{formatPageHours(planningP1Percent)}{' (по умолч.)' if planningP1DefaultUsed else ''}"
     planningP2SummaryText = f"{formatPageHours(planningP2Percent)}{' (по умолч.)' if planningP2DefaultUsed else ''}"
     planningUseRiskPlanSummaryText = (
@@ -4846,22 +4880,38 @@ def buildPlanningProjectsPanelHtml(
         else "Нет"
     )
     planningProjectTotalsRowHtml = (
-        "<tr class=\"planning-projects-total-row\">"
-        "<td>Итого</td>"
-        f"<td>{escape(formatPlanningMetric(totalPlanningBaseline))}</td>"
-        f"<td>{escape(formatPlanningMetric(totalPlanningDevelopmentHours))}</td>"
-        f"<td>{escape(planningP1SummaryText)}</td>"
-        f"<td>{escape(planningP2SummaryText)}</td>"
-        f"<td>{escape(planningUseRiskPlanSummaryText)}</td>"
-        "</tr>"
-        if len(planningProjects) > 1
+        "".join(
+            [
+                '<tr class="planning-projects-total-row">',
+                "<td>Итого</td>",
+                f"<td>{escape(formatPlanningMetric(totalPlanningBaseline))}</td>",
+                f"<td>{escape(formatPlanningMetric(totalPlanningDevelopmentHours))}</td>",
+                *([f"<td>{escape(formatPlanningMetric(totalPlanningReportYearHours))}</td>"] if reportYear is not None else []),
+                f"<td>{escape(planningP1SummaryText)}</td>",
+                f"<td>{escape(planningP2SummaryText)}</td>",
+                f"<td>{escape(planningUseRiskPlanSummaryText)}</td>",
+                "</tr>",
+            ]
+        )
+        if planningProjects
         else ""
+    )
+    planningProjectsTableHeader = (
+        "<tr>"
+        "<th>Имя</th>"
+        "<th>Базовая оценка</th>"
+        "<th>Лимит разработки с багфиксом</th>"
+        + ("<th>Часы за год отчета</th>" if reportYear is not None else "")
+        + "<th>P1 = факт / база, %</th>"
+        + "<th>P2 = факт с багами / факт, %</th>"
+        + "<th>Использовать План с рисками</th>"
+        + "</tr>"
     )
     return f"""
     <section class="planning-projects-panel">
       <h2 class="planning-projects-title">Параметры <a href="{escape(planningProjectsUrl)}">проектов</a></h2>
       {
-        '<div class="planning-projects-table-wrap"><table class="planning-projects-table"><thead><tr><th>Имя</th><th>Базовая оценка</th><th>Лимит разработки с багфиксом</th><th>P1 = факт / база, %</th><th>P2 = факт с багами / факт, %</th><th>Использовать План с рисками</th></tr></thead><tbody>'
+        f'<div class="planning-projects-table-wrap"><table class="planning-projects-table"><thead>{planningProjectsTableHeader}</thead><tbody>'
         + planningProjectRowsHtml
         + planningProjectTotalsRowHtml
         + '</tbody></table></div>'
@@ -6287,6 +6337,12 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     capturedForDateRaw = str(snapshotRun.get("captured_for_date") or "")
     capturedForDate = escape(capturedForDateRaw or "—")
     selectedDate = capturedForDateRaw
+    snapshotReportYear: int | None = None
+    if capturedForDateRaw:
+        try:
+            snapshotReportYear = date.fromisoformat(capturedForDateRaw).year
+        except ValueError:
+            snapshotReportYear = None
     projectIdentifierRaw = str(
         snapshotRun.get("project_identifier")
         or (storedProject.get("identifier") if storedProject else "")
@@ -6303,7 +6359,12 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     planningUseRiskPlanAny = any(bool(project.get("use_risk_plan")) for project in planningProjects)
     selectedUseRiskPlan = planningUseRiskPlan
     useRiskPlanDefaultLabelClass = " planning-checkbox-default" if planningUseRiskPlanAny and not planningUseRiskPlan else ""
-    planningProjectsTextHtml = buildPlanningProjectsPanelHtml(projectIdentifierRaw, projectNameRaw, planningProjects)
+    planningProjectsTextHtml = buildPlanningProjectsPanelHtml(
+        projectIdentifierRaw,
+        projectNameRaw,
+        planningProjects,
+        reportYear=snapshotReportYear,
+    )
     snapshotDynamicSourcePayload = enrichSnapshotPayloadWithFeatureForecasts(
         listFilteredSnapshotIssuesForProjectByDate(projectRedmineId, capturedForDateRaw),
         projectIdentifierRaw,
