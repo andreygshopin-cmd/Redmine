@@ -6297,6 +6297,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     planningProjects = (
         listPlanningProjectsByRedmineIdentifier(projectIdentifierRaw) if projectIdentifierRaw else []
     )
+    totalPlanningBaselineEstimateHours = sum(float(project.get("baseline_estimate_hours") or 0) for project in planningProjects)
+    totalPlanningDevelopmentHours = sum(float(project.get("development_hours") or 0) for project in planningProjects)
     planningUseRiskPlan = bool(planningProjects) and all(bool(project.get("use_risk_plan")) for project in planningProjects)
     planningUseRiskPlanAny = any(bool(project.get("use_risk_plan")) for project in planningProjects)
     selectedUseRiskPlan = planningUseRiskPlan
@@ -6433,7 +6435,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .summary-table th,
       .summary-table td {{ border: 1px solid var(--line); padding: 12px 10px; vertical-align: middle; }}
       .summary-table th:first-child,
-      .summary-table td:first-child {{ width: 20%; }}
+      .summary-table td:first-child {{ width: 12%; }}
       .summary-table thead th {{ position: static; background: #ffffff; color: var(--text); text-transform: none; font-size: 0.98rem; letter-spacing: 0; }}
       .summary-table tbody th {{ background: #ffffff; color: var(--text); text-transform: none; font-size: 1rem; font-weight: 500; }}
       .summary-table .summary-metric {{ text-align: right; font-size: 1.02rem; font-weight: 400; color: #173b5a; white-space: nowrap; }}
@@ -6630,7 +6632,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       <p class="meta">Проект в Redmine: <span class="meta-strong">{projectName}</span>. Идентификатор: <span class="meta-strong">{projectIdentifier}</span>. Дата среза: {capturedForDate}. По фильтру: <span id="filteredIssuesCount">{initialFilteredIssues}</span> из {initialTotalIssues}. На странице: <span id="pageIssuesCount">{len(issues)}</span>.</p>
       {planningProjectsTextHtml}
       <div class="snapshot-planning-option">
-        <label class="field-checkbox-label{useRiskPlanDefaultLabelClass}" for="snapshotUseRiskPlanCheckbox">
+        <label class="field-checkbox-label{useRiskPlanDefaultLabelClass}" id="snapshotUseRiskPlanLabel" for="snapshotUseRiskPlanCheckbox">
           <input id="snapshotUseRiskPlanCheckbox" type="checkbox"{" checked" if selectedUseRiskPlan else ""}>
           <span>Использовать План с рисками</span>
         </label>
@@ -6640,7 +6642,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         <table class="summary-table">
           <thead>
             <tr>
-              <th style="width: 33%"></th>
+              <th style="width: 12%"></th>
               <th>Базовая оценка</th>
               <th>План</th>
               <th>План с рисками</th>
@@ -6655,7 +6657,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           </thead>
           <tbody>
               <tr>
-                <th>Все задачи без фич</th>
+                <th>1. Все задачи без фич</th>
                 <td class="summary-empty"></td>
                 <td class="summary-metric" id="summaryEstimated">{formatPageHours(totalEstimatedHours)}</td>
                 <td class="summary-empty"></td>
@@ -6666,6 +6668,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="summary-empty"></td>
                 <td class="summary-empty"></td>
                 <td class="summary-empty"></td>
+            </tr>
+            <tr>
+              <th colspan="13">2. Разработка</th>
             </tr>
             <tr>
               <th>Разработка, ч</th>
@@ -6719,7 +6724,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-metric" id="summaryDevelopmentTotalForecast">{formatPageHours(snapshotDynamicMetrics["development_total_forecast_hours"])}</td>
             </tr>
             <tr>
-              <th>Контроль списания по фичам</th>
+              <th>4. Фичи</th>
               <td class="summary-metric {featureBaselineEstimateClass}" id="summaryFeatureBaselineEstimate">{formatPageHours(featureBaselineEstimateHours)}</td>
               <td class="summary-metric {featureEstimatedClass}" id="summaryFeatureEstimated">{formatPageHours(featureEstimatedHours)}</td>
               <td class="summary-empty"></td>
@@ -6730,6 +6735,19 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-empty"></td>
               <td class="summary-empty"></td>
               <td class="summary-empty"></td>
+            </tr>
+            <tr>
+              <th>4. Ограничения проекта</th>
+              <td class="summary-metric">{formatPageHours(totalPlanningBaselineEstimateHours)}</td>
+              <td class="summary-empty"></td>
+              <td class="summary-empty"></td>
+              <td class="summary-empty" colspan="2"></td>
+              <td class="summary-empty"></td>
+              <td class="summary-empty" colspan="2"></td>
+              <td class="summary-empty"></td>
+              <td class="summary-empty"></td>
+              <td class="summary-empty"></td>
+              <td class="summary-metric">{formatPageHours(totalPlanningDevelopmentHours)}</td>
             </tr>
           </tbody>
         </table>
@@ -6759,14 +6777,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <th class="baseline-col">Базовая оценка, ч</th>
             <th>План, ч</th>
             <th>План с рисками, ч</th>
+            <th class="spent-col">Факт всего, ч</th>
+            <th class="spent-year-col">Факт за год, ч</th>
             <th class="volume-col">Объем, ч</th>
             <th class="risk-volume-col">Объем (для Плана с рисками), ч</th>
             <th class="remaining-col">Остаток, ч</th>
             <th class="risk-remaining-col">Остаток (для Плана с рисками), ч</th>
             <th class="forecast-col">Прогноз, ч</th>
             <th class="risk-forecast-col">Прогноз (для Плана с рисками), ч</th>
-            <th class="spent-col">Факт всего, ч</th>
-            <th class="spent-year-col">Факт за год, ч</th>
             <th class="closed-col">Закрыта</th>
             <th>Исполнитель</th>
             <th class="version-col">Версия</th>
@@ -6780,14 +6798,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             <th class="baseline-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="baseline" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="baseline" data-filter-role="value"></div></th>
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="estimated" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="estimated" data-filter-role="value"></div></th>
             <th><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="risk" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="risk" data-filter-role="value"></div></th>
+            <th class="spent-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spent" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spent" data-filter-role="value"></div></th>
+            <th class="spent-year-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spentYear" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spentYear" data-filter-role="value"></div></th>
             <th class="volume-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="volume" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="volume" data-filter-role="value"></div></th>
             <th class="risk-volume-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="riskVolume" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="riskVolume" data-filter-role="value"></div></th>
             <th class="remaining-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="remaining" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="remaining" data-filter-role="value"></div></th>
             <th class="risk-remaining-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="riskRemaining" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="riskRemaining" data-filter-role="value"></div></th>
             <th class="forecast-col"></th>
             <th class="risk-forecast-col"></th>
-            <th class="spent-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spent" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spent" data-filter-role="value"></div></th>
-            <th class="spent-year-col"><div class="filter-number-wrap"><select class="filter-number-op" data-filter-key="spentYear" data-filter-role="op"><option value="">—</option><option value=">">></option><option value="<"><</option><option value="=">=</option></select><input class="filter-number-value" type="number" step="0.1" data-filter-key="spentYear" data-filter-role="value"></div></th>
             <th class="closed-col"><input class="filter-input-table" type="text" data-filter-key="closedOn" data-filter-role="text"></th>
             <th><input class="filter-input-table" type="text" data-filter-key="assignedTo" data-filter-role="text"></th>
             <th class="version-col"><input class="filter-input-table" type="text" data-filter-key="fixedVersion" data-filter-role="text"></th>
@@ -6847,6 +6865,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const summaryFeatureSpent = document.getElementById("summaryFeatureSpent");
       const summaryFeatureSpentYear = document.getElementById("summaryFeatureSpentYear");
       const snapshotUseRiskPlanCheckbox = document.getElementById("snapshotUseRiskPlanCheckbox");
+      const snapshotUseRiskPlanLabel = document.getElementById("snapshotUseRiskPlanLabel");
       const summaryEstimated = document.getElementById("summaryEstimated");
       const summarySpent = document.getElementById("summarySpent");
       const summarySpentYear = document.getElementById("summarySpentYear");
@@ -6976,6 +6995,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           snapshotLoadingOverlay.classList.toggle("is-visible", Boolean(isLoading));
           snapshotLoadingOverlay.setAttribute("aria-hidden", isLoading ? "false" : "true");
         }}
+      }}
+
+      function acknowledgeSnapshotRiskPlanWarning() {{
+        snapshotUseRiskPlanLabel?.classList.remove("planning-checkbox-default");
       }}
 
       function escapeHtml(value) {{
@@ -7348,14 +7371,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupBaseline}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupEstimated}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric">${{groupRisk}}</td>
+                <td class="snapshot-group-cell snapshot-group-metric">${{groupSpent}}</td>
+                <td class="snapshot-group-cell snapshot-group-metric">${{groupSpentYear}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric volume-col">${{groupVolume}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric risk-volume-col">${{groupRiskVolume}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric remaining-col">${{groupRemaining}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric risk-remaining-col">${{groupRiskRemaining}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric forecast-col">${{groupForecast}}</td>
                 <td class="snapshot-group-cell snapshot-group-metric risk-forecast-col">${{groupRiskForecast}}</td>
-                <td class="snapshot-group-cell snapshot-group-metric">${{groupSpent}}</td>
-                <td class="snapshot-group-cell snapshot-group-metric">${{groupSpentYear}}</td>
                 <td class="snapshot-group-cell closed-col">${{groupClosedOn}}</td>
                 <td class="snapshot-group-cell">${{groupAssignedTo}}</td>
                 <td class="snapshot-group-cell version-col">${{groupVersion}}</td>
@@ -7377,14 +7400,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="baseline-col">${{formatFilterHours(orderedIssue?.baseline_estimate_hours)}}</td>
                 <td>${{formatFilterHours(orderedIssue?.estimated_hours)}}</td>
                 <td>${{formatFilterHours(orderedIssue?.risk_estimate_hours)}}</td>
+                <td class="spent-col">${{formatFilterHours(orderedIssue?.spent_hours)}}</td>
+                <td class="spent-year-col">${{formatFilterHours(orderedIssue?.spent_hours_year)}}</td>
                 <td class="volume-col">${{formatFilterHours(orderedIssue?.volume_hours)}}</td>
                 <td class="risk-volume-col">${{formatFilterHours(orderedIssue?.risk_volume_hours)}}</td>
                 <td class="remaining-col">${{formatFilterHours(orderedIssue?.remaining_hours)}}</td>
                 <td class="risk-remaining-col">${{formatFilterHours(orderedIssue?.risk_remaining_hours)}}</td>
                 <td class="forecast-col">—</td>
                 <td class="risk-forecast-col">—</td>
-                <td class="spent-col">${{formatFilterHours(orderedIssue?.spent_hours)}}</td>
-                <td class="spent-year-col">${{formatFilterHours(orderedIssue?.spent_hours_year)}}</td>
                 <td class="closed-col">${{escapeHtml(formatSnapshotDateTime(orderedIssue?.closed_on))}}</td>
                 <td>${{escapeHtml(orderedIssue?.assigned_to_name || "—")}}</td>
                 <td class="version-col">${{escapeHtml(orderedIssue?.fixed_version_name || "—")}}</td>
@@ -7741,6 +7764,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }});
 
       applySnapshotPageSizeButton?.addEventListener("click", () => {{
+        acknowledgeSnapshotRiskPlanWarning();
         loadSnapshotIssues(1);
       }});
 
