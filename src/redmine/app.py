@@ -14419,6 +14419,12 @@ def buildProjectsSummaryPage() -> str:
       font-weight: 600;
       vertical-align: middle;
     }}
+    td.summary-limit-cell-single {{
+      vertical-align: top;
+    }}
+    td.summary-limit-cell-merged {{
+      vertical-align: middle;
+    }}
     .summary-project-flagged {{
       color: #c13b3b;
       font-weight: 700;
@@ -14969,8 +14975,9 @@ def buildProjectsSummaryPage() -> str:
           ? `<span style="color:#8a97a5;">${{factContent}} (${{projectsSummaryStrings.factFiltered}})</span>`
           : factContent;
         const factCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{factLabel}}</td>`;
-        const limitCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{hasSummaryValue(group.development_limit_hours) ? wrapSummaryLink(formatSummaryHours(group.development_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName) : formatSummaryHours(group.development_limit_hours)}}</td>`;
-        const reportYearLimitCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{hasSummaryValue(group.report_year_limit_hours) ? wrapSummaryLink(formatSummaryHours(group.report_year_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName) : formatSummaryHours(group.report_year_limit_hours)}}</td>`;
+        const limitCellVerticalClass = rowSpan > 1 ? "summary-limit-cell-merged" : "summary-limit-cell-single";
+        const limitCell = `<td class="group-cell ${{limitCellVerticalClass}}" rowspan="${{rowSpan}}">${{hasSummaryValue(group.development_limit_hours) ? wrapSummaryLink(formatSummaryHours(group.development_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName) : formatSummaryHours(group.development_limit_hours)}}</td>`;
+        const reportYearLimitCell = `<td class="group-cell ${{limitCellVerticalClass}}" rowspan="${{rowSpan}}">${{hasSummaryValue(group.report_year_limit_hours) ? wrapSummaryLink(formatSummaryHours(group.report_year_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName) : formatSummaryHours(group.report_year_limit_hours)}}</td>`;
         return items.map((item, index) => `
           <tr>
             ${{index === 0 ? identifierCell : ""}}
