@@ -5538,7 +5538,7 @@ def buildBurndownPage(
               <span class="legend-swatch dev-bar"></span>
               <div>
                 <div class="legend-name">Объем разработки</div>
-                <div class="legend-text">Полупрозрачный голубой столбик. В stack с ним выше идет «Объем ошибок».</div>
+                <div class="legend-text">Полупрозрачный голубой столбик. Включает объем задач разработки и процессов разработки; по процессам разработки остаток всегда равен 0. В stack с ним выше идет «Объем ошибок».</div>
               </div>
             </li>
             <li>
@@ -6728,7 +6728,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           </thead>
           <tbody>
               <tr>
-                <th>1. Все задачи без фич</th>
+                <th class="summary-section-row">1. Все задачи без фич</th>
                 <td class="summary-empty"></td>
                 <td class="summary-metric" id="summaryEstimated">{formatPageHours(totalEstimatedHours)}</td>
                 <td class="summary-empty"></td>
@@ -6795,7 +6795,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-metric" id="summaryDevelopmentTotalForecast">{formatPageHours(snapshotDynamicMetrics["development_total_forecast_hours"])}</td>
             </tr>
             <tr>
-              <th>3. Фичи</th>
+              <th class="summary-section-row">3. Фичи</th>
               <td class="summary-metric {featureBaselineEstimateClass}" id="summaryFeatureBaselineEstimate">{formatPageHours(featureBaselineEstimateHours)}</td>
               <td class="summary-metric {featureEstimatedClass}" id="summaryFeatureEstimated">{formatPageHours(featureEstimatedHours)}</td>
               <td class="summary-empty"></td>
