@@ -6355,6 +6355,32 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     )
     totalPlanningBaselineEstimateHours = sum(float(project.get("baseline_estimate_hours") or 0) for project in planningProjects)
     totalPlanningDevelopmentHours = sum(float(project.get("development_hours") or 0) for project in planningProjects)
+
+    def resolveSnapshotPlanningReportYearHours(project: dict[str, object]) -> float | None:
+        if snapshotReportYear is None:
+            return None
+        for suffix in ("1", "2", "3"):
+            yearValue = project.get(f"year_{suffix}")
+            hoursValue = project.get(f"hours_{suffix}")
+            if yearValue in (None, ""):
+                continue
+            try:
+                normalizedYear = int(yearValue)
+            except (TypeError, ValueError):
+                continue
+            if normalizedYear == snapshotReportYear:
+                try:
+                    return float(hoursValue) if hoursValue not in (None, "") else None
+                except (TypeError, ValueError):
+                    return None
+        return None
+
+    planningReportYearValues = [resolveSnapshotPlanningReportYearHours(project) for project in planningProjects]
+    totalPlanningReportYearHours = (
+        sum(float(value or 0) for value in planningReportYearValues)
+        if any(value not in (None, "") for value in planningReportYearValues)
+        else None
+    )
     planningUseRiskPlan = bool(planningProjects) and all(bool(project.get("use_risk_plan")) for project in planningProjects)
     planningUseRiskPlanAny = any(bool(project.get("use_risk_plan")) for project in planningProjects)
     selectedUseRiskPlan = planningUseRiskPlan
@@ -6503,6 +6529,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .summary-table .summary-metric {{ text-align: right; font-size: 1.02rem; font-weight: 400; color: #173b5a; white-space: nowrap; }}
       .summary-table .summary-percent {{ font-weight: 700; }}
       .summary-table .summary-empty {{ background: #ffffff; }}
+      .summary-table .summary-rowspan-head {{ text-align: center; vertical-align: middle; }}
       .summary-table .summary-feature-control-zero {{ color: #b8c3cf; }}
       .summary-table .summary-feature-control-alert {{ color: #d54343; font-weight: 700; }}
       .summary-table .summary-section-row th,
@@ -6723,7 +6750,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <th style="width: 12%"></th>
               <th colspan="3">Планирование</th>
               <th colspan="4">Год</th>
-              <th colspan="6">Весь проект</th>
+              <th class="summary-rowspan-head" rowspan="2">Остаток</th>
+              <th colspan="5">Весь проект</th>
             </tr>
             <tr>
               <th style="width: 12%"></th>
@@ -6733,7 +6761,6 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <th colspan="2">Факт (год)</th>
               <th>% (год)</th>
               <th>Прогноз на год</th>
-              <th>Остаток</th>
               <th colspan="2">Факт (всего)</th>
               <th>% (всего)</th>
               <th>Объем</th>
@@ -6828,13 +6855,13 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-empty"></td>
             </tr>
             <tr>
-              <th class="summary-section-row">4. Рамки (лимиты) проекта</th>
+              <th class="summary-section-row">4. Лимиты по разработке с багами</th>
               <td class="summary-metric">{formatPageHours(totalPlanningBaselineEstimateHours)}</td>
               <td class="summary-empty"></td>
               <td class="summary-empty"></td>
               <td class="summary-empty" colspan="2"></td>
               <td class="summary-empty"></td>
-              <td class="summary-empty"></td>
+              <td class="summary-metric">{formatPageHours(totalPlanningReportYearHours) if totalPlanningReportYearHours is not None else "—"}</td>
               <td class="summary-empty"></td>
               <td class="summary-empty" colspan="2"></td>
               <td class="summary-empty"></td>
