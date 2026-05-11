@@ -11360,6 +11360,10 @@ def buildPlanningProjectsPage() -> str:
       font-weight: 700;
       color: #426179;
     }
+    .yearly-hours-title {
+      color: var(--text);
+      font-size: 0.95rem;
+    }
     .subpanel-note {
       margin: 0 0 12px;
       color: var(--muted);
@@ -11803,12 +11807,12 @@ def buildPlanningProjectsPage() -> str:
           </div>
           <div class="form-panels">
             <section class="subpanel">
-              <h3 class="subpanel-title">Часы по разработке с багами на год</h3>
-              <p class="subpanel-note">Если часы по годам не заполнены, то подразумевается, что все затраты ложатся в год = max (год старта, окончания договора, текущий год).</p>
               <div class="field yearly-development-field">
                 <label for="planningProjectDevelopmentHours">Часы разработки с багами</label>
                 <input id="planningProjectDevelopmentHours" type="number" step="0.1" inputmode="decimal">
               </div>
+              <h3 class="subpanel-title yearly-hours-title">Часы по разработке с багами на год</h3>
+              <p class="subpanel-note">Если часы по годам не заполнены, то подразумевается, что все затраты ложатся в год = max (год старта, окончания договора, текущий год).</p>
               <div class="years-grid">
                 <div class="field">
                   <label for="planningProjectYear1">Год 1</label>
@@ -14026,10 +14030,13 @@ def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str,
             item.get("report_year_hours") not in (None, "") or item.get("development_hours") not in (None, "")
             for item in items
         )
-        hasReportYearValues = any(
-            item.get("report_year_hours") not in (None, "")
-            for item in items
-        )
+        reportYearLimitValues: list[float] = []
+        for item in items:
+            reportYearHours = item.get("report_year_hours")
+            developmentHours = item.get("development_hours")
+            selectedYearLimitHours = reportYearHours if reportYearHours not in (None, "") else developmentHours
+            if selectedYearLimitHours not in (None, ""):
+                reportYearLimitValues.append(float(selectedYearLimitHours or 0))
         group["development_limit_hours"] = (
             sum(
                 float(item.get("report_year_hours") or 0) + float(item.get("development_hours") or 0)
@@ -14039,8 +14046,8 @@ def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str,
             else None
         )
         group["report_year_limit_hours"] = (
-            sum(float(item.get("report_year_hours") or 0) for item in items)
-            if hasReportYearValues
+            sum(reportYearLimitValues)
+            if reportYearLimitValues
             else None
         )
 
@@ -14319,6 +14326,12 @@ def buildProjectsSummaryPage() -> str:
       border-radius: 8px;
       background: #ffffff;
     }}
+    .summary-legend {{
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }}
     .projects-summary-loading-overlay {{
       position: fixed;
       inset: 0;
@@ -14513,8 +14526,8 @@ def buildProjectsSummaryPage() -> str:
               <th>ПМ</th>
               <th>Лимит разработки с багами</th>
               <th>Лимит разработки на год отчета</th>
-              <th>Часы разработки на год отчета</th>
               <th>Часы разработки с багами</th>
+              <th>Часы разработки на год отчета</th>
             </tr>
             <tr class="summary-filter-row">
               <th><input class="summary-filter-input" data-filter-key="redmine_identifier" type="text"></th>
@@ -14525,8 +14538,8 @@ def buildProjectsSummaryPage() -> str:
               <th><input class="summary-filter-input" data-filter-key="pm_name" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="development_limit_hours" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="report_year_limit_hours" type="text"></th>
-              <th><input class="summary-filter-input" data-filter-key="report_year_hours" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="development_hours" type="text"></th>
+              <th><input class="summary-filter-input" data-filter-key="report_year_hours" type="text"></th>
             </tr>
           </thead>
           <tbody id="projectsSummaryTableBody">
@@ -14535,6 +14548,7 @@ def buildProjectsSummaryPage() -> str:
           <tfoot id="projectsSummaryTableFoot"></tfoot>
         </table>
       </div>
+      <p class="summary-legend">Легенда: «Лимит разработки на год отчета» считается по проектам в группе: берутся «Часы разработки на год отчета», если они заданы, иначе «Часы разработки с багами». Если часы по годам не заполнены, то подразумевается, что все затраты ложатся в год = max (год старта, окончания договора, текущий год).</p>
     </section>
     <div class="projects-summary-loading-overlay" id="projectsSummaryLoadingOverlay" aria-hidden="true">
       <span class="projects-summary-loading-spinner" aria-hidden="true"></span>
@@ -14574,8 +14588,8 @@ def buildProjectsSummaryPage() -> str:
       "pm_name",
       "development_limit_hours",
       "report_year_limit_hours",
-      "report_year_hours",
       "development_hours",
+      "report_year_hours",
     ];
     const projectsSummarySortableKeys = new Set(projectsSummaryColumnKeys);
     const projectsSummaryItemKeys = new Set([
@@ -14583,8 +14597,8 @@ def buildProjectsSummaryPage() -> str:
       "customer",
       "project_name",
       "pm_name",
-      "report_year_hours",
       "development_hours",
+      "report_year_hours",
     ]);
     const projectsSummaryNumericKeys = new Set([
       "development_spent_hours_year_average",
@@ -14680,6 +14694,16 @@ def buildProjectsSummaryPage() -> str:
 
     function hasSummaryValue(value) {{
       return !(value === null || value === undefined || String(value).trim() === "");
+    }}
+
+    function getSummaryReportYearLimitItemHours(item) {{
+      if (hasSummaryValue(item?.report_year_hours)) {{
+        return Number(item.report_year_hours || 0);
+      }}
+      if (hasSummaryValue(item?.development_hours)) {{
+        return Number(item.development_hours || 0);
+      }}
+      return null;
     }}
 
     function wrapSummaryLink(content, projectId, redmineIdentifier = "", projectName = "") {{
@@ -14848,8 +14872,8 @@ def buildProjectsSummaryPage() -> str:
                   0,
                 )
               : null,
-            report_year_limit_hours: visibleItems.some((item) => item.report_year_hours !== null && item.report_year_hours !== undefined && item.report_year_hours !== "")
-              ? visibleItems.reduce((sum, item) => sum + Number(item.report_year_hours || 0), 0)
+            report_year_limit_hours: visibleItems.some((item) => getSummaryReportYearLimitItemHours(item) !== null)
+              ? visibleItems.reduce((sum, item) => sum + Number(getSummaryReportYearLimitItemHours(item) || 0), 0)
               : null,
           }};
         }})
@@ -14878,12 +14902,12 @@ def buildProjectsSummaryPage() -> str:
           ));
           group.row_span = group.items.length;
           const hasLimitValues = group.items.some((item) => item?.report_year_hours !== null && item?.report_year_hours !== undefined && item?.report_year_hours !== "" || item?.development_hours !== null && item?.development_hours !== undefined && item?.development_hours !== "");
-          const hasReportYearValues = group.items.some((item) => item?.report_year_hours !== null && item?.report_year_hours !== undefined && item?.report_year_hours !== "");
+          const hasReportYearValues = group.items.some((item) => getSummaryReportYearLimitItemHours(item) !== null);
           group.development_limit_hours = hasLimitValues
             ? group.items.reduce((sum, item) => sum + Number(item?.report_year_hours || 0) + Number(item?.development_hours || 0), 0)
             : null;
           group.report_year_limit_hours = hasReportYearValues
-            ? group.items.reduce((sum, item) => sum + Number(item?.report_year_hours || 0), 0)
+            ? group.items.reduce((sum, item) => sum + Number(getSummaryReportYearLimitItemHours(item) || 0), 0)
             : null;
         }});
       }}
@@ -14957,8 +14981,8 @@ def buildProjectsSummaryPage() -> str:
             <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{formatSummaryText(item.pm_name)}}</td>
             ${{index === 0 ? limitCell : ""}}
             ${{index === 0 ? reportYearLimitCell : ""}}
-            <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{hasSummaryValue(item.report_year_hours) ? wrapSummaryLink(formatSummaryHours(item.report_year_hours), item.id, groupIdentifier, item.link_project_name) : formatSummaryHours(item.report_year_hours)}}</td>
             <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{hasSummaryValue(item.development_hours) ? wrapSummaryLink(formatSummaryHours(item.development_hours), item.id, groupIdentifier, item.link_project_name) : formatSummaryHours(item.development_hours)}}</td>
+            <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{hasSummaryValue(item.report_year_hours) ? wrapSummaryLink(formatSummaryHours(item.report_year_hours), item.id, groupIdentifier, item.link_project_name) : formatSummaryHours(item.report_year_hours)}}</td>
           </tr>
         `).join("");
       }}).join("");
@@ -15025,8 +15049,8 @@ def buildProjectsSummaryPage() -> str:
           <td class="totals-spacer-cell" colspan="4"></td>
           <td>${{formatSummaryTotal(limitHasValues ? limitTotal : null)}}</td>
           <td>${{formatSummaryTotal(reportYearLimitHasValues ? reportYearLimitTotal : null)}}</td>
-          <td>${{formatSummaryTotal(reportYearHasValues ? reportYearTotal : null)}}</td>
           <td>${{formatSummaryTotal(developmentHasValues ? developmentTotal : null)}}</td>
+          <td>${{formatSummaryTotal(reportYearHasValues ? reportYearTotal : null)}}</td>
         </tr>
       `;
     }}
@@ -16403,8 +16427,8 @@ def exportProjectsSummaryCsv(
             "ПМ",
             "Лимит разработки с багами",
             "Лимит разработки на год отчета",
-            "Часы разработки на год отчета",
             "Часы разработки с багами",
+            "Часы разработки на год отчета",
         ]
     )
     for group in groups:
@@ -16424,8 +16448,8 @@ def exportProjectsSummaryCsv(
                     str(item.get("pm_name") or ""),
                     formatPageHours(developmentLimit) if itemIndex == 0 and developmentLimit not in (None, "") else "",
                     formatPageHours(reportYearLimit) if itemIndex == 0 and reportYearLimit not in (None, "") else "",
-                    formatPageHours(item.get("report_year_hours")) if item.get("report_year_hours") not in (None, "") else "",
                     formatPageHours(item.get("development_hours")) if item.get("development_hours") not in (None, "") else "",
+                    formatPageHours(item.get("report_year_hours")) if item.get("report_year_hours") not in (None, "") else "",
                 ]
             )
 
