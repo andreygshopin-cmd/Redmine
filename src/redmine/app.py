@@ -14036,23 +14036,20 @@ def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str,
         group["development_spent_hours_year_average"] = (
             sum(factValues) / len(factValues) if factValues else None
         )
-        hasLimitValues = any(
-            item.get("report_year_hours") not in (None, "") or item.get("development_hours") not in (None, "")
-            for item in items
-        )
+        developmentLimitValues: list[float] = []
         reportYearLimitValues: list[float] = []
         for item in items:
             reportYearHours = item.get("report_year_hours")
             developmentHours = item.get("development_hours")
+            selectedDevelopmentLimitHours = developmentHours if developmentHours not in (None, "") else reportYearHours
+            if selectedDevelopmentLimitHours not in (None, ""):
+                developmentLimitValues.append(float(selectedDevelopmentLimitHours or 0))
             selectedYearLimitHours = reportYearHours if reportYearHours not in (None, "") else developmentHours
             if selectedYearLimitHours not in (None, ""):
                 reportYearLimitValues.append(float(selectedYearLimitHours or 0))
         group["development_limit_hours"] = (
-            sum(
-                float(item.get("report_year_hours") or 0) + float(item.get("development_hours") or 0)
-                for item in items
-            )
-            if hasLimitValues
+            sum(developmentLimitValues)
+            if developmentLimitValues
             else None
         )
         group["report_year_limit_hours"] = (
@@ -14722,6 +14719,16 @@ def buildProjectsSummaryPage() -> str:
       return null;
     }}
 
+    function getSummaryDevelopmentLimitItemHours(item) {{
+      if (hasSummaryValue(item?.development_hours)) {{
+        return Number(item.development_hours || 0);
+      }}
+      if (hasSummaryValue(item?.report_year_hours)) {{
+        return Number(item.report_year_hours || 0);
+      }}
+      return null;
+    }}
+
     function wrapSummaryLink(content, projectId, redmineIdentifier = "", projectName = "") {{
       const href = buildPlanningProjectLink(projectId, redmineIdentifier, projectName);
       if (!href) {{
@@ -14882,11 +14889,8 @@ def buildProjectsSummaryPage() -> str:
             items: visibleItems,
             source_row_span: Number(group.row_span || (Array.isArray(group.items) ? group.items.length : 0)),
             row_span: visibleItems.length,
-            development_limit_hours: visibleItems.some((item) => item.report_year_hours !== null && item.report_year_hours !== undefined && item.report_year_hours !== "" || item.development_hours !== null && item.development_hours !== undefined && item.development_hours !== "")
-              ? visibleItems.reduce(
-                  (sum, item) => sum + Number(item.report_year_hours || 0) + Number(item.development_hours || 0),
-                  0,
-                )
+            development_limit_hours: visibleItems.some((item) => getSummaryDevelopmentLimitItemHours(item) !== null)
+              ? visibleItems.reduce((sum, item) => sum + Number(getSummaryDevelopmentLimitItemHours(item) || 0), 0)
               : null,
             report_year_limit_hours: visibleItems.some((item) => getSummaryReportYearLimitItemHours(item) !== null)
               ? visibleItems.reduce((sum, item) => sum + Number(getSummaryReportYearLimitItemHours(item) || 0), 0)
@@ -14917,10 +14921,10 @@ def buildProjectsSummaryPage() -> str:
             compareProjectsSummaryValues(left?.[projectsSummarySortKey], right?.[projectsSummarySortKey], projectsSummarySortKey) * sortMultiplier
           ));
           group.row_span = group.items.length;
-          const hasLimitValues = group.items.some((item) => item?.report_year_hours !== null && item?.report_year_hours !== undefined && item?.report_year_hours !== "" || item?.development_hours !== null && item?.development_hours !== undefined && item?.development_hours !== "");
+          const hasLimitValues = group.items.some((item) => getSummaryDevelopmentLimitItemHours(item) !== null);
           const hasReportYearValues = group.items.some((item) => getSummaryReportYearLimitItemHours(item) !== null);
           group.development_limit_hours = hasLimitValues
-            ? group.items.reduce((sum, item) => sum + Number(item?.report_year_hours || 0) + Number(item?.development_hours || 0), 0)
+            ? group.items.reduce((sum, item) => sum + Number(getSummaryDevelopmentLimitItemHours(item) || 0), 0)
             : null;
           group.report_year_limit_hours = hasReportYearValues
             ? group.items.reduce((sum, item) => sum + Number(getSummaryReportYearLimitItemHours(item) || 0), 0)
