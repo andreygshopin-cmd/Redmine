@@ -6498,6 +6498,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .summary-table th:first-child,
       .summary-table td:first-child {{ width: 12%; }}
       .summary-table thead th {{ position: static; background: #ffffff; color: var(--text); text-transform: none; font-size: 0.98rem; letter-spacing: 0; }}
+      .summary-table .summary-group-head th {{ text-align: center; }}
       .summary-table tbody th {{ background: #ffffff; color: var(--text); text-transform: none; font-size: 1rem; font-weight: 500; }}
       .summary-table .summary-metric {{ text-align: right; font-size: 1.02rem; font-weight: 400; color: #173b5a; white-space: nowrap; }}
       .summary-table .summary-percent {{ font-weight: 700; }}
@@ -6513,6 +6514,12 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         letter-spacing: 0.01em;
         padding-top: 8px;
         padding-bottom: 8px;
+      }}
+      .summary-legend {{
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 0.92rem;
+        line-height: 1.45;
       }}
       .filter-input-table,
       .filter-select-table,
@@ -6712,12 +6719,11 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       <div class="summary-block">
         <table class="summary-table">
           <thead>
-            <tr>
+            <tr class="summary-group-head">
               <th style="width: 12%"></th>
               <th colspan="3">Планирование</th>
-              <th colspan="3">Год</th>
-              <th></th>
-              <th colspan="5">Весь проект</th>
+              <th colspan="4">Год</th>
+              <th colspan="6">Весь проект</th>
             </tr>
             <tr>
               <th style="width: 12%"></th>
@@ -6726,6 +6732,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <th>План с рисками</th>
               <th colspan="2">Факт (год)</th>
               <th>% (год)</th>
+              <th>Прогноз на год</th>
               <th>Остаток</th>
               <th colspan="2">Факт (всего)</th>
               <th>% (всего)</th>
@@ -6742,13 +6749,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                 <td class="summary-metric" id="summarySpentYear" colspan="2">{formatPageHours(totalSpentHoursYear)}</td>
                 <td class="summary-empty"></td>
                 <td class="summary-empty"></td>
+                <td class="summary-empty"></td>
                 <td class="summary-metric" id="summarySpent" colspan="2">{formatPageHours(totalSpentHours)}</td>
                 <td class="summary-empty"></td>
                 <td class="summary-empty"></td>
                 <td class="summary-empty"></td>
             </tr>
             <tr class="summary-section-row">
-              <th colspan="13">2. Разработка</th>
+              <th colspan="14">2. Разработка</th>
             </tr>
             <tr>
               <th>Разработка, ч</th>
@@ -6758,6 +6766,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-metric" id="summaryDevelopmentSpentYear">{formatPageHours(developmentSpentHoursYear)}</td>
               <td class="summary-metric" id="summaryDevelopmentCombinedSpentYear" rowspan="2">{formatPageHours(summaryView["development_combined_spent_hours_year"])}</td>
               <td class="summary-empty" rowspan="2"></td>
+              <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentRemaining">{formatPageHours(snapshotDynamicMetrics["development_remaining_hours"])}</td>
               <td class="summary-metric" id="summaryDevelopmentSpent">{formatPageHours(developmentSpentHours)}</td>
               <td class="summary-metric" id="summaryDevelopmentCombinedSpent" rowspan="2">{formatPageHours(summaryView["development_combined_spent_hours"])}</td>
@@ -6771,6 +6780,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentProcessSpentYear">{formatPageHours(developmentProcessSpentHoursYear)}</td>
               <td class="summary-empty"></td>
+              <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentProcessSpent">{formatPageHours(developmentProcessSpentHours)}</td>
               <td class="summary-empty"></td>
               <td class="summary-empty"></td>
@@ -6782,6 +6792,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryBugSpentYear" colspan="2">{formatPageHours(bugSpentHoursYear)}</td>
               <td class="summary-metric summary-percent" id="summaryBugShareYear">{formatPageHours(summaryView["bug_share_year_percent"])}%</td>
+              <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryBugRemaining">{formatPageHours(snapshotDynamicMetrics["bug_remaining_hours"])}</td>
               <td class="summary-metric" id="summaryBugSpent" colspan="2">{formatPageHours(bugSpentHours)}</td>
               <td class="summary-metric summary-percent" id="summaryBugShareAll">{formatPageHours(summaryView["bug_share_all_percent"])}%</td>
@@ -6795,6 +6806,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentGrandSpentYear" colspan="2">{formatPageHours(summaryView["development_grand_spent_hours_year"])}</td>
               <td class="summary-empty"></td>
+              <td class="summary-metric" id="summaryDevelopmentYearForecast">{formatPageHours(float(snapshotDynamicMetrics["development_total_forecast_hours"] or 0) - float(summaryView["development_grand_spent_hours"] or 0) + float(summaryView["development_grand_spent_hours_year"] or 0))}</td>
               <td class="summary-metric" id="summaryDevelopmentTotalRemaining">{formatPageHours(snapshotDynamicMetrics["development_total_remaining_hours"])}</td>
               <td class="summary-metric" id="summaryDevelopmentGrandSpent" colspan="2">{formatPageHours(summaryView["development_grand_spent_hours"])}</td>
               <td class="summary-empty"></td>
@@ -6807,6 +6819,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-metric {featureEstimatedClass}" id="summaryFeatureEstimated">{formatPageHours(featureEstimatedHours)}</td>
               <td class="summary-empty"></td>
               <td class="summary-metric {featureSpentYearClass}" id="summaryFeatureSpentYear" colspan="2">{formatPageHours(featureSpentHoursYear)}</td>
+              <td class="summary-empty"></td>
               <td class="summary-empty"></td>
               <td class="summary-empty"></td>
               <td class="summary-metric {featureSpentClass}" id="summaryFeatureSpent" colspan="2">{formatPageHours(featureSpentHours)}</td>
@@ -6822,6 +6835,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-empty" colspan="2"></td>
               <td class="summary-empty"></td>
               <td class="summary-empty"></td>
+              <td class="summary-empty"></td>
               <td class="summary-empty" colspan="2"></td>
               <td class="summary-empty"></td>
               <td class="summary-empty"></td>
@@ -6829,6 +6843,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             </tr>
           </tbody>
         </table>
+        <p class="summary-legend">Легенда: Прогноз на год = Прогноз - Факт (всего) + Факт (год).</p>
       </div>
       <div class="filter-reset-wrap">
         <span class="filter-tip">Фильтры применяются к таблице и суммам выше. Суммы считаются по всем задачам, удовлетворяющим фильтру, а не только по текущей странице.</span>
@@ -6972,6 +6987,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const summaryBugVolume = document.getElementById("summaryBugVolume");
       const summaryDevelopmentTotalVolume = document.getElementById("summaryDevelopmentTotalVolume");
       const summaryDevelopmentTotalForecast = document.getElementById("summaryDevelopmentTotalForecast");
+      const summaryDevelopmentYearForecast = document.getElementById("summaryDevelopmentYearForecast");
       let currentSnapshotIssues = initialSnapshotIssues;
       let currentSnapshotSummary = initialSnapshotSummary;
       let currentSnapshotDynamicSummary = initialSnapshotDynamicSummary;
@@ -7383,7 +7399,11 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if (summaryDevelopmentVolume) summaryDevelopmentVolume.textContent = formatFilterHours(getDynamicMetric("development_volume_hours", "developmentVolumeHours"));
         if (summaryBugVolume) summaryBugVolume.textContent = formatFilterHours(getDynamicMetric("bug_volume_hours", "bugVolumeHours"));
         if (summaryDevelopmentTotalVolume) summaryDevelopmentTotalVolume.textContent = formatFilterHours(getDynamicMetric("development_total_volume_hours", "developmentTotalVolumeHours"));
-        if (summaryDevelopmentTotalForecast) summaryDevelopmentTotalForecast.textContent = formatFilterHours(getDynamicMetric("development_total_forecast_hours", "developmentTotalForecastHours"));
+        const developmentTotalForecast = getDynamicMetric("development_total_forecast_hours", "developmentTotalForecastHours");
+        if (summaryDevelopmentTotalForecast) summaryDevelopmentTotalForecast.textContent = formatFilterHours(developmentTotalForecast);
+        if (summaryDevelopmentYearForecast) summaryDevelopmentYearForecast.textContent = formatFilterHours(
+          developmentTotalForecast - Number(view.developmentGrandSpentHours || 0) + Number(view.developmentGrandSpentHoursYear || 0),
+        );
       }}
 
       function renderSnapshotRows(issues) {{
