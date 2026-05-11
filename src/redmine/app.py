@@ -10788,7 +10788,7 @@ def buildProjectsSummaryPage() -> str:
               <th>Идентификатор в Redmine</th>
               <th>ПМ</th>
               <th>Часы разработки с багами</th>
-              <th>Лимит разработки на год отчета</th>
+              <th>Часы разработки на год отчета</th>
               <th>Разработка: факт за год, ч</th>
             </tr>
           </thead>
@@ -11336,7 +11336,6 @@ def buildPlanningProjectsPage() -> str:
     }
     .form-row.metrics-row {
       grid-template-columns:
-        minmax(190px, 1.15fr)
         minmax(150px, 0.95fr)
         minmax(150px, 0.9fr)
         minmax(185px, 1fr)
@@ -11366,6 +11365,9 @@ def buildPlanningProjectsPage() -> str:
       color: var(--muted);
       font-size: 0.92rem;
       line-height: 1.45;
+    }
+    .yearly-development-field {
+      margin: 0 0 14px;
     }
     .years-grid {
       display: grid;
@@ -11557,7 +11559,7 @@ def buildPlanningProjectsPage() -> str:
     th.end-date-col, td.end-date-col { width: 16ch; min-width: 16ch; max-width: 16ch; white-space: nowrap; }
     th.development-col, td.development-col { width: 190px; min-width: 190px; }
     th.year-col, td.year-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
-    th.year-hours-col, td.year-hours-col { width: 14ch; min-width: 14ch; max-width: 14ch; white-space: nowrap; }
+    th.year-hours-col, td.year-hours-col { width: 18ch; min-width: 18ch; max-width: 18ch; white-space: nowrap; }
     th.baseline-col, td.baseline-col { width: 140px; }
     th.p-col, td.p-col { width: 10ch; min-width: 10ch; max-width: 10ch; }
     th.p2-col, td.p2-col { width: 18ch; min-width: 18ch; max-width: 18ch; }
@@ -11682,11 +11684,11 @@ def buildPlanningProjectsPage() -> str:
               <th class="end-date-col" data-sort-key="end_date">Дата окончания<span class="sort-indicator"></span></th>
               <th class="development-col" data-sort-key="development_hours">Часы разработки с багами<span class="sort-indicator"></span></th>
               <th class="year-col" data-sort-key="year_1">Год 1<span class="sort-indicator"></span></th>
-              <th class="year-hours-col" data-sort-key="hours_1">Часы 1<span class="sort-indicator"></span></th>
+              <th class="year-hours-col" data-sort-key="hours_1">Часы по году 1<span class="sort-indicator"></span></th>
               <th class="year-col" data-sort-key="year_2">Год 2<span class="sort-indicator"></span></th>
-              <th class="year-hours-col" data-sort-key="hours_2">Часы 2<span class="sort-indicator"></span></th>
+              <th class="year-hours-col" data-sort-key="hours_2">Часы по году 2<span class="sort-indicator"></span></th>
               <th class="year-col" data-sort-key="year_3">Год 3<span class="sort-indicator"></span></th>
-              <th class="year-hours-col" data-sort-key="hours_3">Часы 3<span class="sort-indicator"></span></th>
+              <th class="year-hours-col" data-sort-key="hours_3">Часы по году 3<span class="sort-indicator"></span></th>
               <th class="baseline-col" data-sort-key="baseline_estimate_hours">Базовая оценка<span class="sort-indicator"></span></th>
               <th class="p-col" data-sort-key="p1">P1 (факт / база), %<span class="sort-indicator"></span></th>
               <th class="p2-col" data-sort-key="p2">P2 (факт с багами / факт), %<span class="sort-indicator"></span></th>
@@ -11783,10 +11785,6 @@ def buildPlanningProjectsPage() -> str:
           </div>
           <div class="form-row metrics-row">
             <div class="field">
-              <label for="planningProjectDevelopmentHours">Часы разработки с багами</label>
-              <input id="planningProjectDevelopmentHours" type="number" step="0.1" inputmode="decimal">
-            </div>
-            <div class="field">
               <label for="planningProjectBaselineEstimate">Базовая оценка</label>
               <input id="planningProjectBaselineEstimate" type="number" step="0.1" inputmode="decimal">
             </div>
@@ -11807,13 +11805,17 @@ def buildPlanningProjectsPage() -> str:
             <section class="subpanel">
               <h3 class="subpanel-title">Часы по разработке с багами на год</h3>
               <p class="subpanel-note">Если часы по годам не заполнены, то подразумевается, что все затраты ложатся в год = max (год старта, окончания договора, текущий год).</p>
+              <div class="field yearly-development-field">
+                <label for="planningProjectDevelopmentHours">Часы разработки с багами</label>
+                <input id="planningProjectDevelopmentHours" type="number" step="0.1" inputmode="decimal">
+              </div>
               <div class="years-grid">
                 <div class="field">
                   <label for="planningProjectYear1">Год 1</label>
                   <input id="planningProjectYear1" type="number" step="1" inputmode="numeric" value="__DEFAULT_YEAR_1__">
                 </div>
                 <div class="field">
-                  <label for="planningProjectHours1">Часы 1</label>
+                  <label for="planningProjectHours1">Часы по году 1</label>
                   <input id="planningProjectHours1" type="number" step="0.1" inputmode="decimal">
                 </div>
                 <div class="field">
@@ -11821,7 +11823,7 @@ def buildPlanningProjectsPage() -> str:
                   <input id="planningProjectYear2" type="number" step="1" inputmode="numeric" value="__DEFAULT_YEAR_2__">
                 </div>
                 <div class="field">
-                  <label for="planningProjectHours2">Часы 2</label>
+                  <label for="planningProjectHours2">Часы по году 2</label>
                   <input id="planningProjectHours2" type="number" step="0.1" inputmode="decimal">
                 </div>
                 <div class="field">
@@ -11829,7 +11831,7 @@ def buildPlanningProjectsPage() -> str:
                   <input id="planningProjectYear3" type="number" step="1" inputmode="numeric" value="__DEFAULT_YEAR_3__">
                 </div>
                 <div class="field">
-                  <label for="planningProjectHours3">Часы 3</label>
+                  <label for="planningProjectHours3">Часы по году 3</label>
                   <input id="planningProjectHours3" type="number" step="0.1" inputmode="decimal">
                 </div>
               </div>
@@ -14024,12 +14026,21 @@ def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str,
             item.get("report_year_hours") not in (None, "") or item.get("development_hours") not in (None, "")
             for item in items
         )
+        hasReportYearValues = any(
+            item.get("report_year_hours") not in (None, "")
+            for item in items
+        )
         group["development_limit_hours"] = (
             sum(
                 float(item.get("report_year_hours") or 0) + float(item.get("development_hours") or 0)
                 for item in items
             )
             if hasLimitValues
+            else None
+        )
+        group["report_year_limit_hours"] = (
+            sum(float(item.get("report_year_hours") or 0) for item in items)
+            if hasReportYearValues
             else None
         )
 
@@ -14502,6 +14513,7 @@ def buildProjectsSummaryPage() -> str:
               <th>ПМ</th>
               <th>Лимит разработки с багами</th>
               <th>Лимит разработки на год отчета</th>
+              <th>Часы разработки на год отчета</th>
               <th>Часы разработки с багами</th>
             </tr>
             <tr class="summary-filter-row">
@@ -14512,12 +14524,13 @@ def buildProjectsSummaryPage() -> str:
               <th><input class="summary-filter-input" data-filter-key="project_name" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="pm_name" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="development_limit_hours" type="text"></th>
+              <th><input class="summary-filter-input" data-filter-key="report_year_limit_hours" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="report_year_hours" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="development_hours" type="text"></th>
             </tr>
           </thead>
           <tbody id="projectsSummaryTableBody">
-            <tr><td colspan="9" class="empty-state">Загружаем сводку...</td></tr>
+            <tr><td colspan="10" class="empty-state">Загружаем сводку...</td></tr>
           </tbody>
           <tfoot id="projectsSummaryTableFoot"></tfoot>
         </table>
@@ -14560,6 +14573,7 @@ def buildProjectsSummaryPage() -> str:
       "project_name",
       "pm_name",
       "development_limit_hours",
+      "report_year_limit_hours",
       "report_year_hours",
       "development_hours",
     ];
@@ -14575,6 +14589,7 @@ def buildProjectsSummaryPage() -> str:
     const projectsSummaryNumericKeys = new Set([
       "development_spent_hours_year_average",
       "development_limit_hours",
+      "report_year_limit_hours",
       "report_year_hours",
       "development_hours",
     ]);
@@ -14783,6 +14798,7 @@ def buildProjectsSummaryPage() -> str:
           const groupIdentifier = String(group.redmine_identifier ?? "");
           const factValue = String(group.development_spent_hours_year_average ?? "");
           const limitValue = String(group.development_limit_hours ?? "");
+          const reportYearLimitValue = String(group.report_year_limit_hours ?? "");
           if (normalizedFilters.redmine_identifier && !normalizeSummaryFilterValue(groupIdentifier).includes(normalizedFilters.redmine_identifier)) {{
             return null;
           }}
@@ -14790,6 +14806,9 @@ def buildProjectsSummaryPage() -> str:
             return null;
           }}
           if (normalizedFilters.development_limit_hours && !normalizeSummaryFilterValue(limitValue).includes(normalizedFilters.development_limit_hours)) {{
+            return null;
+          }}
+          if (normalizedFilters.report_year_limit_hours && !normalizeSummaryFilterValue(reportYearLimitValue).includes(normalizedFilters.report_year_limit_hours)) {{
             return null;
           }}
 
@@ -14829,6 +14848,9 @@ def buildProjectsSummaryPage() -> str:
                   0,
                 )
               : null,
+            report_year_limit_hours: visibleItems.some((item) => item.report_year_hours !== null && item.report_year_hours !== undefined && item.report_year_hours !== "")
+              ? visibleItems.reduce((sum, item) => sum + Number(item.report_year_hours || 0), 0)
+              : null,
           }};
         }})
         .filter(Boolean);
@@ -14856,8 +14878,12 @@ def buildProjectsSummaryPage() -> str:
           ));
           group.row_span = group.items.length;
           const hasLimitValues = group.items.some((item) => item?.report_year_hours !== null && item?.report_year_hours !== undefined && item?.report_year_hours !== "" || item?.development_hours !== null && item?.development_hours !== undefined && item?.development_hours !== "");
+          const hasReportYearValues = group.items.some((item) => item?.report_year_hours !== null && item?.report_year_hours !== undefined && item?.report_year_hours !== "");
           group.development_limit_hours = hasLimitValues
             ? group.items.reduce((sum, item) => sum + Number(item?.report_year_hours || 0) + Number(item?.development_hours || 0), 0)
+            : null;
+          group.report_year_limit_hours = hasReportYearValues
+            ? group.items.reduce((sum, item) => sum + Number(item?.report_year_hours || 0), 0)
             : null;
         }});
       }}
@@ -14893,7 +14919,7 @@ def buildProjectsSummaryPage() -> str:
 
     function renderProjectsSummaryRows(groups) {{
       if (!groups.length) {{
-        projectsSummaryTableBody.innerHTML = `<tr><td colspan="9" class="empty-state">${{projectsSummaryStrings.noRows}}</td></tr>`;
+        projectsSummaryTableBody.innerHTML = `<tr><td colspan="10" class="empty-state">${{projectsSummaryStrings.noRows}}</td></tr>`;
         if (projectsSummaryTableFoot) {{
           projectsSummaryTableFoot.innerHTML = "";
         }}
@@ -14920,6 +14946,7 @@ def buildProjectsSummaryPage() -> str:
           : factContent;
         const factCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{factLabel}}</td>`;
         const limitCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{hasSummaryValue(group.development_limit_hours) ? wrapSummaryLink(formatSummaryHours(group.development_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName) : formatSummaryHours(group.development_limit_hours)}}</td>`;
+        const reportYearLimitCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{hasSummaryValue(group.report_year_limit_hours) ? wrapSummaryLink(formatSummaryHours(group.report_year_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName) : formatSummaryHours(group.report_year_limit_hours)}}</td>`;
         return items.map((item, index) => `
           <tr>
             ${{index === 0 ? identifierCell : ""}}
@@ -14929,6 +14956,7 @@ def buildProjectsSummaryPage() -> str:
             <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{wrapSummaryLink(formatSummaryText(item.project_name), item.id, groupIdentifier, item.link_project_name)}}</td>
             <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{formatSummaryText(item.pm_name)}}</td>
             ${{index === 0 ? limitCell : ""}}
+            ${{index === 0 ? reportYearLimitCell : ""}}
             <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{hasSummaryValue(item.report_year_hours) ? wrapSummaryLink(formatSummaryHours(item.report_year_hours), item.id, groupIdentifier, item.link_project_name) : formatSummaryHours(item.report_year_hours)}}</td>
             <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{hasSummaryValue(item.development_hours) ? wrapSummaryLink(formatSummaryHours(item.development_hours), item.id, groupIdentifier, item.link_project_name) : formatSummaryHours(item.development_hours)}}</td>
           </tr>
@@ -14949,6 +14977,8 @@ def buildProjectsSummaryPage() -> str:
       let factHasValues = false;
       let limitTotal = 0;
       let limitHasValues = false;
+      let reportYearLimitTotal = 0;
+      let reportYearLimitHasValues = false;
       let reportYearTotal = 0;
       let reportYearHasValues = false;
       let developmentTotal = 0;
@@ -14965,6 +14995,12 @@ def buildProjectsSummaryPage() -> str:
         if (Number.isFinite(limitValue)) {{
           limitTotal += limitValue;
           limitHasValues = true;
+        }}
+
+        const reportYearLimitValue = Number(group?.report_year_limit_hours);
+        if (Number.isFinite(reportYearLimitValue)) {{
+          reportYearLimitTotal += reportYearLimitValue;
+          reportYearLimitHasValues = true;
         }}
 
         for (const item of Array.isArray(group?.items) ? group.items : []) {{
@@ -14988,6 +15024,7 @@ def buildProjectsSummaryPage() -> str:
           <td>${{formatSummaryTotal(factHasValues ? factTotal : null)}}</td>
           <td class="totals-spacer-cell" colspan="4"></td>
           <td>${{formatSummaryTotal(limitHasValues ? limitTotal : null)}}</td>
+          <td>${{formatSummaryTotal(reportYearLimitHasValues ? reportYearLimitTotal : null)}}</td>
           <td>${{formatSummaryTotal(reportYearHasValues ? reportYearTotal : null)}}</td>
           <td>${{formatSummaryTotal(developmentHasValues ? developmentTotal : null)}}</td>
         </tr>
@@ -15007,7 +15044,7 @@ def buildProjectsSummaryPage() -> str:
         setProjectsSummaryLoading(true);
       }}
       projectsSummaryMeta.textContent = projectsSummaryStrings.loading;
-      projectsSummaryTableBody.innerHTML = `<tr><td colspan="9" class="empty-state">${{projectsSummaryStrings.loading}}</td></tr>`;
+      projectsSummaryTableBody.innerHTML = `<tr><td colspan="10" class="empty-state">${{projectsSummaryStrings.loading}}</td></tr>`;
       if (projectsSummaryTableFoot) {{
         projectsSummaryTableFoot.innerHTML = "";
       }}
@@ -15027,7 +15064,7 @@ def buildProjectsSummaryPage() -> str:
         refreshProjectsSummaryView();
       }} catch (error) {{
         projectsSummaryMeta.textContent = projectsSummaryStrings.error;
-        projectsSummaryTableBody.innerHTML = `<tr><td colspan="9" class="empty-state">${{projectsSummaryStrings.loadFailed}}</td></tr>`;
+        projectsSummaryTableBody.innerHTML = `<tr><td colspan="10" class="empty-state">${{projectsSummaryStrings.loadFailed}}</td></tr>`;
         if (projectsSummaryTableFoot) {{
           projectsSummaryTableFoot.innerHTML = "";
         }}
@@ -16366,6 +16403,7 @@ def exportProjectsSummaryCsv(
             "ПМ",
             "Лимит разработки с багами",
             "Лимит разработки на год отчета",
+            "Часы разработки на год отчета",
             "Часы разработки с багами",
         ]
     )
@@ -16374,6 +16412,7 @@ def exportProjectsSummaryCsv(
         identifier = str(group.get("redmine_identifier") or "")
         factAverage = group.get("development_spent_hours_year_average")
         developmentLimit = group.get("development_limit_hours")
+        reportYearLimit = group.get("report_year_limit_hours")
         for itemIndex, item in enumerate(items):
             writer.writerow(
                 [
@@ -16384,6 +16423,7 @@ def exportProjectsSummaryCsv(
                     str(item.get("project_name") or ""),
                     str(item.get("pm_name") or ""),
                     formatPageHours(developmentLimit) if itemIndex == 0 and developmentLimit not in (None, "") else "",
+                    formatPageHours(reportYearLimit) if itemIndex == 0 and reportYearLimit not in (None, "") else "",
                     formatPageHours(item.get("report_year_hours")) if item.get("report_year_hours") not in (None, "") else "",
                     formatPageHours(item.get("development_hours")) if item.get("development_hours") not in (None, "") else "",
                 ]
@@ -16423,11 +16463,11 @@ def exportPlanningProjectsCsv(
             "Дата окончания",
             "Часы разработки с багами",
             "Год 1",
-            "Часы 1",
+            "Часы по году 1",
             "Год 2",
-            "Часы 2",
+            "Часы по году 2",
             "Год 3",
-            "Часы 3",
+            "Часы по году 3",
             "Базовая оценка",
             "P1 (факт / база), %",
             "P2 (факт с багами / факт), %",
