@@ -6356,6 +6356,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     totalPlanningBaselineEstimateHours = sum(float(project.get("baseline_estimate_hours") or 0) for project in planningProjects)
     totalPlanningDevelopmentHours = sum(float(project.get("development_hours") or 0) for project in planningProjects)
 
+    def normalizeSnapshotPlanningHours(value: object) -> float | None:
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
     def resolveSnapshotPlanningReportYearHours(project: dict[str, object]) -> float | None:
         if snapshotReportYear is None:
             return None
@@ -6375,7 +6383,13 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
                     return None
         return None
 
-    planningReportYearValues = [resolveSnapshotPlanningReportYearHours(project) for project in planningProjects]
+    def resolveSnapshotPlanningReportYearLimitHours(project: dict[str, object]) -> float | None:
+        reportYearHours = resolveSnapshotPlanningReportYearHours(project)
+        if reportYearHours is not None:
+            return reportYearHours
+        return normalizeSnapshotPlanningHours(project.get("development_hours"))
+
+    planningReportYearValues = [resolveSnapshotPlanningReportYearLimitHours(project) for project in planningProjects]
     totalPlanningReportYearHours = (
         sum(float(value or 0) for value in planningReportYearValues)
         if any(value not in (None, "") for value in planningReportYearValues)
