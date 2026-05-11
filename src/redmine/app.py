@@ -11334,19 +11334,25 @@ def buildPlanningProjectsPage() -> str:
       gap: 14px 16px;
       align-items: end;
     }
-    .form-row.metrics-row {
-      grid-template-columns:
-        minmax(150px, 0.95fr)
-        minmax(150px, 0.9fr)
-        minmax(185px, 1fr)
-        auto;
-      gap: 12px 14px;
-    }
     .form-panels {
       display: grid;
-      grid-template-columns: minmax(280px, 34%) minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 34%);
       gap: 18px;
       align-items: start;
+    }
+    .planning-left-stack {
+      display: grid;
+      gap: 14px;
+    }
+    .planning-metrics-strip {
+      display: grid;
+      grid-template-columns:
+        minmax(130px, 0.85fr)
+        minmax(130px, 0.85fr)
+        minmax(180px, 1fr)
+        auto;
+      gap: 12px 14px;
+      align-items: end;
     }
     .subpanel {
       border: 1px solid var(--line);
@@ -11461,7 +11467,7 @@ def buildPlanningProjectsPage() -> str:
       font-weight: 600;
       color: var(--text);
     }
-    .metrics-row .checkbox-field {
+    .planning-metrics-strip .checkbox-field {
       align-self: end;
       min-height: 44px;
       padding-bottom: 10px;
@@ -11637,6 +11643,7 @@ def buildPlanningProjectsPage() -> str:
     }
     @media (max-width: 1100px) {
       .form-row { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+      .planning-metrics-strip { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
       .form-panels { grid-template-columns: 1fr; }
     }
     @media (max-width: 700px) {
@@ -11648,6 +11655,7 @@ def buildPlanningProjectsPage() -> str:
         justify-content: flex-start;
       }
       .form-row { grid-template-columns: 1fr; }
+      .planning-metrics-strip { grid-template-columns: 1fr; }
       .years-grid { grid-template-columns: 1fr; }
     }
   </style>
@@ -11787,25 +11795,48 @@ def buildPlanningProjectsPage() -> str:
               <input id="planningProjectEndDate" type="date">
             </div>
           </div>
-          <div class="form-row metrics-row">
-            <div class="field">
-              <label for="planningProjectBaselineEstimate">Базовая оценка</label>
-              <input id="planningProjectBaselineEstimate" type="number" step="0.1" inputmode="decimal">
-            </div>
-            <div class="field">
-              <label for="planningProjectP1">P1 (факт / база), %</label>
-              <input id="planningProjectP1" type="number" step="0.1" inputmode="decimal">
-            </div>
-            <div class="field">
-              <label for="planningProjectP2">P2 (факт с багами / факт), %</label>
-              <input id="planningProjectP2" type="number" step="0.1" inputmode="decimal">
-            </div>
-            <label class="checkbox-field" for="planningProjectUseRiskPlan">
-              <input id="planningProjectUseRiskPlan" type="checkbox">
-              <span>Использовать План с рисками</span>
-            </label>
-          </div>
           <div class="form-panels">
+            <div class="planning-left-stack">
+              <div class="planning-metrics-strip">
+                <div class="field">
+                  <label for="planningProjectBaselineEstimate">Базовая оценка</label>
+                  <input id="planningProjectBaselineEstimate" type="number" step="0.1" inputmode="decimal">
+                </div>
+                <div class="field">
+                  <label for="planningProjectP1">P1 (факт / база), %</label>
+                  <input id="planningProjectP1" type="number" step="0.1" inputmode="decimal">
+                </div>
+                <div class="field">
+                  <label for="planningProjectP2">P2 (факт с багами / факт), %</label>
+                  <input id="planningProjectP2" type="number" step="0.1" inputmode="decimal">
+                </div>
+                <label class="checkbox-field" for="planningProjectUseRiskPlan">
+                  <input id="planningProjectUseRiskPlan" type="checkbox">
+                  <span>Использовать План с рисками</span>
+                </label>
+              </div>
+              <section class="subpanel">
+                <h3 class="subpanel-title">Ссылки и комментарии</h3>
+                <div class="links-grid">
+                  <div class="field">
+                    <label for="planningProjectEstimateDoc">Док с оценкой</label>
+                    <input id="planningProjectEstimateDoc" type="url" placeholder="https://">
+                  </div>
+                <div class="field">
+                  <label for="planningProjectBitrix">Bitrix</label>
+                  <input id="planningProjectBitrix" type="url" placeholder="https://">
+                </div>
+                <label class="checkbox-field" for="planningProjectQuestionFlag">
+                  <input id="planningProjectQuestionFlag" type="checkbox">
+                  <span>Есть вопросы</span>
+                </label>
+                <div class="field">
+                  <label for="planningProjectComment">Комментарий</label>
+                  <textarea id="planningProjectComment"></textarea>
+                </div>
+                </div>
+              </section>
+            </div>
             <section class="subpanel">
               <div class="field yearly-development-field">
                 <label for="planningProjectDevelopmentHours">Часы разработки с багами</label>
@@ -11838,27 +11869,6 @@ def buildPlanningProjectsPage() -> str:
                   <label for="planningProjectHours3">Часы по году 3</label>
                   <input id="planningProjectHours3" type="number" step="0.1" inputmode="decimal">
                 </div>
-              </div>
-            </section>
-            <section class="subpanel">
-              <h3 class="subpanel-title">Ссылки и комментарии</h3>
-              <div class="links-grid">
-                <div class="field">
-                  <label for="planningProjectEstimateDoc">Док с оценкой</label>
-                  <input id="planningProjectEstimateDoc" type="url" placeholder="https://">
-                </div>
-              <div class="field">
-                <label for="planningProjectBitrix">Bitrix</label>
-                <input id="planningProjectBitrix" type="url" placeholder="https://">
-              </div>
-              <label class="checkbox-field" for="planningProjectQuestionFlag">
-                <input id="planningProjectQuestionFlag" type="checkbox">
-                <span>Есть вопросы</span>
-              </label>
-              <div class="field">
-                <label for="planningProjectComment">Комментарий</label>
-                <textarea id="planningProjectComment"></textarea>
-              </div>
               </div>
             </section>
           </div>
