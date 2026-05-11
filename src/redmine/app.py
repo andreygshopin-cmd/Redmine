@@ -4900,8 +4900,8 @@ def buildPlanningProjectsPanelHtml(
         "<tr>"
         "<th>Имя</th>"
         "<th>Базовая оценка</th>"
-        "<th>Лимит разработки с багфиксом</th>"
-        + ("<th>Часы за год отчета</th>" if reportYear is not None else "")
+        "<th>Лимит разработки с багами</th>"
+        + ("<th>Лимит разработки на год</th>" if reportYear is not None else "")
         + "<th>P1 = факт / база, %</th>"
         + "<th>P2 = факт с багами / факт, %</th>"
         + "<th>Использовать План с рисками</th>"
@@ -5890,7 +5890,7 @@ def buildBurndownPage(
       if (planningDevelopmentHoursTotal > 0) {{
         chartDatasets.push({{
           type: "line",
-          label: "Лимит разработки с багфиксом",
+          label: "Лимит разработки с багами",
           data: datasets.developmentHoursData,
           borderColor: "#d9534f",
           backgroundColor: "#d9534f",
@@ -10787,8 +10787,8 @@ def buildProjectsSummaryPage() -> str:
               <th>Название проекта</th>
               <th>Идентификатор в Redmine</th>
               <th>ПМ</th>
-              <th>Часы разработки с багфиксом</th>
-              <th>Часы за год отчета</th>
+              <th>Часы разработки с багами</th>
+              <th>Лимит разработки на год отчета</th>
               <th>Разработка: факт за год, ч</th>
             </tr>
           </thead>
@@ -11680,7 +11680,7 @@ def buildPlanningProjectsPage() -> str:
               <th class="pm-col" data-sort-key="pm_name">ПМ<span class="sort-indicator"></span></th>
               <th class="start-date-col" data-sort-key="start_date">Дата старта<span class="sort-indicator"></span></th>
               <th class="end-date-col" data-sort-key="end_date">Дата окончания<span class="sort-indicator"></span></th>
-              <th class="development-col" data-sort-key="development_hours">Часы разработки с багфиксом<span class="sort-indicator"></span></th>
+              <th class="development-col" data-sort-key="development_hours">Часы разработки с багами<span class="sort-indicator"></span></th>
               <th class="year-col" data-sort-key="year_1">Год 1<span class="sort-indicator"></span></th>
               <th class="year-hours-col" data-sort-key="hours_1">Часы 1<span class="sort-indicator"></span></th>
               <th class="year-col" data-sort-key="year_2">Год 2<span class="sort-indicator"></span></th>
@@ -11783,7 +11783,7 @@ def buildPlanningProjectsPage() -> str:
           </div>
           <div class="form-row metrics-row">
             <div class="field">
-              <label for="planningProjectDevelopmentHours">Часы разработки с багфиксом</label>
+              <label for="planningProjectDevelopmentHours">Часы разработки с багами</label>
               <input id="planningProjectDevelopmentHours" type="number" step="0.1" inputmode="decimal">
             </div>
             <div class="field">
@@ -11805,8 +11805,8 @@ def buildPlanningProjectsPage() -> str:
           </div>
           <div class="form-panels">
             <section class="subpanel">
-              <h3 class="subpanel-title">План по годам по разработке с багфиксом</h3>
-              <p class="subpanel-note">Если План по годам не заполнен, то подразумевается, что все затраты ложатся в год = max (год старта, окончания договора, текущий год).</p>
+              <h3 class="subpanel-title">Часы по разработке с багами на год</h3>
+              <p class="subpanel-note">Если часы по годам не заполнены, то подразумевается, что все затраты ложатся в год = max (год старта, окончания договора, текущий год).</p>
               <div class="years-grid">
                 <div class="field">
                   <label for="planningProjectYear1">Год 1</label>
@@ -14500,9 +14500,9 @@ def buildProjectsSummaryPage() -> str:
               <th>Заказчик</th>
               <th>Название проекта</th>
               <th>ПМ</th>
-              <th>Лимит разработки с багфиксом</th>
-              <th>Часы за год отчета</th>
-              <th>Часы разработки с багфиксом</th>
+              <th>Лимит разработки с багами</th>
+              <th>Лимит разработки на год отчета</th>
+              <th>Часы разработки с багами</th>
             </tr>
             <tr class="summary-filter-row">
               <th><input class="summary-filter-input" data-filter-key="redmine_identifier" type="text"></th>
@@ -16364,9 +16364,9 @@ def exportProjectsSummaryCsv(
             "Заказчик",
             "Название проекта",
             "ПМ",
-            "Лимит разработки с багфиксом",
-            "Часы за год отчета",
-            "Часы разработки с багфиксом",
+            "Лимит разработки с багами",
+            "Лимит разработки на год отчета",
+            "Часы разработки с багами",
         ]
     )
     for group in groups:
@@ -16421,7 +16421,7 @@ def exportPlanningProjectsCsv(
             "ПМ",
             "Дата старта",
             "Дата окончания",
-            "Часы разработки с багфиксом",
+            "Часы разработки с багами",
             "Год 1",
             "Часы 1",
             "Год 2",
