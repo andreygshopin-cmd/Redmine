@@ -11427,10 +11427,10 @@ def buildPlanningProjectsPage() -> str:
       align-items: end;
     }
     #planningFormTitle.is-create {
-      color: var(--cyan-310);
+      color: var(--blue-302);
     }
     #planningFormTitle.is-edit {
-      color: var(--blue-302);
+      color: var(--cyan-310);
     }
     .subpanel {
       border: 1px solid var(--line);
@@ -11518,12 +11518,12 @@ def buildPlanningProjectsPage() -> str:
       color: #ffffff;
     }
     #savePlanningProjectButton.is-create {
-      background: var(--cyan-310);
-      color: #16324a;
-    }
-    #savePlanningProjectButton.is-edit {
       background: var(--blue-302);
       color: #ffffff;
+    }
+    #savePlanningProjectButton.is-edit {
+      background: var(--cyan-310);
+      color: #16324a;
     }
     #resetPlanningProjectFormButton {
       background: #eef2f5;
