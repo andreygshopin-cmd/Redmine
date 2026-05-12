@@ -873,8 +873,10 @@ def buildAdminUsersPage(users: list[dict[str, object]]) -> str:
     usersJson = json.dumps(
         [
             {
-                **user,
+                "id": user.get("id"),
+                "login": user.get("login"),
                 "roles": _parseRoles(user.get("roles")),
+                "must_change_password": bool(user.get("must_change_password")),
             }
             for user in users
         ],
