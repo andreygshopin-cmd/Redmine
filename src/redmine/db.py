@@ -828,6 +828,7 @@ def ensurePlanningProjectsTable() -> None:
                         pm_name TEXT,
                         customer TEXT,
                         start_date DATE NULL,
+                        next_deadline DATE NULL,
                         end_date DATE NULL,
                         development_hours DOUBLE PRECISION NULL,
                         year_1 INTEGER NULL,
@@ -867,6 +868,7 @@ def ensurePlanningProjectsTable() -> None:
                         pm_name TEXT,
                         customer TEXT,
                         start_date DATE NULL,
+                        next_deadline DATE NULL,
                         end_date DATE NULL,
                         development_hours DOUBLE PRECISION NULL,
                         year_1 INTEGER NULL,
@@ -922,6 +924,24 @@ def ensurePlanningProjectsTable() -> None:
                     """
                     ALTER TABLE planning_projects
                     ADD COLUMN IF NOT EXISTS comment_text TEXT
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE planning_projects
+                    ADD COLUMN IF NOT EXISTS next_deadline DATE NULL
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE planning_project_versions
+                    ADD COLUMN IF NOT EXISTS next_deadline DATE NULL
                     """
                 )
             )
@@ -1092,6 +1112,7 @@ def ensurePlanningProjectsTable() -> None:
                         pm_name,
                         customer,
                         start_date,
+                        next_deadline,
                         end_date,
                         development_hours,
                         year_1,
@@ -1123,6 +1144,7 @@ def ensurePlanningProjectsTable() -> None:
                         p.pm_name,
                         p.customer,
                         p.start_date,
+                        p.next_deadline,
                         p.end_date,
                         p.development_hours,
                         p.year_1,
@@ -1171,6 +1193,7 @@ def _buildPlanningProjectVersionPayload(
         "pm_name": projectRow.get("pm_name"),
         "customer": projectRow.get("customer"),
         "start_date": projectRow.get("start_date"),
+        "next_deadline": projectRow.get("next_deadline"),
         "end_date": projectRow.get("end_date"),
         "development_hours": projectRow.get("development_hours"),
         "year_1": projectRow.get("year_1"),
@@ -1208,6 +1231,7 @@ def _insertPlanningProjectVersion(connection: Connection, projectRow: Mapping[st
                 pm_name,
                 customer,
                 start_date,
+                next_deadline,
                 end_date,
                 development_hours,
                 year_1,
@@ -1238,6 +1262,7 @@ def _insertPlanningProjectVersion(connection: Connection, projectRow: Mapping[st
                 :pm_name,
                 :customer,
                 :start_date,
+                :next_deadline,
                 :end_date,
                 :development_hours,
                 :year_1,
@@ -1684,6 +1709,7 @@ def countPlanningProjects(searchText: str | None = None, includeClosed: bool = F
                     OR LOWER(COALESCE(redmine_identifier, '')) LIKE :search_pattern
                     OR LOWER(COALESCE(pm_name, '')) LIKE :search_pattern
                     OR LOWER(COALESCE(customer, '')) LIKE :search_pattern
+                    OR CAST(next_deadline AS TEXT) LIKE :search_pattern
                     OR LOWER(COALESCE(estimate_doc_url, '')) LIKE :search_pattern
                     OR LOWER(COALESCE(bitrix_url, '')) LIKE :search_pattern
                     OR LOWER(COALESCE(comment_text, '')) LIKE :search_pattern
@@ -1718,6 +1744,7 @@ def listPlanningProjects(
                     pm_name,
                     customer,
                     start_date,
+                    next_deadline,
                     end_date,
                     development_hours,
                     year_1,
@@ -1747,6 +1774,7 @@ def listPlanningProjects(
                     OR LOWER(COALESCE(redmine_identifier, '')) LIKE :search_pattern
                     OR LOWER(COALESCE(pm_name, '')) LIKE :search_pattern
                     OR LOWER(COALESCE(customer, '')) LIKE :search_pattern
+                    OR CAST(next_deadline AS TEXT) LIKE :search_pattern
                     OR LOWER(COALESCE(estimate_doc_url, '')) LIKE :search_pattern
                     OR LOWER(COALESCE(bitrix_url, '')) LIKE :search_pattern
                     OR LOWER(COALESCE(comment_text, '')) LIKE :search_pattern
@@ -2243,6 +2271,7 @@ def getPlanningProjectByRedmineIdentifier(redmineIdentifier: str) -> dict[str, o
                     pm_name,
                     customer,
                     start_date,
+                    next_deadline,
                     end_date,
                     development_hours,
                     year_1,
@@ -2295,6 +2324,7 @@ def listPlanningProjectsByRedmineIdentifier(redmineIdentifier: str) -> list[dict
                     pm_name,
                     customer,
                     start_date,
+                    next_deadline,
                     end_date,
                     development_hours,
                     year_1,
@@ -3804,6 +3834,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     pm_name,
                     customer,
                     start_date,
+                    next_deadline,
                     end_date,
                     development_hours,
                     year_1,
@@ -3829,6 +3860,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     :pm_name,
                     :customer,
                     :start_date,
+                    :next_deadline,
                     :end_date,
                     :development_hours,
                     :year_1,
@@ -3856,6 +3888,7 @@ def createPlanningProject(project: dict[str, object]) -> dict[str, object]:
                     pm_name,
                     customer,
                     start_date,
+                    next_deadline,
                     end_date,
                     development_hours,
                     year_1,
@@ -3900,6 +3933,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     pm_name = :pm_name,
                     customer = :customer,
                     start_date = :start_date,
+                    next_deadline = :next_deadline,
                     end_date = :end_date,
                     development_hours = :development_hours,
                     year_1 = :year_1,
@@ -3928,6 +3962,7 @@ def updatePlanningProject(projectId: int, project: dict[str, object]) -> dict[st
                     pm_name,
                     customer,
                     start_date,
+                    next_deadline,
                     end_date,
                     development_hours,
                     year_1,
@@ -3984,6 +4019,7 @@ def deletePlanningProject(projectId: int) -> bool:
                     pm_name,
                     customer,
                     start_date,
+                    next_deadline,
                     end_date,
                     development_hours,
                     year_1,

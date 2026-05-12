@@ -358,6 +358,7 @@ class PlanningProjectPayload(BaseModel):
     pm_name: str | None = None
     customer: str | None = None
     start_date: str | None = None
+    next_deadline: str | None = None
     end_date: str | None = None
     development_hours: float | None = None
     year_1: int | None = None
@@ -10604,6 +10605,7 @@ def normalizePlanningProjectPayload(payload: PlanningProjectPayload) -> dict[str
         "pm_name": _normalizePlanningProjectText(payload.pm_name),
         "customer": _normalizePlanningProjectText(payload.customer),
         "start_date": _normalizePlanningProjectDate(payload.start_date),
+        "next_deadline": _normalizePlanningProjectDate(payload.next_deadline),
         "end_date": _normalizePlanningProjectDate(payload.end_date),
         "development_hours": payload.development_hours,
         "year_1": payload.year_1,
@@ -11400,7 +11402,7 @@ def buildPlanningProjectsPage() -> str:
     }
     .form-row {
       display: grid;
-      grid-template-columns: repeat(4, minmax(160px, 1fr));
+      grid-template-columns: repeat(5, minmax(130px, 1fr));
       gap: 14px 16px;
       align-items: end;
     }
@@ -11582,7 +11584,7 @@ def buildPlanningProjectsPage() -> str:
     }
     table {
       width: 100%;
-      min-width: 2500px;
+      min-width: 2600px;
       border-collapse: collapse;
       background: #ffffff;
     }
@@ -11650,6 +11652,7 @@ def buildPlanningProjectsPage() -> str:
     th.identifier-col, td.identifier-col { width: 276px; min-width: 276px; max-width: 276px; }
     th.pm-col, td.pm-col { width: 150px; }
     th.start-date-col, td.start-date-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
+    th.next-deadline-col, td.next-deadline-col { width: 15ch; min-width: 15ch; max-width: 15ch; white-space: nowrap; }
     th.end-date-col, td.end-date-col { width: 16ch; min-width: 16ch; max-width: 16ch; white-space: nowrap; }
     th.development-col, td.development-col { width: 190px; min-width: 190px; }
     th.year-col, td.year-col { width: 10ch; min-width: 10ch; max-width: 10ch; white-space: nowrap; }
@@ -11777,6 +11780,7 @@ def buildPlanningProjectsPage() -> str:
               <th class="identifier-col" data-sort-key="redmine_identifier">Идентификатор в Redmine<span class="sort-indicator"></span></th>
               <th class="pm-col" data-sort-key="pm_name">ПМ<span class="sort-indicator"></span></th>
               <th class="start-date-col" data-sort-key="start_date">Дата старта<span class="sort-indicator"></span></th>
+              <th class="next-deadline-col" data-sort-key="next_deadline">Следующий дедлайн<span class="sort-indicator"></span></th>
               <th class="end-date-col" data-sort-key="end_date">Дата окончания<span class="sort-indicator"></span></th>
               <th class="development-col" data-sort-key="development_hours">Часы разработки с багами<span class="sort-indicator"></span></th>
               <th class="year-col" data-sort-key="year_1">Год 1<span class="sort-indicator"></span></th>
@@ -11808,6 +11812,7 @@ def buildPlanningProjectsPage() -> str:
               <th class="identifier-col"><input class="planning-filter-input" data-filter-key="redmine_identifier" type="text" placeholder="Фильтр"></th>
               <th class="pm-col"><input class="planning-filter-input" data-filter-key="pm_name" type="text" placeholder="Фильтр"></th>
               <th class="start-date-col"><input class="planning-filter-input" data-filter-key="start_date" type="text" placeholder="Фильтр"></th>
+              <th class="next-deadline-col"><input class="planning-filter-input" data-filter-key="next_deadline" type="text" placeholder="Фильтр"></th>
               <th class="end-date-col"><input class="planning-filter-input" data-filter-key="end_date" type="text" placeholder="Фильтр"></th>
               <th class="development-col"><input class="planning-filter-input" data-filter-key="development_hours" type="text" placeholder="Фильтр"></th>
               <th class="year-col"><input class="planning-filter-input" data-filter-key="year_1" type="text" placeholder="Фильтр"></th>
@@ -11832,7 +11837,7 @@ def buildPlanningProjectsPage() -> str:
             </tr>
           </thead>
           <tbody id="planningProjectsTableBody">
-            <tr><td colspan="23" class="empty-state">Загружаем записи...</td></tr>
+            <tr><td colspan="24" class="empty-state">Загружаем записи...</td></tr>
           </tbody>
         </table>
       </div>
@@ -11873,6 +11878,10 @@ def buildPlanningProjectsPage() -> str:
             <div class="field">
               <label for="planningProjectStartDate">Дата старта</label>
               <input id="planningProjectStartDate" type="date">
+            </div>
+            <div class="field">
+              <label for="planningProjectNextDeadline">Следующий дедлайн</label>
+              <input id="planningProjectNextDeadline" type="date">
             </div>
             <div class="field">
               <label for="planningProjectEndDate">Дата окончания</label>
@@ -11983,6 +11992,7 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectPm = document.getElementById("planningProjectPm");
     const planningProjectCustomer = document.getElementById("planningProjectCustomer");
     const planningProjectStartDate = document.getElementById("planningProjectStartDate");
+    const planningProjectNextDeadline = document.getElementById("planningProjectNextDeadline");
     const planningProjectEndDate = document.getElementById("planningProjectEndDate");
     const planningProjectDevelopmentHours = document.getElementById("planningProjectDevelopmentHours");
     const planningProjectQuestionFlag = document.getElementById("planningProjectQuestionFlag");
@@ -12252,6 +12262,7 @@ def buildPlanningProjectsPage() -> str:
       planningProjectPm.value = project.pm_name ?? "";
       planningProjectCustomer.value = project.customer ?? "";
       planningProjectStartDate.value = project.start_date ?? "";
+      planningProjectNextDeadline.value = project.next_deadline ?? "";
       planningProjectEndDate.value = project.end_date ?? "";
       planningProjectDevelopmentHours.value = project.development_hours ?? "";
       planningProjectQuestionFlag.checked = Boolean(project.question_flag);
@@ -12322,7 +12333,7 @@ def buildPlanningProjectsPage() -> str:
       const totalProjects = Number(window.__planningProjectsTotal || currentPlanningProjects.length || 0);
       planningProjectsCount.textContent = `Показано: ${projects.length} из ${currentPlanningProjects.length || 0} (в выборке ${totalProjects}, лимит 100)`;
       if (!projects.length) {
-        planningProjectsTableBody.innerHTML = '<tr><td colspan="23" class="empty-state">Пока нет ни одной записи.</td></tr>';
+        planningProjectsTableBody.innerHTML = '<tr><td colspan="24" class="empty-state">Пока нет ни одной записи.</td></tr>';
         return;
       }
 
@@ -12348,6 +12359,7 @@ def buildPlanningProjectsPage() -> str:
           <td class="identifier-col mono">${escapeHtml(project.redmine_identifier ?? "—")}</td>
           <td class="pm-col">${escapeHtml(project.pm_name ?? "—")}</td>
           <td class="start-date-col">${formatOptionalDate(project.start_date)}</td>
+          <td class="next-deadline-col">${formatOptionalDate(project.next_deadline)}</td>
           <td class="end-date-col">${formatOptionalDate(project.end_date)}</td>
           <td class="development-col">${formatOptionalNumber(project.development_hours)}</td>
           <td class="year-col">${formatPlanningYearCell(project.year_1, project.hours_1)}</td>
@@ -12368,7 +12380,7 @@ def buildPlanningProjectsPage() -> str:
     }
 
     async function loadPlanningProjects() {
-      planningProjectsTableBody.innerHTML = '<tr><td colspan="23" class="empty-state">Загружаем записи...</td></tr>';
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="24" class="empty-state">Загружаем записи...</td></tr>';
       const params = new URLSearchParams();
       params.set("include_closed", "true");
       params.set("limit", "100");
@@ -12392,6 +12404,7 @@ def buildPlanningProjectsPage() -> str:
         pm_name: planningProjectPm.value.trim(),
         customer: planningProjectCustomer.value.trim(),
         start_date: planningProjectStartDate.value || null,
+        next_deadline: planningProjectNextDeadline.value || null,
         end_date: planningProjectEndDate.value || null,
         development_hours: planningProjectDevelopmentHours.value === "" ? null : Number(planningProjectDevelopmentHours.value),
         year_1: planningProjectYear1.value === "" ? null : Number(planningProjectYear1.value),
@@ -12539,7 +12552,7 @@ def buildPlanningProjectsPage() -> str:
 
     loadPlanningProjects().catch((error) => {
       planningProjectsCount.textContent = "Ошибка";
-      planningProjectsTableBody.innerHTML = '<tr><td colspan="23" class="empty-state">Не удалось загрузить записи.</td></tr>';
+      planningProjectsTableBody.innerHTML = '<tr><td colspan="24" class="empty-state">Не удалось загрузить записи.</td></tr>';
       setPlanningProjectsStatus(error instanceof Error ? error.message : "Не удалось загрузить планирование проектов.");
     });
 
@@ -16649,6 +16662,7 @@ def exportPlanningProjectsCsv(
             "Идентификатор в Redmine",
             "ПМ",
             "Дата старта",
+            "Следующий дедлайн",
             "Дата окончания",
             "Часы разработки с багами",
             "Год 1",
@@ -16676,6 +16690,7 @@ def exportPlanningProjectsCsv(
                 str(project.get("redmine_identifier") or ""),
                 str(project.get("pm_name") or ""),
                 str(project.get("start_date") or ""),
+                str(project.get("next_deadline") or ""),
                 str(project.get("end_date") or ""),
                 formatPageHours(project.get("development_hours")) if project.get("development_hours") not in (None, "") else "",
                 str(project.get("year_1") or ""),
