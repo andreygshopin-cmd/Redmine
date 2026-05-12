@@ -11417,12 +11417,18 @@ def buildPlanningProjectsPage() -> str:
     .planning-metrics-strip {
       display: grid;
       grid-template-columns:
-        minmax(130px, 0.85fr)
-        minmax(130px, 0.85fr)
+        minmax(104px, 0.68fr)
+        minmax(117px, 0.77fr)
         minmax(180px, 1fr)
         auto;
       gap: 12px 14px;
       align-items: end;
+    }
+    #planningFormTitle.is-create {
+      color: var(--cyan-310);
+    }
+    #planningFormTitle.is-edit {
+      color: var(--blue-302);
     }
     .subpanel {
       border: 1px solid var(--line);
@@ -11506,6 +11512,14 @@ def buildPlanningProjectsPage() -> str:
       box-shadow: var(--shadow-soft);
     }
     #savePlanningProjectButton {
+      background: var(--blue-302);
+      color: #ffffff;
+    }
+    #savePlanningProjectButton.is-create {
+      background: var(--cyan-310);
+      color: #16324a;
+    }
+    #savePlanningProjectButton.is-edit {
       background: var(--blue-302);
       color: #ffffff;
     }
@@ -11825,7 +11839,7 @@ def buildPlanningProjectsPage() -> str:
     </section>
 
     <section class="panel">
-      <h2 id="planningFormTitle">Новая запись</h2>
+      <h2 id="planningFormTitle" class="is-create">Новая запись</h2>
       <form id="planningProjectForm">
         <input type="hidden" id="planningProjectId">
         <div class="form-grid">
@@ -11944,7 +11958,7 @@ def buildPlanningProjectsPage() -> str:
           </div>
         </div>
         <div class="actions">
-          <button type="submit" id="savePlanningProjectButton">Сохранить</button>
+          <button type="submit" id="savePlanningProjectButton" class="is-create">Создать</button>
           <button type="button" id="resetPlanningProjectFormButton">Очистить форму</button>
         </div>
       </form>
@@ -11986,6 +12000,7 @@ def buildPlanningProjectsPage() -> str:
     const planningProjectBitrix = document.getElementById("planningProjectBitrix");
     const planningProjectComment = document.getElementById("planningProjectComment");
     const resetPlanningProjectFormButton = document.getElementById("resetPlanningProjectFormButton");
+    const savePlanningProjectButton = document.getElementById("savePlanningProjectButton");
     const planningProjectFormSection = planningProjectForm ? planningProjectForm.closest(".panel") : null;
     const planningProjectsTable = document.querySelector(".planning-projects-table");
     const planningColumnFilterInputs = Array.from(document.querySelectorAll(".planning-filter-input, .planning-filter-select"));
@@ -12202,12 +12217,22 @@ def buildPlanningProjectsPage() -> str:
       }
     }
 
+    function setPlanningProjectFormMode(mode, title = "") {
+      const isEdit = mode === "edit";
+      planningFormTitle.textContent = title || (isEdit ? "Редактирование записи" : "Новая запись");
+      planningFormTitle.classList.toggle("is-edit", isEdit);
+      planningFormTitle.classList.toggle("is-create", !isEdit);
+      savePlanningProjectButton.textContent = isEdit ? "Сохранить" : "Создать";
+      savePlanningProjectButton.classList.toggle("is-edit", isEdit);
+      savePlanningProjectButton.classList.toggle("is-create", !isEdit);
+    }
+
     function resetPlanningProjectForm() {
       planningProjectId.value = "";
       planningProjectForm.reset();
       planningProjectQuestionFlag.checked = false;
       planningProjectUseRiskPlan.checked = false;
-      planningFormTitle.textContent = "Новая запись";
+      setPlanningProjectFormMode("create");
       setPlanningProjectsStatus("");
     }
 
@@ -12243,7 +12268,7 @@ def buildPlanningProjectsPage() -> str:
       planningProjectEstimateDoc.value = project.estimate_doc_url ?? "";
       planningProjectBitrix.value = project.bitrix_url ?? "";
       planningProjectComment.value = project.comment_text ?? "";
-      planningFormTitle.textContent = preserveId ? "Редактирование записи" : "Новая запись (копия)";
+      setPlanningProjectFormMode(preserveId ? "edit" : "create");
       setPlanningProjectsStatus(preserveId ? "Запись загружена в форму для редактирования." : "Поля заполнены из существующей записи. Можно сохранить как новую.");
       scrollPlanningProjectFormIntoView();
     }
@@ -12287,7 +12312,7 @@ def buildPlanningProjectsPage() -> str:
       if (queryState.projectName) {
         planningProjectName.value = queryState.projectName;
       }
-      planningFormTitle.textContent = "Новая запись";
+      setPlanningProjectFormMode("create");
       setPlanningProjectsStatus(`Запись не найдена. Подготовлена новая форма для проекта с идентификатором ${queryState.redmineIdentifier}.`);
       scrollPlanningProjectFormIntoView();
       clearPlanningProjectsQueryState();
@@ -12404,8 +12429,11 @@ def buildPlanningProjectsPage() -> str:
         if (!response.ok) {
           throw new Error(payload.detail || "Не удалось сохранить запись.");
         }
+        const savedProject = payload.project || null;
         await loadPlanningProjects();
-        resetPlanningProjectForm();
+        if (savedProject) {
+          fillPlanningProjectForm(savedProject);
+        }
         setPlanningProjectsStatus(projectId ? "Изменения сохранены." : "Запись создана.");
       } catch (error) {
         setPlanningProjectsStatus(error instanceof Error ? error.message : "Ошибка сохранения.");
@@ -14087,6 +14115,7 @@ def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str,
                 "customer": row.get("customer"),
                 "project_name": row.get("project_name"),
                 "pm_name": row.get("pm_name"),
+                "is_closed": None if bool(row.get("is_missing_planning_project")) else bool(row.get("is_closed")),
                 "report_year_hours": row.get("report_year_hours"),
                 "development_hours": row.get("development_hours"),
                 "question_flag": bool(row.get("question_flag")),
@@ -14103,6 +14132,7 @@ def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str,
             None,
         )
         group["row_span"] = len(items)
+        group["is_closed"] = bool(items) and all(item.get("is_closed") is True for item in items)
         group["development_spent_hours_year_average"] = (
             sum(factValues) / len(factValues) if factValues else None
         )
@@ -14510,6 +14540,13 @@ def buildProjectsSummaryPage() -> str:
       color: inherit !important;
       border-bottom-color: currentColor !important;
     }}
+    .summary-project-closed {{
+      color: #8a97a5;
+    }}
+    .summary-project-closed a {{
+      color: inherit !important;
+      border-bottom-color: currentColor !important;
+    }}
     tfoot td {{
       position: sticky;
       bottom: 0;
@@ -14607,6 +14644,7 @@ def buildProjectsSummaryPage() -> str:
               <th>Заказчик</th>
               <th>Название проекта</th>
               <th>ПМ</th>
+              <th>Проект закрыт</th>
               <th>Лимит разработки с багами</th>
               <th>Лимит разработки на год отчета</th>
               <th>Часы разработки с багами</th>
@@ -14619,6 +14657,7 @@ def buildProjectsSummaryPage() -> str:
               <th><input class="summary-filter-input" data-filter-key="customer" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="project_name" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="pm_name" type="text"></th>
+              <th><input class="summary-filter-input" data-filter-key="is_closed" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="development_limit_hours" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="report_year_limit_hours" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="development_hours" type="text"></th>
@@ -14626,7 +14665,7 @@ def buildProjectsSummaryPage() -> str:
             </tr>
           </thead>
           <tbody id="projectsSummaryTableBody">
-            <tr><td colspan="10" class="empty-state">Загружаем сводку...</td></tr>
+            <tr><td colspan="11" class="empty-state">Загружаем сводку...</td></tr>
           </tbody>
           <tfoot id="projectsSummaryTableFoot"></tfoot>
         </table>
@@ -14669,6 +14708,7 @@ def buildProjectsSummaryPage() -> str:
       "customer",
       "project_name",
       "pm_name",
+      "is_closed",
       "development_limit_hours",
       "report_year_limit_hours",
       "development_hours",
@@ -14680,6 +14720,7 @@ def buildProjectsSummaryPage() -> str:
       "customer",
       "project_name",
       "pm_name",
+      "is_closed",
       "development_hours",
       "report_year_hours",
     ]);
@@ -14697,6 +14738,10 @@ def buildProjectsSummaryPage() -> str:
     const projectsSummaryDirectionFilterCell = document.querySelector('.summary-filter-row [data-filter-key="direction"]')?.parentElement;
     if (projectsSummaryDirectionFilterCell) {{
       projectsSummaryDirectionFilterCell.innerHTML = `<select class="summary-filter-input summary-filter-select" data-filter-key="direction"><option value="">${{projectsSummaryStrings.all}}</option></select>`;
+    }}
+    const projectsSummaryClosedFilterCell = document.querySelector('.summary-filter-row [data-filter-key="is_closed"]')?.parentElement;
+    if (projectsSummaryClosedFilterCell) {{
+      projectsSummaryClosedFilterCell.innerHTML = `<select class="summary-filter-input summary-filter-select" data-filter-key="is_closed"><option value="">${{projectsSummaryStrings.all}}</option><option value="true">Да</option><option value="false">Нет</option></select>`;
     }}
     let projectsSummaryFilterInputs = Array.from(document.querySelectorAll(".summary-filter-input"));
     let allProjectsSummaryGroups = [];
@@ -14728,6 +14773,13 @@ def buildProjectsSummaryPage() -> str:
     function formatSummaryText(value) {{
       const text = String(value ?? "").trim();
       return text || projectsSummaryStrings.dash;
+    }}
+
+    function formatSummaryBoolean(value) {{
+      if (value === null || value === undefined || value === "") {{
+        return projectsSummaryStrings.dash;
+      }}
+      return value ? "Да" : "Нет";
     }}
 
     function formatSummaryTotal(value) {{
@@ -14805,6 +14857,17 @@ def buildProjectsSummaryPage() -> str:
         return content;
       }}
       return `<a href="${{href}}" target="_blank" rel="noreferrer" style="color:inherit; text-decoration:none; border-bottom:1px dashed #b7c1cb;">${{content}}</a>`;
+    }}
+
+    function getProjectsSummaryItemClass(item) {{
+      const classes = [];
+      if (item?.question_flag) {{
+        classes.push("summary-project-flagged");
+      }}
+      if (item?.is_closed) {{
+        classes.push("summary-project-closed");
+      }}
+      return classes.join(" ");
     }}
 
     function wrapCustomSummaryLink(content, href) {{
@@ -14935,6 +14998,7 @@ def buildProjectsSummaryPage() -> str:
               customer: item.customer,
               project_name: item.project_name,
               pm_name: item.pm_name,
+              is_closed: item.is_closed,
               report_year_hours: item.report_year_hours,
               development_hours: item.development_hours,
             }};
@@ -14945,6 +15009,12 @@ def buildProjectsSummaryPage() -> str:
               }}
               if (key === "direction" && filterValue === "__empty__") {{
                 return !String(rawValue ?? "").trim();
+              }}
+              if (key === "is_closed") {{
+                if (rawValue === null || rawValue === undefined || rawValue === "") {{
+                  return false;
+                }}
+                return String(Boolean(rawValue)) === filterValue;
               }}
               return normalizeSummaryFilterValue(rawValue).includes(filterValue);
             }});
@@ -15033,7 +15103,7 @@ def buildProjectsSummaryPage() -> str:
 
     function renderProjectsSummaryRows(groups) {{
       if (!groups.length) {{
-        projectsSummaryTableBody.innerHTML = `<tr><td colspan="10" class="empty-state">${{projectsSummaryStrings.noRows}}</td></tr>`;
+        projectsSummaryTableBody.innerHTML = `<tr><td colspan="11" class="empty-state">${{projectsSummaryStrings.noRows}}</td></tr>`;
         if (projectsSummaryTableFoot) {{
           projectsSummaryTableFoot.innerHTML = "";
         }}
@@ -15050,7 +15120,8 @@ def buildProjectsSummaryPage() -> str:
         const groupLinkProjectId = items.length === 1 ? items[0].id : "";
         const groupProjectName = String(items[0]?.link_project_name ?? items[0]?.project_name ?? "");
         const snapshotIssuesHref = buildSnapshotIssuesLink(groupProjectRedmineId);
-        const identifierCell = `<td class="mono group-cell" rowspan="${{rowSpan}}">${{formatSummaryText(group.redmine_identifier)}}</td>`;
+        const groupClosedClass = group.is_closed ? " summary-project-closed" : "";
+        const identifierCell = `<td class="mono group-cell${{groupClosedClass}}" rowspan="${{rowSpan}}">${{formatSummaryText(group.redmine_identifier)}}</td>`;
         const factContent = wrapCustomSummaryLink(
           formatSummaryHours(group.development_spent_hours_year_average),
           hasSummaryValue(group.development_spent_hours_year_average) ? snapshotIssuesHref : "",
@@ -15058,22 +15129,23 @@ def buildProjectsSummaryPage() -> str:
         const factLabel = factIsFiltered
           ? `<span style="color:#8a97a5;">${{factContent}} (${{projectsSummaryStrings.factFiltered}})</span>`
           : factContent;
-        const factCell = `<td class="group-cell" rowspan="${{rowSpan}}">${{factLabel}}</td>`;
+        const factCell = `<td class="group-cell${{groupClosedClass}}" rowspan="${{rowSpan}}">${{factLabel}}</td>`;
         const limitCellVerticalClass = rowSpan > 1 ? "summary-limit-cell-merged" : "summary-limit-cell-single";
-        const limitCell = `<td class="group-cell ${{limitCellVerticalClass}}" rowspan="${{rowSpan}}">${{hasSummaryValue(group.development_limit_hours) ? wrapSummaryLink(formatSummaryHours(group.development_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName) : formatSummaryHours(group.development_limit_hours)}}</td>`;
-        const reportYearLimitCell = `<td class="group-cell ${{limitCellVerticalClass}}" rowspan="${{rowSpan}}">${{hasSummaryValue(group.report_year_limit_hours) ? wrapSummaryLink(formatSummaryHours(group.report_year_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName) : formatSummaryHours(group.report_year_limit_hours)}}</td>`;
+        const limitCell = `<td class="group-cell ${{limitCellVerticalClass}}${{groupClosedClass}}" rowspan="${{rowSpan}}">${{hasSummaryValue(group.development_limit_hours) ? wrapSummaryLink(formatSummaryHours(group.development_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName) : formatSummaryHours(group.development_limit_hours)}}</td>`;
+        const reportYearLimitCell = `<td class="group-cell ${{limitCellVerticalClass}}${{groupClosedClass}}" rowspan="${{rowSpan}}">${{hasSummaryValue(group.report_year_limit_hours) ? wrapSummaryLink(formatSummaryHours(group.report_year_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName) : formatSummaryHours(group.report_year_limit_hours)}}</td>`;
         return items.map((item, index) => `
           <tr>
             ${{index === 0 ? identifierCell : ""}}
             ${{index === 0 ? factCell : ""}}
-            <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{formatSummaryText(item.direction)}}</td>
-            <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{formatSummaryText(item.customer)}}</td>
-            <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{wrapSummaryLink(formatSummaryText(item.project_name), item.id, groupIdentifier, item.link_project_name)}}</td>
-            <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{formatSummaryText(item.pm_name)}}</td>
+            <td class="${{getProjectsSummaryItemClass(item)}}">${{formatSummaryText(item.direction)}}</td>
+            <td class="${{getProjectsSummaryItemClass(item)}}">${{formatSummaryText(item.customer)}}</td>
+            <td class="${{getProjectsSummaryItemClass(item)}}">${{wrapSummaryLink(formatSummaryText(item.project_name), item.id, groupIdentifier, item.link_project_name)}}</td>
+            <td class="${{getProjectsSummaryItemClass(item)}}">${{formatSummaryText(item.pm_name)}}</td>
+            <td class="${{getProjectsSummaryItemClass(item)}}">${{formatSummaryBoolean(item.is_closed)}}</td>
             ${{index === 0 ? limitCell : ""}}
             ${{index === 0 ? reportYearLimitCell : ""}}
-            <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{hasSummaryValue(item.development_hours) ? wrapSummaryLink(formatSummaryHours(item.development_hours), item.id, groupIdentifier, item.link_project_name) : formatSummaryHours(item.development_hours)}}</td>
-            <td class="${{item.question_flag ? "summary-project-flagged" : ""}}">${{hasSummaryValue(item.report_year_hours) ? wrapSummaryLink(formatSummaryHours(item.report_year_hours), item.id, groupIdentifier, item.link_project_name) : formatSummaryHours(item.report_year_hours)}}</td>
+            <td class="${{getProjectsSummaryItemClass(item)}}">${{hasSummaryValue(item.development_hours) ? wrapSummaryLink(formatSummaryHours(item.development_hours), item.id, groupIdentifier, item.link_project_name) : formatSummaryHours(item.development_hours)}}</td>
+            <td class="${{getProjectsSummaryItemClass(item)}}">${{hasSummaryValue(item.report_year_hours) ? wrapSummaryLink(formatSummaryHours(item.report_year_hours), item.id, groupIdentifier, item.link_project_name) : formatSummaryHours(item.report_year_hours)}}</td>
           </tr>
         `).join("");
       }}).join("");
@@ -15137,7 +15209,7 @@ def buildProjectsSummaryPage() -> str:
         <tr>
           <td class="totals-label-cell mono">Итого</td>
           <td>${{formatSummaryTotal(factHasValues ? factTotal : null)}}</td>
-          <td class="totals-spacer-cell" colspan="4"></td>
+          <td class="totals-spacer-cell" colspan="5"></td>
           <td>${{formatSummaryTotal(limitHasValues ? limitTotal : null)}}</td>
           <td>${{formatSummaryTotal(reportYearLimitHasValues ? reportYearLimitTotal : null)}}</td>
           <td>${{formatSummaryTotal(developmentHasValues ? developmentTotal : null)}}</td>
@@ -15159,7 +15231,7 @@ def buildProjectsSummaryPage() -> str:
         setProjectsSummaryLoading(true);
       }}
       projectsSummaryMeta.textContent = projectsSummaryStrings.loading;
-      projectsSummaryTableBody.innerHTML = `<tr><td colspan="10" class="empty-state">${{projectsSummaryStrings.loading}}</td></tr>`;
+      projectsSummaryTableBody.innerHTML = `<tr><td colspan="11" class="empty-state">${{projectsSummaryStrings.loading}}</td></tr>`;
       if (projectsSummaryTableFoot) {{
         projectsSummaryTableFoot.innerHTML = "";
       }}
@@ -15179,7 +15251,7 @@ def buildProjectsSummaryPage() -> str:
         refreshProjectsSummaryView();
       }} catch (error) {{
         projectsSummaryMeta.textContent = projectsSummaryStrings.error;
-        projectsSummaryTableBody.innerHTML = `<tr><td colspan="10" class="empty-state">${{projectsSummaryStrings.loadFailed}}</td></tr>`;
+        projectsSummaryTableBody.innerHTML = `<tr><td colspan="11" class="empty-state">${{projectsSummaryStrings.loadFailed}}</td></tr>`;
         if (projectsSummaryTableFoot) {{
           projectsSummaryTableFoot.innerHTML = "";
         }}
@@ -16516,6 +16588,7 @@ def exportProjectsSummaryCsv(
             "Заказчик",
             "Название проекта",
             "ПМ",
+            "Проект закрыт",
             "Лимит разработки с багами",
             "Лимит разработки на год отчета",
             "Часы разработки с багами",
@@ -16537,6 +16610,7 @@ def exportProjectsSummaryCsv(
                     str(item.get("customer") or ""),
                     str(item.get("project_name") or ""),
                     str(item.get("pm_name") or ""),
+                    "Да" if item.get("is_closed") is True else "Нет" if item.get("is_closed") is False else "",
                     formatPageHours(developmentLimit) if itemIndex == 0 and developmentLimit not in (None, "") else "",
                     formatPageHours(reportYearLimit) if itemIndex == 0 and reportYearLimit not in (None, "") else "",
                     formatPageHours(item.get("development_hours")) if item.get("development_hours") not in (None, "") else "",
