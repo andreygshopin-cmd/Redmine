@@ -10040,7 +10040,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     .pager { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
     .pager-info { color: var(--muted); }
     .changed-cell { background: #fff3b8; box-shadow: inset 0 0 0 1px rgba(205, 153, 0, 0.2); }
-    .compare-old-value { color: #aeb8c2; text-decoration: line-through; text-decoration-thickness: 2px; }
+    .compare-old-value { color: #aeb8c2; font-weight: 400; text-decoration: line-through; text-decoration-thickness: 2px; }
     .amount-cell,
     .amount-header { text-align: right; }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
@@ -13244,8 +13244,9 @@ def buildBitrixInvoiceSummaryPage() -> str:
     .summary-cell-changed { background: #d9fbff; }
     .summary-cell-removed { background: #ffd6d6; }
     .previous-amount {
-      display: inline-block;
+      display: block;
       color: #aeb8c2;
+      font-weight: 400;
       text-decoration: line-through;
       text-decoration-thickness: 2px;
     }
@@ -13746,15 +13747,15 @@ def buildBitrixInvoiceSummaryPage() -> str:
       const hasChangedExistingAmount = comparisonActive && currentAmount > 0 && previousAmount > 0 && currentAmount !== previousAmount;
       if (cellClass === "summary-cell-moved-from") {
         const previousContent = `<span class="previous-amount">${formatAmount(previousValue)}</span>`;
-        content = currentAmount > 0 ? `${formatAmount(currentValue)} ${previousContent}` : previousContent;
+        content = currentAmount > 0 ? `${formatAmount(currentValue)}${previousContent}` : previousContent;
       }
       if (cellClass === "summary-cell-changed" || (hasChangedExistingAmount && cellClass === "summary-cell-moved-to")) {
         const previousContent = `<span class="previous-amount">${formatAmount(previousValue)}</span>`;
-        content = `${formatAmount(currentValue)} ${previousContent}`;
+        content = `${formatAmount(currentValue)}${previousContent}`;
       }
       if (comparisonActive && cellClass === "summary-cell-removed") {
         const previousContent = `<span class="previous-amount">${formatAmount(previousValue)}</span>`;
-        content = currentAmount > 0 ? `${formatAmount(currentValue)} ${previousContent}` : previousContent;
+        content = currentAmount > 0 ? `${formatAmount(currentValue)}${previousContent}` : previousContent;
       }
       return `<td class="amount-cell mono ${cellClass}">${content}</td>`;
     }

@@ -139,6 +139,7 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
     assert 'compare-filter[data-compare-filter="deal_id"]' in body
     assert "buildChangedCompareContent" in body
     assert "compare-old-value" in body
+    assert ".compare-old-value { color: #aeb8c2; font-weight: 400" in body
     assert "color: #aeb8c2" in body
     assert "text-decoration: line-through" in body
     assert "&rarr;" in body
@@ -243,6 +244,8 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert ".summary-cell-changed { background: #d9fbff" in body
     assert ".summary-cell-moved-from { background: #fff8c9; }" in body
     assert "color: #aeb8c2" in body
+    assert "display: block" in body
+    assert "font-weight: 400" in body
     assert "text-decoration-thickness: 2px" in body
     assert "summary-cell-changed" in body
     assert "currentAmount > 0 && previousAmount > 0" in body
