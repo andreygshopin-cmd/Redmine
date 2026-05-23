@@ -21,7 +21,10 @@ services:
       - key: BITRIX_PORTAL_URL
         value: https://sms-it.bitrix24.ru
       - key: Btrx
-        sync: false
+        fromService:
+          type: web
+          name: redmine-api
+          envVarKey: Btrx
 
   # 02:00 Saturday Europe/Samara == 22:00 Friday UTC. Render cron schedules use UTC.
   - type: cron
@@ -63,9 +66,15 @@ services:
           name: redmine-db
           property: connectionString
       - key: REDMINE_URL
-        sync: false
+        fromService:
+          type: web
+          name: redmine-api
+          envVarKey: REDMINE_URL
       - key: REDMINE_API_KEY
-        sync: false
+        fromService:
+          type: web
+          name: redmine-api
+          envVarKey: REDMINE_API_KEY
 
 databases:
   - name: redmine-db
