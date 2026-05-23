@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from src.redmine import app as app_module
@@ -15,6 +17,7 @@ from src.redmine.redmine_client import (
 
 
 client = TestClient(app)
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def testLoadConfigReturnsObject() -> None:
@@ -22,6 +25,68 @@ def testLoadConfigReturnsObject() -> None:
     assert config is not None
     assert config.appHost != ""
     assert config.bitrixPortalUrl.startswith("https://")
+
+
+def testRenderYamlSchedulesWeeklySnapshotCronJobs() -> None:
+    body = (REPO_ROOT / "render.yaml").read_text(encoding="utf-8")
+
+    assert "name: redmine-bitrix-snapshot-cron" in body
+    assert 'schedule: "0 22 * * FRI"' in body
+    assert "startCommand: python -m src.redmine.capture_bitrix_snapshots" in body
+    assert "name: redmine-snapshot-cron" in body
+    assert 'schedule: "0 23 * * FRI"' in body
+    assert "startCommand: python -m src.redmine.capture_snapshots" in body
+
+
+def testRunBitrixSnapshotCaptureJobUsesPagedCapture(monkeypatch) -> None:
+    from src.redmine import capture_bitrix_snapshots as bitrix_capture_module
+
+    calls: list[tuple[str, str, int]] = []
+
+    def fakeStartBitrixSnapshotCapture(entities=None):
+        assert entities == "deal,lead,invoice"
+        return {
+            "session_id": "session-1",
+            "captured_for_date": "2026-05-23",
+            "entities": [{"key": "deal"}, {"key": "lead"}, {"key": "invoice"}],
+        }
+
+    def fakeCaptureBitrixSnapshotPage(payload):
+        calls.append((payload.session_id, payload.entity, payload.start))
+        if payload.entity == "deal" and payload.start == 0:
+            return {
+                "fetched": 500,
+                "total": 600,
+                "remaining": 100,
+                "next": 500,
+                "done": False,
+            }
+        return {
+            "fetched": 600 if payload.entity == "deal" else 10,
+            "total": 600 if payload.entity == "deal" else 10,
+            "remaining": 0,
+            "next": None,
+            "done": True,
+            "snapshot": {"entity": payload.entity},
+        }
+
+    monkeypatch.setattr(bitrix_capture_module, "startBitrixSnapshotCapture", fakeStartBitrixSnapshotCapture)
+    monkeypatch.setattr(bitrix_capture_module, "captureBitrixSnapshotPage", fakeCaptureBitrixSnapshotPage)
+
+    result = bitrix_capture_module.runBitrixSnapshotCaptureJob("deal,lead,invoice")
+
+    assert result["captured_for_date"] == "2026-05-23"
+    assert result["snapshots"] == {
+        "deal": {"entity": "deal"},
+        "lead": {"entity": "lead"},
+        "invoice": {"entity": "invoice"},
+    }
+    assert calls == [
+        ("session-1", "deal", 0),
+        ("session-1", "deal", 500),
+        ("session-1", "lead", 0),
+        ("session-1", "invoice", 0),
+    ]
 
 
 def testReadRootReturnsHtmlPage() -> None:
