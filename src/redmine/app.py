@@ -10040,7 +10040,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     .pager { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
     .pager-info { color: var(--muted); }
     .changed-cell { background: #fff3b8; box-shadow: inset 0 0 0 1px rgba(205, 153, 0, 0.2); }
-    .compare-old-value { color: #66717c; text-decoration: line-through; text-decoration-thickness: 2px; }
+    .compare-old-value { color: #aeb8c2; text-decoration: line-through; text-decoration-thickness: 2px; }
     .amount-cell,
     .amount-header { text-align: right; }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
@@ -13238,13 +13238,14 @@ def buildBitrixInvoiceSummaryPage() -> str:
     th:first-child { z-index: 12; background: #f3f7fa; }
     .amount-cell, .amount-header { text-align: right; font-variant-numeric: tabular-nums; }
     .mono { font-family: "Cascadia Mono", Consolas, monospace; }
-    .summary-cell-moved-from { background: #fff8c9; color: #66717c; text-decoration: line-through; text-decoration-thickness: 2px; }
+    .summary-cell-moved-from { background: #fff8c9; }
     .summary-cell-moved-to { background: #ffd92e; }
     .summary-cell-added { background: #52cee6; }
+    .summary-cell-changed { background: #d9fbff; }
     .summary-cell-removed { background: #ffd6d6; }
     .previous-amount {
       display: inline-block;
-      color: #66717c;
+      color: #aeb8c2;
       text-decoration: line-through;
       text-decoration-thickness: 2px;
     }
@@ -13270,6 +13271,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
     .legend-swatch.moved-from { background: #fff8c9; }
     .legend-swatch.moved-to { background: #ffd92e; }
     .legend-swatch.added { background: #52cee6; }
+    .legend-swatch.changed { background: #d9fbff; }
     .legend-swatch.removed { background: #ffd6d6; }
     .product-row td { font-weight: 800; }
     .deal-row td:first-child { padding-left: 42px; }
@@ -13349,6 +13351,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
         <span class="legend-item"><span class="legend-swatch moved-from"></span>Сумма была в этом месяце</span>
         <span class="legend-item"><span class="legend-swatch moved-to"></span>Сумма переместилась сюда</span>
         <span class="legend-item"><span class="legend-swatch added"></span>Сумма добавилась</span>
+        <span class="legend-item"><span class="legend-swatch changed"></span>Сумма изменилась</span>
         <span class="legend-item"><span class="legend-swatch removed"></span>Сумма исчезла</span>
       </div>
       <div class="table-wrap">
@@ -13668,25 +13671,6 @@ def buildBitrixInvoiceSummaryPage() -> str:
       });
       target.compareYearTotal = Number(target.compareYearTotal || 0) + Number(row.year_total || 0);
     }
-    function getSummaryCellClassPriority(cellClass) {
-      switch (cellClass) {
-        case "summary-cell-removed":
-          return 4;
-        case "summary-cell-added":
-          return 3;
-        case "summary-cell-moved-to":
-          return 2;
-        case "summary-cell-moved-from":
-          return 1;
-        default:
-          return 0;
-      }
-    }
-    function mergeSummaryCellClass(currentClass, nextClass) {
-      return getSummaryCellClassPriority(nextClass) > getSummaryCellClassPriority(currentClass)
-        ? nextClass
-        : currentClass;
-    }
     function mergeSummaryRows(reportRows, compareRows) {
       const compareRowsByKey = buildRowsByKey(compareRows);
       const reportRowsByKey = buildRowsByKey(reportRows);
@@ -13713,7 +13697,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
       mergeSummaryRows(rows, compareRows).forEach((row) => {
         const product = String(row.product || "—");
         if (!groups.has(product)) {
-          groups.set(product, { product, months: createEmptyMonths(), compareMonths: createEmptyMonths(), monthClasses: {}, year_total: 0, compareYearTotal: 0, yearTotalClass: "", deals: [] });
+          groups.set(product, { product, months: createEmptyMonths(), compareMonths: createEmptyMonths(), year_total: 0, compareYearTotal: 0, deals: [] });
         }
         const group = groups.get(product);
         group.deals.push(row);
@@ -13721,12 +13705,6 @@ def buildBitrixInvoiceSummaryPage() -> str:
         if (row.compareRow) {
           addCompareRowAmounts(group, row.compareRow);
         }
-        monthNumbers.forEach((month) => {
-          const rowCellClass = getCellClass(row.months?.[month], row.compareRow?.months?.[month], row.year_total, row.compareRow?.year_total);
-          group.monthClasses[month] = mergeSummaryCellClass(group.monthClasses[month], rowCellClass);
-        });
-        const rowTotalClass = getCellClass(row.year_total, row.compareRow?.year_total, row.year_total, row.compareRow?.year_total);
-        group.yearTotalClass = mergeSummaryCellClass(group.yearTotalClass, rowTotalClass);
       });
       return Array.from(groups.values());
     }
@@ -13748,6 +13726,9 @@ def buildBitrixInvoiceSummaryPage() -> str:
       if (isMoved && currentAmount > previousAmount) {
         return "summary-cell-moved-to";
       }
+      if (currentAmount > 0 && previousAmount > 0) {
+        return "summary-cell-changed";
+      }
       if (currentAmount > previousAmount) {
         return "summary-cell-added";
       }
@@ -13762,9 +13743,14 @@ def buildBitrixInvoiceSummaryPage() -> str:
       const currentAmount = roundedAmountNumber(currentValue);
       const previousAmount = roundedAmountNumber(previousValue);
       let content = formatAmount(currentValue);
+      const hasChangedExistingAmount = comparisonActive && currentAmount > 0 && previousAmount > 0 && currentAmount !== previousAmount;
       if (cellClass === "summary-cell-moved-from") {
         const previousContent = `<span class="previous-amount">${formatAmount(previousValue)}</span>`;
         content = currentAmount > 0 ? `${formatAmount(currentValue)} ${previousContent}` : previousContent;
+      }
+      if (cellClass === "summary-cell-changed" || (hasChangedExistingAmount && cellClass === "summary-cell-moved-to")) {
+        const previousContent = `<span class="previous-amount">${formatAmount(previousValue)}</span>`;
+        content = `${formatAmount(currentValue)} ${previousContent}`;
       }
       if (comparisonActive && cellClass === "summary-cell-removed") {
         const previousContent = `<span class="previous-amount">${formatAmount(previousValue)}</span>`;
@@ -13786,7 +13772,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
         tableBody.innerHTML = groupRowsByProduct(rows, compareRows).map((group) => {
           const productKey = group.product;
           const isCollapsed = collapsedProducts.has(productKey);
-          const productCells = renderAmountCells(group.months, group.compareMonths, group.year_total, group.compareYearTotal, group.monthClasses);
+          const productCells = renderAmountCells(group.months, group.compareMonths, group.year_total, group.compareYearTotal);
           const dealRows = isCollapsed ? "" : group.deals.map((row) => `
             <tr class="deal-row" data-product-key="${escapeHtml(productKey)}">
               <td>${formatDealLink(row)}</td>
@@ -13801,7 +13787,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
                 ${formatValue(group.product)}
               </td>
               ${productCells}
-              ${renderComparedAmountCell(group.year_total, group.compareYearTotal, group.year_total, group.compareYearTotal, group.yearTotalClass)}
+              ${renderComparedAmountCell(group.year_total, group.compareYearTotal, group.year_total, group.compareYearTotal)}
             </tr>
             ${dealRows}
           `;

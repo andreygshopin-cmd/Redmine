@@ -139,6 +139,7 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
     assert 'compare-filter[data-compare-filter="deal_id"]' in body
     assert "buildChangedCompareContent" in body
     assert "compare-old-value" in body
+    assert "color: #aeb8c2" in body
     assert "text-decoration: line-through" in body
     assert "&rarr;" in body
     assert "<th>Валюта</th>" not in body
@@ -235,15 +236,20 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "summary-cell-moved-from" in body
     assert "summary-cell-moved-to" in body
     assert "summary-cell-added" in body
+    assert "summary-cell-changed" in body
     assert "summary-cell-removed" in body
     assert "previous-amount" in body
     assert ".summary-cell-added { background: #52cee6" in body
-    assert ".summary-cell-moved-from { background: #fff8c9; color: #66717c; text-decoration: line-through" in body
+    assert ".summary-cell-changed { background: #d9fbff" in body
+    assert ".summary-cell-moved-from { background: #fff8c9; }" in body
+    assert "color: #aeb8c2" in body
     assert "text-decoration-thickness: 2px" in body
-    assert "mergeSummaryCellClass" in body
-    assert "group.monthClasses" in body
-    assert "group.yearTotalClass" in body
-    assert "renderAmountCells(group.months, group.compareMonths, group.year_total, group.compareYearTotal, group.monthClasses)" in body
+    assert "summary-cell-changed" in body
+    assert "currentAmount > 0 && previousAmount > 0" in body
+    assert "mergeSummaryCellClass" not in body
+    assert "group.monthClasses" not in body
+    assert "group.yearTotalClass" not in body
+    assert "renderAmountCells(group.months, group.compareMonths, group.year_total, group.compareYearTotal)" in body
     assert "background: #e9edf1" not in body
     assert "filter-stack" in body
     assert "filter-card" in body
