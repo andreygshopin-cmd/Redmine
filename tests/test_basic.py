@@ -138,6 +138,9 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
     assert "th:first-child, td:first-child { padding-left: 6px" in body
     assert 'compare-filter[data-compare-filter="deal_id"]' in body
     assert "buildChangedCompareContent" in body
+    assert "compare-old-value" in body
+    assert "text-decoration: line-through" in body
+    assert "&rarr;" in body
     assert "<th>Валюта</th>" not in body
 
 
@@ -234,6 +237,13 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
     assert "summary-cell-added" in body
     assert "summary-cell-removed" in body
     assert "previous-amount" in body
+    assert ".summary-cell-added { background: #52cee6" in body
+    assert ".summary-cell-moved-from { background: #fff8c9; color: #66717c; text-decoration: line-through" in body
+    assert "text-decoration-thickness: 2px" in body
+    assert "mergeSummaryCellClass" in body
+    assert "group.monthClasses" in body
+    assert "group.yearTotalClass" in body
+    assert "renderAmountCells(group.months, group.compareMonths, group.year_total, group.compareYearTotal, group.monthClasses)" in body
     assert "background: #e9edf1" not in body
     assert "filter-stack" in body
     assert "filter-card" in body
