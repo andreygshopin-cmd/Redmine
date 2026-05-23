@@ -6912,6 +6912,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               </tr>
             </tbody>
           </table>
+          <p class="summary-legend">Количество программистов = сумма часов списаний по задачам проекта за неделю / 40.</p>
         </div>
         <div class="snapshot-capacity-card snapshot-deadline-card">
           <label for="snapshotDeveloperCountInput">Количество разработчиков
