@@ -3348,6 +3348,68 @@ def formatSnapshotPageDateTime(value: object) -> str:
     return str(value).replace("T", " ").replace("+00:00", " UTC")
 
 
+def buildSnapshotWeeklyDeveloperLoad(
+    projectRedmineId: int,
+    capturedForDate: str | None,
+    weeks: int = 5,
+) -> list[dict[str, object]]:
+    normalizedDate = str(capturedForDate or "").strip()
+    if not normalizedDate:
+        return []
+
+    try:
+        snapshotDate = date.fromisoformat(normalizedDate)
+    except ValueError:
+        return []
+
+    safeWeeks = max(1, int(weeks or 1))
+    currentWeekStart = snapshotDate - timedelta(days=snapshotDate.weekday())
+    weekStarts = [
+        currentWeekStart - timedelta(days=7 * offset)
+        for offset in range(safeWeeks - 1, -1, -1)
+    ]
+    hoursByWeekStart = {weekStart.isoformat(): 0.0 for weekStart in weekStarts}
+
+    try:
+        timeEntryPayload = getSnapshotTimeEntriesForProjectByDateRange(
+            projectRedmineId,
+            normalizedDate,
+            weekStarts[0].isoformat(),
+            snapshotDate.isoformat(),
+        )
+    except Exception:
+        timeEntryPayload = {"time_entries": []}
+
+    for entry in timeEntryPayload.get("time_entries") or []:
+        try:
+            spentOn = date.fromisoformat(str(entry.get("spent_on") or ""))
+        except ValueError:
+            continue
+        weekStart = spentOn - timedelta(days=spentOn.weekday())
+        weekKey = weekStart.isoformat()
+        if weekKey not in hoursByWeekStart:
+            continue
+        try:
+            hoursByWeekStart[weekKey] += float(entry.get("hours") or 0)
+        except (TypeError, ValueError):
+            continue
+
+    rows: list[dict[str, object]] = []
+    for weekStart in weekStarts:
+        weekEnd = min(weekStart + timedelta(days=6), snapshotDate)
+        hours = hoursByWeekStart.get(weekStart.isoformat(), 0.0)
+        rows.append(
+            {
+                "week_start": weekStart.isoformat(),
+                "week_end": weekEnd.isoformat(),
+                "label": f"{weekStart.strftime('%d.%m')}–{weekEnd.strftime('%d.%m')}",
+                "hours": hours,
+                "developers": hours / 40.0,
+            }
+        )
+    return rows
+
+
 def normalizePlanningPercentValue(value: object, defaultPercent: float = 150.0) -> float:
     if value in (None, ""):
         return defaultPercent
@@ -6413,6 +6475,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         projectIdentifierRaw,
     )
     snapshotDynamicSummary = buildSnapshotDynamicSummary(snapshotDynamicSourcePayload.get("issues"))
+    snapshotWeeklyDeveloperLoad = buildSnapshotWeeklyDeveloperLoad(projectRedmineId, capturedForDateRaw)
     snapshotDynamicMetrics = snapshotDynamicSummary["risk" if selectedUseRiskPlan else "default"]
     snapshotPageUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
     if selectedDate:
@@ -6430,6 +6493,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     initialIssuesJson = json.dumps(issues, ensure_ascii=False, default=str)
     initialSummaryJson = json.dumps(summaryView, ensure_ascii=False, default=str)
     initialSnapshotDynamicSummaryJson = json.dumps(snapshotDynamicSummary, ensure_ascii=False, default=str)
+    initialSnapshotWeeklyDeveloperLoadJson = json.dumps(snapshotWeeklyDeveloperLoad, ensure_ascii=False, default=str)
     initialFilterOptionsJson = json.dumps(snapshotPayload.get("filter_options") or {}, ensure_ascii=False, default=str)
     initialFilteredIssues = int(snapshotPayload.get("total_filtered_issues") or 0)
     initialTotalIssues = int(snapshotPayload.get("total_all_issues") or 0)
@@ -6440,6 +6504,20 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     for dateValue in availableDates:
         selectedAttr = " selected" if dateValue == selectedDate else ""
         optionsHtml.append(f'<option value="{escape(dateValue)}"{selectedAttr}>{escape(dateValue)}</option>')
+    weeklyLoadWeekCellsHtml = "".join(
+        f'<th scope="col">{escape(str(row.get("label") or "—"))}</th>'
+        for row in snapshotWeeklyDeveloperLoad
+    )
+    weeklyLoadDeveloperCellsHtml = "".join(
+        f'<td>{formatPageHours(row.get("developers"))}</td>'
+        for row in snapshotWeeklyDeveloperLoad
+    )
+    latestWeeklyDeveloperCount = (
+        float(snapshotWeeklyDeveloperLoad[-1].get("developers") or 0)
+        if snapshotWeeklyDeveloperLoad
+        else 0.0
+    )
+    latestWeeklyDeveloperCountValue = f"{latestWeeklyDeveloperCount:.2f}"
 
     return f"""<!doctype html>
 <html lang="ru">
@@ -6534,6 +6612,66 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }}
       .snapshot-date-warning {{ margin-top: 0; font-size: inherit; font-weight: inherit; }}
       .action-status {{ color: var(--muted); margin: 0 0 18px; min-height: 22px; }}
+      .snapshot-capacity-panel {{
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+        gap: 16px;
+        align-items: stretch;
+        margin: 0 0 20px;
+      }}
+      .snapshot-capacity-table {{
+        width: 100%;
+        border-collapse: collapse;
+        border: 1px solid var(--line);
+        background: #ffffff;
+      }}
+      .snapshot-capacity-table th,
+      .snapshot-capacity-table td {{
+        position: static;
+        border: 1px solid var(--line);
+        padding: 10px 12px;
+        text-align: center;
+        vertical-align: middle;
+      }}
+      .snapshot-capacity-table th:first-child {{
+        width: 180px;
+        text-align: left;
+        color: #375d77;
+        background: #f3f7fa;
+      }}
+      .snapshot-capacity-table th:not(:first-child) {{
+        position: static;
+        color: var(--text);
+        background: #ffffff;
+        text-transform: none;
+        font-size: 0.95rem;
+      }}
+      .snapshot-capacity-card {{
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f8fbfd;
+        padding: 14px;
+      }}
+      .snapshot-deadline-card {{
+        display: grid;
+        gap: 10px;
+        align-content: center;
+      }}
+      .snapshot-deadline-card label {{
+        display: grid;
+        gap: 6px;
+      }}
+      .snapshot-developer-count-input {{
+        width: 150px;
+      }}
+      .snapshot-deadline-result {{
+        min-height: 24px;
+        color: #375d77;
+        font-weight: 700;
+      }}
+      @media (max-width: 900px) {{
+        .snapshot-capacity-panel {{ grid-template-columns: 1fr; }}
+      }}
       .summary-block {{ margin: 0 0 20px; }}
       .summary-table {{ width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid var(--line); }}
       .summary-table th,
@@ -6760,6 +6898,29 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         </label>
         <button type="button" class="secondary-button" id="applySnapshotPageSizeButton">Показать</button>
       </div>
+      <div class="snapshot-capacity-panel">
+        <div class="snapshot-capacity-card">
+          <table class="snapshot-capacity-table" aria-label="Недельная загрузка программистов">
+            <tbody>
+              <tr id="snapshotWeeklyLoadWeeksRow">
+                <th scope="row">Неделя</th>
+                {weeklyLoadWeekCellsHtml}
+              </tr>
+              <tr id="snapshotWeeklyLoadDevelopersRow">
+                <th scope="row">Количество программистов</th>
+                {weeklyLoadDeveloperCellsHtml}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="snapshot-capacity-card snapshot-deadline-card">
+          <label for="snapshotDeveloperCountInput">Количество разработчиков
+            <input class="snapshot-developer-count-input" id="snapshotDeveloperCountInput" type="number" min="0" step="0.1" value="{latestWeeklyDeveloperCountValue}">
+          </label>
+          <button type="button" class="secondary-button" id="calculateSnapshotDeadlineButton">Рассчитать срок</button>
+          <div class="snapshot-deadline-result" id="snapshotDeadlineResult">Дата завершения: —</div>
+        </div>
+      </div>
       <div class="summary-block">
         <table class="summary-table">
           <thead>
@@ -6971,6 +7132,11 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const applySnapshotPageSizeButton = document.getElementById("applySnapshotPageSizeButton");
       const exportSnapshotCsvButton = document.getElementById("exportSnapshotCsvButton");
       const viewSnapshotTimeEntriesButton = document.getElementById("viewSnapshotTimeEntriesButton");
+      const snapshotWeeklyLoadWeeksRow = document.getElementById("snapshotWeeklyLoadWeeksRow");
+      const snapshotWeeklyLoadDevelopersRow = document.getElementById("snapshotWeeklyLoadDevelopersRow");
+      const snapshotDeveloperCountInput = document.getElementById("snapshotDeveloperCountInput");
+      const calculateSnapshotDeadlineButton = document.getElementById("calculateSnapshotDeadlineButton");
+      const snapshotDeadlineResult = document.getElementById("snapshotDeadlineResult");
       const snapshotPrevPageButton = document.getElementById("snapshotPrevPageButton");
       const snapshotNextPageButton = document.getElementById("snapshotNextPageButton");
       const snapshotPaginationInfo = document.getElementById("snapshotPaginationInfo");
@@ -6981,14 +7147,18 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const initialSnapshotIssues = {initialIssuesJson};
       const initialSnapshotSummary = {initialSummaryJson};
       const initialSnapshotDynamicSummary = {initialSnapshotDynamicSummaryJson};
+      const initialSnapshotWeeklyDeveloperLoad = {initialSnapshotWeeklyDeveloperLoadJson};
       const initialFilterOptions = {initialFilterOptionsJson};
       const selectedSnapshotDate = {json.dumps(selectedDate, ensure_ascii=False)};
+      const initialSnapshotCapturedForDate = {json.dumps(capturedForDateRaw, ensure_ascii=False)};
       const snapshotPageSizeStorageKey = "latestSnapshotPageSize";
       let currentSnapshotPage = {initialPage};
       let currentSnapshotTotalPages = {initialTotalPages};
       let currentSnapshotFilteredIssues = {initialFilteredIssues};
       let currentSnapshotTotalIssues = {initialTotalIssues};
       let currentSnapshotPageSize = {initialPageSize};
+      let currentSnapshotCapturedForDate = initialSnapshotCapturedForDate;
+      let currentSnapshotWeeklyDeveloperLoad = initialSnapshotWeeklyDeveloperLoad;
       let snapshotReloadTimer = null;
       let snapshotCaptureErrorsExpanded = false;
 
@@ -7161,6 +7331,90 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 
       function formatFilterPercent(value) {{
         return `${{formatFilterHours(value)}}%`;
+      }}
+
+      function formatSnapshotDevelopersInput(value) {{
+        const parsed = Number(value ?? 0);
+        if (!Number.isFinite(parsed)) {{
+          return "0.00";
+        }}
+        return parsed.toFixed(2);
+      }}
+
+      function parseSnapshotNumber(value) {{
+        const normalized = String(value ?? "")
+          .replace(/\\s/g, "")
+          .replace(",", ".");
+        const parsed = Number(normalized);
+        return Number.isFinite(parsed) ? parsed : 0;
+      }}
+
+      function formatSnapshotDisplayDate(dateValue) {{
+        if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) {{
+          return "—";
+        }}
+        const day = String(dateValue.getDate()).padStart(2, "0");
+        const month = String(dateValue.getMonth() + 1).padStart(2, "0");
+        return `${{day}}.${{month}}.${{dateValue.getFullYear()}}`;
+      }}
+
+      function parseSnapshotLocalDate(value) {{
+        const match = String(value || "").match(/^(\\d{{4}})-(\\d{{2}})-(\\d{{2}})$/);
+        if (!match) {{
+          return null;
+        }}
+        return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+      }}
+
+      function addSnapshotWorkingDays(startDateValue, workingDays) {{
+        const startDate = parseSnapshotLocalDate(startDateValue);
+        if (!startDate) {{
+          return null;
+        }}
+        let remainingDays = Math.max(0, Math.ceil(Number(workingDays) || 0));
+        const resultDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+        while (remainingDays > 0) {{
+          resultDate.setDate(resultDate.getDate() + 1);
+          const day = resultDate.getDay();
+          if (day !== 0 && day !== 6) {{
+            remainingDays -= 1;
+          }}
+        }}
+        return resultDate;
+      }}
+
+      function renderSnapshotWeeklyDeveloperLoad(rows, copyLatestToInput = false) {{
+        const sourceRows = Array.isArray(rows) ? rows : [];
+        if (snapshotWeeklyLoadWeeksRow) {{
+          snapshotWeeklyLoadWeeksRow.innerHTML = `<th scope="row">Неделя</th>${{sourceRows.map((row) => `<th scope="col">${{escapeHtml(row?.label || "—")}}</th>`).join("")}}`;
+        }}
+        if (snapshotWeeklyLoadDevelopersRow) {{
+          snapshotWeeklyLoadDevelopersRow.innerHTML = `<th scope="row">Количество программистов</th>${{sourceRows.map((row) => `<td>${{formatFilterHours(row?.developers || 0)}}</td>`).join("")}}`;
+        }}
+        if (copyLatestToInput && snapshotDeveloperCountInput) {{
+          const latestRow = sourceRows.length ? sourceRows[sourceRows.length - 1] : null;
+          snapshotDeveloperCountInput.value = formatSnapshotDevelopersInput(latestRow?.developers || 0);
+        }}
+      }}
+
+      function calculateSnapshotDeadline() {{
+        if (!snapshotDeadlineResult) {{
+          return;
+        }}
+        const developerCount = parseSnapshotNumber(snapshotDeveloperCountInput?.value || "");
+        if (developerCount <= 0) {{
+          snapshotDeadlineResult.textContent = "Дата завершения: укажите количество разработчиков больше 0";
+          return;
+        }}
+        const remainingHours = parseSnapshotNumber(summaryDevelopmentTotalRemaining?.dataset.hours || summaryDevelopmentTotalRemaining?.textContent || "0");
+        const workingDays = remainingHours / 8 / developerCount;
+        const baseDate = currentSnapshotCapturedForDate || getSelectedSnapshotDate() || selectedSnapshotDate;
+        const completionDate = addSnapshotWorkingDays(baseDate, workingDays);
+        if (!completionDate) {{
+          snapshotDeadlineResult.textContent = "Дата завершения: не удалось определить дату среза";
+          return;
+        }}
+        snapshotDeadlineResult.textContent = `Дата завершения: ${{formatSnapshotDisplayDate(completionDate)}}`;
       }}
 
       function formatSnapshotDateTime(value) {{
@@ -7437,9 +7691,13 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if (summaryDevelopmentGrandSpent) summaryDevelopmentGrandSpent.textContent = formatFilterHours(view.developmentGrandSpentHours);
         if (summaryBugShareYear) summaryBugShareYear.textContent = formatFilterPercent(view.bugShareYearPercent);
         if (summaryBugShareAll) summaryBugShareAll.textContent = formatFilterPercent(view.bugShareAllPercent);
+        const developmentTotalRemaining = getDynamicMetric("development_total_remaining_hours", "developmentTotalRemainingHours");
         if (summaryDevelopmentRemaining) summaryDevelopmentRemaining.textContent = formatFilterHours(getDynamicMetric("development_remaining_hours", "developmentRemainingHours"));
         if (summaryBugRemaining) summaryBugRemaining.textContent = formatFilterHours(getDynamicMetric("bug_remaining_hours", "bugRemainingHours"));
-        if (summaryDevelopmentTotalRemaining) summaryDevelopmentTotalRemaining.textContent = formatFilterHours(getDynamicMetric("development_total_remaining_hours", "developmentTotalRemainingHours"));
+        if (summaryDevelopmentTotalRemaining) {{
+          summaryDevelopmentTotalRemaining.textContent = formatFilterHours(developmentTotalRemaining);
+          summaryDevelopmentTotalRemaining.dataset.hours = String(developmentTotalRemaining);
+        }}
         if (summaryDevelopmentVolume) summaryDevelopmentVolume.textContent = formatFilterHours(getDynamicMetric("development_volume_hours", "developmentVolumeHours"));
         if (summaryBugVolume) summaryBugVolume.textContent = formatFilterHours(getDynamicMetric("bug_volume_hours", "bugVolumeHours"));
         if (summaryDevelopmentTotalVolume) summaryDevelopmentTotalVolume.textContent = formatFilterHours(getDynamicMetric("development_total_volume_hours", "developmentTotalVolumeHours"));
@@ -7775,8 +8033,11 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           currentSnapshotIssues = Array.isArray(payload.issues) ? payload.issues : [];
           currentSnapshotSummary = payload.summary || {{}};
           currentSnapshotDynamicSummary = payload.dynamic_summary || initialSnapshotDynamicSummary;
+          currentSnapshotCapturedForDate = String(payload.snapshot_run?.captured_for_date || getSelectedSnapshotDate() || currentSnapshotCapturedForDate || "");
+          currentSnapshotWeeklyDeveloperLoad = Array.isArray(payload.weekly_developer_load) ? payload.weekly_developer_load : [];
           renderSnapshotRows(currentSnapshotIssues);
           renderSnapshotSummary(currentSnapshotSummary, currentSnapshotDynamicSummary);
+          renderSnapshotWeeklyDeveloperLoad(currentSnapshotWeeklyDeveloperLoad, true);
           updateSnapshotCounts(currentSnapshotIssues.length);
           updateSnapshotPaginationInfo();
           updateSnapshotFilterHeaderOffset();
@@ -7960,12 +8221,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       }});
 
       resetSnapshotFiltersButton?.addEventListener("click", resetSnapshotTableFilters);
+      calculateSnapshotDeadlineButton?.addEventListener("click", calculateSnapshotDeadline);
       snapshotUseRiskPlanCheckbox?.addEventListener("change", () => {{
         renderSnapshotSummary(currentSnapshotSummary, currentSnapshotDynamicSummary);
       }});
       populateSnapshotMultiSelects();
       renderSnapshotRows(initialSnapshotIssues);
       renderSnapshotSummary(initialSnapshotSummary, initialSnapshotDynamicSummary);
+      renderSnapshotWeeklyDeveloperLoad(initialSnapshotWeeklyDeveloperLoad, true);
       updateSnapshotCounts(initialSnapshotIssues.length);
       updateSnapshotFilterHeaderOffset();
       updateSnapshotTableViewportHeight();
@@ -16868,6 +17131,16 @@ def getProjectLatestSnapshotIssuesData(
         projectIdentifierRaw,
     )
     payload["dynamic_summary"] = buildSnapshotDynamicSummary(dynamicSourcePayload.get("issues"))
+    snapshotRunForWeeklyLoad = payload.get("snapshot_run") or {}
+    capturedForWeeklyLoad = (
+        str(snapshotRunForWeeklyLoad.get("captured_for_date") or "").strip()
+        if isinstance(snapshotRunForWeeklyLoad, dict)
+        else ""
+    )
+    payload["weekly_developer_load"] = buildSnapshotWeeklyDeveloperLoad(
+        project_redmine_id,
+        capturedForWeeklyLoad,
+    )
     return payload
 
 
