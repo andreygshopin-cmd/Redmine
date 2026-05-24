@@ -289,6 +289,40 @@ def _hasRole(user: dict[str, object] | None, role: str) -> bool:
     return role in roles
 
 
+def _hasAnyRole(user: dict[str, object] | None, roles: tuple[str, ...]) -> bool:
+    return any(_hasRole(user, role) for role in roles)
+
+
+def _bitrixProtectedPath(path: str) -> bool:
+    normalizedPath = str(path or "").lower()
+    return (
+        normalizedPath == "/bitrix"
+        or normalizedPath.startswith("/bitrix/")
+        or normalizedPath == "/api/bitrix"
+        or normalizedPath.startswith("/api/bitrix/")
+    )
+
+
+def _bitrixAccessDeniedResponse(path: str) -> Response:
+    detail = "Bitrix access requires Admin or Finance role"
+    if str(path or "").startswith("/api/"):
+        return JSONResponse({"detail": detail}, status_code=403)
+    return HTMLResponse(
+        """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Доступ запрещен</title>
+</head>
+<body>
+  <h1>Доступ запрещен</h1>
+  <p>Раздел Bitrix доступен только пользователям с правами Admin или Finance.</p>
+</body>
+</html>""",
+        status_code=403,
+    )
+
+
 def _publicPath(path: str) -> bool:
     return path in {
         "/login",
@@ -401,6 +435,9 @@ async def authMiddleware(request: Request, call_next):
         if path.startswith("/api/"):
             return JSONResponse({"detail": "Password change required", "must_change_password": True}, status_code=403)
         return RedirectResponse(url="/change-password", status_code=303)
+
+    if _bitrixProtectedPath(path) and not _hasAnyRole(user, (ADMIN_ROLE, FINANCE_ROLE)):
+        return _bitrixAccessDeniedResponse(path)
 
     return await call_next(request)
 
@@ -5973,11 +6010,18 @@ __LOCAL_GOLOS_FONT_CSS__
     .field-grid {
       display: grid;
       grid-column: 1 / -1;
-      grid-template-columns: 180px 180px 190px 240px max-content max-content max-content;
+      grid-template-columns: 180px 180px 190px 240px max-content;
       gap: 12px;
       align-items: end;
       overflow-x: auto;
       padding-bottom: 2px;
+    }
+    .field-actions-row {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
     }
     label {
       display: flex;
@@ -6542,8 +6586,10 @@ __LOCAL_GOLOS_FONT_CSS__
                 <input class="risk-plan-checkbox" type="checkbox">
                 <span>Использовать План с рисками</span>
               </label>
-              <button type="button" class="show-widget-button">Применить и сохранить</button>
-              <button type="button" class="display-widget-button">Отобразить без сохранения</button>
+              <div class="field-actions-row">
+                <button type="button" class="show-widget-button">Применить и сохранить</button>
+                <button type="button" class="display-widget-button">Отобразить без сохранения</button>
+              </div>
             </div>
           </div>
           <div class="widget-body">

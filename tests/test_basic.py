@@ -222,6 +222,45 @@ def testReadBitrixPageMasksCredential(monkeypatch) -> None:
     assert "123/secret-webhook-code" not in body
 
 
+def testBitrixPagesRequireFinanceOrAdmin(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(
+        app_module,
+        "_getCurrentUser",
+        lambda request: {
+            "login": "regular@example.com",
+            "roles": ["User"],
+            "must_change_password": False,
+        },
+    )
+
+    pageResponse = client.get("/Bitrix")
+    apiResponse = client.get("/api/bitrix/profile")
+
+    assert pageResponse.status_code == 403
+    assert "Admin или Finance" in pageResponse.text
+    assert apiResponse.status_code == 403
+    assert apiResponse.json()["detail"] == "Bitrix access requires Admin or Finance role"
+
+
+def testBitrixPagesAllowFinance(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(
+        app_module,
+        "_getCurrentUser",
+        lambda request: {
+            "login": "finance@example.com",
+            "roles": ["Finance"],
+            "must_change_password": False,
+        },
+    )
+
+    response = client.get("/Bitrix")
+
+    assert response.status_code == 200
+    assert "Bitrix" in response.text
+
+
 def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
     body = readBitrixDealSnapshotComparePage().body.decode("utf-8")
 
@@ -599,7 +638,7 @@ def testCaptureBitrixDealSnapshotEndpointStoresDeals(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "bitrixPortalUrl", "https://sms-it.bitrix24.ru")
     monkeypatch.setattr(app_module.config, "bitrixCredential", "1/test-webhook")
     monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
-    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "roles": ["Admin"], "must_change_password": False})
     monkeypatch.setattr(
         app_module,
         "fetchAllBitrixDeals",
@@ -667,7 +706,7 @@ def testCaptureBitrixDealSnapshotEndpointStoresDeals(monkeypatch) -> None:
 def testCompareBitrixDealSnapshotsEndpointReturnsChanges(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
     monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
-    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "roles": ["Admin"], "must_change_password": False})
     monkeypatch.setattr(
         app_module,
         "compareBitrixDealSnapshots",
@@ -688,7 +727,7 @@ def testCompareBitrixDealSnapshotsEndpointReturnsChanges(monkeypatch) -> None:
 def testGetBitrixDealSnapshotFilterOptionsEndpointReturnsOptions(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
     monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
-    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "roles": ["Admin"], "must_change_password": False})
     monkeypatch.setattr(
         app_module,
         "getBitrixDealSnapshotFilterOptions",
@@ -708,7 +747,7 @@ def testGetBitrixDealSnapshotFilterOptionsEndpointReturnsOptions(monkeypatch) ->
 def testBitrixInvoiceSummaryEndpointPassesFilters(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
     monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
-    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "roles": ["Admin"], "must_change_password": False})
     captured: dict[str, object] = {}
 
     def fakeGetBitrixInvoiceSummary(year, *, dateField, capturedForDate, pipelineStages):
@@ -746,7 +785,7 @@ def testBitrixInvoiceSummaryEndpointPassesFilters(monkeypatch) -> None:
 def testBitrixInvoiceSummaryExportEndpointReturnsAnsiCsv(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
     monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
-    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "roles": ["Admin"], "must_change_password": False})
 
     monkeypatch.setattr(
         app_module,
@@ -788,7 +827,7 @@ def testBitrixInvoiceSummaryExportEndpointReturnsAnsiCsv(monkeypatch) -> None:
 def testDeleteBitrixDealSnapshotByDateEndpointDeletesRows(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
     monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
-    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "roles": ["Admin"], "must_change_password": False})
     monkeypatch.setattr(
         app_module,
         "deleteBitrixDealSnapshotForDate",
@@ -817,7 +856,7 @@ def testGetBitrixResponsiblesEndpointReturnsUsers(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "bitrixPortalUrl", "https://sms-it.bitrix24.ru")
     monkeypatch.setattr(app_module.config, "bitrixCredential", "1/test-webhook")
     monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
-    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "roles": ["Admin"], "must_change_password": False})
     monkeypatch.setattr(app_module, "upsertBitrixUsers", lambda users: {"upserted": len(users)})
     monkeypatch.setattr(
         app_module,
@@ -844,7 +883,7 @@ def testExportBitrixDealSnapshotEndpointReturnsAnsiCsv(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "bitrixPortalUrl", "")
     monkeypatch.setattr(app_module.config, "bitrixCredential", "")
     monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
-    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "must_change_password": False})
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "roles": ["Admin"], "must_change_password": False})
     monkeypatch.setattr(
         app_module,
         "getBitrixDealSnapshotItems",
