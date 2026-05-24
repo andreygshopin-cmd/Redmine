@@ -5655,9 +5655,11 @@ __LOCAL_GOLOS_FONT_CSS__
     }
     .field-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      grid-template-columns: 180px 180px 190px 240px max-content 120px;
       gap: 12px;
       align-items: end;
+      overflow-x: auto;
+      padding-bottom: 2px;
     }
     label {
       display: flex;
@@ -5811,6 +5813,7 @@ __LOCAL_GOLOS_FONT_CSS__
     .dashboard-metrics-table,
     .weekly-load-table {
       width: 100%;
+      min-width: 620px;
       border-collapse: collapse;
       font-size: 0.88rem;
     }
@@ -5829,6 +5832,12 @@ __LOCAL_GOLOS_FONT_CSS__
       text-align: left;
       color: var(--text);
       font-weight: 700;
+    }
+    .weekly-load-table th:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      background: #eef6f7;
     }
     .dashboard-metrics-table thead th,
     .weekly-load-table th {
@@ -5856,18 +5865,30 @@ __LOCAL_GOLOS_FONT_CSS__
     .dashboard-deadline-panel {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
       min-width: 0;
+      font-size: 0.72rem;
+      line-height: 1.2;
     }
-    .dashboard-deadline-panel label {
-      white-space: normal;
+    .dashboard-developer-label {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      white-space: nowrap;
+    }
+    .dashboard-developer-label input {
+      width: 82px;
+      padding: 6px 7px;
+      font-size: 0.72rem;
     }
     .calculate-deadline-button {
-      min-height: 36px;
+      min-height: 30px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 7px 10px;
+      padding: 6px 8px;
       font: inherit;
+      font-size: 0.72rem;
       font-weight: 700;
       color: var(--text);
       background: #eef2f5;
@@ -5876,8 +5897,12 @@ __LOCAL_GOLOS_FONT_CSS__
     .deadline-result {
       min-height: 20px;
       color: var(--blue);
+      font-size: 0.72rem;
       font-weight: 700;
       line-height: 1.35;
+    }
+    .deadline-result.is-out-of-year {
+      color: #d9534f;
     }
     .summary-legend {
       margin: 8px 10px 10px;
@@ -6152,7 +6177,7 @@ __LOCAL_GOLOS_FONT_CSS__
         <section class="widget project-state-widget" data-widget-id="${escapeHtml(widget.id)}">
           <div class="widget-head">
             <h2 class="widget-title">${escapeHtml(widgetTitle)}</h2>
-            <button type="button" class="toggle-panel-button">Показать панель</button>
+            <button type="button" class="toggle-panel-button">Панель настройки</button>
           </div>
           <div class="widget-panel is-collapsed">
             <div class="project-select-block">
@@ -6217,21 +6242,21 @@ __LOCAL_GOLOS_FONT_CSS__
                 </table>
               </div>
               <div class="widget-card weekly-load-card">
-                <h3 class="widget-card-title">Количество программистов</h3>
+                <h3 class="widget-card-title">Кол-во программ.</h3>
                 <div class="weekly-block">
                   <div>
                     <div class="weekly-table-wrap">
                       <table class="weekly-load-table">
                         <tbody>
                           <tr class="weekly-load-weeks-row"><th>Неделя</th><td>—</td></tr>
-                          <tr class="weekly-load-developers-row"><th>Количество программистов</th><td>—</td></tr>
+                          <tr class="weekly-load-developers-row"><th>Кол-во программ.</th><td>—</td></tr>
                         </tbody>
                       </table>
                     </div>
-                    <p class="summary-legend">Количество программистов = сумма часов списаний по задачам проекта за неделю / 40.</p>
+                    <p class="summary-legend">Кол-во программ. = сумма часов списаний по задачам проекта за неделю / 40.</p>
                   </div>
                   <div class="dashboard-deadline-panel">
-                    <label>Количество разработчиков
+                    <label class="dashboard-developer-label">Количество разработчиков
                       <input class="developer-count-input" type="text" inputmode="decimal">
                     </label>
                     <button type="button" class="calculate-deadline-button">Рассчитать срок</button>
@@ -6272,6 +6297,7 @@ __LOCAL_GOLOS_FONT_CSS__
         parametersWrap: widgetNode.querySelector(".parameters-table-wrap"),
         status: widgetNode.querySelector(".chart-status"),
         mainMetricsBody: widgetNode.querySelector(".dashboard-metrics-body"),
+        weeklyTableWrap: widgetNode.querySelector(".weekly-table-wrap"),
         weeklyLoadWeeksRow: widgetNode.querySelector(".weekly-load-weeks-row"),
         weeklyLoadDevelopersRow: widgetNode.querySelector(".weekly-load-developers-row"),
         developerCountInput: widgetNode.querySelector(".developer-count-input"),
@@ -6509,11 +6535,16 @@ __LOCAL_GOLOS_FONT_CSS__
         elements.weeklyLoadWeeksRow.innerHTML = `<th scope="row">Неделя</th>${sourceRows.map((row) => `<th scope="col">${escapeHtml(row?.label || "—")}</th>`).join("") || "<td>—</td>"}`;
       }
       if (elements.weeklyLoadDevelopersRow) {
-        elements.weeklyLoadDevelopersRow.innerHTML = `<th scope="row">Количество программистов</th>${sourceRows.map((row) => `<td>${formatHours(row?.developers || 0)}</td>`).join("") || "<td>—</td>"}`;
+        elements.weeklyLoadDevelopersRow.innerHTML = `<th scope="row">Кол-во программ.</th>${sourceRows.map((row) => `<td>${formatHours(row?.developers || 0)}</td>`).join("") || "<td>—</td>"}`;
       }
       if (copyLatestToInput && elements.developerCountInput) {
         const latestRow = sourceRows.length ? sourceRows[sourceRows.length - 1] : null;
         elements.developerCountInput.value = formatDeveloperCount(latestRow?.developers || 0);
+      }
+      if (elements.weeklyTableWrap) {
+        requestAnimationFrame(() => {
+          elements.weeklyTableWrap.scrollLeft = elements.weeklyTableWrap.scrollWidth;
+        });
       }
     }
 
@@ -6524,6 +6555,7 @@ __LOCAL_GOLOS_FONT_CSS__
       const developerCount = parseDashboardNumber(elements.developerCountInput?.value || "");
       if (developerCount <= 0) {
         elements.deadlineResult.textContent = "Дата завершения: укажите количество разработчиков больше 0";
+        elements.deadlineResult.classList.remove("is-out-of-year");
         return;
       }
       const remainingHours = Number(elements.mainMetricsBody?.dataset.remainingHours || 0);
@@ -6531,9 +6563,11 @@ __LOCAL_GOLOS_FONT_CSS__
       const completionDate = addWorkingDays(baseDate, remainingHours / 8 / developerCount);
       if (!completionDate) {
         elements.deadlineResult.textContent = "Дата завершения: не удалось определить дату среза";
+        elements.deadlineResult.classList.remove("is-out-of-year");
         return;
       }
       elements.deadlineResult.textContent = `Дата завершения: ${formatDisplayDate(completionDate)}`;
+      elements.deadlineResult.classList.toggle("is-out-of-year", completionDate.getFullYear() !== new Date().getFullYear());
     }
 
     function buildAggregatedDatasets(payload, p1Factor, p2Factor, useRiskPlan) {
@@ -6874,7 +6908,7 @@ __LOCAL_GOLOS_FONT_CSS__
       elements.togglePanelButton.addEventListener("click", () => {
         const collapsed = elements.panel.classList.toggle("is-collapsed");
         widgetNode.classList.toggle("is-panel-open", !collapsed);
-        elements.togglePanelButton.textContent = collapsed ? "Показать панель" : "Скрыть панель";
+        elements.togglePanelButton.textContent = collapsed ? "Панель настройки" : "Скрыть панель";
       });
       elements.selectVisibleProjectsButton.addEventListener("click", () => {
         groupProjectSelectionRows(getFilteredProjectSelectionRows(elements)).forEach((group) => {
