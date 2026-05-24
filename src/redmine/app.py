@@ -5937,6 +5937,7 @@ __LOCAL_GOLOS_FONT_CSS__
     }
     .toggle-panel-button,
     .show-widget-button,
+    .display-widget-button,
     .small-action-button {
       min-height: 40px;
       border: 1px solid var(--line);
@@ -5949,6 +5950,9 @@ __LOCAL_GOLOS_FONT_CSS__
       cursor: pointer;
     }
     .show-widget-button { background: var(--blue); color: #ffffff; border-color: var(--blue); }
+    .display-widget-button { background: #eef2f5; color: var(--text); border-color: var(--line); }
+    .show-widget-button,
+    .display-widget-button { white-space: nowrap; }
     .small-action-button { min-height: 34px; padding: 6px 10px; font-size: 0.92rem; }
     .widget-panel {
       display: grid;
@@ -5969,7 +5973,7 @@ __LOCAL_GOLOS_FONT_CSS__
     .field-grid {
       display: grid;
       grid-column: 1 / -1;
-      grid-template-columns: 180px 180px 190px 240px max-content 120px;
+      grid-template-columns: 180px 180px 190px 240px max-content max-content max-content;
       gap: 12px;
       align-items: end;
       overflow-x: auto;
@@ -6538,7 +6542,8 @@ __LOCAL_GOLOS_FONT_CSS__
                 <input class="risk-plan-checkbox" type="checkbox">
                 <span>Использовать План с рисками</span>
               </label>
-              <button type="button" class="show-widget-button">Применить настройки</button>
+              <button type="button" class="show-widget-button">Применить и сохранить</button>
+              <button type="button" class="display-widget-button">Отобразить без сохранения</button>
             </div>
           </div>
           <div class="widget-body">
@@ -6614,6 +6619,7 @@ __LOCAL_GOLOS_FONT_CSS__
         riskPlanCheckbox: widgetNode.querySelector(".risk-plan-checkbox"),
         riskPlanLabel: widgetNode.querySelector(".risk-plan-label"),
         showButton: widgetNode.querySelector(".show-widget-button"),
+        displayButton: widgetNode.querySelector(".display-widget-button"),
         parametersWrap: widgetNode.querySelector(".parameters-table-wrap"),
         status: widgetNode.querySelector(".chart-status"),
         mainMetricsBody: widgetNode.querySelector(".dashboard-metrics-body"),
@@ -7135,6 +7141,9 @@ __LOCAL_GOLOS_FONT_CSS__
       elements.loadingOverlay.classList.add("is-visible");
       elements.status.textContent = shouldRenderChart ? "Загружаем состояние проекта..." : "Загружаем параметры проектов...";
       elements.showButton.disabled = true;
+      if (elements.displayButton) {
+        elements.displayButton.disabled = true;
+      }
       if (elements.confirmProjectsButton) {
         elements.confirmProjectsButton.disabled = true;
       }
@@ -7189,6 +7198,9 @@ __LOCAL_GOLOS_FONT_CSS__
       } finally {
         elements.loadingOverlay.classList.remove("is-visible");
         elements.showButton.disabled = false;
+        if (elements.displayButton) {
+          elements.displayButton.disabled = false;
+        }
         if (elements.confirmProjectsButton) {
           elements.confirmProjectsButton.disabled = false;
         }
@@ -7220,6 +7232,11 @@ __LOCAL_GOLOS_FONT_CSS__
         const collapsed = elements.panel.classList.toggle("is-collapsed");
         widgetNode.classList.toggle("is-panel-open", !collapsed);
         elements.togglePanelButton.textContent = collapsed ? "Панель настройки" : "Скрыть панель";
+        if (!collapsed) {
+          requestAnimationFrame(() => {
+            elements.panel.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+        }
       });
       elements.selectVisibleProjectsButton.addEventListener("click", () => {
         groupProjectSelectionRows(getFilteredProjectSelectionRows(elements)).forEach((group) => {
@@ -7277,6 +7294,12 @@ __LOCAL_GOLOS_FONT_CSS__
         renderChart: true,
         updateParameters: false,
         saveSettings: true,
+      }));
+      elements.displayButton?.addEventListener("click", () => loadWidget(widgetNode, {
+        resetFromPlanning: false,
+        renderChart: true,
+        updateParameters: false,
+        saveSettings: false,
       }));
       const hasSavedSettings = Boolean(
         widgetSettings.start_date
