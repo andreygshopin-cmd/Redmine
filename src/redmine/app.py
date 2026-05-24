@@ -5538,6 +5538,8 @@ __LOCAL_GOLOS_FONT_CSS__
       --cyan: #52cee6;
       --orange: #ff6c0e;
       --shadow: 0 14px 32px rgba(22, 50, 74, 0.08);
+      --dashboard-table-height: 300px;
+      --dashboard-action-row-height: 46px;
     }
     * { box-sizing: border-box; }
     body {
@@ -5653,7 +5655,7 @@ __LOCAL_GOLOS_FONT_CSS__
     }
     .field-grid {
       display: grid;
-      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
       gap: 12px;
       align-items: end;
     }
@@ -5707,16 +5709,16 @@ __LOCAL_GOLOS_FONT_CSS__
       overflow: auto;
       border: 1px solid var(--line);
       border-radius: 8px;
-      height: 300px;
-      min-height: 300px;
+      height: calc(var(--dashboard-table-height) + var(--dashboard-action-row-height));
+      min-height: calc(var(--dashboard-table-height) + var(--dashboard-action-row-height));
       background: #ffffff;
     }
     .project-selection-table-wrap {
       overflow: auto;
       border: 1px solid var(--line);
       border-radius: 8px;
-      height: 300px;
-      min-height: 300px;
+      height: var(--dashboard-table-height);
+      min-height: var(--dashboard-table-height);
       background: #ffffff;
     }
     .parameters-table,
@@ -5786,7 +5788,7 @@ __LOCAL_GOLOS_FONT_CSS__
     }
     .widget-indicators {
       display: grid;
-      grid-template-columns: minmax(240px, 0.85fr) minmax(260px, 1.15fr);
+      grid-template-columns: 1fr;
       gap: 12px;
       margin-bottom: 12px;
       align-items: start;
@@ -5929,7 +5931,7 @@ __LOCAL_GOLOS_FONT_CSS__
       .widget.is-panel-open { grid-template-columns: 1fr; }
       .widget.is-panel-open .widget-body { border-right: 0; }
       .widget-panel { grid-template-columns: 1fr; }
-      .field-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+      .field-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
       .widget-indicators { grid-template-columns: 1fr; }
     }
     @media (max-width: 680px) {
@@ -6162,8 +6164,8 @@ __LOCAL_GOLOS_FONT_CSS__
               <div class="project-select-actions">
                 <div class="project-select-actions-group">
                   <button type="button" class="small-action-button select-visible-projects-button">Выбрать видимые</button>
-                  <button type="button" class="small-action-button confirm-projects-button">Подтвердить</button>
                   <button type="button" class="small-action-button clear-projects-button">Снять выбор</button>
+                  <button type="button" class="small-action-button confirm-projects-button">Подтвердить</button>
                 </div>
                 <span class="selection-counter">Выбрано: 0</span>
               </div>
