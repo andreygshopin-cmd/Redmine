@@ -5132,6 +5132,63 @@ def resolveDashboardDefaultProjectIds(
     return [int(selectedProject.get("redmine_id") or 0)]
 
 
+def buildDashboardProjectSelectionRows(projects: list[dict[str, object]]) -> list[dict[str, object]]:
+    try:
+        planningProjects = listPlanningProjects(includeClosed=True)
+    except Exception:
+        planningProjects = []
+
+    planningByIdentifier: dict[str, list[dict[str, object]]] = {}
+    for planningProject in planningProjects:
+        identifier = str(planningProject.get("redmine_identifier") or "").strip().lower()
+        if not identifier:
+            continue
+        planningByIdentifier.setdefault(identifier, []).append(planningProject)
+
+    rows: list[dict[str, object]] = []
+    for project in projects:
+        try:
+            redmineId = int(project.get("redmine_id") or 0)
+        except (TypeError, ValueError):
+            redmineId = 0
+        if not redmineId:
+            continue
+
+        identifier = str(project.get("identifier") or "").strip()
+        redmineName = str(project.get("name") or "—")
+        planningRows = planningByIdentifier.get(identifier.lower(), []) if identifier else []
+        if not planningRows:
+            rows.append(
+                {
+                    "redmine_id": redmineId,
+                    "redmine_identifier": identifier,
+                    "direction": "",
+                    "customer": "",
+                    "project_name": redmineName,
+                    "pm_name": "",
+                    "is_closed": None,
+                    "is_enabled": bool(project.get("is_enabled")),
+                }
+            )
+            continue
+
+        for planningProject in planningRows:
+            rows.append(
+                {
+                    "redmine_id": redmineId,
+                    "redmine_identifier": identifier,
+                    "direction": planningProject.get("direction") or "",
+                    "customer": planningProject.get("customer") or "",
+                    "project_name": planningProject.get("project_name") or redmineName,
+                    "pm_name": planningProject.get("pm_name") or "",
+                    "is_closed": bool(planningProject.get("is_closed")),
+                    "is_enabled": bool(project.get("is_enabled")),
+                }
+            )
+
+    return rows
+
+
 def buildDashboardProjectStatePayload(
     projectRedmineIds: list[int],
     startDateValue: str | None = None,
@@ -5298,6 +5355,7 @@ def buildDashboardPage(login: str) -> str:
 
     storedProjects = listStoredProjects()
     projectOptions = [serializeDashboardProject(project) for project in storedProjects]
+    projectSelectionRows = buildDashboardProjectSelectionRows(storedProjects)
     widgets = []
     for index, widget in enumerate(dashboardConfig.get("widgets") or []):
         if not isinstance(widget, dict):
@@ -5316,6 +5374,7 @@ def buildDashboardPage(login: str) -> str:
             "login": login,
             "title": str(dashboardConfig.get("title") or "Dashboard"),
             "projects": projectOptions,
+            "project_rows": projectSelectionRows,
             "widgets": widgets,
         },
         ensure_ascii=False,
@@ -5352,7 +5411,8 @@ __LOCAL_GOLOS_FONT_CSS__
       color: var(--text);
     }
     main {
-      max-width: 1500px;
+      width: 100%;
+      max-width: none;
       margin: 0 auto;
       padding: 24px 20px 48px;
     }
@@ -5378,15 +5438,23 @@ __LOCAL_GOLOS_FONT_CSS__
     }
     .dashboard-grid {
       display: grid;
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 18px;
+      align-items: start;
     }
     .widget {
+      grid-column: span 1;
       border: 1px solid var(--line);
       border-radius: 12px;
       background: var(--panel);
       box-shadow: var(--shadow);
       overflow: hidden;
+    }
+    .widget.is-panel-open {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
     }
     .widget-head {
       display: flex;
@@ -5396,6 +5464,14 @@ __LOCAL_GOLOS_FONT_CSS__
       padding: 16px 18px;
       border-bottom: 1px solid var(--line);
       background: #f8fbfd;
+    }
+    .widget.is-panel-open .widget-head,
+    .widget.is-panel-open .widget-panel {
+      grid-column: 1 / -1;
+    }
+    .widget.is-panel-open .widget-body {
+      grid-column: span 1;
+      border-right: 1px solid var(--line);
     }
     .widget-title {
       margin: 0;
@@ -5418,7 +5494,7 @@ __LOCAL_GOLOS_FONT_CSS__
     .small-action-button { min-height: 34px; padding: 6px 10px; font-size: 0.92rem; }
     .widget-panel {
       display: grid;
-      grid-template-columns: minmax(280px, 420px) minmax(420px, 1fr);
+      grid-template-columns: minmax(520px, 1.1fr) minmax(420px, 0.9fr);
       gap: 16px;
       padding: 16px 18px;
       border-bottom: 1px solid var(--line);
@@ -5430,6 +5506,7 @@ __LOCAL_GOLOS_FONT_CSS__
       display: flex;
       flex-direction: column;
       gap: 10px;
+      min-width: 0;
     }
     .field-grid {
       display: grid;
@@ -5452,14 +5529,22 @@ __LOCAL_GOLOS_FONT_CSS__
       color: var(--text);
       background: #ffffff;
     }
-    select[multiple] {
-      min-height: 180px;
-      width: 100%;
-    }
     .project-select-actions {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .project-select-actions-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .selection-counter {
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.35;
     }
     .checkbox-label {
       flex-direction: row;
@@ -5475,27 +5560,73 @@ __LOCAL_GOLOS_FONT_CSS__
       overflow: auto;
       border: 1px solid var(--line);
       border-radius: 8px;
+      height: 300px;
+      min-height: 300px;
+      background: #ffffff;
     }
-    .parameters-table {
+    .project-selection-table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      height: 300px;
+      min-height: 300px;
+      background: #ffffff;
+    }
+    .parameters-table,
+    .project-selection-table {
       width: 100%;
       min-width: 760px;
       border-collapse: collapse;
       font-size: 0.9rem;
     }
+    .project-selection-table {
+      min-width: 980px;
+    }
     .parameters-table th,
-    .parameters-table td {
+    .parameters-table td,
+    .project-selection-table th,
+    .project-selection-table td {
       padding: 8px 9px;
       border-bottom: 1px solid var(--line);
       text-align: left;
       vertical-align: middle;
       white-space: nowrap;
     }
-    .parameters-table th {
+    .parameters-table th,
+    .project-selection-table th {
+      position: sticky;
+      top: 0;
+      z-index: 3;
       background: #eef6f7;
       color: #426179;
       text-transform: uppercase;
       font-size: 0.76rem;
       line-height: 1.25;
+    }
+    .project-selection-table .filter-row th {
+      top: 36px;
+      background: #f8fbfd;
+      z-index: 2;
+    }
+    .project-selection-table input[type="text"],
+    .project-selection-table select {
+      width: 100%;
+      min-width: 0;
+      padding: 6px 7px;
+      border-radius: 7px;
+      font-size: 0.86rem;
+    }
+    .project-select-col {
+      width: 44px;
+      text-align: center !important;
+    }
+    .project-selection-checkbox {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--blue);
+    }
+    .project-disabled-row {
+      color: #9aa8b5;
     }
     .parameters-table tbody tr:last-child td { border-bottom: 0; }
     .parameters-total-row td {
@@ -5546,6 +5677,11 @@ __LOCAL_GOLOS_FONT_CSS__
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     @media (max-width: 1100px) {
+      .dashboard-grid { grid-template-columns: 1fr; }
+      .widget,
+      .widget.is-panel-open { grid-column: 1 / -1; }
+      .widget.is-panel-open { grid-template-columns: 1fr; }
+      .widget.is-panel-open .widget-body { border-right: 0; }
       .widget-panel { grid-template-columns: 1fr; }
       .field-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
     }
@@ -5647,34 +5783,88 @@ __LOCAL_GOLOS_FONT_CSS__
       };
     }
 
-    function buildProjectOptions(defaultProjectIds) {
-      const selectedIds = new Set((defaultProjectIds || []).map((value) => Number(value)));
-      return (dashboardBootstrap.projects || []).map((project) => {
-        const id = Number(project.redmine_id || 0);
-        const labelParts = [`#${id}`, project.name || "—"];
-        if (project.identifier) {
-          labelParts.push(`(${project.identifier})`);
-        }
-        const disabledLabel = project.is_enabled ? "" : " [выкл.]";
-        return `<option value="${id}"${selectedIds.has(id) ? " selected" : ""}>${escapeHtml(labelParts.join(" ") + disabledLabel)}</option>`;
-      }).join("");
+    const projectSelectionColumnKeys = [
+      "redmine_identifier",
+      "direction",
+      "customer",
+      "project_name",
+      "pm_name",
+      "is_closed",
+    ];
+
+    const projectSelectionRows = Array.isArray(dashboardBootstrap.project_rows)
+      ? dashboardBootstrap.project_rows
+      : [];
+
+    function formatBooleanText(value) {
+      if (value === null || value === undefined || value === "") {
+        return "—";
+      }
+      return value ? "Да" : "Нет";
+    }
+
+    function getProjectRowValue(row, key) {
+      if (key === "is_closed") {
+        return formatBooleanText(row?.is_closed);
+      }
+      return String(row?.[key] ?? "").trim() || "—";
+    }
+
+    function normalizeFilterText(value) {
+      return String(value ?? "").trim().toLowerCase();
+    }
+
+    function buildProjectSelectionFilterCells() {
+      return `
+        <th></th>
+        <th><input class="project-filter-input" data-filter-key="redmine_identifier" type="text"></th>
+        <th><input class="project-filter-input" data-filter-key="direction" type="text"></th>
+        <th><input class="project-filter-input" data-filter-key="customer" type="text"></th>
+        <th><input class="project-filter-input" data-filter-key="project_name" type="text"></th>
+        <th><input class="project-filter-input" data-filter-key="pm_name" type="text"></th>
+        <th><select class="project-filter-input" data-filter-key="is_closed"><option value=""></option><option value="Да">Да</option><option value="Нет">Нет</option><option value="—">—</option></select></th>
+      `;
+    }
+
+    function buildProjectSelectionTable() {
+      return `
+        <div class="project-selection-table-wrap">
+          <table class="project-selection-table">
+            <thead>
+              <tr>
+                <th class="project-select-col">Выбор</th>
+                <th>Идентификатор в Redmine</th>
+                <th>Направление</th>
+                <th>Заказчик</th>
+                <th>Название проекта</th>
+                <th>ПМ</th>
+                <th>Проект закрыт</th>
+              </tr>
+              <tr class="filter-row">${buildProjectSelectionFilterCells()}</tr>
+            </thead>
+            <tbody class="project-selection-table-body"></tbody>
+          </table>
+        </div>
+      `;
     }
 
     function buildWidgetHtml(widget) {
       return `
-        <section class="widget project-state-widget" data-widget-id="${escapeHtml(widget.id)}">
+        <section class="widget project-state-widget is-panel-open" data-widget-id="${escapeHtml(widget.id)}">
           <div class="widget-head">
             <h2 class="widget-title">${escapeHtml(widget.title || "Состояние проекта")}</h2>
             <button type="button" class="toggle-panel-button">Скрыть панель</button>
           </div>
           <div class="widget-panel">
             <div class="project-select-block">
-              <label>Группа проектов
-                <select class="project-select" multiple>${buildProjectOptions(widget.default_project_ids || [])}</select>
-              </label>
+              <h3 class="parameters-title">Группа проектов</h3>
+              ${buildProjectSelectionTable()}
               <div class="project-select-actions">
-                <button type="button" class="small-action-button select-all-projects-button">Выбрать все</button>
-                <button type="button" class="small-action-button clear-projects-button">Снять выбор</button>
+                <div class="project-select-actions-group">
+                  <button type="button" class="small-action-button select-visible-projects-button">Выбрать видимые</button>
+                  <button type="button" class="small-action-button clear-projects-button">Снять выбор</button>
+                </div>
+                <span class="selection-counter">Выбрано: 0</span>
               </div>
               <div class="field-grid">
                 <label>Начало интервала
@@ -5719,9 +5909,11 @@ __LOCAL_GOLOS_FONT_CSS__
       return {
         panel: widgetNode.querySelector(".widget-panel"),
         togglePanelButton: widgetNode.querySelector(".toggle-panel-button"),
-        projectSelect: widgetNode.querySelector(".project-select"),
-        selectAllProjectsButton: widgetNode.querySelector(".select-all-projects-button"),
+        projectTableBody: widgetNode.querySelector(".project-selection-table-body"),
+        projectFilterInputs: Array.from(widgetNode.querySelectorAll(".project-filter-input")),
+        selectVisibleProjectsButton: widgetNode.querySelector(".select-visible-projects-button"),
         clearProjectsButton: widgetNode.querySelector(".clear-projects-button"),
+        selectionCounter: widgetNode.querySelector(".selection-counter"),
         startDateInput: widgetNode.querySelector(".start-date-input"),
         endDateInput: widgetNode.querySelector(".end-date-input"),
         p1Input: widgetNode.querySelector(".p1-input"),
@@ -5737,10 +5929,83 @@ __LOCAL_GOLOS_FONT_CSS__
       };
     }
 
-    function getSelectedProjectIds(elements) {
-      return Array.from(elements.projectSelect?.selectedOptions || [])
-        .map((option) => Number(option.value || 0))
+    function getWidgetState(widgetNode) {
+      const widgetId = widgetNode.dataset.widgetId || "";
+      let state = widgetStates.get(widgetId);
+      if (!state) {
+        state = { selectedProjectIds: new Set(), chart: null };
+        widgetStates.set(widgetId, state);
+      }
+      if (!(state.selectedProjectIds instanceof Set)) {
+        state.selectedProjectIds = new Set(Array.from(state.selectedProjectIds || []).map((value) => Number(value)));
+      }
+      return state;
+    }
+
+    function getSelectedProjectIds(widgetNode) {
+      return Array.from(getWidgetState(widgetNode).selectedProjectIds)
+        .map((value) => Number(value || 0))
         .filter((value) => Number.isFinite(value) && value > 0);
+    }
+
+    function getProjectSelectionFilters(elements) {
+      const filters = {};
+      elements.projectFilterInputs.forEach((input) => {
+        const key = input.dataset.filterKey || "";
+        if (key) {
+          filters[key] = normalizeFilterText(input.value);
+        }
+      });
+      return filters;
+    }
+
+    function getFilteredProjectSelectionRows(elements) {
+      const filters = getProjectSelectionFilters(elements);
+      return projectSelectionRows.filter((row) => {
+        return projectSelectionColumnKeys.every((key) => {
+          const filterValue = filters[key] || "";
+          if (!filterValue) {
+            return true;
+          }
+          return normalizeFilterText(getProjectRowValue(row, key)).includes(filterValue);
+        });
+      });
+    }
+
+    function updateProjectSelectionCounter(widgetNode, elements, visibleRows) {
+      const selectedCount = getSelectedProjectIds(widgetNode).length;
+      const visibleCount = Array.isArray(visibleRows) ? visibleRows.length : getFilteredProjectSelectionRows(elements).length;
+      if (elements.selectionCounter) {
+        elements.selectionCounter.textContent = `Выбрано: ${selectedCount}. Видимо: ${visibleCount}.`;
+      }
+    }
+
+    function renderProjectSelectionRows(widgetNode) {
+      const elements = getWidgetElements(widgetNode);
+      const state = getWidgetState(widgetNode);
+      const rows = getFilteredProjectSelectionRows(elements);
+      if (!rows.length) {
+        elements.projectTableBody.innerHTML = '<tr><td colspan="7">По фильтрам проекты не найдены.</td></tr>';
+        updateProjectSelectionCounter(widgetNode, elements, rows);
+        return;
+      }
+      elements.projectTableBody.innerHTML = rows.map((row) => {
+        const projectId = Number(row.redmine_id || 0);
+        const checked = state.selectedProjectIds.has(projectId) ? " checked" : "";
+        const rowClass = row.is_enabled ? "" : ' class="project-disabled-row"';
+        return `
+          <tr${rowClass}>
+            <td class="project-select-col"><input class="project-selection-checkbox" type="checkbox" data-project-id="${projectId}"${checked}></td>
+            <td>${escapeHtml(getProjectRowValue(row, "redmine_identifier"))}</td>
+            <td>${escapeHtml(getProjectRowValue(row, "direction"))}</td>
+            <td>${escapeHtml(getProjectRowValue(row, "customer"))}</td>
+            <td>${escapeHtml(getProjectRowValue(row, "project_name"))}</td>
+            <td>${escapeHtml(getProjectRowValue(row, "pm_name"))}</td>
+            <td>${escapeHtml(getProjectRowValue(row, "is_closed"))}</td>
+          </tr>
+        `;
+      }).join("");
+      updateProjectSelectionCounter(widgetNode, elements, rows);
     }
 
     function renderParametersTable(elements, payload) {
@@ -5860,7 +6125,7 @@ __LOCAL_GOLOS_FONT_CSS__
     }
 
     function renderChart(widgetNode, elements, payload) {
-      const state = widgetStates.get(widgetNode.dataset.widgetId) || {};
+      const state = getWidgetState(widgetNode);
       if (typeof Chart === "undefined") {
         elements.status.textContent = "Не удалось загрузить библиотеку диаграмм.";
         return;
@@ -5957,7 +6222,7 @@ __LOCAL_GOLOS_FONT_CSS__
 
     async function loadWidget(widgetNode, resetFromPlanning = false) {
       const elements = getWidgetElements(widgetNode);
-      const projectIds = getSelectedProjectIds(elements);
+      const projectIds = getSelectedProjectIds(widgetNode);
       elements.loadingOverlay.classList.add("is-visible");
       elements.status.textContent = "Загружаем состояние проекта...";
       elements.showButton.disabled = true;
@@ -5999,19 +6264,51 @@ __LOCAL_GOLOS_FONT_CSS__
 
     function initializeWidget(widgetNode) {
       const elements = getWidgetElements(widgetNode);
+      const widgetConfig = (dashboardBootstrap.widgets || []).find((widget) => widget.id === widgetNode.dataset.widgetId) || {};
+      const state = getWidgetState(widgetNode);
+      state.selectedProjectIds = new Set((widgetConfig.default_project_ids || []).map((value) => Number(value || 0)).filter((value) => value > 0));
+      widgetStates.set(widgetNode.dataset.widgetId, state);
+      renderProjectSelectionRows(widgetNode);
       elements.togglePanelButton.addEventListener("click", () => {
         const collapsed = elements.panel.classList.toggle("is-collapsed");
+        widgetNode.classList.toggle("is-panel-open", !collapsed);
         elements.togglePanelButton.textContent = collapsed ? "Показать панель" : "Скрыть панель";
       });
-      elements.selectAllProjectsButton.addEventListener("click", () => {
-        Array.from(elements.projectSelect.options).forEach((option) => { option.selected = true; });
-        loadWidget(widgetNode, true);
+      elements.selectVisibleProjectsButton.addEventListener("click", () => {
+        getFilteredProjectSelectionRows(elements).forEach((row) => {
+          const projectId = Number(row.redmine_id || 0);
+          if (projectId > 0) {
+            state.selectedProjectIds.add(projectId);
+          }
+        });
+        renderProjectSelectionRows(widgetNode);
       });
       elements.clearProjectsButton.addEventListener("click", () => {
-        Array.from(elements.projectSelect.options).forEach((option) => { option.selected = false; });
-        loadWidget(widgetNode, true);
+        state.selectedProjectIds.clear();
+        renderProjectSelectionRows(widgetNode);
       });
-      elements.projectSelect.addEventListener("change", () => loadWidget(widgetNode, true));
+      elements.projectTableBody.addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement) || !target.classList.contains("project-selection-checkbox")) {
+          return;
+        }
+        const projectId = Number(target.dataset.projectId || 0);
+        if (!projectId) {
+          return;
+        }
+        if (target.checked) {
+          state.selectedProjectIds.add(projectId);
+        } else {
+          state.selectedProjectIds.delete(projectId);
+        }
+        renderProjectSelectionRows(widgetNode);
+      });
+      elements.projectFilterInputs.forEach((input) => {
+        const eventName = input.tagName === "SELECT" ? "change" : "input";
+        input.addEventListener(eventName, () => {
+          renderProjectSelectionRows(widgetNode);
+        });
+      });
       elements.showButton.addEventListener("click", () => loadWidget(widgetNode, false));
       loadWidget(widgetNode, true);
     }
