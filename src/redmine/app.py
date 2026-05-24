@@ -8039,6 +8039,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           renderSnapshotRows(currentSnapshotIssues);
           renderSnapshotSummary(currentSnapshotSummary, currentSnapshotDynamicSummary);
           renderSnapshotWeeklyDeveloperLoad(currentSnapshotWeeklyDeveloperLoad, true);
+          calculateSnapshotDeadline();
           updateSnapshotCounts(currentSnapshotIssues.length);
           updateSnapshotPaginationInfo();
           updateSnapshotFilterHeaderOffset();
@@ -8225,11 +8226,13 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       calculateSnapshotDeadlineButton?.addEventListener("click", calculateSnapshotDeadline);
       snapshotUseRiskPlanCheckbox?.addEventListener("change", () => {{
         renderSnapshotSummary(currentSnapshotSummary, currentSnapshotDynamicSummary);
+        calculateSnapshotDeadline();
       }});
       populateSnapshotMultiSelects();
       renderSnapshotRows(initialSnapshotIssues);
       renderSnapshotSummary(initialSnapshotSummary, initialSnapshotDynamicSummary);
       renderSnapshotWeeklyDeveloperLoad(initialSnapshotWeeklyDeveloperLoad, true);
+      calculateSnapshotDeadline();
       updateSnapshotCounts(initialSnapshotIssues.length);
       updateSnapshotFilterHeaderOffset();
       updateSnapshotTableViewportHeight();
