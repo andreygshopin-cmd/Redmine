@@ -89,6 +89,7 @@ from src.redmine.db import (
     syncProjects,
     clearUserPasswordResetToken,
     updateUser,
+    updateUserDashboardSettings,
     updateUserPassword,
     updatePlanningProject,
     updateProjectLoadSettings,
@@ -256,6 +257,18 @@ def _userHasDashboard(login: object) -> bool:
 
 def _buildDashboardUrl(login: object) -> str:
     return f"/dashboards/{quote(str(login or '').strip())}"
+
+
+def _parseDashboardSettings(rawSettings: object) -> dict[str, object]:
+    if isinstance(rawSettings, dict):
+        return rawSettings
+    if isinstance(rawSettings, str) and rawSettings.strip():
+        try:
+            parsed = json.loads(rawSettings)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
 
 
 def _parseRoles(rawRoles: object) -> list[str]:
@@ -455,6 +468,10 @@ class UserPayload(BaseModel):
     password: str | None = None
     roles: list[str] = []
     must_change_password: bool = False
+
+
+class DashboardSettingsPayload(BaseModel):
+    settings: dict[str, object] = {}
 
 
 def _buildRedmineApiSession() -> requests.Session:
@@ -5356,16 +5373,29 @@ def buildDashboardPage(login: str) -> str:
     storedProjects = listStoredProjects()
     projectOptions = [serializeDashboardProject(project) for project in storedProjects]
     projectSelectionRows = buildDashboardProjectSelectionRows(storedProjects)
+    userRow = getUserByLogin(login) or {}
+    dashboardSettings = _parseDashboardSettings(userRow.get("dashboard_settings"))
+    dashboardWidgetSettings = dashboardSettings.get("widgets") if isinstance(dashboardSettings.get("widgets"), dict) else {}
     widgets = []
     for index, widget in enumerate(dashboardConfig.get("widgets") or []):
         if not isinstance(widget, dict):
             continue
+        widgetId = str(widget.get("id") or f"widget-{index + 1}")
+        widgetSettings = dashboardWidgetSettings.get(widgetId) if isinstance(dashboardWidgetSettings, dict) else {}
+        widgetSettings = widgetSettings if isinstance(widgetSettings, dict) else {}
+        savedProjectIds = widgetSettings.get("selected_project_ids")
+        defaultProjectIds = (
+            [int(value) for value in savedProjectIds if str(value).strip().isdigit()]
+            if isinstance(savedProjectIds, list) and savedProjectIds
+            else resolveDashboardDefaultProjectIds(widget, storedProjects)
+        )
         widgets.append(
             {
-                "id": str(widget.get("id") or f"widget-{index + 1}"),
+                "id": widgetId,
                 "type": str(widget.get("type") or "project_state"),
                 "title": str(widget.get("title") or "Состояние проекта"),
-                "default_project_ids": resolveDashboardDefaultProjectIds(widget, storedProjects),
+                "default_project_ids": defaultProjectIds,
+                "settings": widgetSettings,
             }
         )
 
@@ -5376,6 +5406,7 @@ def buildDashboardPage(login: str) -> str:
             "projects": projectOptions,
             "project_rows": projectSelectionRows,
             "widgets": widgets,
+            "settings": dashboardSettings,
         },
         ensure_ascii=False,
     )
@@ -5519,6 +5550,7 @@ __LOCAL_GOLOS_FONT_CSS__
       flex-direction: column;
       gap: 6px;
       font-weight: 700;
+      white-space: nowrap;
     }
     input,
     select {
@@ -5550,6 +5582,9 @@ __LOCAL_GOLOS_FONT_CSS__
       flex-direction: row;
       align-items: center;
       min-height: 40px;
+    }
+    .checkbox-label span {
+      white-space: nowrap;
     }
     .checkbox-label.is-default-warning { color: #d9534f; }
     .parameters-title {
@@ -5850,18 +5885,19 @@ __LOCAL_GOLOS_FONT_CSS__
 
     function buildWidgetHtml(widget) {
       return `
-        <section class="widget project-state-widget is-panel-open" data-widget-id="${escapeHtml(widget.id)}">
+        <section class="widget project-state-widget" data-widget-id="${escapeHtml(widget.id)}">
           <div class="widget-head">
             <h2 class="widget-title">${escapeHtml(widget.title || "Состояние проекта")}</h2>
-            <button type="button" class="toggle-panel-button">Скрыть панель</button>
+            <button type="button" class="toggle-panel-button">Показать панель</button>
           </div>
-          <div class="widget-panel">
+          <div class="widget-panel is-collapsed">
             <div class="project-select-block">
               <h3 class="parameters-title">Группа проектов</h3>
               ${buildProjectSelectionTable()}
               <div class="project-select-actions">
                 <div class="project-select-actions-group">
                   <button type="button" class="small-action-button select-visible-projects-button">Выбрать видимые</button>
+                  <button type="button" class="small-action-button confirm-projects-button">Подтвердить</button>
                   <button type="button" class="small-action-button clear-projects-button">Снять выбор</button>
                 </div>
                 <span class="selection-counter">Выбрано: 0</span>
@@ -5912,6 +5948,7 @@ __LOCAL_GOLOS_FONT_CSS__
         projectTableBody: widgetNode.querySelector(".project-selection-table-body"),
         projectFilterInputs: Array.from(widgetNode.querySelectorAll(".project-filter-input")),
         selectVisibleProjectsButton: widgetNode.querySelector(".select-visible-projects-button"),
+        confirmProjectsButton: widgetNode.querySelector(".confirm-projects-button"),
         clearProjectsButton: widgetNode.querySelector(".clear-projects-button"),
         selectionCounter: widgetNode.querySelector(".selection-counter"),
         startDateInput: widgetNode.querySelector(".start-date-input"),
@@ -5972,9 +6009,32 @@ __LOCAL_GOLOS_FONT_CSS__
       });
     }
 
+    function groupProjectSelectionRows(rows) {
+      const grouped = [];
+      const byKey = new Map();
+      for (const row of rows) {
+        const identifier = String(row?.redmine_identifier || "").trim();
+        const projectId = Number(row?.redmine_id || 0);
+        const key = identifier ? identifier.toLowerCase() : `__project_${projectId}`;
+        let group = byKey.get(key);
+        if (!group) {
+          group = {
+            key,
+            redmine_id: projectId,
+            redmine_identifier: identifier || "—",
+            rows: [],
+          };
+          byKey.set(key, group);
+          grouped.push(group);
+        }
+        group.rows.push(row);
+      }
+      return grouped;
+    }
+
     function updateProjectSelectionCounter(widgetNode, elements, visibleRows) {
       const selectedCount = getSelectedProjectIds(widgetNode).length;
-      const visibleCount = Array.isArray(visibleRows) ? visibleRows.length : getFilteredProjectSelectionRows(elements).length;
+      const visibleCount = groupProjectSelectionRows(Array.isArray(visibleRows) ? visibleRows : getFilteredProjectSelectionRows(elements)).length;
       if (elements.selectionCounter) {
         elements.selectionCounter.textContent = `Выбрано: ${selectedCount}. Видимо: ${visibleCount}.`;
       }
@@ -5989,21 +6049,27 @@ __LOCAL_GOLOS_FONT_CSS__
         updateProjectSelectionCounter(widgetNode, elements, rows);
         return;
       }
-      elements.projectTableBody.innerHTML = rows.map((row) => {
-        const projectId = Number(row.redmine_id || 0);
-        const checked = state.selectedProjectIds.has(projectId) ? " checked" : "";
-        const rowClass = row.is_enabled ? "" : ' class="project-disabled-row"';
-        return `
-          <tr${rowClass}>
-            <td class="project-select-col"><input class="project-selection-checkbox" type="checkbox" data-project-id="${projectId}"${checked}></td>
-            <td>${escapeHtml(getProjectRowValue(row, "redmine_identifier"))}</td>
-            <td>${escapeHtml(getProjectRowValue(row, "direction"))}</td>
-            <td>${escapeHtml(getProjectRowValue(row, "customer"))}</td>
-            <td>${escapeHtml(getProjectRowValue(row, "project_name"))}</td>
-            <td>${escapeHtml(getProjectRowValue(row, "pm_name"))}</td>
-            <td>${escapeHtml(getProjectRowValue(row, "is_closed"))}</td>
-          </tr>
-        `;
+      elements.projectTableBody.innerHTML = groupProjectSelectionRows(rows).map((group) => {
+        const checked = state.selectedProjectIds.has(Number(group.redmine_id || 0)) ? " checked" : "";
+        return group.rows.map((row, rowIndex) => {
+          const rowClass = row.is_enabled ? "" : ' class="project-disabled-row"';
+          const mergedCells = rowIndex === 0
+            ? `
+              <td class="project-select-col" rowspan="${group.rows.length}"><input class="project-selection-checkbox" type="checkbox" data-project-id="${group.redmine_id}"${checked}></td>
+              <td rowspan="${group.rows.length}">${escapeHtml(group.redmine_identifier)}</td>
+            `
+            : "";
+          return `
+            <tr${rowClass}>
+              ${mergedCells}
+              <td>${escapeHtml(getProjectRowValue(row, "direction"))}</td>
+              <td>${escapeHtml(getProjectRowValue(row, "customer"))}</td>
+              <td>${escapeHtml(getProjectRowValue(row, "project_name"))}</td>
+              <td>${escapeHtml(getProjectRowValue(row, "pm_name"))}</td>
+              <td>${escapeHtml(getProjectRowValue(row, "is_closed"))}</td>
+            </tr>
+          `;
+        }).join("");
       }).join("");
       updateProjectSelectionCounter(widgetNode, elements, rows);
     }
@@ -6220,12 +6286,72 @@ __LOCAL_GOLOS_FONT_CSS__
       widgetStates.set(widgetNode.dataset.widgetId, state);
     }
 
-    async function loadWidget(widgetNode, resetFromPlanning = false) {
+    function applyWidgetSettingsToFields(widgetNode, widgetSettings) {
       const elements = getWidgetElements(widgetNode);
+      const settings = widgetSettings && typeof widgetSettings === "object" ? widgetSettings : {};
+      if (settings.start_date) {
+        elements.startDateInput.value = String(settings.start_date);
+      }
+      if (settings.end_date) {
+        elements.endDateInput.value = String(settings.end_date);
+      }
+      if (settings.p1 !== undefined && settings.p1 !== null && settings.p1 !== "") {
+        elements.p1Input.value = String(settings.p1);
+      }
+      if (settings.p2 !== undefined && settings.p2 !== null && settings.p2 !== "") {
+        elements.p2Input.value = String(settings.p2);
+      }
+      if (settings.use_risk_plan !== undefined) {
+        elements.riskPlanCheckbox.checked = Boolean(settings.use_risk_plan);
+      }
+    }
+
+    function collectWidgetSettings(widgetNode) {
+      const elements = getWidgetElements(widgetNode);
+      return {
+        selected_project_ids: getSelectedProjectIds(widgetNode),
+        start_date: elements.startDateInput.value || "",
+        end_date: elements.endDateInput.value || "",
+        p1: elements.p1Input.value || "",
+        p2: elements.p2Input.value || "",
+        use_risk_plan: Boolean(elements.riskPlanCheckbox.checked),
+      };
+    }
+
+    function buildDashboardSettingsPayload() {
+      const widgets = {};
+      document.querySelectorAll(".project-state-widget").forEach((widgetNode) => {
+        widgets[widgetNode.dataset.widgetId || ""] = collectWidgetSettings(widgetNode);
+      });
+      return { widgets };
+    }
+
+    async function saveDashboardSettings() {
+      const response = await fetch(`/api/dashboards/${encodeURIComponent(dashboardBootstrap.login)}/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: buildDashboardSettingsPayload() }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || "Не удалось сохранить настройки dashboard.");
+      }
+      return payload;
+    }
+
+    async function loadWidget(widgetNode, options = {}) {
+      const elements = getWidgetElements(widgetNode);
+      const resetFromPlanning = Boolean(options.resetFromPlanning);
+      const shouldRenderChart = options.renderChart !== false;
+      const shouldUpdateParameters = options.updateParameters !== false;
+      const shouldSaveSettings = Boolean(options.saveSettings);
       const projectIds = getSelectedProjectIds(widgetNode);
       elements.loadingOverlay.classList.add("is-visible");
-      elements.status.textContent = "Загружаем состояние проекта...";
+      elements.status.textContent = shouldRenderChart ? "Загружаем состояние проекта..." : "Загружаем параметры проектов...";
       elements.showButton.disabled = true;
+      if (elements.confirmProjectsButton) {
+        elements.confirmProjectsButton.disabled = true;
+      }
       try {
         const params = new URLSearchParams();
         projectIds.forEach((projectId) => params.append("project_redmine_ids", String(projectId)));
@@ -6242,9 +6368,9 @@ __LOCAL_GOLOS_FONT_CSS__
         if (!response.ok) {
           throw new Error(payload.detail || "Не удалось загрузить виджет.");
         }
-        elements.startDateInput.value = payload.interval?.start_date || "";
-        elements.endDateInput.value = payload.interval?.end_date || "";
         if (resetFromPlanning) {
+          elements.startDateInput.value = payload.interval?.start_date || "";
+          elements.endDateInput.value = payload.interval?.end_date || "";
           elements.p1Input.value = formatInputNumber(payload.planning?.p1_percent || 150);
           elements.p2Input.value = formatInputNumber(payload.planning?.p2_percent || 150);
           elements.riskPlanCheckbox.checked = Boolean(payload.planning?.use_risk_plan);
@@ -6252,13 +6378,25 @@ __LOCAL_GOLOS_FONT_CSS__
         } else {
           elements.riskPlanLabel.classList.remove("is-default-warning");
         }
-        renderParametersTable(elements, payload);
-        renderChart(widgetNode, elements, payload);
+        if (shouldUpdateParameters) {
+          renderParametersTable(elements, payload);
+        }
+        if (shouldRenderChart) {
+          renderChart(widgetNode, elements, payload);
+        } else {
+          elements.status.textContent = "Параметры проектов загружены. Для построения диаграммы нажмите «Показать».";
+        }
+        if (shouldSaveSettings) {
+          await saveDashboardSettings();
+        }
       } catch (error) {
         elements.status.textContent = String(error.message || error);
       } finally {
         elements.loadingOverlay.classList.remove("is-visible");
         elements.showButton.disabled = false;
+        if (elements.confirmProjectsButton) {
+          elements.confirmProjectsButton.disabled = false;
+        }
       }
     }
 
@@ -6268,6 +6406,8 @@ __LOCAL_GOLOS_FONT_CSS__
       const state = getWidgetState(widgetNode);
       state.selectedProjectIds = new Set((widgetConfig.default_project_ids || []).map((value) => Number(value || 0)).filter((value) => value > 0));
       widgetStates.set(widgetNode.dataset.widgetId, state);
+      const widgetSettings = widgetConfig.settings && typeof widgetConfig.settings === "object" ? widgetConfig.settings : {};
+      applyWidgetSettingsToFields(widgetNode, widgetSettings);
       renderProjectSelectionRows(widgetNode);
       elements.togglePanelButton.addEventListener("click", () => {
         const collapsed = elements.panel.classList.toggle("is-collapsed");
@@ -6275,8 +6415,8 @@ __LOCAL_GOLOS_FONT_CSS__
         elements.togglePanelButton.textContent = collapsed ? "Показать панель" : "Скрыть панель";
       });
       elements.selectVisibleProjectsButton.addEventListener("click", () => {
-        getFilteredProjectSelectionRows(elements).forEach((row) => {
-          const projectId = Number(row.redmine_id || 0);
+        groupProjectSelectionRows(getFilteredProjectSelectionRows(elements)).forEach((group) => {
+          const projectId = Number(group.redmine_id || 0);
           if (projectId > 0) {
             state.selectedProjectIds.add(projectId);
           }
@@ -6286,6 +6426,14 @@ __LOCAL_GOLOS_FONT_CSS__
       elements.clearProjectsButton.addEventListener("click", () => {
         state.selectedProjectIds.clear();
         renderProjectSelectionRows(widgetNode);
+      });
+      elements.confirmProjectsButton.addEventListener("click", () => {
+        loadWidget(widgetNode, {
+          resetFromPlanning: true,
+          renderChart: false,
+          updateParameters: true,
+          saveSettings: true,
+        });
       });
       elements.projectTableBody.addEventListener("change", (event) => {
         const target = event.target;
@@ -6309,8 +6457,25 @@ __LOCAL_GOLOS_FONT_CSS__
           renderProjectSelectionRows(widgetNode);
         });
       });
-      elements.showButton.addEventListener("click", () => loadWidget(widgetNode, false));
-      loadWidget(widgetNode, true);
+      elements.showButton.addEventListener("click", () => loadWidget(widgetNode, {
+        resetFromPlanning: false,
+        renderChart: true,
+        updateParameters: false,
+        saveSettings: true,
+      }));
+      const hasSavedSettings = Boolean(
+        widgetSettings.start_date
+        || widgetSettings.end_date
+        || widgetSettings.p1
+        || widgetSettings.p2
+        || widgetSettings.use_risk_plan !== undefined
+      );
+      loadWidget(widgetNode, {
+        resetFromPlanning: !hasSavedSettings,
+        renderChart: true,
+        updateParameters: true,
+        saveSettings: false,
+      });
     }
 
     dashboardGrid.innerHTML = (dashboardBootstrap.widgets || []).map(buildWidgetHtml).join("");
@@ -15699,6 +15864,7 @@ def getDashboardPage(request: Request, dashboard_login: str) -> HTMLResponse:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     _requireDashboardAccess(request, dashboard_login)
+    ensureUsersTable()
     ensureProjectsTable()
     ensureIssueSnapshotTables()
     ensurePlanningProjectsTable()
@@ -15732,6 +15898,24 @@ def getDashboardProjectStateApi(
         p2,
         None if use_risk_plan_present is None and use_risk_plan is None else bool(use_risk_plan),
     )
+
+
+@app.post("/api/dashboards/{dashboard_login}/settings")
+def saveDashboardSettingsApi(
+    request: Request,
+    dashboard_login: str,
+    payload: DashboardSettingsPayload,
+) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    _requireDashboardAccess(request, dashboard_login)
+    ensureUsersTable()
+    settings = payload.settings if isinstance(payload.settings, dict) else {}
+    updated = updateUserDashboardSettings(dashboard_login, settings)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Пользователь не найден.")
+    return {"settings": _parseDashboardSettings(updated.get("dashboard_settings"))}
 
 
 @app.get("/planning-projects", response_class=HTMLResponse)

@@ -1315,6 +1315,7 @@ def ensureUsersTable() -> None:
                         must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
                         reset_password_token_hash TEXT NULL,
                         reset_password_expires_at TIMESTAMPTZ NULL,
+                        dashboard_settings JSONB NOT NULL DEFAULT '{}'::jsonb,
                         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
@@ -1372,6 +1373,15 @@ def ensureUsersTable() -> None:
                     """
                     ALTER TABLE app_users
                     ADD COLUMN IF NOT EXISTS reset_password_expires_at TIMESTAMPTZ NULL
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE app_users
+                    ADD COLUMN IF NOT EXISTS dashboard_settings JSONB NOT NULL DEFAULT '{}'::jsonb
                     """
                 )
             )
@@ -2389,6 +2399,7 @@ def listUsers() -> list[dict[str, object]]:
                     login,
                     roles,
                     must_change_password,
+                    dashboard_settings,
                     created_at,
                     updated_at
                 FROM app_users
@@ -2416,6 +2427,7 @@ def getUserByLogin(login: str) -> dict[str, object] | None:
                     must_change_password,
                     reset_password_token_hash,
                     reset_password_expires_at,
+                    dashboard_settings,
                     created_at,
                     updated_at
                 FROM app_users
@@ -4075,6 +4087,7 @@ def createUser(user: dict[str, object]) -> dict[str, object]:
                     login,
                     roles,
                     must_change_password,
+                    dashboard_settings,
                     created_at,
                     updated_at
                 """
@@ -4119,6 +4132,7 @@ def updateUser(userId: int, user: dict[str, object]) -> dict[str, object] | None
                     login,
                     roles,
                     must_change_password,
+                    dashboard_settings,
                     created_at,
                     updated_at
                 """
@@ -4150,6 +4164,7 @@ def updateUserPassword(userId: int, passwordHash: str, mustChangePassword: bool)
                     login,
                     roles,
                     must_change_password,
+                    dashboard_settings,
                     created_at,
                     updated_at
                 """
@@ -4258,6 +4273,38 @@ def clearUserPasswordResetToken(userId: int) -> dict[str, object] | None:
                 """
             ),
             {"user_id": userId},
+        ).mappings().first()
+
+    return dict(row) if row else None
+
+
+def updateUserDashboardSettings(login: str, dashboardSettings: Mapping[str, object]) -> dict[str, object] | None:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.begin() as connection:
+        row = connection.execute(
+            text(
+                """
+                UPDATE app_users
+                SET
+                    dashboard_settings = CAST(:dashboard_settings AS JSONB),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE lower(login) = lower(:login)
+                RETURNING
+                    id,
+                    login,
+                    roles,
+                    must_change_password,
+                    dashboard_settings,
+                    created_at,
+                    updated_at
+                """
+            ),
+            {
+                "login": login,
+                "dashboard_settings": json.dumps(dict(dashboardSettings or {}), ensure_ascii=False),
+            },
         ).mappings().first()
 
     return dict(row) if row else None
