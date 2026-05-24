@@ -123,6 +123,25 @@ DEFAULT_ADMIN_LOGINS = (
     "stanislav.shidlovskiy@sms-a.ru",
     "sergey.laptev@sms-a.ru",
 )
+DASHBOARD_USER_CONFIGS: dict[str, dict[str, object]] = {
+    "andrey.shopin@sms-a.ru": {
+        "title": "Dashboard",
+        "widgets": [
+            {
+                "id": "project-state-1",
+                "type": "project_state",
+                "title": "Состояние проекта",
+                "default_project_offset": 0,
+            },
+            {
+                "id": "project-state-2",
+                "type": "project_state",
+                "title": "Состояние проекта",
+                "default_project_offset": 1,
+            },
+        ],
+    },
+}
 
 LOCAL_GOLOS_FONT_CSS = """
     @font-face {
@@ -222,6 +241,23 @@ def _serializeRoles(roles: list[str] | tuple[str, ...] | set[str] | None) -> str
     return ",".join(_normalizeRoles(roles))
 
 
+def _normalizeDashboardLogin(login: object) -> str:
+    return str(login or "").strip().lower()
+
+
+def _getDashboardConfig(login: object) -> dict[str, object] | None:
+    return DASHBOARD_USER_CONFIGS.get(_normalizeDashboardLogin(login))
+
+
+def _userHasDashboard(login: object) -> bool:
+    configValue = _getDashboardConfig(login)
+    return bool(configValue and configValue.get("widgets"))
+
+
+def _buildDashboardUrl(login: object) -> str:
+    return f"/dashboards/{quote(str(login or '').strip())}"
+
+
 def _parseRoles(rawRoles: object) -> list[str]:
     if not rawRoles:
         return []
@@ -304,6 +340,18 @@ def _requireAdminUser(request: Request) -> dict[str, object]:
     user = _requireAuthenticatedUser(request)
     if not _hasRole(user, ADMIN_ROLE):
         raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+def _requireDashboardAccess(request: Request, dashboardLogin: str) -> dict[str, object]:
+    if not _userHasDashboard(dashboardLogin):
+        raise HTTPException(status_code=404, detail="Dashboard is not configured")
+
+    user = _requireAuthenticatedUser(request)
+    currentLogin = _normalizeDashboardLogin(user.get("login"))
+    targetLogin = _normalizeDashboardLogin(dashboardLogin)
+    if currentLogin != targetLogin and not _hasRole(user, ADMIN_ROLE):
+        raise HTTPException(status_code=403, detail="Dashboard access denied")
     return user
 
 
@@ -870,17 +918,22 @@ def buildChangePasswordPage() -> str:
 </html>"""
 
 
+def serializeAdminUser(user: dict[str, object]) -> dict[str, object]:
+    loginValue = str(user.get("login") or "")
+    hasDashboard = _userHasDashboard(loginValue)
+    return {
+        "id": user.get("id"),
+        "login": loginValue,
+        "roles": _parseRoles(user.get("roles")),
+        "must_change_password": bool(user.get("must_change_password")),
+        "has_dashboard": hasDashboard,
+        "dashboard_url": _buildDashboardUrl(loginValue) if hasDashboard else "",
+    }
+
+
 def buildAdminUsersPage(users: list[dict[str, object]]) -> str:
     usersJson = json.dumps(
-        [
-            {
-                "id": user.get("id"),
-                "login": user.get("login"),
-                "roles": _parseRoles(user.get("roles")),
-                "must_change_password": bool(user.get("must_change_password")),
-            }
-            for user in users
-        ],
+        [serializeAdminUser(user) for user in users],
         ensure_ascii=False,
     )
     return f"""<!doctype html>
@@ -972,6 +1025,20 @@ def buildAdminUsersPage(users: list[dict[str, object]]) -> str:
     }}
     .edit-button {{ background: #375d77; }}
     .delete-button {{ background: #d54343; }}
+    .dashboard-button {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 32px;
+      margin-left: 10px;
+      padding: 0 10px;
+      border-radius: 8px;
+      background: #52cee6;
+      color: #16324a;
+      text-decoration: none;
+      font-weight: 700;
+      white-space: nowrap;
+    }}
     .save-button {{ background: #ff6c0e; }}
     .reset-button {{ background: #375d77; }}
     .form-grid {{
@@ -1136,7 +1203,7 @@ def buildAdminUsersPage(users: list[dict[str, object]]) -> str:
 
       usersTableBody.innerHTML = users.map((user) => `
         <tr>
-          <td>${{user.login || ""}}</td>
+          <td>${{user.login || ""}}${{user.has_dashboard ? `<a class="dashboard-button" href="${{user.dashboard_url}}" target="_blank" rel="noreferrer">Dashboard</a>` : ""}}</td>
           <td>${{Array.isArray(user.roles) ? user.roles.join(", ") : ""}}</td>
           <td>${{user.must_change_password ? "Да" : "Нет"}}</td>
           <td>
@@ -4997,6 +5064,968 @@ def buildBurndownDateLabels(dateFrom: date, dateTo: date) -> list[str]:
         currentDate += timedelta(days=1)
 
     return labels
+
+
+def addCalendarMonths(baseDate: date, monthsDelta: int) -> date:
+    monthIndex = (baseDate.month - 1) + monthsDelta
+    year = baseDate.year + monthIndex // 12
+    month = monthIndex % 12 + 1
+    if month == 12:
+        monthLastDay = 31
+    else:
+        monthLastDay = (date(year, month + 1, 1) - timedelta(days=1)).day
+    return date(year, month, min(baseDate.day, monthLastDay))
+
+
+def normalizeDashboardDate(rawValue: str | None, fallbackDate: date) -> date:
+    normalized = str(rawValue or "").strip()
+    if not normalized:
+        return fallbackDate
+    try:
+        return date.fromisoformat(normalized)
+    except ValueError:
+        return fallbackDate
+
+
+def serializeDashboardProject(project: dict[str, object]) -> dict[str, object]:
+    return {
+        "redmine_id": int(project.get("redmine_id") or 0),
+        "name": str(project.get("name") or "—"),
+        "identifier": str(project.get("identifier") or ""),
+        "is_enabled": bool(project.get("is_enabled")),
+        "is_disabled": bool(project.get("is_disabled")),
+    }
+
+
+def resolveDashboardDefaultProjectIds(
+    widget: dict[str, object],
+    projects: list[dict[str, object]],
+) -> list[int]:
+    explicitIds = widget.get("project_redmine_ids")
+    if isinstance(explicitIds, list):
+        resolvedExplicitIds = []
+        knownIds = {int(project.get("redmine_id") or 0) for project in projects}
+        for value in explicitIds:
+            try:
+                projectId = int(value)
+            except (TypeError, ValueError):
+                continue
+            if projectId in knownIds:
+                resolvedExplicitIds.append(projectId)
+        if resolvedExplicitIds:
+            return resolvedExplicitIds
+
+    candidates = [
+        project
+        for project in projects
+        if int(project.get("redmine_id") or 0) and bool(project.get("is_enabled"))
+    ] or [project for project in projects if int(project.get("redmine_id") or 0)]
+    if not candidates:
+        return []
+
+    try:
+        offset = int(widget.get("default_project_offset") or 0)
+    except (TypeError, ValueError):
+        offset = 0
+    offset = max(0, offset)
+    selectedProject = candidates[offset] if offset < len(candidates) else candidates[0]
+    return [int(selectedProject.get("redmine_id") or 0)]
+
+
+def buildDashboardProjectStatePayload(
+    projectRedmineIds: list[int],
+    startDateValue: str | None = None,
+    endDateValue: str | None = None,
+    p1Value: str | None = None,
+    p2Value: str | None = None,
+    useRiskPlan: bool | None = None,
+) -> dict[str, object]:
+    storedProjects = listStoredProjects()
+    projectsById = {
+        int(project.get("redmine_id") or 0): project
+        for project in storedProjects
+        if int(project.get("redmine_id") or 0)
+    }
+    selectedIds: list[int] = []
+    for value in projectRedmineIds:
+        try:
+            projectId = int(value)
+        except (TypeError, ValueError):
+            continue
+        if projectId in projectsById and projectId not in selectedIds:
+            selectedIds.append(projectId)
+
+    selectedProjects = [projectsById[projectId] for projectId in selectedIds]
+    planningProjects: list[dict[str, object]] = []
+    for project in selectedProjects:
+        projectIdentifier = str(project.get("identifier") or "").strip()
+        projectPlanningRows = listPlanningProjectsByRedmineIdentifier(projectIdentifier) if projectIdentifier else []
+        for planningProject in projectPlanningRows:
+            planningProjects.append(
+                {
+                    **planningProject,
+                    "redmine_project_id": int(project.get("redmine_id") or 0),
+                    "redmine_project_name": str(project.get("name") or "—"),
+                    "redmine_identifier": projectIdentifier,
+                }
+            )
+
+    planningStartDates: list[date] = []
+    for project in planningProjects:
+        rawStartDate = str(project.get("start_date") or "").strip()
+        if not rawStartDate:
+            continue
+        try:
+            planningStartDates.append(date.fromisoformat(rawStartDate))
+        except ValueError:
+            continue
+
+    todayLocal = datetime.now().date()
+    defaultStartDate = min(planningStartDates) if planningStartDates else addCalendarMonths(todayLocal, -1)
+    defaultEndDate = addCalendarMonths(todayLocal, 1)
+    if defaultStartDate > defaultEndDate:
+        defaultStartDate = defaultEndDate
+
+    chartStartDate = normalizeDashboardDate(startDateValue, defaultStartDate)
+    chartEndDate = normalizeDashboardDate(endDateValue, defaultEndDate)
+    if chartStartDate > chartEndDate:
+        chartStartDate, chartEndDate = chartEndDate, chartStartDate
+
+    planningP1Values = [
+        normalizePlanningPercentValue(project.get("p1"), 150.0)
+        for project in planningProjects
+        if project.get("p1") not in (None, "")
+    ]
+    planningP2Values = [
+        normalizePlanningPercentValue(project.get("p2"), 150.0)
+        for project in planningProjects
+        if project.get("p2") not in (None, "")
+    ]
+    planningP1Unique = sorted({round(value, 6) for value in planningP1Values})
+    planningP2Unique = sorted({round(value, 6) for value in planningP2Values})
+    planningP1Mixed = len(planningP1Unique) > 1
+    planningP2Mixed = len(planningP2Unique) > 1
+    planningP1Percent = planningP1Unique[0] if len(planningP1Unique) == 1 else 150.0
+    planningP2Percent = planningP2Unique[0] if len(planningP2Unique) == 1 else 150.0
+    selectedP1Percent = normalizePlanningPercentValue(p1Value, planningP1Percent) if str(p1Value or "").strip() else planningP1Percent
+    selectedP2Percent = normalizePlanningPercentValue(p2Value, planningP2Percent) if str(p2Value or "").strip() else planningP2Percent
+    planningUseRiskPlan = bool(planningProjects) and all(bool(project.get("use_risk_plan")) for project in planningProjects)
+    planningUseRiskPlanAny = any(bool(project.get("use_risk_plan")) for project in planningProjects)
+    selectedUseRiskPlan = planningUseRiskPlan if useRiskPlan is None else bool(useRiskPlan)
+
+    chartSeeds: list[dict[str, object]] = []
+    for project in selectedProjects:
+        projectId = int(project.get("redmine_id") or 0)
+        if not projectId:
+            continue
+        burndownPayload = getSnapshotRunsWithIssuesForProjectDateRange(
+            projectId,
+            chartStartDate.isoformat(),
+            chartEndDate.isoformat(),
+        )
+        for seed in buildBurndownChartSeeds(list(burndownPayload.get("snapshot_runs") or [])):
+            chartSeeds.append(
+                {
+                    **seed,
+                    "project_redmine_id": projectId,
+                    "project_name": str(project.get("name") or "—"),
+                    "project_identifier": str(project.get("identifier") or ""),
+                }
+            )
+
+    planningProjectRows: list[dict[str, object]] = []
+    for project in planningProjects:
+        planningProjectRows.append(
+            {
+                "id": project.get("id"),
+                "name": f"{project.get('customer') or '—'} - {project.get('project_name') or 'Без названия'}",
+                "redmine_project_name": project.get("redmine_project_name") or "—",
+                "redmine_identifier": project.get("redmine_identifier") or "",
+                "baseline_estimate_hours": float(project.get("baseline_estimate_hours") or 0),
+                "development_hours": float(project.get("development_hours") or 0),
+                "p1_percent": normalizePlanningPercentValue(project.get("p1"), 150.0) if project.get("p1") not in (None, "") else None,
+                "p2_percent": normalizePlanningPercentValue(project.get("p2"), 150.0) if project.get("p2") not in (None, "") else None,
+                "use_risk_plan": bool(project.get("use_risk_plan")),
+            }
+        )
+
+    totalPlanningBaseline = sum(float(project.get("baseline_estimate_hours") or 0) for project in planningProjects)
+    totalPlanningDevelopmentHours = sum(float(project.get("development_hours") or 0) for project in planningProjects)
+    return {
+        "selected_project_ids": selectedIds,
+        "projects": [serializeDashboardProject(project) for project in selectedProjects],
+        "interval": {
+            "start_date": chartStartDate.isoformat(),
+            "end_date": chartEndDate.isoformat(),
+            "default_start_date": defaultStartDate.isoformat(),
+            "default_end_date": defaultEndDate.isoformat(),
+        },
+        "planning": {
+            "p1_percent": selectedP1Percent,
+            "p2_percent": selectedP2Percent,
+            "p1_default_percent": planningP1Percent,
+            "p2_default_percent": planningP2Percent,
+            "p1_mixed": planningP1Mixed,
+            "p2_mixed": planningP2Mixed,
+            "p1_default_used": len(planningP1Unique) != 1,
+            "p2_default_used": len(planningP2Unique) != 1,
+            "use_risk_plan": selectedUseRiskPlan,
+            "use_risk_plan_default": planningUseRiskPlan,
+            "use_risk_plan_default_used": planningUseRiskPlanAny and not planningUseRiskPlan,
+            "development_hours_total": totalPlanningDevelopmentHours,
+        },
+        "planning_projects": planningProjectRows,
+        "planning_totals": {
+            "baseline_estimate_hours": totalPlanningBaseline,
+            "development_hours": totalPlanningDevelopmentHours,
+            "p1_percent": planningP1Percent,
+            "p2_percent": planningP2Percent,
+            "p1_default_used": len(planningP1Unique) != 1,
+            "p2_default_used": len(planningP2Unique) != 1,
+            "use_risk_plan": planningUseRiskPlan,
+            "use_risk_plan_default_used": planningUseRiskPlanAny and not planningUseRiskPlan,
+        },
+        "chart_date_labels": buildBurndownDateLabels(chartStartDate, chartEndDate),
+        "snapshot_seeds": chartSeeds,
+        "snapshot_count": len(chartSeeds),
+    }
+
+
+def buildDashboardPage(login: str) -> str:
+    dashboardConfig = _getDashboardConfig(login)
+    if not dashboardConfig:
+        raise HTTPException(status_code=404, detail="Dashboard is not configured")
+
+    storedProjects = listStoredProjects()
+    projectOptions = [serializeDashboardProject(project) for project in storedProjects]
+    widgets = []
+    for index, widget in enumerate(dashboardConfig.get("widgets") or []):
+        if not isinstance(widget, dict):
+            continue
+        widgets.append(
+            {
+                "id": str(widget.get("id") or f"widget-{index + 1}"),
+                "type": str(widget.get("type") or "project_state"),
+                "title": str(widget.get("title") or "Состояние проекта"),
+                "default_project_ids": resolveDashboardDefaultProjectIds(widget, storedProjects),
+            }
+        )
+
+    dashboardBootstrapJson = json.dumps(
+        {
+            "login": login,
+            "title": str(dashboardConfig.get("title") or "Dashboard"),
+            "projects": projectOptions,
+            "widgets": widgets,
+        },
+        ensure_ascii=False,
+    )
+    html = """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <script src="/static/vendor/chart.umd.min.js"></script>
+  <style>
+__LOCAL_GOLOS_FONT_CSS__
+    :root {
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --panel-soft: #f5fafb;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue: #375d77;
+      --yellow: #ffc600;
+      --cyan: #52cee6;
+      --orange: #ff6c0e;
+      --shadow: 0 14px 32px rgba(22, 50, 74, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      background: linear-gradient(180deg, #ffffff 0%, #f6fafc 100%);
+      color: var(--text);
+    }
+    main {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 24px 20px 48px;
+    }
+    .brand {
+      display: inline-flex;
+      width: 220px;
+      min-height: 70px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .brand img { width: 100%; height: auto; display: block; }
+    h1 {
+      margin: 4px 0 8px;
+      font-size: clamp(1.85rem, 4vw, 2.65rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
+    }
+    .lead {
+      margin: 0 0 20px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+    }
+    .widget {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .widget-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #f8fbfd;
+    }
+    .widget-title {
+      margin: 0;
+      font-size: 1.25rem;
+    }
+    .toggle-panel-button,
+    .show-widget-button,
+    .small-action-button {
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font: inherit;
+      font-weight: 700;
+      color: var(--text);
+      background: #eef2f5;
+      cursor: pointer;
+    }
+    .show-widget-button { background: var(--blue); color: #ffffff; border-color: var(--blue); }
+    .small-action-button { min-height: 34px; padding: 6px 10px; font-size: 0.92rem; }
+    .widget-panel {
+      display: grid;
+      grid-template-columns: minmax(280px, 420px) minmax(420px, 1fr);
+      gap: 16px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #ffffff;
+    }
+    .widget-panel.is-collapsed { display: none; }
+    .project-select-block,
+    .parameters-block {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-weight: 700;
+    }
+    input,
+    select {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px 10px;
+      font: inherit;
+      color: var(--text);
+      background: #ffffff;
+    }
+    select[multiple] {
+      min-height: 180px;
+      width: 100%;
+    }
+    .project-select-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .checkbox-label {
+      flex-direction: row;
+      align-items: center;
+      min-height: 40px;
+    }
+    .checkbox-label.is-default-warning { color: #d9534f; }
+    .parameters-title {
+      margin: 0;
+      font-size: 1rem;
+    }
+    .parameters-table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .parameters-table {
+      width: 100%;
+      min-width: 760px;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    .parameters-table th,
+    .parameters-table td {
+      padding: 8px 9px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    .parameters-table th {
+      background: #eef6f7;
+      color: #426179;
+      text-transform: uppercase;
+      font-size: 0.76rem;
+      line-height: 1.25;
+    }
+    .parameters-table tbody tr:last-child td { border-bottom: 0; }
+    .parameters-total-row td {
+      background: #f8fbfd;
+      font-weight: 700;
+      border-top: 2px solid var(--line);
+    }
+    .widget-body {
+      padding: 16px 18px 18px;
+    }
+    .chart-status {
+      min-height: 24px;
+      color: var(--muted);
+      line-height: 1.45;
+      margin-bottom: 10px;
+    }
+    .chart-wrap {
+      position: relative;
+      min-height: 430px;
+    }
+    .empty-state {
+      display: none;
+      padding: 22px;
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.72);
+      z-index: 5;
+    }
+    .loading-overlay.is-visible { display: flex; }
+    .spinner {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 4px solid rgba(55, 93, 119, 0.18);
+      border-top-color: var(--cyan);
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 1100px) {
+      .widget-panel { grid-template-columns: 1fr; }
+      .field-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+    }
+    @media (max-width: 680px) {
+      main { padding: 18px 12px 36px; }
+      .field-grid { grid-template-columns: 1fr; }
+      .chart-wrap { min-height: 360px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="brand" href="/" aria-label="На главную">
+      <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+    </a>
+    <h1>Dashboard</h1>
+    <p class="lead">Пользователь: <strong id="dashboardLogin"></strong>. На странице можно разместить несколько виджетов и настраивать каждый независимо.</p>
+    <div class="dashboard-grid" id="dashboardGrid"></div>
+  </main>
+  <script>
+    const dashboardBootstrap = __DASHBOARD_BOOTSTRAP__;
+    const dashboardLogin = document.getElementById("dashboardLogin");
+    const dashboardGrid = document.getElementById("dashboardGrid");
+    const widgetStates = new Map();
+    dashboardLogin.textContent = dashboardBootstrap.login || "";
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatHours(value) {
+      const numericValue = Number(value || 0);
+      if (!Number.isFinite(numericValue)) {
+        return "—";
+      }
+      return numericValue.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    }
+
+    function formatOptionalHours(value) {
+      return value === null || value === undefined || value === "" ? "—" : formatHours(value);
+    }
+
+    function formatInputNumber(value) {
+      return Number(value || 0).toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    }
+
+    function formatDateLabel(value) {
+      const parts = String(value || "").split("-");
+      return parts.length === 3 ? `${parts[2]}.${parts[1]}.${parts[0]}` : String(value || "");
+    }
+
+    function parsePercentValue(rawValue, fallbackPercent) {
+      const normalized = String(rawValue ?? "").trim().replace(",", ".");
+      const parsed = Number.parseFloat(normalized);
+      if (!Number.isFinite(parsed)) {
+        return fallbackPercent;
+      }
+      return Math.abs(parsed) <= 10 ? parsed * 100 : parsed;
+    }
+
+    function computeSnapshotMetrics(snapshot, p1Factor, p2Factor, useRiskPlan) {
+      const groups = Array.isArray(snapshot?.groups) ? snapshot.groups : [];
+      let forecast = 0;
+      let currentDevelopment = 0;
+      let currentBugs = 0;
+      let remainingDevelopment = 0;
+      let remainingBugs = 0;
+
+      for (const group of groups) {
+        const baselineTotal = Number(group?.baseline_total || 0);
+        const developmentVolume = Number(useRiskPlan ? (group?.development_volume_risk || 0) : (group?.development_volume || 0));
+        const bugVolume = Number(useRiskPlan ? (group?.bug_volume_risk || 0) : (group?.bug_volume || 0));
+        const developmentRemaining = Number(useRiskPlan ? (group?.development_remaining_risk || 0) : (group?.development_remaining || 0));
+        const bugRemaining = Number(useRiskPlan ? (group?.bug_remaining_risk || 0) : (group?.bug_remaining || 0));
+        const currentTotal = developmentVolume + bugVolume;
+        const forecastFloor = baselineTotal * p1Factor * p2Factor;
+        const groupForecast = group?.is_ready ? currentTotal : Math.max(currentTotal, forecastFloor);
+        forecast += groupForecast;
+        currentDevelopment += developmentVolume;
+        currentBugs += bugVolume;
+        remainingDevelopment += developmentRemaining;
+        remainingBugs += bugRemaining;
+      }
+
+      return {
+        budget: Number(snapshot?.budget_baseline_total || 0) * p1Factor * p2Factor,
+        forecast,
+        currentDevelopment,
+        currentBugs,
+        currentTotal: currentDevelopment + currentBugs,
+        remainingDevelopment,
+        remainingBugs,
+        remainingTotal: remainingDevelopment + remainingBugs,
+      };
+    }
+
+    function buildProjectOptions(defaultProjectIds) {
+      const selectedIds = new Set((defaultProjectIds || []).map((value) => Number(value)));
+      return (dashboardBootstrap.projects || []).map((project) => {
+        const id = Number(project.redmine_id || 0);
+        const labelParts = [`#${id}`, project.name || "—"];
+        if (project.identifier) {
+          labelParts.push(`(${project.identifier})`);
+        }
+        const disabledLabel = project.is_enabled ? "" : " [выкл.]";
+        return `<option value="${id}"${selectedIds.has(id) ? " selected" : ""}>${escapeHtml(labelParts.join(" ") + disabledLabel)}</option>`;
+      }).join("");
+    }
+
+    function buildWidgetHtml(widget) {
+      return `
+        <section class="widget project-state-widget" data-widget-id="${escapeHtml(widget.id)}">
+          <div class="widget-head">
+            <h2 class="widget-title">${escapeHtml(widget.title || "Состояние проекта")}</h2>
+            <button type="button" class="toggle-panel-button">Скрыть панель</button>
+          </div>
+          <div class="widget-panel">
+            <div class="project-select-block">
+              <label>Группа проектов
+                <select class="project-select" multiple>${buildProjectOptions(widget.default_project_ids || [])}</select>
+              </label>
+              <div class="project-select-actions">
+                <button type="button" class="small-action-button select-all-projects-button">Выбрать все</button>
+                <button type="button" class="small-action-button clear-projects-button">Снять выбор</button>
+              </div>
+              <div class="field-grid">
+                <label>Начало интервала
+                  <input class="start-date-input" type="date">
+                </label>
+                <label>Конец интервала
+                  <input class="end-date-input" type="date">
+                </label>
+                <label>P1 = факт / база, %
+                  <input class="p1-input" type="text" inputmode="decimal">
+                </label>
+                <label>P2 = факт с багами / факт, %
+                  <input class="p2-input" type="text" inputmode="decimal">
+                </label>
+                <label class="checkbox-label risk-plan-label">
+                  <input class="risk-plan-checkbox" type="checkbox">
+                  <span>Использовать План с рисками</span>
+                </label>
+                <button type="button" class="show-widget-button">Показать</button>
+              </div>
+            </div>
+            <div class="parameters-block">
+              <h3 class="parameters-title">Параметры проектов</h3>
+              <div class="parameters-table-wrap">
+                <div class="parameters-table-placeholder">Выберите проекты и нажмите «Показать».</div>
+              </div>
+            </div>
+          </div>
+          <div class="widget-body">
+            <div class="chart-status"></div>
+            <div class="chart-wrap">
+              <canvas class="project-state-chart"></canvas>
+              <div class="loading-overlay"><span class="spinner"></span><strong>Загружаем виджет...</strong></div>
+            </div>
+            <div class="empty-state">Для выбранной группы проектов нет срезов в указанном интервале.</div>
+          </div>
+        </section>
+      `;
+    }
+
+    function getWidgetElements(widgetNode) {
+      return {
+        panel: widgetNode.querySelector(".widget-panel"),
+        togglePanelButton: widgetNode.querySelector(".toggle-panel-button"),
+        projectSelect: widgetNode.querySelector(".project-select"),
+        selectAllProjectsButton: widgetNode.querySelector(".select-all-projects-button"),
+        clearProjectsButton: widgetNode.querySelector(".clear-projects-button"),
+        startDateInput: widgetNode.querySelector(".start-date-input"),
+        endDateInput: widgetNode.querySelector(".end-date-input"),
+        p1Input: widgetNode.querySelector(".p1-input"),
+        p2Input: widgetNode.querySelector(".p2-input"),
+        riskPlanCheckbox: widgetNode.querySelector(".risk-plan-checkbox"),
+        riskPlanLabel: widgetNode.querySelector(".risk-plan-label"),
+        showButton: widgetNode.querySelector(".show-widget-button"),
+        parametersWrap: widgetNode.querySelector(".parameters-table-wrap"),
+        status: widgetNode.querySelector(".chart-status"),
+        chartCanvas: widgetNode.querySelector(".project-state-chart"),
+        loadingOverlay: widgetNode.querySelector(".loading-overlay"),
+        emptyState: widgetNode.querySelector(".empty-state"),
+      };
+    }
+
+    function getSelectedProjectIds(elements) {
+      return Array.from(elements.projectSelect?.selectedOptions || [])
+        .map((option) => Number(option.value || 0))
+        .filter((value) => Number.isFinite(value) && value > 0);
+    }
+
+    function renderParametersTable(elements, payload) {
+      const rows = Array.isArray(payload.planning_projects) ? payload.planning_projects : [];
+      if (!rows.length) {
+        elements.parametersWrap.innerHTML = '<div class="parameters-table-placeholder">Для выбранной группы проектов нет записей в Планировании проектов.</div>';
+        return;
+      }
+      const totals = payload.planning_totals || {};
+      const totalRiskText = totals.use_risk_plan
+        ? "Да"
+        : (totals.use_risk_plan_default_used ? "Нет (по умолч.)" : "Нет");
+      elements.parametersWrap.innerHTML = `
+        <table class="parameters-table">
+          <thead>
+            <tr>
+              <th>Имя</th>
+              <th>Базовая оценка</th>
+              <th>Лимит разработки с багами</th>
+              <th>P1 = факт / база, %</th>
+              <th>P2 = факт с багами / факт, %</th>
+              <th>Использовать План с рисками</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr>
+                <td>${escapeHtml(row.name || "—")}</td>
+                <td>${formatHours(row.baseline_estimate_hours)}</td>
+                <td>${formatHours(row.development_hours)}</td>
+                <td>${formatOptionalHours(row.p1_percent)}</td>
+                <td>${formatOptionalHours(row.p2_percent)}</td>
+                <td>${row.use_risk_plan ? "Да" : "Нет"}</td>
+              </tr>
+            `).join("")}
+            <tr class="parameters-total-row">
+              <td>Итого</td>
+              <td>${formatHours(totals.baseline_estimate_hours)}</td>
+              <td>${formatHours(totals.development_hours)}</td>
+              <td>${formatHours(totals.p1_percent)}${totals.p1_default_used ? " (по умолч.)" : ""}</td>
+              <td>${formatHours(totals.p2_percent)}${totals.p2_default_used ? " (по умолч.)" : ""}</td>
+              <td>${totalRiskText}</td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+    }
+
+    function buildAggregatedDatasets(payload, p1Factor, p2Factor, useRiskPlan) {
+      const labels = Array.isArray(payload.chart_date_labels) ? payload.chart_date_labels : [];
+      const seeds = Array.isArray(payload.snapshot_seeds) ? payload.snapshot_seeds : [];
+      const latestSeedByProjectDate = new Map();
+      for (const seed of seeds) {
+        latestSeedByProjectDate.set(`${seed.project_redmine_id || ""}|${seed.date || ""}`, seed);
+      }
+      const metricsByDate = new Map();
+      latestSeedByProjectDate.forEach((seed) => {
+        const dateKey = String(seed.date || "");
+        if (!dateKey) {
+          return;
+        }
+        const metrics = computeSnapshotMetrics(seed, p1Factor, p2Factor, useRiskPlan);
+        const target = metricsByDate.get(dateKey) || {
+          budget: 0,
+          forecast: 0,
+          currentDevelopment: 0,
+          currentBugs: 0,
+          currentTotal: 0,
+          remainingDevelopment: 0,
+          remainingBugs: 0,
+          remainingTotal: 0,
+        };
+        Object.keys(target).forEach((key) => {
+          target[key] += Number(metrics[key] || 0);
+        });
+        metricsByDate.set(dateKey, target);
+      });
+
+      const data = {
+        labels,
+        budgetData: [],
+        forecastData: [],
+        currentTotalData: [],
+        currentDevelopmentData: [],
+        currentBugData: [],
+        remainingTotalData: [],
+        remainingDevelopmentData: [],
+        remainingBugData: [],
+        developmentHoursData: [],
+      };
+      const limitValue = Number(payload.planning?.development_hours_total || 0);
+      for (const label of labels) {
+        const metrics = metricsByDate.get(label);
+        if (!metrics) {
+          data.budgetData.push(null);
+          data.forecastData.push(null);
+          data.currentTotalData.push(null);
+          data.currentDevelopmentData.push(null);
+          data.currentBugData.push(null);
+          data.remainingTotalData.push(null);
+          data.remainingDevelopmentData.push(null);
+          data.remainingBugData.push(null);
+          data.developmentHoursData.push(null);
+          continue;
+        }
+        data.budgetData.push(metrics.budget);
+        data.forecastData.push(metrics.forecast);
+        data.currentTotalData.push(metrics.currentTotal);
+        data.currentDevelopmentData.push(metrics.currentDevelopment);
+        data.currentBugData.push(metrics.currentBugs);
+        data.remainingTotalData.push(metrics.remainingTotal);
+        data.remainingDevelopmentData.push(metrics.remainingDevelopment);
+        data.remainingBugData.push(metrics.remainingBugs);
+        data.developmentHoursData.push(limitValue > 0 ? limitValue : null);
+      }
+      return data;
+    }
+
+    function renderChart(widgetNode, elements, payload) {
+      const state = widgetStates.get(widgetNode.dataset.widgetId) || {};
+      if (typeof Chart === "undefined") {
+        elements.status.textContent = "Не удалось загрузить библиотеку диаграмм.";
+        return;
+      }
+      const seeds = Array.isArray(payload.snapshot_seeds) ? payload.snapshot_seeds : [];
+      elements.emptyState.style.display = seeds.length ? "none" : "block";
+      elements.chartCanvas.style.display = seeds.length ? "block" : "none";
+      if (!seeds.length) {
+        elements.status.textContent = "Для выбранной группы проектов нет срезов в указанном интервале.";
+        if (state.chart) {
+          state.chart.destroy();
+          state.chart = null;
+          widgetStates.set(widgetNode.dataset.widgetId, state);
+        }
+        return;
+      }
+
+      const p1Percent = parsePercentValue(elements.p1Input.value, payload.planning?.p1_percent || 150);
+      const p2Percent = parsePercentValue(elements.p2Input.value, payload.planning?.p2_percent || 150);
+      const useRiskPlan = Boolean(elements.riskPlanCheckbox.checked);
+      const datasets = buildAggregatedDatasets(payload, p1Percent / 100, p2Percent / 100, useRiskPlan);
+      const allValues = [
+        ...datasets.budgetData,
+        ...datasets.forecastData,
+        ...datasets.currentTotalData,
+        ...datasets.remainingTotalData,
+        ...datasets.currentDevelopmentData,
+        ...datasets.currentBugData,
+        ...datasets.remainingDevelopmentData,
+        ...datasets.remainingBugData,
+        ...datasets.developmentHoursData,
+      ].filter((value) => value !== null && value !== undefined);
+      const maxValue = allValues.length ? Math.max(...allValues.map((value) => Number(value || 0))) : 0;
+      const chartMax = maxValue > 0 ? maxValue * 1.08 : 10;
+      const chartDatasets = [
+        { type: "bar", label: "Объем разработки", data: datasets.currentDevelopmentData, stack: "current", backgroundColor: "rgba(82, 206, 230, 0.38)", borderColor: "rgba(82, 206, 230, 0.9)", borderWidth: 1, yAxisID: "yBars", order: 3 },
+        { type: "bar", label: "Объем ошибок", data: datasets.currentBugData, stack: "current", backgroundColor: "rgba(255, 108, 14, 0.30)", borderColor: "rgba(255, 108, 14, 0.85)", borderWidth: 1, yAxisID: "yBars", order: 3 },
+        { type: "bar", label: "Остаток разработки", data: datasets.remainingDevelopmentData, stack: "remaining", backgroundColor: "#52cee6", borderColor: "#52cee6", borderWidth: 1, yAxisID: "yBars", order: 3 },
+        { type: "bar", label: "Остаток ошибок", data: datasets.remainingBugData, stack: "remaining", backgroundColor: "#ffc600", borderColor: "#ffc600", borderWidth: 1, yAxisID: "yBars", order: 3 },
+        { type: "line", label: "Бюджет", data: datasets.budgetData, borderColor: "#ff6c0e", backgroundColor: "#ff6c0e", borderWidth: 3, pointRadius: 0, pointHoverRadius: 4, spanGaps: true, tension: 0.2, yAxisID: "yLines", order: 1 },
+        { type: "line", label: "Объем.Прогноз", data: datasets.forecastData, borderColor: "#375d77", backgroundColor: "#375d77", borderWidth: 3, pointRadius: 0, pointHoverRadius: 4, spanGaps: true, tension: 0.2, yAxisID: "yLines", order: 1 },
+        { type: "line", label: "Объем.Текущий", data: datasets.currentTotalData, borderColor: "#0f9bb8", backgroundColor: "#0f9bb8", borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, spanGaps: true, tension: 0.15, yAxisID: "yLines", order: 1 },
+        { type: "line", label: "Объем.Остаток", data: datasets.remainingTotalData, borderColor: "#7b8c9d", backgroundColor: "#7b8c9d", borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, spanGaps: true, tension: 0.15, yAxisID: "yLines", order: 1 },
+      ];
+      if (Number(payload.planning?.development_hours_total || 0) > 0) {
+        chartDatasets.push({ type: "line", label: "Лимит разработки с багами", data: datasets.developmentHoursData, borderColor: "#d9534f", backgroundColor: "#d9534f", borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, spanGaps: true, tension: 0, yAxisID: "yLines", order: 1 });
+      }
+      const selectedProjectNames = (payload.projects || []).map((project) => project.name).filter(Boolean).join(", ");
+      const planModeText = useRiskPlan ? "Используется План с рисками, если он задан." : "Используется обычный План.";
+      elements.status.textContent = `Проекты: ${selectedProjectNames || "не выбраны"}. P1 = ${formatHours(p1Percent)}%, P2 = ${formatHours(p2Percent)}%. Срезов в расчете: ${seeds.length}. ${planModeText}`;
+      const chartConfig = {
+        data: { labels: datasets.labels, datasets: chartDatasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { position: "bottom", labels: { usePointStyle: true, boxWidth: 12 } },
+            tooltip: {
+              callbacks: {
+                title(items) { return items.length ? formatDateLabel(items[0].label) : ""; },
+                label(context) { return `${context.dataset.label}: ${formatHours(context.parsed.y)}`; },
+              },
+            },
+          },
+          scales: {
+            x: {
+              stacked: true,
+              ticks: {
+                autoSkip: false,
+                maxRotation: 0,
+                minRotation: 0,
+                callback(value) {
+                  const label = this.getLabelForValue(value);
+                  return String(label || "").endsWith("-01") ? formatDateLabel(label).slice(0, 5) : "";
+                },
+              },
+              grid: { display: false },
+            },
+            yBars: { stacked: true, beginAtZero: true, max: chartMax, ticks: { callback(value) { return formatHours(value); } } },
+            yLines: { position: "left", beginAtZero: true, stacked: false, max: chartMax, display: false, grid: { display: false } },
+          },
+        },
+      };
+      if (state.chart) {
+        state.chart.data = chartConfig.data;
+        state.chart.options = chartConfig.options;
+        state.chart.update();
+      } else {
+        state.chart = new Chart(elements.chartCanvas, chartConfig);
+      }
+      widgetStates.set(widgetNode.dataset.widgetId, state);
+    }
+
+    async function loadWidget(widgetNode, resetFromPlanning = false) {
+      const elements = getWidgetElements(widgetNode);
+      const projectIds = getSelectedProjectIds(elements);
+      elements.loadingOverlay.classList.add("is-visible");
+      elements.status.textContent = "Загружаем состояние проекта...";
+      elements.showButton.disabled = true;
+      try {
+        const params = new URLSearchParams();
+        projectIds.forEach((projectId) => params.append("project_redmine_ids", String(projectId)));
+        if (!resetFromPlanning) {
+          if (elements.startDateInput.value) params.set("start_date", elements.startDateInput.value);
+          if (elements.endDateInput.value) params.set("end_date", elements.endDateInput.value);
+          if (elements.p1Input.value) params.set("p1", elements.p1Input.value);
+          if (elements.p2Input.value) params.set("p2", elements.p2Input.value);
+          params.set("use_risk_plan_present", "1");
+          if (elements.riskPlanCheckbox.checked) params.set("use_risk_plan", "1");
+        }
+        const response = await fetch(`/api/dashboards/${encodeURIComponent(dashboardBootstrap.login)}/project-state?${params.toString()}`);
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Не удалось загрузить виджет.");
+        }
+        elements.startDateInput.value = payload.interval?.start_date || "";
+        elements.endDateInput.value = payload.interval?.end_date || "";
+        if (resetFromPlanning) {
+          elements.p1Input.value = formatInputNumber(payload.planning?.p1_percent || 150);
+          elements.p2Input.value = formatInputNumber(payload.planning?.p2_percent || 150);
+          elements.riskPlanCheckbox.checked = Boolean(payload.planning?.use_risk_plan);
+          elements.riskPlanLabel.classList.toggle("is-default-warning", Boolean(payload.planning?.use_risk_plan_default_used));
+        } else {
+          elements.riskPlanLabel.classList.remove("is-default-warning");
+        }
+        renderParametersTable(elements, payload);
+        renderChart(widgetNode, elements, payload);
+      } catch (error) {
+        elements.status.textContent = String(error.message || error);
+      } finally {
+        elements.loadingOverlay.classList.remove("is-visible");
+        elements.showButton.disabled = false;
+      }
+    }
+
+    function initializeWidget(widgetNode) {
+      const elements = getWidgetElements(widgetNode);
+      elements.togglePanelButton.addEventListener("click", () => {
+        const collapsed = elements.panel.classList.toggle("is-collapsed");
+        elements.togglePanelButton.textContent = collapsed ? "Показать панель" : "Скрыть панель";
+      });
+      elements.selectAllProjectsButton.addEventListener("click", () => {
+        Array.from(elements.projectSelect.options).forEach((option) => { option.selected = true; });
+        loadWidget(widgetNode, true);
+      });
+      elements.clearProjectsButton.addEventListener("click", () => {
+        Array.from(elements.projectSelect.options).forEach((option) => { option.selected = false; });
+        loadWidget(widgetNode, true);
+      });
+      elements.projectSelect.addEventListener("change", () => loadWidget(widgetNode, true));
+      elements.showButton.addEventListener("click", () => loadWidget(widgetNode, false));
+      loadWidget(widgetNode, true);
+    }
+
+    dashboardGrid.innerHTML = (dashboardBootstrap.widgets || []).map(buildWidgetHtml).join("");
+    document.querySelectorAll(".project-state-widget").forEach(initializeWidget);
+  </script>
+</body>
+</html>"""
+    return (
+        html
+        .replace("__LOCAL_GOLOS_FONT_CSS__", LOCAL_GOLOS_FONT_CSS)
+        .replace("__DASHBOARD_BOOTSTRAP__", dashboardBootstrapJson)
+    )
 
 
 def buildBurndownPage(
@@ -14296,10 +15325,7 @@ def getAdminUsersApi(request: Request) -> dict[str, object]:
     _requireAdminUser(request)
     _ensureAuthStorage()
     return {
-        "users": [
-            {**user, "roles": _parseRoles(user.get("roles"))}
-            for user in listUsers()
-        ]
+        "users": [serializeAdminUser(user) for user in listUsers()]
     }
 
 
@@ -14368,6 +15394,47 @@ def deleteAdminUserApi(request: Request, user_id: int) -> dict[str, object]:
     if not deleted:
         raise HTTPException(status_code=404, detail="Пользователь не найден.")
     return {"deleted": True}
+
+
+@app.get("/dashboards/{dashboard_login}", response_class=HTMLResponse)
+def getDashboardPage(request: Request, dashboard_login: str) -> HTMLResponse:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    _requireDashboardAccess(request, dashboard_login)
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+    ensurePlanningProjectsTable()
+    return _renderHtmlPage(buildDashboardPage(dashboard_login))
+
+
+@app.get("/api/dashboards/{dashboard_login}/project-state")
+def getDashboardProjectStateApi(
+    request: Request,
+    dashboard_login: str,
+    project_redmine_ids: list[int] = Query([]),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    p1: str | None = Query(None),
+    p2: str | None = Query(None),
+    use_risk_plan: int | None = Query(None),
+    use_risk_plan_present: int | None = Query(None),
+) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    _requireDashboardAccess(request, dashboard_login)
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+    ensurePlanningProjectsTable()
+    return buildDashboardProjectStatePayload(
+        project_redmine_ids,
+        start_date,
+        end_date,
+        p1,
+        p2,
+        None if use_risk_plan_present is None and use_risk_plan is None else bool(use_risk_plan),
+    )
 
 
 @app.get("/planning-projects", response_class=HTMLResponse)

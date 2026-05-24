@@ -1131,6 +1131,107 @@ def testSnapshotIssuesPageUsesCleanRussianText(monkeypatch) -> None:
     assert "Billing" in response.text
 
 
+def testAdminUsersPageShowsDashboardButtonForConfiguredUser(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(
+        app_module,
+        "listUsers",
+        lambda: [
+            {
+                "id": 1,
+                "login": "andrey.shopin@sms-a.ru",
+                "roles": "Admin,User",
+                "must_change_password": False,
+            },
+            {
+                "id": 2,
+                "login": "no-dashboard@example.com",
+                "roles": "User",
+                "must_change_password": False,
+            },
+        ],
+    )
+
+    response = client.get("/admin/users")
+
+    assert response.status_code == 200
+    assert "Dashboard" in response.text
+    assert "/dashboards/andrey.shopin%40sms-a.ru" in response.text
+    assert "/dashboards/no-dashboard%40example.com" not in response.text
+
+
+def testDashboardProjectStateApiReturnsBurndownWidgetPayload(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module, "ensureProjectsTable", lambda: None)
+    monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
+    monkeypatch.setattr(app_module, "ensurePlanningProjectsTable", lambda: None)
+    monkeypatch.setattr(
+        app_module,
+        "listStoredProjects",
+        lambda: [
+            {
+                "redmine_id": 10,
+                "name": "Billing",
+                "identifier": "billing",
+                "is_enabled": True,
+                "is_disabled": False,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        app_module,
+        "listPlanningProjectsByRedmineIdentifier",
+        lambda identifier: [
+            {
+                "id": 7,
+                "customer": "ACME",
+                "project_name": "Billing roadmap",
+                "redmine_identifier": identifier,
+                "start_date": "2026-04-01",
+                "development_hours": 120.0,
+                "baseline_estimate_hours": 80.0,
+                "p1": 1.2,
+                "p2": 1.3,
+                "use_risk_plan": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        app_module,
+        "getSnapshotRunsWithIssuesForProjectDateRange",
+        lambda *args, **kwargs: {
+            "project": {
+                "project_redmine_id": 10,
+                "project_name": "Billing",
+                "project_identifier": "billing",
+            },
+            "snapshot_runs": [
+                {
+                    "id": 1,
+                    "project_redmine_id": 10,
+                    "project_name": "Billing",
+                    "project_identifier": "billing",
+                    "captured_for_date": "2026-04-18",
+                    "issues": [],
+                }
+            ],
+        },
+    )
+
+    response = client.get(
+        "/api/dashboards/andrey.shopin%40sms-a.ru/project-state?project_redmine_ids=10"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["selected_project_ids"] == [10]
+    assert payload["planning"]["p1_percent"] == 120.0
+    assert payload["planning"]["p2_percent"] == 130.0
+    assert payload["planning"]["use_risk_plan"] is True
+    assert payload["snapshot_count"] == 1
+    assert payload["planning_projects"][0]["name"] == "ACME - Billing roadmap"
+
+
 def testRefreshProjectsEndpointStoresOnlyMissingRows(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
     monkeypatch.setattr(app_module.config, "redmineUrl", "https://redmine.example.com")
