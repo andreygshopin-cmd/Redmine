@@ -5803,12 +5803,13 @@ __LOCAL_GOLOS_FONT_CSS__
     }
     .widget-card-title {
       margin: 0;
-      padding: 9px 11px;
+      padding: 9px 14px;
       background: #f8fbfd;
       border-bottom: 1px solid var(--line);
       color: var(--text);
       font-size: 0.95rem;
       font-weight: 700;
+      overflow: visible;
     }
     .dashboard-metrics-table,
     .weekly-load-table {
@@ -5905,10 +5906,14 @@ __LOCAL_GOLOS_FONT_CSS__
       color: #d9534f;
     }
     .summary-legend {
-      margin: 8px 10px 10px;
+      margin: 0;
       color: var(--muted);
-      font-size: 0.82rem;
+      font-size: 0.72rem;
       line-height: 1.4;
+    }
+    .weekly-block .summary-legend {
+      grid-column: 1 / -1;
+      width: 100%;
     }
     .chart-status {
       min-height: 24px;
@@ -6225,7 +6230,6 @@ __LOCAL_GOLOS_FONT_CSS__
             <div class="chart-status"></div>
             <div class="widget-indicators">
               <div class="widget-card dashboard-metrics-card">
-                <h3 class="widget-card-title">Основные показатели проекта</h3>
                 <table class="dashboard-metrics-table">
                   <thead>
                     <tr>
@@ -6242,7 +6246,7 @@ __LOCAL_GOLOS_FONT_CSS__
                 </table>
               </div>
               <div class="widget-card weekly-load-card">
-                <h3 class="widget-card-title">Кол-во программ.</h3>
+                <h3 class="widget-card-title">Количество программистов</h3>
                 <div class="weekly-block">
                   <div>
                     <div class="weekly-table-wrap">
@@ -6253,15 +6257,15 @@ __LOCAL_GOLOS_FONT_CSS__
                         </tbody>
                       </table>
                     </div>
-                    <p class="summary-legend">Кол-во программ. = сумма часов списаний по задачам проекта за неделю / 40.</p>
                   </div>
                   <div class="dashboard-deadline-panel">
-                    <label class="dashboard-developer-label">Количество разработчиков
+                    <label class="dashboard-developer-label">Кол-во разработчиков
                       <input class="developer-count-input" type="text" inputmode="decimal">
                     </label>
                     <button type="button" class="calculate-deadline-button">Рассчитать срок</button>
                     <div class="deadline-result">Дата завершения: —</div>
                   </div>
+                  <p class="summary-legend">Количество программистов = сумма часов списаний по задачам проекта за неделю / 40.</p>
                 </div>
               </div>
             </div>
@@ -6554,7 +6558,7 @@ __LOCAL_GOLOS_FONT_CSS__
       }
       const developerCount = parseDashboardNumber(elements.developerCountInput?.value || "");
       if (developerCount <= 0) {
-        elements.deadlineResult.textContent = "Дата завершения: укажите количество разработчиков больше 0";
+        elements.deadlineResult.textContent = "Дата завершения: укажите кол-во разработчиков больше 0";
         elements.deadlineResult.classList.remove("is-out-of-year");
         return;
       }
@@ -6706,7 +6710,7 @@ __LOCAL_GOLOS_FONT_CSS__
           maintainAspectRatio: false,
           interaction: { mode: "index", intersect: false },
           plugins: {
-            legend: { position: "bottom", labels: { usePointStyle: true, boxWidth: 12 } },
+            legend: { position: "bottom", labels: { usePointStyle: true, boxWidth: 9, padding: 8, font: { size: 10 } } },
             tooltip: {
               callbacks: {
                 title(items) { return items.length ? formatDateLabel(items[0].label) : ""; },
@@ -6860,7 +6864,7 @@ __LOCAL_GOLOS_FONT_CSS__
           renderMainMetricsTable(elements, calculateMainMetrics(payload, p1Percent / 100, p2Percent / 100, useRiskPlan));
           renderWeeklyDeveloperLoad(elements, payload.weekly_developer_load, !elements.developerCountInput?.value);
           calculateWidgetDeadline(elements);
-          elements.status.textContent = "Параметры проектов загружены. Для построения диаграммы нажмите «Показать».";
+          elements.status.textContent = "";
         }
         if (shouldSaveSettings) {
           await saveDashboardSettings();
