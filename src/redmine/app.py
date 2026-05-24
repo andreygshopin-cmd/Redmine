@@ -3494,6 +3494,70 @@ def buildSnapshotWeeklyDeveloperLoad(
     return rows
 
 
+def buildDashboardWeeklyDeveloperLoad(
+    projectRedmineIds: list[int],
+    capturedForDate: str | None,
+    weeks: int = 5,
+) -> list[dict[str, object]]:
+    normalizedDate = str(capturedForDate or "").strip()
+    if not normalizedDate:
+        return []
+
+    try:
+        snapshotDate = date.fromisoformat(normalizedDate)
+    except ValueError:
+        return []
+
+    safeWeeks = max(1, int(weeks or 1))
+    currentWeekStart = snapshotDate - timedelta(days=snapshotDate.weekday())
+    weekStarts = [
+        currentWeekStart - timedelta(days=7 * offset)
+        for offset in range(safeWeeks - 1, -1, -1)
+    ]
+    hoursByWeekStart = {weekStart.isoformat(): 0.0 for weekStart in weekStarts}
+    projectIds = sorted({int(projectId) for projectId in projectRedmineIds if int(projectId or 0) > 0})
+
+    for projectId in projectIds:
+        try:
+            timeEntryPayload = getSnapshotTimeEntriesForProjectByDateRange(
+                projectId,
+                normalizedDate,
+                weekStarts[0].isoformat(),
+                snapshotDate.isoformat(),
+            )
+        except Exception:
+            timeEntryPayload = {"time_entries": []}
+
+        for entry in timeEntryPayload.get("time_entries") or []:
+            try:
+                spentOn = date.fromisoformat(str(entry.get("spent_on") or ""))
+            except ValueError:
+                continue
+            weekStart = spentOn - timedelta(days=spentOn.weekday())
+            weekKey = weekStart.isoformat()
+            if weekKey not in hoursByWeekStart:
+                continue
+            try:
+                hoursByWeekStart[weekKey] += float(entry.get("hours") or 0)
+            except (TypeError, ValueError):
+                continue
+
+    rows: list[dict[str, object]] = []
+    for weekStart in weekStarts:
+        weekEnd = min(weekStart + timedelta(days=6), snapshotDate)
+        hours = hoursByWeekStart.get(weekStart.isoformat(), 0.0)
+        rows.append(
+            {
+                "week_start": weekStart.isoformat(),
+                "week_end": weekEnd.isoformat(),
+                "label": f"{weekStart.strftime('%d.%m')}-{weekEnd.strftime('%d.%m')}",
+                "hours": hours,
+                "developers": hours / 40.0,
+            }
+        )
+    return rows
+
+
 def normalizePlanningPercentValue(value: object, defaultPercent: float = 150.0) -> float:
     if value in (None, ""):
         return defaultPercent
@@ -4550,6 +4614,40 @@ def calculateBurndownBudgetBaselineTotal(issues: list[dict[str, object]]) -> flo
     return budgetBaselineTotal
 
 
+def buildBurndownSnapshotSummary(issues: list[dict[str, object]]) -> dict[str, float]:
+    developmentSpentHours = 0.0
+    developmentSpentHoursYear = 0.0
+    developmentProcessSpentHours = 0.0
+    developmentProcessSpentHoursYear = 0.0
+    bugSpentHours = 0.0
+    bugSpentHoursYear = 0.0
+
+    for issue in issues:
+        trackerName = normalizeBurndownText(issue.get("tracker_name"))
+        try:
+            spentHours = float(issue.get("spent_hours") or 0)
+            spentHoursYear = float(issue.get("spent_hours_year") or 0)
+        except (TypeError, ValueError):
+            continue
+
+        if trackerName == "разработка":
+            developmentSpentHours += spentHours
+            developmentSpentHoursYear += spentHoursYear
+        elif trackerName == "процессы разработки":
+            developmentProcessSpentHours += spentHours
+            developmentProcessSpentHoursYear += spentHoursYear
+        elif trackerName == "ошибка":
+            bugSpentHours += spentHours
+            bugSpentHoursYear += spentHoursYear
+
+    developmentCombinedSpentHours = developmentSpentHours + developmentProcessSpentHours
+    developmentCombinedSpentHoursYear = developmentSpentHoursYear + developmentProcessSpentHoursYear
+    return {
+        "development_grand_spent_hours": developmentCombinedSpentHours + bugSpentHours,
+        "development_grand_spent_hours_year": developmentCombinedSpentHoursYear + bugSpentHoursYear,
+    }
+
+
 def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str, object]]:
     issuesById: dict[int, dict[str, object]] = {}
     for issue in issues:
@@ -4687,6 +4785,7 @@ def buildBurndownChartSeeds(snapshotRuns: list[dict[str, object]]) -> list[dict[
                 "date": str(snapshotRun.get("captured_for_date") or ""),
                 "budget_baseline_total": calculateBurndownBudgetBaselineTotal(snapshotIssues),
                 "groups": buildBurndownFeatureGroups(snapshotIssues),
+                "summary": buildBurndownSnapshotSummary(snapshotIssues),
             }
         )
 
@@ -5307,6 +5406,10 @@ def buildDashboardProjectStatePayload(
                 }
             )
 
+    snapshotDates = [str(seed.get("date") or "") for seed in chartSeeds if str(seed.get("date") or "")]
+    latestSnapshotDate = max(snapshotDates) if snapshotDates else ""
+    weeklyDeveloperLoad = buildDashboardWeeklyDeveloperLoad(selectedIds, latestSnapshotDate or chartEndDate.isoformat())
+
     planningProjectRows: list[dict[str, object]] = []
     for project in planningProjects:
         planningProjectRows.append(
@@ -5362,6 +5465,8 @@ def buildDashboardProjectStatePayload(
         "chart_date_labels": buildBurndownDateLabels(chartStartDate, chartEndDate),
         "snapshot_seeds": chartSeeds,
         "snapshot_count": len(chartSeeds),
+        "latest_snapshot_date": latestSnapshotDate,
+        "weekly_developer_load": weeklyDeveloperLoad,
     }
 
 
@@ -5393,7 +5498,7 @@ def buildDashboardPage(login: str) -> str:
             {
                 "id": widgetId,
                 "type": str(widget.get("type") or "project_state"),
-                "title": str(widget.get("title") or "Состояние проекта"),
+                "title": str(widgetSettings.get("title") or widget.get("title") or "Состояние проекта"),
                 "default_project_ids": defaultProjectIds,
                 "settings": widgetSettings,
             }
@@ -5507,6 +5612,13 @@ __LOCAL_GOLOS_FONT_CSS__
     .widget-title {
       margin: 0;
       font-size: 1.25rem;
+    }
+    .widget-name-label {
+      grid-column: 1 / -1;
+      margin-bottom: 2px;
+    }
+    .widget-title-input {
+      max-width: 520px;
     }
     .toggle-panel-button,
     .show-widget-button,
@@ -5672,6 +5784,105 @@ __LOCAL_GOLOS_FONT_CSS__
     .widget-body {
       padding: 16px 18px 18px;
     }
+    .widget-indicators {
+      display: grid;
+      grid-template-columns: minmax(240px, 0.85fr) minmax(260px, 1.15fr);
+      gap: 12px;
+      margin-bottom: 12px;
+      align-items: start;
+    }
+    .widget-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #ffffff;
+      overflow: hidden;
+    }
+    .widget-card-title {
+      margin: 0;
+      padding: 9px 11px;
+      background: #f8fbfd;
+      border-bottom: 1px solid var(--line);
+      color: var(--text);
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+    .dashboard-metrics-table,
+    .weekly-load-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    .dashboard-metrics-table th,
+    .dashboard-metrics-table td,
+    .weekly-load-table th,
+    .weekly-load-table td {
+      padding: 8px 9px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    .dashboard-metrics-table th:first-child,
+    .weekly-load-table th:first-child {
+      text-align: left;
+      color: var(--text);
+      font-weight: 700;
+    }
+    .dashboard-metrics-table thead th,
+    .weekly-load-table th {
+      background: #eef6f7;
+      color: #426179;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      line-height: 1.2;
+    }
+    .dashboard-metrics-table tbody tr:last-child td,
+    .dashboard-metrics-table tbody tr:last-child th,
+    .weekly-load-table tr:last-child td,
+    .weekly-load-table tr:last-child th {
+      border-bottom: 0;
+    }
+    .weekly-block {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(220px, 0.52fr);
+      gap: 10px;
+      padding: 10px;
+    }
+    .weekly-table-wrap {
+      overflow-x: auto;
+    }
+    .dashboard-deadline-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+    }
+    .dashboard-deadline-panel label {
+      white-space: normal;
+    }
+    .calculate-deadline-button {
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font: inherit;
+      font-weight: 700;
+      color: var(--text);
+      background: #eef2f5;
+      cursor: pointer;
+    }
+    .deadline-result {
+      min-height: 20px;
+      color: var(--blue);
+      font-weight: 700;
+      line-height: 1.35;
+    }
+    .summary-legend {
+      margin: 8px 10px 10px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
     .chart-status {
       min-height: 24px;
       color: var(--muted);
@@ -5719,10 +5930,12 @@ __LOCAL_GOLOS_FONT_CSS__
       .widget.is-panel-open .widget-body { border-right: 0; }
       .widget-panel { grid-template-columns: 1fr; }
       .field-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+      .widget-indicators { grid-template-columns: 1fr; }
     }
     @media (max-width: 680px) {
       main { padding: 18px 12px 36px; }
       .field-grid { grid-template-columns: 1fr; }
+      .weekly-block { grid-template-columns: 1fr; }
       .chart-wrap { min-height: 360px; }
     }
   </style>
@@ -5780,6 +5993,54 @@ __LOCAL_GOLOS_FONT_CSS__
         return fallbackPercent;
       }
       return Math.abs(parsed) <= 10 ? parsed * 100 : parsed;
+    }
+
+    function parseDashboardNumber(rawValue) {
+      const normalized = String(rawValue ?? "").trim().replace(/\s/g, "").replace(",", ".");
+      const parsed = Number.parseFloat(normalized);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function formatDeveloperCount(value) {
+      const numericValue = Number(value || 0);
+      if (!Number.isFinite(numericValue)) {
+        return "";
+      }
+      return numericValue.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+    }
+
+    function parseLocalDate(value) {
+      const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!match) {
+        return null;
+      }
+      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    }
+
+    function formatDisplayDate(dateValue) {
+      if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) {
+        return "—";
+      }
+      const day = String(dateValue.getDate()).padStart(2, "0");
+      const month = String(dateValue.getMonth() + 1).padStart(2, "0");
+      return `${day}.${month}.${dateValue.getFullYear()}`;
+    }
+
+    function addWorkingDays(startDateValue, workingDays) {
+      const startDate = parseLocalDate(startDateValue);
+      if (!startDate) {
+        return null;
+      }
+      let remainingDays = Math.max(0, Math.ceil(Number(workingDays) || 0));
+      const resultDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+      while (remainingDays > 0) {
+        resultDate.setDate(resultDate.getDate() + 1);
+        const day = resultDate.getDay();
+        if (day !== 0 && day !== 6) {
+          remainingDays -= 1;
+        }
+      }
+      return resultDate;
     }
 
     function computeSnapshotMetrics(snapshot, p1Factor, p2Factor, useRiskPlan) {
@@ -5884,14 +6145,18 @@ __LOCAL_GOLOS_FONT_CSS__
     }
 
     function buildWidgetHtml(widget) {
+      const widgetTitle = String(widget?.settings?.title || widget?.title || "Состояние проекта");
       return `
         <section class="widget project-state-widget" data-widget-id="${escapeHtml(widget.id)}">
           <div class="widget-head">
-            <h2 class="widget-title">${escapeHtml(widget.title || "Состояние проекта")}</h2>
+            <h2 class="widget-title">${escapeHtml(widgetTitle)}</h2>
             <button type="button" class="toggle-panel-button">Показать панель</button>
           </div>
           <div class="widget-panel is-collapsed">
             <div class="project-select-block">
+              <label class="widget-name-label">Наименование виджета
+                <input class="widget-title-input" type="text" value="${escapeHtml(widgetTitle)}">
+              </label>
               <h3 class="parameters-title">Группа проектов</h3>
               ${buildProjectSelectionTable()}
               <div class="project-select-actions">
@@ -5931,6 +6196,48 @@ __LOCAL_GOLOS_FONT_CSS__
           </div>
           <div class="widget-body">
             <div class="chart-status"></div>
+            <div class="widget-indicators">
+              <div class="widget-card dashboard-metrics-card">
+                <h3 class="widget-card-title">Основные показатели проекта</h3>
+                <table class="dashboard-metrics-table">
+                  <thead>
+                    <tr>
+                      <th></th>
+                      <th>Факт (год)</th>
+                      <th>Прогноз на год</th>
+                      <th>Остаток</th>
+                      <th>Факт (всего)</th>
+                    </tr>
+                  </thead>
+                  <tbody class="dashboard-metrics-body">
+                    <tr><th>Итого по разработке</th><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="widget-card weekly-load-card">
+                <h3 class="widget-card-title">Количество программистов</h3>
+                <div class="weekly-block">
+                  <div>
+                    <div class="weekly-table-wrap">
+                      <table class="weekly-load-table">
+                        <tbody>
+                          <tr class="weekly-load-weeks-row"><th>Неделя</th><td>—</td></tr>
+                          <tr class="weekly-load-developers-row"><th>Количество программистов</th><td>—</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <p class="summary-legend">Количество программистов = сумма часов списаний по задачам проекта за неделю / 40.</p>
+                  </div>
+                  <div class="dashboard-deadline-panel">
+                    <label>Количество разработчиков
+                      <input class="developer-count-input" type="text" inputmode="decimal">
+                    </label>
+                    <button type="button" class="calculate-deadline-button">Рассчитать срок</button>
+                    <div class="deadline-result">Дата завершения: —</div>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div class="chart-wrap">
               <canvas class="project-state-chart"></canvas>
               <div class="loading-overlay"><span class="spinner"></span><strong>Загружаем виджет...</strong></div>
@@ -5945,6 +6252,8 @@ __LOCAL_GOLOS_FONT_CSS__
       return {
         panel: widgetNode.querySelector(".widget-panel"),
         togglePanelButton: widgetNode.querySelector(".toggle-panel-button"),
+        widgetTitle: widgetNode.querySelector(".widget-title"),
+        titleInput: widgetNode.querySelector(".widget-title-input"),
         projectTableBody: widgetNode.querySelector(".project-selection-table-body"),
         projectFilterInputs: Array.from(widgetNode.querySelectorAll(".project-filter-input")),
         selectVisibleProjectsButton: widgetNode.querySelector(".select-visible-projects-button"),
@@ -5960,6 +6269,12 @@ __LOCAL_GOLOS_FONT_CSS__
         showButton: widgetNode.querySelector(".show-widget-button"),
         parametersWrap: widgetNode.querySelector(".parameters-table-wrap"),
         status: widgetNode.querySelector(".chart-status"),
+        mainMetricsBody: widgetNode.querySelector(".dashboard-metrics-body"),
+        weeklyLoadWeeksRow: widgetNode.querySelector(".weekly-load-weeks-row"),
+        weeklyLoadDevelopersRow: widgetNode.querySelector(".weekly-load-developers-row"),
+        developerCountInput: widgetNode.querySelector(".developer-count-input"),
+        calculateDeadlineButton: widgetNode.querySelector(".calculate-deadline-button"),
+        deadlineResult: widgetNode.querySelector(".deadline-result"),
         chartCanvas: widgetNode.querySelector(".project-state-chart"),
         loadingOverlay: widgetNode.querySelector(".loading-overlay"),
         emptyState: widgetNode.querySelector(".empty-state"),
@@ -6120,6 +6435,105 @@ __LOCAL_GOLOS_FONT_CSS__
       `;
     }
 
+    function setWidgetTitle(widgetNode, titleValue) {
+      const elements = getWidgetElements(widgetNode);
+      const normalizedTitle = String(titleValue || "").trim() || "Состояние проекта";
+      if (elements.widgetTitle) {
+        elements.widgetTitle.textContent = normalizedTitle;
+      }
+      return normalizedTitle;
+    }
+
+    function calculateMainMetrics(payload, p1Factor, p2Factor, useRiskPlan) {
+      const seeds = Array.isArray(payload.snapshot_seeds) ? payload.snapshot_seeds : [];
+      const latestSeedByProject = new Map();
+      for (const seed of seeds) {
+        const projectKey = String(seed?.project_redmine_id || "");
+        const dateKey = String(seed?.date || "");
+        if (!projectKey || !dateKey) {
+          continue;
+        }
+        const previous = latestSeedByProject.get(projectKey);
+        if (!previous || dateKey >= String(previous.date || "")) {
+          latestSeedByProject.set(projectKey, seed);
+        }
+      }
+      const result = {
+        factYear: 0,
+        forecastYear: 0,
+        remaining: 0,
+        factTotal: 0,
+        forecast: 0,
+        latestDate: "",
+      };
+      latestSeedByProject.forEach((seed) => {
+        const metrics = computeSnapshotMetrics(seed, p1Factor, p2Factor, useRiskPlan);
+        const summary = seed.summary || {};
+        const factYear = Number(summary.development_grand_spent_hours_year || 0);
+        const factTotal = Number(summary.development_grand_spent_hours || 0);
+        result.factYear += factYear;
+        result.factTotal += factTotal;
+        result.forecast += Number(metrics.forecast || 0);
+        result.remaining += Number(metrics.remainingTotal || 0);
+        if (String(seed.date || "") > result.latestDate) {
+          result.latestDate = String(seed.date || "");
+        }
+      });
+      result.forecastYear = result.forecast - result.factTotal + result.factYear;
+      return result;
+    }
+
+    function renderMainMetricsTable(elements, metrics) {
+      const safeMetrics = metrics || { factYear: 0, forecastYear: 0, remaining: 0, factTotal: 0, latestDate: "" };
+      if (!elements.mainMetricsBody) {
+        return;
+      }
+      elements.mainMetricsBody.dataset.remainingHours = String(Number(safeMetrics.remaining || 0));
+      elements.mainMetricsBody.dataset.baseDate = String(safeMetrics.latestDate || "");
+      elements.mainMetricsBody.innerHTML = `
+        <tr>
+          <th>Итого по разработке</th>
+          <td>${formatHours(safeMetrics.factYear)}</td>
+          <td>${formatHours(safeMetrics.forecastYear)}</td>
+          <td>${formatHours(safeMetrics.remaining)}</td>
+          <td>${formatHours(safeMetrics.factTotal)}</td>
+        </tr>
+      `;
+    }
+
+    function renderWeeklyDeveloperLoad(elements, rows, copyLatestToInput = false) {
+      const sourceRows = Array.isArray(rows) ? rows : [];
+      if (elements.weeklyLoadWeeksRow) {
+        elements.weeklyLoadWeeksRow.innerHTML = `<th scope="row">Неделя</th>${sourceRows.map((row) => `<th scope="col">${escapeHtml(row?.label || "—")}</th>`).join("") || "<td>—</td>"}`;
+      }
+      if (elements.weeklyLoadDevelopersRow) {
+        elements.weeklyLoadDevelopersRow.innerHTML = `<th scope="row">Количество программистов</th>${sourceRows.map((row) => `<td>${formatHours(row?.developers || 0)}</td>`).join("") || "<td>—</td>"}`;
+      }
+      if (copyLatestToInput && elements.developerCountInput) {
+        const latestRow = sourceRows.length ? sourceRows[sourceRows.length - 1] : null;
+        elements.developerCountInput.value = formatDeveloperCount(latestRow?.developers || 0);
+      }
+    }
+
+    function calculateWidgetDeadline(elements) {
+      if (!elements.deadlineResult) {
+        return;
+      }
+      const developerCount = parseDashboardNumber(elements.developerCountInput?.value || "");
+      if (developerCount <= 0) {
+        elements.deadlineResult.textContent = "Дата завершения: укажите количество разработчиков больше 0";
+        return;
+      }
+      const remainingHours = Number(elements.mainMetricsBody?.dataset.remainingHours || 0);
+      const baseDate = String(elements.mainMetricsBody?.dataset.baseDate || "");
+      const completionDate = addWorkingDays(baseDate, remainingHours / 8 / developerCount);
+      if (!completionDate) {
+        elements.deadlineResult.textContent = "Дата завершения: не удалось определить дату среза";
+        return;
+      }
+      elements.deadlineResult.textContent = `Дата завершения: ${formatDisplayDate(completionDate)}`;
+    }
+
     function buildAggregatedDatasets(payload, p1Factor, p2Factor, useRiskPlan) {
       const labels = Array.isArray(payload.chart_date_labels) ? payload.chart_date_labels : [];
       const seeds = Array.isArray(payload.snapshot_seeds) ? payload.snapshot_seeds : [];
@@ -6200,6 +6614,9 @@ __LOCAL_GOLOS_FONT_CSS__
       elements.emptyState.style.display = seeds.length ? "none" : "block";
       elements.chartCanvas.style.display = seeds.length ? "block" : "none";
       if (!seeds.length) {
+        renderMainMetricsTable(elements, null);
+        renderWeeklyDeveloperLoad(elements, payload.weekly_developer_load, !elements.developerCountInput?.value);
+        calculateWidgetDeadline(elements);
         elements.status.textContent = "Для выбранной группы проектов нет срезов в указанном интервале.";
         if (state.chart) {
           state.chart.destroy();
@@ -6212,6 +6629,10 @@ __LOCAL_GOLOS_FONT_CSS__
       const p1Percent = parsePercentValue(elements.p1Input.value, payload.planning?.p1_percent || 150);
       const p2Percent = parsePercentValue(elements.p2Input.value, payload.planning?.p2_percent || 150);
       const useRiskPlan = Boolean(elements.riskPlanCheckbox.checked);
+      const mainMetrics = calculateMainMetrics(payload, p1Percent / 100, p2Percent / 100, useRiskPlan);
+      renderMainMetricsTable(elements, mainMetrics);
+      renderWeeklyDeveloperLoad(elements, payload.weekly_developer_load, !elements.developerCountInput?.value);
+      calculateWidgetDeadline(elements);
       const datasets = buildAggregatedDatasets(payload, p1Percent / 100, p2Percent / 100, useRiskPlan);
       const allValues = [
         ...datasets.budgetData,
@@ -6289,6 +6710,14 @@ __LOCAL_GOLOS_FONT_CSS__
     function applyWidgetSettingsToFields(widgetNode, widgetSettings) {
       const elements = getWidgetElements(widgetNode);
       const settings = widgetSettings && typeof widgetSettings === "object" ? widgetSettings : {};
+      if (settings.title !== undefined && settings.title !== null && settings.title !== "") {
+        const titleValue = setWidgetTitle(widgetNode, settings.title);
+        if (elements.titleInput) {
+          elements.titleInput.value = titleValue;
+        }
+      } else {
+        setWidgetTitle(widgetNode, elements.titleInput?.value || "");
+      }
       if (settings.start_date) {
         elements.startDateInput.value = String(settings.start_date);
       }
@@ -6304,17 +6733,22 @@ __LOCAL_GOLOS_FONT_CSS__
       if (settings.use_risk_plan !== undefined) {
         elements.riskPlanCheckbox.checked = Boolean(settings.use_risk_plan);
       }
+      if (settings.developer_count !== undefined && settings.developer_count !== null && settings.developer_count !== "") {
+        elements.developerCountInput.value = String(settings.developer_count);
+      }
     }
 
     function collectWidgetSettings(widgetNode) {
       const elements = getWidgetElements(widgetNode);
       return {
+        title: setWidgetTitle(widgetNode, elements.titleInput?.value || ""),
         selected_project_ids: getSelectedProjectIds(widgetNode),
         start_date: elements.startDateInput.value || "",
         end_date: elements.endDateInput.value || "",
         p1: elements.p1Input.value || "",
         p2: elements.p2Input.value || "",
         use_risk_plan: Boolean(elements.riskPlanCheckbox.checked),
+        developer_count: elements.developerCountInput?.value || "",
       };
     }
 
@@ -6384,6 +6818,12 @@ __LOCAL_GOLOS_FONT_CSS__
         if (shouldRenderChart) {
           renderChart(widgetNode, elements, payload);
         } else {
+          const p1Percent = parsePercentValue(elements.p1Input.value, payload.planning?.p1_percent || 150);
+          const p2Percent = parsePercentValue(elements.p2Input.value, payload.planning?.p2_percent || 150);
+          const useRiskPlan = Boolean(elements.riskPlanCheckbox.checked);
+          renderMainMetricsTable(elements, calculateMainMetrics(payload, p1Percent / 100, p2Percent / 100, useRiskPlan));
+          renderWeeklyDeveloperLoad(elements, payload.weekly_developer_load, !elements.developerCountInput?.value);
+          calculateWidgetDeadline(elements);
           elements.status.textContent = "Параметры проектов загружены. Для построения диаграммы нажмите «Показать».";
         }
         if (shouldSaveSettings) {
@@ -6409,6 +6849,26 @@ __LOCAL_GOLOS_FONT_CSS__
       const widgetSettings = widgetConfig.settings && typeof widgetConfig.settings === "object" ? widgetConfig.settings : {};
       applyWidgetSettingsToFields(widgetNode, widgetSettings);
       renderProjectSelectionRows(widgetNode);
+      elements.titleInput?.addEventListener("input", () => {
+        setWidgetTitle(widgetNode, elements.titleInput.value);
+      });
+      elements.titleInput?.addEventListener("change", () => {
+        saveDashboardSettings().catch((error) => {
+          elements.status.textContent = String(error.message || error);
+        });
+      });
+      elements.calculateDeadlineButton?.addEventListener("click", () => {
+        calculateWidgetDeadline(elements);
+        saveDashboardSettings().catch((error) => {
+          elements.status.textContent = String(error.message || error);
+        });
+      });
+      elements.developerCountInput?.addEventListener("change", () => {
+        calculateWidgetDeadline(elements);
+        saveDashboardSettings().catch((error) => {
+          elements.status.textContent = String(error.message || error);
+        });
+      });
       elements.togglePanelButton.addEventListener("click", () => {
         const collapsed = elements.panel.classList.toggle("is-collapsed");
         widgetNode.classList.toggle("is-panel-open", !collapsed);
