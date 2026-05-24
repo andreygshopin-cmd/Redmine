@@ -143,6 +143,34 @@ def ensureProjectsTable() -> None:
             connection.execute(
                 text(
                     """
+                    CREATE TABLE IF NOT EXISTS project_settings_change_log (
+                        id BIGSERIAL PRIMARY KEY,
+                        changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        project_redmine_id INTEGER NOT NULL,
+                        project_identifier TEXT,
+                        project_name TEXT,
+                        changed_by TEXT,
+                        old_is_enabled BOOLEAN,
+                        new_is_enabled BOOLEAN,
+                        old_partial_load BOOLEAN,
+                        new_partial_load BOOLEAN
+                    )
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_project_settings_change_log_changed_at
+                    ON project_settings_change_log(changed_at DESC, id DESC)
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
                     UPDATE projects
                     SET is_enabled = NOT COALESCE(is_disabled, FALSE)
                     WHERE is_enabled IS DISTINCT FROM NOT COALESCE(is_disabled, FALSE)
@@ -3788,7 +3816,11 @@ def storeMissingProjects(projects: Sequence[dict[str, object]]) -> int:
     return syncProjects(projects)["added_count"]
 
 
-def updateProjectLoadSettings(enabledProjectIds: Sequence[int], partialProjectIds: Sequence[int]) -> dict[str, int]:
+def updateProjectLoadSettings(
+    enabledProjectIds: Sequence[int],
+    partialProjectIds: Sequence[int],
+    changedBy: str | None = None,
+) -> dict[str, int]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")
 
@@ -3796,6 +3828,44 @@ def updateProjectLoadSettings(enabledProjectIds: Sequence[int], partialProjectId
     partialIds = sorted({int(projectId) for projectId in partialProjectIds if int(projectId) in set(enabledIds)})
 
     with engine.begin() as connection:
+        rowsBefore = connection.execute(
+            text(
+                """
+                SELECT
+                    redmine_id,
+                    identifier,
+                    name,
+                    is_enabled,
+                    partial_load
+                FROM projects
+                ORDER BY redmine_id
+                """
+            )
+        ).mappings().all()
+        changeRows: list[dict[str, object]] = []
+        enabledSet = set(enabledIds)
+        partialSet = set(partialIds)
+        for row in rowsBefore:
+            projectId = int(row["redmine_id"])
+            oldIsEnabled = bool(row["is_enabled"])
+            oldPartialLoad = bool(row["partial_load"])
+            newIsEnabled = projectId in enabledSet
+            newPartialLoad = projectId in partialSet if newIsEnabled else False
+            if oldIsEnabled == newIsEnabled and oldPartialLoad == newPartialLoad:
+                continue
+            changeRows.append(
+                {
+                    "project_redmine_id": projectId,
+                    "project_identifier": row.get("identifier"),
+                    "project_name": row.get("name"),
+                    "changed_by": changedBy or "",
+                    "old_is_enabled": oldIsEnabled,
+                    "new_is_enabled": newIsEnabled,
+                    "old_partial_load": oldPartialLoad,
+                    "new_partial_load": newPartialLoad,
+                }
+            )
+
         if enabledIds or partialIds:
             connection.execute(
                 text(
@@ -3837,10 +3907,68 @@ def updateProjectLoadSettings(enabledProjectIds: Sequence[int], partialProjectId
                 )
             )
 
+        if changeRows:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO project_settings_change_log (
+                        project_redmine_id,
+                        project_identifier,
+                        project_name,
+                        changed_by,
+                        old_is_enabled,
+                        new_is_enabled,
+                        old_partial_load,
+                        new_partial_load
+                    ) VALUES (
+                        :project_redmine_id,
+                        :project_identifier,
+                        :project_name,
+                        :changed_by,
+                        :old_is_enabled,
+                        :new_is_enabled,
+                        :old_partial_load,
+                        :new_partial_load
+                    )
+                    """
+                ),
+                changeRows,
+            )
+
     return {
         "enabled_count": len(enabledIds),
         "partial_count": len(partialIds),
     }
+
+
+def listProjectSettingsChangeLog(limit: int = 100) -> list[dict[str, object]]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    safeLimit = max(1, min(int(limit or 100), 1000))
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    changed_at,
+                    project_redmine_id,
+                    project_identifier,
+                    project_name,
+                    changed_by,
+                    old_is_enabled,
+                    new_is_enabled,
+                    old_partial_load,
+                    new_partial_load
+                FROM project_settings_change_log
+                ORDER BY changed_at DESC, id DESC
+                LIMIT :limit_value
+                """
+            ),
+            {"limit_value": safeLimit},
+        ).mappings().all()
+    return [dict(row) for row in rows]
 
 
 def createPlanningProject(project: dict[str, object]) -> dict[str, object]:

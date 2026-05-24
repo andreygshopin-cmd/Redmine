@@ -79,6 +79,7 @@ from src.redmine.db import (
     listIssueSnapshotCaptureErrors,
     listBitrixDealSnapshotRuns,
     listPlanningProjects,
+    listProjectSettingsChangeLog,
     listRecentIssueSnapshotRuns,
     listSnapshotDatesForProject,
     listStoredProjects,
@@ -1056,6 +1057,20 @@ def buildAdminUsersPage(users: list[dict[str, object]]) -> str:
       font-weight: 700;
       white-space: nowrap;
     }}
+    .admin-log-button {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      margin: 0 0 18px 12px;
+      padding: 0 14px;
+      border-radius: 8px;
+      background: #eef2f5;
+      color: #16324a;
+      text-decoration: none;
+      font-weight: 700;
+      white-space: nowrap;
+    }}
     .save-button {{ background: #ff6c0e; }}
     .reset-button {{ background: #375d77; }}
     .form-grid {{
@@ -1111,6 +1126,7 @@ def buildAdminUsersPage(users: list[dict[str, object]]) -> str:
 <body>
   <main>
     <a class="top-link" href="/">Вернуться на главную</a>
+    <a class="admin-log-button" href="/admin/project-settings-log">Лог</a>
     <h1>Администрирование пользователей</h1>
     <p class="lead">Здесь можно создавать пользователей, выдавать роли и включать обязательную смену пароля.</p>
 
@@ -1316,6 +1332,290 @@ def buildAdminUsersPage(users: list[dict[str, object]]) -> str:
     }});
 
     renderUsers(currentUsers);
+  </script>
+</body>
+</html>"""
+
+
+def buildProjectSettingsLogPage() -> str:
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Лог изменений проектов Redmine</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+{LOCAL_GOLOS_FONT_CSS}
+    body {{
+      margin: 0;
+      font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      color: #16324a;
+      background: #f6fafc;
+    }}
+    main {{
+      width: min(1500px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 28px 0 48px;
+    }}
+    h1 {{
+      margin: 0 0 10px;
+      font-size: clamp(1.8rem, 4vw, 2.8rem);
+      font-weight: 400;
+      letter-spacing: -0.04em;
+    }}
+    .top-link {{
+      display: inline-flex;
+      margin-bottom: 18px;
+      color: #375d77;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      font-weight: 600;
+    }}
+    .panel {{
+      background: #ffffff;
+      border: 1px solid #d9e5eb;
+      border-radius: 10px;
+      box-shadow: 0 12px 24px rgba(22, 50, 74, 0.06);
+      padding: 16px 18px 18px;
+    }}
+    .toolbar {{
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: end;
+      margin-bottom: 12px;
+    }}
+    label {{
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-weight: 700;
+    }}
+    input {{
+      border: 1px solid #d9e5eb;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      color: #16324a;
+      background: #ffffff;
+    }}
+    button {{
+      min-height: 38px;
+      border: 1px solid #d9e5eb;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font: inherit;
+      font-weight: 700;
+      color: #16324a;
+      background: #eef2f5;
+      cursor: pointer;
+    }}
+    .meta {{
+      min-height: 22px;
+      color: #64798d;
+      margin: 0 0 10px;
+    }}
+    .table-wrap {{
+      overflow: auto;
+      border: 1px solid #d9e5eb;
+      border-radius: 8px;
+      background: #ffffff;
+      max-height: 75vh;
+    }}
+    table {{
+      width: 100%;
+      min-width: 1180px;
+      border-collapse: collapse;
+    }}
+    th, td {{
+      padding: 9px 10px;
+      border-bottom: 1px solid #d9e5eb;
+      text-align: left;
+      vertical-align: middle;
+      white-space: nowrap;
+    }}
+    th {{
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #eef6f7;
+      color: #426179;
+      text-transform: uppercase;
+      font-size: 0.76rem;
+    }}
+    .filter-row th {{
+      top: 37px;
+      background: #f8fbfd;
+      z-index: 1;
+    }}
+    .filter-row input {{
+      width: 100%;
+      min-width: 0;
+      padding: 6px 7px;
+      font-size: 0.86rem;
+    }}
+    .mono {{ font-variant-numeric: tabular-nums; }}
+    .changed-cell {{
+      color: #d54343;
+      font-weight: 700;
+      background: #fff3f0;
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <a class="top-link" href="/admin/users">Вернуться в администрирование</a>
+    <h1>Лог изменений проектов Redmine</h1>
+    <section class="panel">
+      <div class="toolbar">
+        <label>Записей на странице
+          <input id="limitInput" type="number" min="1" max="1000" step="1" value="100">
+        </label>
+        <button type="button" id="reloadButton">Показать</button>
+      </div>
+      <p class="meta" id="meta">Загружаем лог...</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Время</th>
+              <th>ID проекта</th>
+              <th>Идентификатор</th>
+              <th>Название</th>
+              <th>Пользователь</th>
+              <th>Вкл. было</th>
+              <th>Вкл. стало</th>
+              <th>Част. было</th>
+              <th>Част. стало</th>
+            </tr>
+            <tr class="filter-row">
+              <th><input data-filter-key="changed_at" type="text"></th>
+              <th><input data-filter-key="project_redmine_id" type="text"></th>
+              <th><input data-filter-key="project_identifier" type="text"></th>
+              <th><input data-filter-key="project_name" type="text"></th>
+              <th><input data-filter-key="changed_by" type="text"></th>
+              <th><input data-filter-key="old_is_enabled" type="text"></th>
+              <th><input data-filter-key="new_is_enabled" type="text"></th>
+              <th><input data-filter-key="old_partial_load" type="text"></th>
+              <th><input data-filter-key="new_partial_load" type="text"></th>
+            </tr>
+          </thead>
+          <tbody id="logTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script>
+    const limitInput = document.getElementById("limitInput");
+    const reloadButton = document.getElementById("reloadButton");
+    const meta = document.getElementById("meta");
+    const logTableBody = document.getElementById("logTableBody");
+    const filterInputs = Array.from(document.querySelectorAll(".filter-row input"));
+    let allRows = [];
+
+    function escapeHtml(value) {{
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }}
+
+    function formatDate(value) {{
+      if (!value) return "—";
+      const date = new Date(String(value));
+      if (Number.isNaN(date.getTime())) {{
+        return String(value).replace("T", " ").replace("+00:00", " UTC");
+      }}
+      return new Intl.DateTimeFormat("ru-RU", {{
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }}).format(date);
+    }}
+
+    function boolText(value) {{
+      if (value === null || value === undefined || value === "") return "—";
+      return value ? "Да" : "Нет";
+    }}
+
+    function getValue(row, key) {{
+      if (key === "changed_at") return formatDate(row.changed_at);
+      if (key.includes("is_enabled") || key.includes("partial_load")) return boolText(row[key]);
+      return String(row[key] ?? "—");
+    }}
+
+    function getFilters() {{
+      const filters = {{}};
+      filterInputs.forEach((input) => {{
+        filters[input.dataset.filterKey || ""] = String(input.value || "").trim().toLowerCase();
+      }});
+      return filters;
+    }}
+
+    function renderRows() {{
+      const filters = getFilters();
+      const rows = allRows.filter((row) => {{
+        return Object.entries(filters).every(([key, value]) => {{
+          if (!key || !value) return true;
+          return getValue(row, key).toLowerCase().includes(value);
+        }});
+      }});
+      meta.textContent = `Загружено: ${{allRows.length}}. Показано после фильтра: ${{rows.length}}.`;
+      if (!rows.length) {{
+        logTableBody.innerHTML = '<tr><td colspan="9">Записи не найдены.</td></tr>';
+        return;
+      }}
+      logTableBody.innerHTML = rows.map((row) => {{
+        const enabledChanged = Boolean(row.old_is_enabled) !== Boolean(row.new_is_enabled);
+        const partialChanged = Boolean(row.old_partial_load) !== Boolean(row.new_partial_load);
+        return `
+          <tr>
+            <td class="mono">${{escapeHtml(formatDate(row.changed_at))}}</td>
+            <td class="mono">${{escapeHtml(row.project_redmine_id ?? "—")}}</td>
+            <td>${{escapeHtml(row.project_identifier || "—")}}</td>
+            <td>${{escapeHtml(row.project_name || "—")}}</td>
+            <td>${{escapeHtml(row.changed_by || "—")}}</td>
+            <td class="${{enabledChanged ? "changed-cell" : ""}}">${{escapeHtml(boolText(row.old_is_enabled))}}</td>
+            <td class="${{enabledChanged ? "changed-cell" : ""}}">${{escapeHtml(boolText(row.new_is_enabled))}}</td>
+            <td class="${{partialChanged ? "changed-cell" : ""}}">${{escapeHtml(boolText(row.old_partial_load))}}</td>
+            <td class="${{partialChanged ? "changed-cell" : ""}}">${{escapeHtml(boolText(row.new_partial_load))}}</td>
+          </tr>
+        `;
+      }}).join("");
+    }}
+
+    async function loadRows() {{
+      const limit = Math.max(1, Math.min(Number(limitInput.value || 100), 1000));
+      limitInput.value = String(limit);
+      meta.textContent = "Загружаем лог...";
+      reloadButton.disabled = true;
+      try {{
+        const response = await fetch(`/api/admin/project-settings-log?limit=${{encodeURIComponent(limit)}}`);
+        const payload = await response.json();
+        if (!response.ok) {{
+          throw new Error(payload.detail || "Не удалось загрузить лог.");
+        }}
+        allRows = Array.isArray(payload.rows) ? payload.rows : [];
+        renderRows();
+      }} catch (error) {{
+        allRows = [];
+        logTableBody.innerHTML = '<tr><td colspan="9">Не удалось загрузить лог.</td></tr>';
+        meta.textContent = String(error.message || error);
+      }} finally {{
+        reloadButton.disabled = false;
+      }}
+    }}
+
+    filterInputs.forEach((input) => input.addEventListener("input", renderRows));
+    reloadButton.addEventListener("click", loadRows);
+    limitInput.addEventListener("change", loadRows);
+    loadRows();
   </script>
 </body>
 </html>"""
@@ -2450,7 +2750,18 @@ PAGE_HTML = """<!doctype html>
         return "—";
       }
 
-      return String(value).replace("T", " ").replace("+00:00", " UTC");
+      const date = new Date(String(value));
+      if (Number.isNaN(date.getTime())) {
+        return String(value).replace("T", " ").replace("+00:00", " UTC");
+      }
+      return new Intl.DateTimeFormat("ru-RU", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).format(date);
     }
 
     function formatHours(value) {
@@ -6188,10 +6499,10 @@ __LOCAL_GOLOS_FONT_CSS__
             <button type="button" class="toggle-panel-button">Панель настройки</button>
           </div>
           <div class="widget-panel is-collapsed">
+            <label class="widget-name-label">Наименование виджета
+              <input class="widget-title-input" type="text" value="${escapeHtml(widgetTitle)}">
+            </label>
             <div class="project-select-block">
-              <label class="widget-name-label">Наименование виджета
-                <input class="widget-title-input" type="text" value="${escapeHtml(widgetTitle)}">
-              </label>
               <h3 class="parameters-title">Группа проектов</h3>
               ${buildProjectSelectionTable()}
               <div class="project-select-actions">
@@ -6227,7 +6538,7 @@ __LOCAL_GOLOS_FONT_CSS__
                 <input class="risk-plan-checkbox" type="checkbox">
                 <span>Использовать План с рисками</span>
               </label>
-              <button type="button" class="show-widget-button">Показать</button>
+              <button type="button" class="show-widget-button">Применить настройки</button>
             </div>
           </div>
           <div class="widget-body">
@@ -6899,11 +7210,6 @@ __LOCAL_GOLOS_FONT_CSS__
       elements.titleInput?.addEventListener("input", () => {
         setWidgetTitle(widgetNode, elements.titleInput.value);
       });
-      elements.titleInput?.addEventListener("change", () => {
-        saveDashboardSettings().catch((error) => {
-          elements.status.textContent = String(error.message || error);
-        });
-      });
       elements.calculateDeadlineButton?.addEventListener("click", () => {
         calculateWidgetDeadline(elements);
       });
@@ -6933,7 +7239,7 @@ __LOCAL_GOLOS_FONT_CSS__
           resetFromPlanning: true,
           renderChart: false,
           updateParameters: true,
-          saveSettings: true,
+          saveSettings: false,
         });
       });
       elements.applyCurrentProjectsButton?.addEventListener("click", () => {
@@ -6941,7 +7247,7 @@ __LOCAL_GOLOS_FONT_CSS__
           resetFromPlanning: false,
           renderChart: true,
           updateParameters: true,
-          saveSettings: true,
+          saveSettings: false,
         });
       });
       elements.projectTableBody.addEventListener("change", (event) => {
@@ -16291,6 +16597,16 @@ def getAdminUsersPage(request: Request) -> HTMLResponse:
     return _renderHtmlPage(buildAdminUsersPage(listUsers()))
 
 
+@app.get("/admin/project-settings-log", response_class=HTMLResponse)
+def getProjectSettingsLogPage(request: Request) -> HTMLResponse:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    _requireAdminUser(request)
+    ensureProjectsTable()
+    return _renderHtmlPage(buildProjectSettingsLogPage())
+
+
 @app.get("/api/admin/users")
 def getAdminUsersApi(request: Request) -> dict[str, object]:
     _requireAdminUser(request)
@@ -16298,6 +16614,16 @@ def getAdminUsersApi(request: Request) -> dict[str, object]:
     return {
         "users": [serializeAdminUser(user) for user in listUsers()]
     }
+
+
+@app.get("/api/admin/project-settings-log")
+def getProjectSettingsLogApi(
+    request: Request,
+    limit: int = Query(100, ge=1, le=1000),
+) -> dict[str, object]:
+    _requireAdminUser(request)
+    ensureProjectsTable()
+    return {"rows": listProjectSettingsChangeLog(limit), "limit": limit}
 
 
 @app.post("/api/admin/users")
@@ -19577,12 +19903,17 @@ def refreshProjects() -> dict[str, object]:
 
 
 @app.post("/api/projects/settings")
-def updateProjectSettings(payload: ProjectSettingsUpdate) -> dict[str, object]:
+def updateProjectSettings(request: Request, payload: ProjectSettingsUpdate) -> dict[str, object]:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
+    currentUser = _requireAuthenticatedUser(request)
     ensureProjectsTable()
-    settingsStats = updateProjectLoadSettings(payload.enabled_project_ids, payload.partial_project_ids)
+    settingsStats = updateProjectLoadSettings(
+        payload.enabled_project_ids,
+        payload.partial_project_ids,
+        str(currentUser.get("login") or ""),
+    )
     return {
         "enabled_count": settingsStats["enabled_count"],
         "partial_count": settingsStats["partial_count"],
