@@ -2302,6 +2302,7 @@ PAGE_HTML = """<!doctype html>
             <tr>
               <th>ID</th>
               <th>Дата среза</th>
+              <th>Част.</th>
               <th>Проект</th>
               <th>Идентификатор</th>
               <th>Задач</th>
@@ -2964,7 +2965,7 @@ PAGE_HTML = """<!doctype html>
       snapshotRunsCount.textContent = `Всего срезов в базе: ${totalCount}. Показано: ${filteredRuns.length}`;
 
       if (!filteredRuns.length) {
-        snapshotRunsTableBody.innerHTML = '<tr><td colspan="10">Срезов пока нет.</td></tr>';
+        snapshotRunsTableBody.innerHTML = '<tr><td colspan="11">Срезов пока нет.</td></tr>';
         return;
       }
 
@@ -2980,6 +2981,7 @@ PAGE_HTML = """<!doctype html>
         row.innerHTML = `
           <td class="mono">${run.id ?? "—"}</td>
           <td class="mono">${run.captured_for_date ?? "—"}</td>
+          <td class="checkbox-cell">${run.partial_load === null || run.partial_load === undefined ? "—" : `<input type="checkbox" disabled ${run.partial_load ? "checked" : ""}>`}</td>
           <td>${run.project_name ?? "—"}</td>
           <td>${identifierHtml}</td>
           <td>${run.total_issues ?? 0}</td>
@@ -5655,6 +5657,7 @@ __LOCAL_GOLOS_FONT_CSS__
     }
     .field-grid {
       display: grid;
+      grid-column: 1 / -1;
       grid-template-columns: 180px 180px 190px 240px max-content 120px;
       gap: 12px;
       align-items: end;
@@ -5923,7 +5926,7 @@ __LOCAL_GOLOS_FONT_CSS__
     }
     .chart-wrap {
       position: relative;
-      min-height: 430px;
+      min-height: 322px;
     }
     .empty-state {
       display: none;
@@ -5968,7 +5971,7 @@ __LOCAL_GOLOS_FONT_CSS__
       main { padding: 18px 12px 36px; }
       .field-grid { grid-template-columns: 1fr; }
       .weekly-block { grid-template-columns: 1fr; }
-      .chart-wrap { min-height: 360px; }
+      .chart-wrap { min-height: 270px; }
     }
   </style>
 </head>
@@ -6195,35 +6198,36 @@ __LOCAL_GOLOS_FONT_CSS__
                 <div class="project-select-actions-group">
                   <button type="button" class="small-action-button select-visible-projects-button">Выбрать видимые</button>
                   <button type="button" class="small-action-button clear-projects-button">Снять выбор</button>
-                  <button type="button" class="small-action-button confirm-projects-button">Подтвердить</button>
+                  <button type="button" class="small-action-button confirm-projects-button">Применить</button>
+                  <button type="button" class="small-action-button apply-current-projects-button">Применить без смены настроек</button>
                 </div>
                 <span class="selection-counter">Выбрано: 0</span>
-              </div>
-              <div class="field-grid">
-                <label>Начало интервала
-                  <input class="start-date-input" type="date">
-                </label>
-                <label>Конец интервала
-                  <input class="end-date-input" type="date">
-                </label>
-                <label>P1 = факт / база, %
-                  <input class="p1-input" type="text" inputmode="decimal">
-                </label>
-                <label>P2 = факт с багами / факт, %
-                  <input class="p2-input" type="text" inputmode="decimal">
-                </label>
-                <label class="checkbox-label risk-plan-label">
-                  <input class="risk-plan-checkbox" type="checkbox">
-                  <span>Использовать План с рисками</span>
-                </label>
-                <button type="button" class="show-widget-button">Показать</button>
               </div>
             </div>
             <div class="parameters-block">
               <h3 class="parameters-title">Параметры проектов</h3>
               <div class="parameters-table-wrap">
-                <div class="parameters-table-placeholder">Выберите проекты и нажмите «Показать».</div>
+                <div class="parameters-table-placeholder">Выберите проекты и нажмите «Применить».</div>
               </div>
+            </div>
+            <div class="field-grid">
+              <label>Начало интервала
+                <input class="start-date-input" type="date">
+              </label>
+              <label>Конец интервала
+                <input class="end-date-input" type="date">
+              </label>
+              <label>P1 = факт / база, %
+                <input class="p1-input" type="text" inputmode="decimal">
+              </label>
+              <label>P2 = факт с багами / факт, %
+                <input class="p2-input" type="text" inputmode="decimal">
+              </label>
+              <label class="checkbox-label risk-plan-label">
+                <input class="risk-plan-checkbox" type="checkbox">
+                <span>Использовать План с рисками</span>
+              </label>
+              <button type="button" class="show-widget-button">Показать</button>
             </div>
           </div>
           <div class="widget-body">
@@ -6289,6 +6293,7 @@ __LOCAL_GOLOS_FONT_CSS__
         projectFilterInputs: Array.from(widgetNode.querySelectorAll(".project-filter-input")),
         selectVisibleProjectsButton: widgetNode.querySelector(".select-visible-projects-button"),
         confirmProjectsButton: widgetNode.querySelector(".confirm-projects-button"),
+        applyCurrentProjectsButton: widgetNode.querySelector(".apply-current-projects-button"),
         clearProjectsButton: widgetNode.querySelector(".clear-projects-button"),
         selectionCounter: widgetNode.querySelector(".selection-counter"),
         startDateInput: widgetNode.querySelector(".start-date-input"),
@@ -6655,7 +6660,7 @@ __LOCAL_GOLOS_FONT_CSS__
       elements.chartCanvas.style.display = seeds.length ? "block" : "none";
       if (!seeds.length) {
         renderMainMetricsTable(elements, null);
-        renderWeeklyDeveloperLoad(elements, payload.weekly_developer_load, !elements.developerCountInput?.value);
+        renderWeeklyDeveloperLoad(elements, payload.weekly_developer_load, true);
         calculateWidgetDeadline(elements);
         elements.status.textContent = "Для выбранной группы проектов нет срезов в указанном интервале.";
         if (state.chart) {
@@ -6671,7 +6676,7 @@ __LOCAL_GOLOS_FONT_CSS__
       const useRiskPlan = Boolean(elements.riskPlanCheckbox.checked);
       const mainMetrics = calculateMainMetrics(payload, p1Percent / 100, p2Percent / 100, useRiskPlan);
       renderMainMetricsTable(elements, mainMetrics);
-      renderWeeklyDeveloperLoad(elements, payload.weekly_developer_load, !elements.developerCountInput?.value);
+      renderWeeklyDeveloperLoad(elements, payload.weekly_developer_load, true);
       calculateWidgetDeadline(elements);
       const datasets = buildAggregatedDatasets(payload, p1Percent / 100, p2Percent / 100, useRiskPlan);
       const allValues = [
@@ -6773,9 +6778,6 @@ __LOCAL_GOLOS_FONT_CSS__
       if (settings.use_risk_plan !== undefined) {
         elements.riskPlanCheckbox.checked = Boolean(settings.use_risk_plan);
       }
-      if (settings.developer_count !== undefined && settings.developer_count !== null && settings.developer_count !== "") {
-        elements.developerCountInput.value = String(settings.developer_count);
-      }
     }
 
     function collectWidgetSettings(widgetNode) {
@@ -6788,7 +6790,6 @@ __LOCAL_GOLOS_FONT_CSS__
         p1: elements.p1Input.value || "",
         p2: elements.p2Input.value || "",
         use_risk_plan: Boolean(elements.riskPlanCheckbox.checked),
-        developer_count: elements.developerCountInput?.value || "",
       };
     }
 
@@ -6826,6 +6827,9 @@ __LOCAL_GOLOS_FONT_CSS__
       if (elements.confirmProjectsButton) {
         elements.confirmProjectsButton.disabled = true;
       }
+      if (elements.applyCurrentProjectsButton) {
+        elements.applyCurrentProjectsButton.disabled = true;
+      }
       try {
         const params = new URLSearchParams();
         projectIds.forEach((projectId) => params.append("project_redmine_ids", String(projectId)));
@@ -6862,7 +6866,7 @@ __LOCAL_GOLOS_FONT_CSS__
           const p2Percent = parsePercentValue(elements.p2Input.value, payload.planning?.p2_percent || 150);
           const useRiskPlan = Boolean(elements.riskPlanCheckbox.checked);
           renderMainMetricsTable(elements, calculateMainMetrics(payload, p1Percent / 100, p2Percent / 100, useRiskPlan));
-          renderWeeklyDeveloperLoad(elements, payload.weekly_developer_load, !elements.developerCountInput?.value);
+          renderWeeklyDeveloperLoad(elements, payload.weekly_developer_load, true);
           calculateWidgetDeadline(elements);
           elements.status.textContent = "";
         }
@@ -6876,6 +6880,9 @@ __LOCAL_GOLOS_FONT_CSS__
         elements.showButton.disabled = false;
         if (elements.confirmProjectsButton) {
           elements.confirmProjectsButton.disabled = false;
+        }
+        if (elements.applyCurrentProjectsButton) {
+          elements.applyCurrentProjectsButton.disabled = false;
         }
       }
     }
@@ -6899,15 +6906,9 @@ __LOCAL_GOLOS_FONT_CSS__
       });
       elements.calculateDeadlineButton?.addEventListener("click", () => {
         calculateWidgetDeadline(elements);
-        saveDashboardSettings().catch((error) => {
-          elements.status.textContent = String(error.message || error);
-        });
       });
       elements.developerCountInput?.addEventListener("change", () => {
         calculateWidgetDeadline(elements);
-        saveDashboardSettings().catch((error) => {
-          elements.status.textContent = String(error.message || error);
-        });
       });
       elements.togglePanelButton.addEventListener("click", () => {
         const collapsed = elements.panel.classList.toggle("is-collapsed");
@@ -6931,6 +6932,14 @@ __LOCAL_GOLOS_FONT_CSS__
         loadWidget(widgetNode, {
           resetFromPlanning: true,
           renderChart: false,
+          updateParameters: true,
+          saveSettings: true,
+        });
+      });
+      elements.applyCurrentProjectsButton?.addEventListener("click", () => {
+        loadWidget(widgetNode, {
+          resetFromPlanning: false,
+          renderChart: true,
           updateParameters: true,
           saveSettings: true,
         });

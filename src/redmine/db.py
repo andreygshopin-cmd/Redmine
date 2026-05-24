@@ -181,8 +181,18 @@ def ensureIssueSnapshotTables() -> None:
                         total_baseline_estimate_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
                         total_estimated_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
                         total_spent_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
-                        total_spent_hours_year DOUBLE PRECISION NOT NULL DEFAULT 0
+                        total_spent_hours_year DOUBLE PRECISION NOT NULL DEFAULT 0,
+                        partial_load BOOLEAN NULL
                     )
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE issue_snapshot_runs
+                    ADD COLUMN IF NOT EXISTS partial_load BOOLEAN NULL
                     """
                 )
             )
@@ -1562,6 +1572,7 @@ def listRecentIssueSnapshotRuns(limit: int | None = 20) -> list[dict[str, object
                     COALESCE(p.identifier, r.project_identifier) AS project_identifier,
                     r.captured_for_date,
                     r.captured_at,
+                    r.partial_load,
                     r.total_issues,
                     COALESCE(m.total_baseline_estimate_hours, 0) AS total_baseline_estimate_hours,
                     COALESCE(m.total_estimated_hours, 0) AS total_estimated_hours,
@@ -1632,6 +1643,7 @@ def listRecentIssueSnapshotRuns(limit: int | None = 20) -> list[dict[str, object
                     COALESCE(p.identifier, r.project_identifier) AS project_identifier,
                     r.captured_for_date,
                     r.captured_at,
+                    r.partial_load,
                     r.total_issues,
                     COALESCE(m.total_baseline_estimate_hours, 0) AS total_baseline_estimate_hours,
                     COALESCE(m.total_estimated_hours, 0) AS total_estimated_hours,
@@ -4351,6 +4363,7 @@ def createIssueSnapshotRun(
                     project_name,
                     project_identifier,
                     captured_for_date,
+                    partial_load,
                     total_issues,
                     total_baseline_estimate_hours,
                     total_estimated_hours,
@@ -4361,6 +4374,7 @@ def createIssueSnapshotRun(
                     :project_name,
                     :project_identifier,
                     :captured_for_date,
+                    :partial_load,
                     :total_issues,
                     :total_baseline_estimate_hours,
                     :total_estimated_hours,
@@ -4376,6 +4390,7 @@ def createIssueSnapshotRun(
                 "project_name": project["name"],
                 "project_identifier": project["identifier"],
                 "captured_for_date": capturedForDate,
+                "partial_load": bool(project.get("partial_load")),
                 "total_issues": len(issues),
                 "total_baseline_estimate_hours": totalBaselineEstimateHours,
                 "total_estimated_hours": totalEstimatedHours,
