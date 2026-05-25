@@ -6629,7 +6629,8 @@ __LOCAL_GOLOS_FONT_CSS__
                       <input class="developer-count-input" type="text" inputmode="decimal">
                     </label>
                     <button type="button" class="calculate-deadline-button">Рассчитать срок</button>
-                    <div class="deadline-result">Дата завершения: —</div>
+                    <div class="deadline-result deadline-remaining-result">Дата завершения (остаток): —</div>
+                    <div class="deadline-result deadline-forecast-result">Дата завершения (прогноз - факт): —</div>
                   </div>
                   <p class="summary-legend">Количество программистов = сумма часов списаний по задачам проекта за неделю / 40.</p>
                 </div>
@@ -6674,7 +6675,8 @@ __LOCAL_GOLOS_FONT_CSS__
         weeklyLoadDevelopersRow: widgetNode.querySelector(".weekly-load-developers-row"),
         developerCountInput: widgetNode.querySelector(".developer-count-input"),
         calculateDeadlineButton: widgetNode.querySelector(".calculate-deadline-button"),
-        deadlineResult: widgetNode.querySelector(".deadline-result"),
+        deadlineResult: widgetNode.querySelector(".deadline-remaining-result"),
+        forecastDeadlineResult: widgetNode.querySelector(".deadline-forecast-result"),
         chartCanvas: widgetNode.querySelector(".project-state-chart"),
         loadingOverlay: widgetNode.querySelector(".loading-overlay"),
         emptyState: widgetNode.querySelector(".empty-state"),
@@ -6889,6 +6891,8 @@ __LOCAL_GOLOS_FONT_CSS__
         return;
       }
       elements.mainMetricsBody.dataset.remainingHours = String(Number(safeMetrics.remaining || 0));
+      elements.mainMetricsBody.dataset.factYearHours = String(Number(safeMetrics.factYear || 0));
+      elements.mainMetricsBody.dataset.forecastYearHours = String(Number(safeMetrics.forecastYear || 0));
       elements.mainMetricsBody.dataset.baseDate = String(safeMetrics.latestDate || "");
       elements.mainMetricsBody.innerHTML = `
         <tr>
@@ -6920,26 +6924,41 @@ __LOCAL_GOLOS_FONT_CSS__
       }
     }
 
+    function setWidgetDeadlineResult(resultElement, label, hoursValue, developerCount, baseDate) {
+      if (!resultElement) {
+        return;
+      }
+      const completionDate = addWorkingDays(baseDate, Math.max(0, Number(hoursValue || 0)) / 8 / developerCount);
+      if (!completionDate) {
+        resultElement.textContent = `${label}: не удалось определить дату среза`;
+        resultElement.classList.remove("is-out-of-year");
+        return;
+      }
+      resultElement.textContent = `${label}: ${formatDisplayDate(completionDate)}`;
+      resultElement.classList.toggle("is-out-of-year", completionDate.getFullYear() !== new Date().getFullYear());
+    }
+
     function calculateWidgetDeadline(elements) {
-      if (!elements.deadlineResult) {
+      if (!elements.deadlineResult && !elements.forecastDeadlineResult) {
         return;
       }
       const developerCount = parseDashboardNumber(elements.developerCountInput?.value || "");
       if (developerCount <= 0) {
-        elements.deadlineResult.textContent = "Дата завершения: укажите кол-во разработчиков больше 0";
-        elements.deadlineResult.classList.remove("is-out-of-year");
+        if (elements.deadlineResult) {
+          elements.deadlineResult.textContent = "Дата завершения (остаток): укажите кол-во разработчиков больше 0";
+          elements.deadlineResult.classList.remove("is-out-of-year");
+        }
+        if (elements.forecastDeadlineResult) {
+          elements.forecastDeadlineResult.textContent = "Дата завершения (прогноз - факт): укажите кол-во разработчиков больше 0";
+          elements.forecastDeadlineResult.classList.remove("is-out-of-year");
+        }
         return;
       }
       const remainingHours = Number(elements.mainMetricsBody?.dataset.remainingHours || 0);
+      const forecastMinusFactHours = Number(elements.mainMetricsBody?.dataset.forecastYearHours || 0) - Number(elements.mainMetricsBody?.dataset.factYearHours || 0);
       const baseDate = String(elements.mainMetricsBody?.dataset.baseDate || "");
-      const completionDate = addWorkingDays(baseDate, remainingHours / 8 / developerCount);
-      if (!completionDate) {
-        elements.deadlineResult.textContent = "Дата завершения: не удалось определить дату среза";
-        elements.deadlineResult.classList.remove("is-out-of-year");
-        return;
-      }
-      elements.deadlineResult.textContent = `Дата завершения: ${formatDisplayDate(completionDate)}`;
-      elements.deadlineResult.classList.toggle("is-out-of-year", completionDate.getFullYear() !== new Date().getFullYear());
+      setWidgetDeadlineResult(elements.deadlineResult, "Дата завершения (остаток)", remainingHours, developerCount, baseDate);
+      setWidgetDeadlineResult(elements.forecastDeadlineResult, "Дата завершения (прогноз - факт)", forecastMinusFactHours, developerCount, baseDate);
     }
 
     function buildAggregatedDatasets(payload, p1Factor, p2Factor, useRiskPlan) {
@@ -8989,7 +9008,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .action-status {{ color: var(--muted); margin: 0 0 18px; min-height: 22px; }}
       .snapshot-capacity-panel {{
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+        grid-template-columns: minmax(0, 1fr) minmax(364px, 468px);
         gap: 16px;
         align-items: stretch;
         margin: 0 0 20px;
@@ -9399,9 +9418,9 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentTotalEstimated">{formatPageHours(summaryView["development_total_estimated_hours"])}</td>
               <td class="summary-empty"></td>
-              <td class="summary-metric" id="summaryDevelopmentGrandSpentYear" colspan="2">{formatPageHours(summaryView["development_grand_spent_hours_year"])}</td>
+              <td class="summary-metric" id="summaryDevelopmentGrandSpentYear" colspan="2" data-hours="{float(summaryView["development_grand_spent_hours_year"] or 0)}">{formatPageHours(summaryView["development_grand_spent_hours_year"])}</td>
               <td class="summary-empty"></td>
-              <td class="summary-metric" id="summaryDevelopmentYearForecast">{formatPageHours(float(snapshotDynamicMetrics["development_total_forecast_hours"] or 0) - float(summaryView["development_grand_spent_hours"] or 0) + float(summaryView["development_grand_spent_hours_year"] or 0))}</td>
+              <td class="summary-metric" id="summaryDevelopmentYearForecast" data-hours="{float(snapshotDynamicMetrics["development_total_forecast_hours"] or 0) - float(summaryView["development_grand_spent_hours"] or 0) + float(summaryView["development_grand_spent_hours_year"] or 0)}">{formatPageHours(float(snapshotDynamicMetrics["development_total_forecast_hours"] or 0) - float(summaryView["development_grand_spent_hours"] or 0) + float(summaryView["development_grand_spent_hours_year"] or 0))}</td>
               <td class="summary-metric" id="summaryDevelopmentTotalRemaining" data-hours="{float(snapshotDynamicMetrics["development_total_remaining_hours"] or 0)}">{formatPageHours(snapshotDynamicMetrics["development_total_remaining_hours"])}</td>
               <td class="summary-metric" id="summaryDevelopmentGrandSpent" colspan="2" data-hours="{float(summaryView["development_grand_spent_hours"] or 0)}">{formatPageHours(summaryView["development_grand_spent_hours"])}</td>
               <td class="summary-empty"></td>
@@ -9820,7 +9839,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         }}
         const baseDate = currentSnapshotCapturedForDate || getSelectedSnapshotDate() || selectedSnapshotDate;
         const remainingHours = getSnapshotSummaryCellHours(summaryDevelopmentTotalRemaining);
-        const forecastMinusFactHours = getSnapshotSummaryCellHours(summaryDevelopmentTotalForecast) - getSnapshotSummaryCellHours(summaryDevelopmentGrandSpent);
+        const forecastMinusFactHours = getSnapshotSummaryCellHours(summaryDevelopmentYearForecast) - getSnapshotSummaryCellHours(summaryDevelopmentGrandSpentYear);
         renderSnapshotDeadlineResult(snapshotDeadlineResult, "Дата завершения (остаток)", remainingHours, developerCount, baseDate);
         renderSnapshotDeadlineResult(snapshotForecastDeadlineResult, "Дата завершения (прогноз - факт)", forecastMinusFactHours, developerCount, baseDate);
       }}
@@ -10095,7 +10114,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if (summaryDevelopmentCombinedSpent) summaryDevelopmentCombinedSpent.textContent = formatFilterHours(view.developmentCombinedSpentHours);
         if (summaryDevelopmentCoverageAll) summaryDevelopmentCoverageAll.textContent = formatFilterPercent(view.developmentCoverageAllPercent);
         if (summaryDevelopmentTotalEstimated) summaryDevelopmentTotalEstimated.textContent = formatFilterHours(view.developmentTotalEstimatedHours);
-        if (summaryDevelopmentGrandSpentYear) summaryDevelopmentGrandSpentYear.textContent = formatFilterHours(view.developmentGrandSpentHoursYear);
+        if (summaryDevelopmentGrandSpentYear) {{
+          summaryDevelopmentGrandSpentYear.textContent = formatFilterHours(view.developmentGrandSpentHoursYear);
+          summaryDevelopmentGrandSpentYear.dataset.hours = String(view.developmentGrandSpentHoursYear || 0);
+        }}
         if (summaryDevelopmentGrandSpent) {{
           summaryDevelopmentGrandSpent.textContent = formatFilterHours(view.developmentGrandSpentHours);
           summaryDevelopmentGrandSpent.dataset.hours = String(view.developmentGrandSpentHours || 0);
@@ -10117,9 +10139,11 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           summaryDevelopmentTotalForecast.textContent = formatFilterHours(developmentTotalForecast);
           summaryDevelopmentTotalForecast.dataset.hours = String(developmentTotalForecast);
         }}
-        if (summaryDevelopmentYearForecast) summaryDevelopmentYearForecast.textContent = formatFilterHours(
-          developmentTotalForecast - Number(view.developmentGrandSpentHours || 0) + Number(view.developmentGrandSpentHoursYear || 0),
-        );
+        if (summaryDevelopmentYearForecast) {{
+          const developmentYearForecast = developmentTotalForecast - Number(view.developmentGrandSpentHours || 0) + Number(view.developmentGrandSpentHoursYear || 0);
+          summaryDevelopmentYearForecast.textContent = formatFilterHours(developmentYearForecast);
+          summaryDevelopmentYearForecast.dataset.hours = String(developmentYearForecast);
+        }}
       }}
 
       function renderSnapshotRows(issues) {{
