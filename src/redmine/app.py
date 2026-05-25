@@ -6182,7 +6182,7 @@ __LOCAL_GOLOS_FONT_CSS__
     }
     .weekly-load-table {
       width: auto;
-      min-width: 420px;
+      min-width: 348px;
     }
     .dashboard-metrics-table th,
     .dashboard-metrics-table td,
@@ -6194,6 +6194,10 @@ __LOCAL_GOLOS_FONT_CSS__
       vertical-align: middle;
       white-space: nowrap;
     }
+    .weekly-load-table th,
+    .weekly-load-table td {
+      padding: 7px 7px;
+    }
     .dashboard-metrics-table th:first-child,
     .weekly-load-table th:first-child {
       text-align: left;
@@ -6204,14 +6208,14 @@ __LOCAL_GOLOS_FONT_CSS__
       position: sticky;
       left: 0;
       z-index: 2;
-      width: 62px;
-      min-width: 62px;
-      max-width: 62px;
+      width: 56px;
+      min-width: 56px;
+      max-width: 56px;
       background: #eef6f7;
     }
     .weekly-load-table th:not(:first-child),
     .weekly-load-table td:not(:first-child) {
-      min-width: 72px;
+      min-width: 58px;
     }
     .dashboard-metrics-table thead th,
     .weekly-load-table th {
@@ -6220,6 +6224,9 @@ __LOCAL_GOLOS_FONT_CSS__
       text-transform: uppercase;
       font-size: 0.72rem;
       line-height: 1.2;
+    }
+    .weekly-load-table th {
+      text-transform: none;
     }
     .dashboard-metrics-table tbody tr:last-child td,
     .dashboard-metrics-table tbody tr:last-child th,
@@ -6244,23 +6251,29 @@ __LOCAL_GOLOS_FONT_CSS__
       font-size: 0.72rem;
       line-height: 1.2;
     }
+    .dashboard-deadline-controls {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: nowrap;
+    }
     .dashboard-developer-label {
       flex-direction: row;
       align-items: center;
-      justify-content: space-between;
-      gap: 8px;
+      gap: 6px;
       white-space: nowrap;
     }
     .dashboard-developer-label input {
-      width: 82px;
+      width: 41px;
       padding: 6px 7px;
       font-size: 0.72rem;
     }
     .calculate-deadline-button {
       min-height: 30px;
+      width: 104px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 6px 8px;
+      padding: 6px 6px;
       font: inherit;
       font-size: 0.72rem;
       font-weight: 700;
@@ -6636,10 +6649,12 @@ __LOCAL_GOLOS_FONT_CSS__
                     </div>
                   </div>
                   <div class="dashboard-deadline-panel">
-                    <label class="dashboard-developer-label">Кол-во разработчиков
-                      <input class="developer-count-input" type="text" inputmode="decimal">
-                    </label>
-                    <button type="button" class="calculate-deadline-button">Рассчитать срок</button>
+                    <div class="dashboard-deadline-controls">
+                      <label class="dashboard-developer-label">Кол-во
+                        <input class="developer-count-input" type="text" inputmode="decimal">
+                      </label>
+                      <button type="button" class="calculate-deadline-button">Рассчитать срок</button>
+                    </div>
                     <div class="deadline-result deadline-remaining-result">Дата завершения (остаток): —</div>
                     <div class="deadline-result deadline-forecast-result">Дата заверш. (прогноз - факт): —</div>
                   </div>
