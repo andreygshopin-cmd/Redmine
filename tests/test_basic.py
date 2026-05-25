@@ -154,6 +154,25 @@ def testReadRootReturnsHtmlPage() -> None:
     assert "Удаление среза по дате" in response.body.decode("utf-8")
 
 
+def testIndexQuickLinksUseCurrentUserRoles() -> None:
+    adminBody = app_module.buildIndexPage({
+        "login": "andrey.shopin@sms-a.ru",
+        "roles": ["Admin"],
+    })
+    userBody = app_module.buildIndexPage({
+        "login": "regular@example.com",
+        "roles": ["User"],
+    })
+
+    assert 'href="/dashboards/andrey.shopin%40sms-a.ru"' in adminBody
+    assert 'class="dashboard-nav-button is-finance"' in adminBody
+    assert 'href="/admin/users"' in adminBody
+    assert "Проекты Redmine</a>" not in adminBody
+    assert "Срезы задач</a>" not in adminBody
+    assert 'href="/dashboards/' not in userBody
+    assert 'href="/admin/users"' not in userBody
+
+
 def testReadBitrixPageReturnsHtmlPage() -> None:
     response = readBitrixPage()
     body = response.body.decode("utf-8")

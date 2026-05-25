@@ -310,6 +310,18 @@ def _hasAnyRole(user: dict[str, object] | None, roles: tuple[str, ...]) -> bool:
     return any(_hasRole(user, role) for role in roles)
 
 
+def _buildIndexQuickLinks(user: dict[str, object] | None) -> str:
+    links: list[str] = []
+    userLogin = str((user or {}).get("login") or "").strip()
+    if _userHasDashboard(userLogin):
+        financeOrAdmin = _hasAnyRole(user, (FINANCE_ROLE, ADMIN_ROLE))
+        cssClass = "dashboard-nav-button is-finance" if financeOrAdmin else "dashboard-nav-button"
+        links.append(f'<a class="{cssClass}" href="{escape(_buildDashboardUrl(userLogin))}">Dashboard</a>')
+    if _hasRole(user, ADMIN_ROLE):
+        links.append('<a id="adminPageButton" href="/admin/users">Администрирование</a>')
+    return "\n          ".join(links)
+
+
 def _bitrixProtectedPath(path: str) -> bool:
     normalizedPath = str(path or "").lower()
     return (
@@ -1939,14 +1951,14 @@ PAGE_HTML = """<!doctype html>
       transition: transform 120ms ease, border-color 120ms ease;
     }
 
-    .quick-links a#projectsNavButton {
+    .quick-links a.dashboard-nav-button {
       background: var(--blue-302);
       color: #ffffff;
       border-color: transparent;
       box-shadow: 0 10px 18px rgba(55, 93, 119, 0.2);
     }
 
-    .quick-links a#snapshotRunsNavButton {
+    .quick-links a.dashboard-nav-button.is-finance {
       background: var(--yellow-109);
       color: var(--text);
       border-color: transparent;
@@ -2510,9 +2522,7 @@ PAGE_HTML = """<!doctype html>
       </a>
       <nav class="hero-nav" aria-label="Быстрый переход по разделам">
         <div class="quick-links">
-          <a id="projectsNavButton" href="#projects-table">Проекты Redmine</a>
-          <a id="snapshotRunsNavButton" href="#snapshot-runs-table">Срезы задач</a>
-          <a id="adminPageButton" href="/admin/users">Администрирование</a>
+          __INDEX_QUICK_LINKS__
         </div>
       </nav>
     </div>
@@ -2902,9 +2912,6 @@ PAGE_HTML = """<!doctype html>
       const texts = [
         [".brand-logo", "alt", "СМС-ИТ"],
         [".hero-nav", "aria-label", "Быстрый переход по разделам"],
-        [".quick-links a:nth-child(1)", "textContent", "Загрузка данных"],
-        [".quick-links a:nth-child(2)", "textContent", "Таблица проектов"],
-        [".quick-links a:nth-child(3)", "textContent", "Таблица срезов"],
         [".hero h1", "textContent", "Анализ проектов Redmine"],
         ["#project-actions h2", "textContent", "Управление проектами"],
         ["#project-actions p", "textContent", "Получает список проектов из Redmine, добавляет новые записи и обновляет измененные."],
@@ -6327,9 +6334,8 @@ __LOCAL_GOLOS_FONT_CSS__
       line-height: 1.4;
     }
     .weekly-block .summary-legend {
-      grid-column: 1 / -1;
       width: 100%;
-      margin-top: -6px;
+      margin-top: 4px;
     }
     .chart-status {
       min-height: 24px;
@@ -6677,6 +6683,7 @@ __LOCAL_GOLOS_FONT_CSS__
                         </tbody>
                       </table>
                     </div>
+                    <p class="summary-legend">Количество программистов = сумма часов списаний по задачам проекта за неделю / 40.</p>
                   </div>
                   <div class="dashboard-deadline-panel">
                     <div class="dashboard-deadline-controls">
@@ -6688,7 +6695,6 @@ __LOCAL_GOLOS_FONT_CSS__
                     <div class="deadline-result deadline-remaining-result">Дата завершения (остаток): —</div>
                     <div class="deadline-result deadline-forecast-result">Дата заверш. (прогноз - факт): —</div>
                   </div>
-                  <p class="summary-legend">Количество программистов = сумма часов списаний по задачам проекта за неделю / 40.</p>
                 </div>
               </div>
             </div>
@@ -15365,19 +15371,24 @@ def buildPlanningProjectsPage() -> str:
 </html>""".replace("__DEFAULT_YEAR_1__", str(defaultYear1)).replace("__DEFAULT_YEAR_2__", str(defaultYear2)).replace("__DEFAULT_YEAR_3__", str(defaultYear3))
 
 
+def buildIndexPage(user: dict[str, object] | None = None) -> str:
+    return PAGE_HTML.replace("__INDEX_QUICK_LINKS__", _buildIndexQuickLinks(user))
+
+
 @app.get("/", response_class=HTMLResponse)
-def getIndexPage() -> HTMLResponse:
+def getIndexPage(request: Request) -> HTMLResponse:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureProjectsTable()
     ensureIssueSnapshotTables()
     ensurePlanningProjectsTable()
-    return _renderHtmlPage(PAGE_HTML)
+    currentUser = getattr(request.state, "current_user", None) or _getCurrentUser(request)
+    return _renderHtmlPage(buildIndexPage(currentUser))
 
 
 def readRoot() -> HTMLResponse:
-    return _renderHtmlPage(PAGE_HTML)
+    return _renderHtmlPage(buildIndexPage(None))
 
 
 @app.get("/Bitrix", response_class=HTMLResponse)
