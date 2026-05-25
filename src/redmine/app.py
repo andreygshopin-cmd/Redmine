@@ -9032,12 +9032,23 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         gap: 10px;
         align-content: center;
       }}
-      .snapshot-deadline-card label {{
+      .snapshot-deadline-controls {{
+        display: flex;
+        gap: 8px;
+        align-items: end;
+        flex-wrap: wrap;
+      }}
+      .snapshot-deadline-input-group {{
         display: grid;
         gap: 6px;
       }}
       .snapshot-developer-count-input {{
+        width: 75px;
+      }}
+      .snapshot-deadline-card .secondary-button {{
         width: 150px;
+        padding-left: 8px;
+        padding-right: 8px;
       }}
       .snapshot-deadline-result {{
         min-height: 24px;
@@ -9290,11 +9301,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           <p class="summary-legend">Количество программистов = сумма часов списаний по задачам проекта за неделю / 40.</p>
         </div>
         <div class="snapshot-capacity-card snapshot-deadline-card">
-          <label for="snapshotDeveloperCountInput">Количество разработчиков
-            <input class="snapshot-developer-count-input" id="snapshotDeveloperCountInput" type="number" min="0" step="0.1" value="{latestWeeklyDeveloperCountValue}">
-          </label>
-          <button type="button" class="secondary-button" id="calculateSnapshotDeadlineButton">Рассчитать срок</button>
-          <div class="snapshot-deadline-result" id="snapshotDeadlineResult">Дата завершения: —</div>
+          <div class="snapshot-deadline-controls">
+            <label class="snapshot-deadline-input-group" for="snapshotDeveloperCountInput">Количество разработчиков
+              <input class="snapshot-developer-count-input" id="snapshotDeveloperCountInput" type="number" min="0" step="0.1" value="{latestWeeklyDeveloperCountValue}">
+            </label>
+            <button type="button" class="secondary-button" id="calculateSnapshotDeadlineButton">Рассчитать срок</button>
+          </div>
+          <div class="snapshot-deadline-result" id="snapshotDeadlineResult">Дата завершения (остаток): —</div>
+          <div class="snapshot-deadline-result" id="snapshotForecastDeadlineResult">Дата завершения (прогноз - факт): —</div>
         </div>
       </div>
       <div class="summary-block">
@@ -9388,11 +9402,11 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-metric" id="summaryDevelopmentGrandSpentYear" colspan="2">{formatPageHours(summaryView["development_grand_spent_hours_year"])}</td>
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentYearForecast">{formatPageHours(float(snapshotDynamicMetrics["development_total_forecast_hours"] or 0) - float(summaryView["development_grand_spent_hours"] or 0) + float(summaryView["development_grand_spent_hours_year"] or 0))}</td>
-              <td class="summary-metric" id="summaryDevelopmentTotalRemaining">{formatPageHours(snapshotDynamicMetrics["development_total_remaining_hours"])}</td>
-              <td class="summary-metric" id="summaryDevelopmentGrandSpent" colspan="2">{formatPageHours(summaryView["development_grand_spent_hours"])}</td>
+              <td class="summary-metric" id="summaryDevelopmentTotalRemaining" data-hours="{float(snapshotDynamicMetrics["development_total_remaining_hours"] or 0)}">{formatPageHours(snapshotDynamicMetrics["development_total_remaining_hours"])}</td>
+              <td class="summary-metric" id="summaryDevelopmentGrandSpent" colspan="2" data-hours="{float(summaryView["development_grand_spent_hours"] or 0)}">{formatPageHours(summaryView["development_grand_spent_hours"])}</td>
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentTotalVolume">{formatPageHours(snapshotDynamicMetrics["development_total_volume_hours"])}</td>
-              <td class="summary-metric" id="summaryDevelopmentTotalForecast">{formatPageHours(snapshotDynamicMetrics["development_total_forecast_hours"])}</td>
+              <td class="summary-metric" id="summaryDevelopmentTotalForecast" data-hours="{float(snapshotDynamicMetrics["development_total_forecast_hours"] or 0)}">{formatPageHours(snapshotDynamicMetrics["development_total_forecast_hours"])}</td>
             </tr>
             <tr>
               <th class="summary-section-row">3. Фичи</th>
@@ -9513,6 +9527,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       const snapshotDeveloperCountInput = document.getElementById("snapshotDeveloperCountInput");
       const calculateSnapshotDeadlineButton = document.getElementById("calculateSnapshotDeadlineButton");
       const snapshotDeadlineResult = document.getElementById("snapshotDeadlineResult");
+      const snapshotForecastDeadlineResult = document.getElementById("snapshotForecastDeadlineResult");
       const snapshotPrevPageButton = document.getElementById("snapshotPrevPageButton");
       const snapshotNextPageButton = document.getElementById("snapshotNextPageButton");
       const snapshotPaginationInfo = document.getElementById("snapshotPaginationInfo");
@@ -9773,24 +9788,41 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         }}
       }}
 
+      function getSnapshotSummaryCellHours(cell) {{
+        return parseSnapshotNumber(cell?.dataset.hours || cell?.textContent || "0");
+      }}
+
+      function renderSnapshotDeadlineResult(resultElement, label, hoursValue, developerCount, baseDate) {{
+        if (!resultElement) {{
+          return;
+        }}
+        const completionDate = addSnapshotWorkingDays(baseDate, Math.max(0, Number(hoursValue || 0)) / 8 / developerCount);
+        if (!completionDate) {{
+          resultElement.textContent = `${{label}}: не удалось определить дату среза`;
+          return;
+        }}
+        resultElement.textContent = `${{label}}: ${{formatSnapshotDisplayDate(completionDate)}}`;
+      }}
+
       function calculateSnapshotDeadline() {{
-        if (!snapshotDeadlineResult) {{
+        if (!snapshotDeadlineResult && !snapshotForecastDeadlineResult) {{
           return;
         }}
         const developerCount = parseSnapshotNumber(snapshotDeveloperCountInput?.value || "");
         if (developerCount <= 0) {{
-          snapshotDeadlineResult.textContent = "Дата завершения: укажите количество разработчиков больше 0";
+          if (snapshotDeadlineResult) {{
+            snapshotDeadlineResult.textContent = "Дата завершения (остаток): укажите количество разработчиков больше 0";
+          }}
+          if (snapshotForecastDeadlineResult) {{
+            snapshotForecastDeadlineResult.textContent = "Дата завершения (прогноз - факт): укажите количество разработчиков больше 0";
+          }}
           return;
         }}
-        const remainingHours = parseSnapshotNumber(summaryDevelopmentTotalRemaining?.dataset.hours || summaryDevelopmentTotalRemaining?.textContent || "0");
-        const workingDays = remainingHours / 8 / developerCount;
         const baseDate = currentSnapshotCapturedForDate || getSelectedSnapshotDate() || selectedSnapshotDate;
-        const completionDate = addSnapshotWorkingDays(baseDate, workingDays);
-        if (!completionDate) {{
-          snapshotDeadlineResult.textContent = "Дата завершения: не удалось определить дату среза";
-          return;
-        }}
-        snapshotDeadlineResult.textContent = `Дата завершения: ${{formatSnapshotDisplayDate(completionDate)}}`;
+        const remainingHours = getSnapshotSummaryCellHours(summaryDevelopmentTotalRemaining);
+        const forecastMinusFactHours = getSnapshotSummaryCellHours(summaryDevelopmentTotalForecast) - getSnapshotSummaryCellHours(summaryDevelopmentGrandSpent);
+        renderSnapshotDeadlineResult(snapshotDeadlineResult, "Дата завершения (остаток)", remainingHours, developerCount, baseDate);
+        renderSnapshotDeadlineResult(snapshotForecastDeadlineResult, "Дата завершения (прогноз - факт)", forecastMinusFactHours, developerCount, baseDate);
       }}
 
       function formatSnapshotDateTime(value) {{
@@ -10064,7 +10096,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if (summaryDevelopmentCoverageAll) summaryDevelopmentCoverageAll.textContent = formatFilterPercent(view.developmentCoverageAllPercent);
         if (summaryDevelopmentTotalEstimated) summaryDevelopmentTotalEstimated.textContent = formatFilterHours(view.developmentTotalEstimatedHours);
         if (summaryDevelopmentGrandSpentYear) summaryDevelopmentGrandSpentYear.textContent = formatFilterHours(view.developmentGrandSpentHoursYear);
-        if (summaryDevelopmentGrandSpent) summaryDevelopmentGrandSpent.textContent = formatFilterHours(view.developmentGrandSpentHours);
+        if (summaryDevelopmentGrandSpent) {{
+          summaryDevelopmentGrandSpent.textContent = formatFilterHours(view.developmentGrandSpentHours);
+          summaryDevelopmentGrandSpent.dataset.hours = String(view.developmentGrandSpentHours || 0);
+        }}
         if (summaryBugShareYear) summaryBugShareYear.textContent = formatFilterPercent(view.bugShareYearPercent);
         if (summaryBugShareAll) summaryBugShareAll.textContent = formatFilterPercent(view.bugShareAllPercent);
         const developmentTotalRemaining = getDynamicMetric("development_total_remaining_hours", "developmentTotalRemainingHours");
@@ -10078,7 +10113,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if (summaryBugVolume) summaryBugVolume.textContent = formatFilterHours(getDynamicMetric("bug_volume_hours", "bugVolumeHours"));
         if (summaryDevelopmentTotalVolume) summaryDevelopmentTotalVolume.textContent = formatFilterHours(getDynamicMetric("development_total_volume_hours", "developmentTotalVolumeHours"));
         const developmentTotalForecast = getDynamicMetric("development_total_forecast_hours", "developmentTotalForecastHours");
-        if (summaryDevelopmentTotalForecast) summaryDevelopmentTotalForecast.textContent = formatFilterHours(developmentTotalForecast);
+        if (summaryDevelopmentTotalForecast) {{
+          summaryDevelopmentTotalForecast.textContent = formatFilterHours(developmentTotalForecast);
+          summaryDevelopmentTotalForecast.dataset.hours = String(developmentTotalForecast);
+        }}
         if (summaryDevelopmentYearForecast) summaryDevelopmentYearForecast.textContent = formatFilterHours(
           developmentTotalForecast - Number(view.developmentGrandSpentHours || 0) + Number(view.developmentGrandSpentHoursYear || 0),
         );
