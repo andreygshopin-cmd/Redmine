@@ -6268,7 +6268,8 @@ __LOCAL_GOLOS_FONT_CSS__
     .weekly-block {
       display: grid;
       grid-template-columns: minmax(0, 1fr) max-content;
-      gap: 36px;
+      column-gap: 36px;
+      row-gap: 4px;
       padding: 10px;
       align-items: start;
     }
@@ -6334,8 +6335,9 @@ __LOCAL_GOLOS_FONT_CSS__
       line-height: 1.4;
     }
     .weekly-block .summary-legend {
+      grid-column: 1 / -1;
       width: 100%;
-      margin-top: 4px;
+      margin-top: 0;
     }
     .chart-status {
       min-height: 24px;
@@ -6683,7 +6685,6 @@ __LOCAL_GOLOS_FONT_CSS__
                         </tbody>
                       </table>
                     </div>
-                    <p class="summary-legend">Количество программистов = сумма часов списаний по задачам проекта за неделю / 40.</p>
                   </div>
                   <div class="dashboard-deadline-panel">
                     <div class="dashboard-deadline-controls">
@@ -6695,6 +6696,7 @@ __LOCAL_GOLOS_FONT_CSS__
                     <div class="deadline-result deadline-remaining-result">Дата завершения (остаток): —</div>
                     <div class="deadline-result deadline-forecast-result">Дата заверш. (прогноз - факт): —</div>
                   </div>
+                  <p class="summary-legend">Количество программистов = сумма часов списаний по задачам проекта за неделю / 40.</p>
                 </div>
               </div>
             </div>
