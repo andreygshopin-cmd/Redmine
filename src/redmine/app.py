@@ -314,9 +314,9 @@ def _buildIndexQuickLinks(user: dict[str, object] | None) -> str:
     links: list[str] = []
     userLogin = str((user or {}).get("login") or "").strip()
     if _userHasDashboard(userLogin):
-        financeOrAdmin = _hasAnyRole(user, (FINANCE_ROLE, ADMIN_ROLE))
-        cssClass = "dashboard-nav-button is-finance" if financeOrAdmin else "dashboard-nav-button"
-        links.append(f'<a class="{cssClass}" href="{escape(_buildDashboardUrl(userLogin))}">Dashboard</a>')
+        links.append(f'<a class="dashboard-nav-button" href="{escape(_buildDashboardUrl(userLogin))}">Dashboard</a>')
+    if _hasAnyRole(user, (FINANCE_ROLE, ADMIN_ROLE)):
+        links.append('<a class="bitrix-nav-button" href="/Bitrix">Bitrix</a>')
     if _hasRole(user, ADMIN_ROLE):
         links.append('<a id="adminPageButton" href="/admin/users">Администрирование</a>')
     return "\n          ".join(links)
@@ -1958,7 +1958,7 @@ PAGE_HTML = """<!doctype html>
       box-shadow: 0 10px 18px rgba(55, 93, 119, 0.2);
     }
 
-    .quick-links a.dashboard-nav-button.is-finance {
+    .quick-links a.bitrix-nav-button {
       background: var(--yellow-109);
       color: var(--text);
       border-color: transparent;
@@ -6279,7 +6279,7 @@ __LOCAL_GOLOS_FONT_CSS__
     .dashboard-deadline-panel {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 3px;
       justify-self: end;
       min-width: 0;
       font-size: 0.72rem;
@@ -6317,11 +6317,11 @@ __LOCAL_GOLOS_FONT_CSS__
       white-space: nowrap;
     }
     .deadline-result {
-      min-height: 20px;
+      min-height: 0;
       color: var(--blue);
       font-size: 0.72rem;
       font-weight: 700;
-      line-height: 1.35;
+      line-height: 1.15;
       white-space: nowrap;
     }
     .deadline-result.is-out-of-year {

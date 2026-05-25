@@ -165,11 +165,14 @@ def testIndexQuickLinksUseCurrentUserRoles() -> None:
     })
 
     assert 'href="/dashboards/andrey.shopin%40sms-a.ru"' in adminBody
-    assert 'class="dashboard-nav-button is-finance"' in adminBody
+    assert 'class="dashboard-nav-button"' in adminBody
+    assert 'class="bitrix-nav-button"' in adminBody
+    assert 'href="/Bitrix"' in adminBody
     assert 'href="/admin/users"' in adminBody
     assert "Проекты Redmine</a>" not in adminBody
     assert "Срезы задач</a>" not in adminBody
     assert 'href="/dashboards/' not in userBody
+    assert 'href="/Bitrix"' not in userBody
     assert 'href="/admin/users"' not in userBody
 
 
