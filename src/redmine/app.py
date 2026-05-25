@@ -6220,6 +6220,10 @@ __LOCAL_GOLOS_FONT_CSS__
     .weekly-load-table .is-weekly-column-hidden {
       visibility: hidden;
     }
+    .weekly-load-table th.is-weekly-column-hidden {
+      color: transparent;
+      visibility: visible;
+    }
     .dashboard-metrics-table thead th,
     .weekly-load-table th {
       background: #eef6f7;
@@ -6240,7 +6244,7 @@ __LOCAL_GOLOS_FONT_CSS__
     .weekly-block {
       display: grid;
       grid-template-columns: minmax(0, 0.75fr) minmax(275px, 0.65fr);
-      gap: 10px;
+      gap: 18px;
       padding: 10px;
     }
     .weekly-table-wrap {
