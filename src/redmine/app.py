@@ -143,6 +143,23 @@ DASHBOARD_USER_CONFIGS: dict[str, dict[str, object]] = {
             },
         ],
     },
+    "stanislav.shidlovskiy@sms-a.ru": {
+        "title": "Dashboard",
+        "widgets": [
+            {
+                "id": "project-state-1",
+                "type": "project_state",
+                "title": "Состояние проекта",
+                "default_project_offset": 0,
+            },
+            {
+                "id": "project-state-2",
+                "type": "project_state",
+                "title": "Состояние проекта",
+                "default_project_offset": 1,
+            },
+        ],
+    },
 }
 
 LOCAL_GOLOS_FONT_CSS = """
@@ -6246,6 +6263,7 @@ __LOCAL_GOLOS_FONT_CSS__
       grid-template-columns: minmax(0, 1fr) max-content;
       gap: 36px;
       padding: 10px;
+      align-items: start;
     }
     .weekly-table-wrap {
       overflow-x: auto;
@@ -6311,6 +6329,7 @@ __LOCAL_GOLOS_FONT_CSS__
     .weekly-block .summary-legend {
       grid-column: 1 / -1;
       width: 100%;
+      margin-top: -6px;
     }
     .chart-status {
       min-height: 24px;
