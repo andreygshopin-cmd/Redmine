@@ -6243,8 +6243,8 @@ __LOCAL_GOLOS_FONT_CSS__
     }
     .weekly-block {
       display: grid;
-      grid-template-columns: minmax(0, 0.75fr) minmax(275px, 0.65fr);
-      gap: 18px;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 36px;
       padding: 10px;
     }
     .weekly-table-wrap {
@@ -6295,6 +6295,7 @@ __LOCAL_GOLOS_FONT_CSS__
       font-size: 0.72rem;
       font-weight: 700;
       line-height: 1.35;
+      white-space: nowrap;
     }
     .deadline-result.is-out-of-year {
       color: #d9534f;
