@@ -6217,6 +6217,9 @@ __LOCAL_GOLOS_FONT_CSS__
     .weekly-load-table td:not(:first-child) {
       min-width: 58px;
     }
+    .weekly-load-table .is-weekly-column-hidden {
+      visibility: hidden;
+    }
     .dashboard-metrics-table thead th,
     .weekly-load-table th {
       background: #eef6f7;
@@ -6935,10 +6938,10 @@ __LOCAL_GOLOS_FONT_CSS__
     function renderWeeklyDeveloperLoad(elements, rows, copyLatestToInput = false) {
       const sourceRows = Array.isArray(rows) ? rows : [];
       if (elements.weeklyLoadWeeksRow) {
-        elements.weeklyLoadWeeksRow.innerHTML = `<th scope="row">Неделя</th>${sourceRows.map((row) => `<th scope="col">${escapeHtml(row?.label || "—")}</th>`).join("") || "<td>—</td>"}`;
+        elements.weeklyLoadWeeksRow.innerHTML = `<th scope="row">Неделя</th>${sourceRows.map((row, index) => `<th scope="col" data-weekly-column="${index}">${escapeHtml(row?.label || "—")}</th>`).join("") || "<td>—</td>"}`;
       }
       if (elements.weeklyLoadDevelopersRow) {
-        elements.weeklyLoadDevelopersRow.innerHTML = `<th scope="row">Кол-во</th>${sourceRows.map((row) => `<td>${formatHours(row?.developers || 0)}</td>`).join("") || "<td>—</td>"}`;
+        elements.weeklyLoadDevelopersRow.innerHTML = `<th scope="row">Кол-во</th>${sourceRows.map((row, index) => `<td data-weekly-column="${index}">${formatHours(row?.developers || 0)}</td>`).join("") || "<td>—</td>"}`;
       }
       if (copyLatestToInput && elements.developerCountInput) {
         const latestRow = sourceRows.length ? sourceRows[sourceRows.length - 1] : null;
@@ -6947,8 +6950,28 @@ __LOCAL_GOLOS_FONT_CSS__
       if (elements.weeklyTableWrap) {
         requestAnimationFrame(() => {
           elements.weeklyTableWrap.scrollLeft = elements.weeklyTableWrap.scrollWidth;
+          updateWeeklyColumnVisibility(elements);
         });
       }
+    }
+
+    function updateWeeklyColumnVisibility(elements) {
+      if (!elements.weeklyTableWrap || !elements.weeklyLoadWeeksRow) {
+        return;
+      }
+      const wrapRect = elements.weeklyTableWrap.getBoundingClientRect();
+      const stickyHeader = elements.weeklyLoadWeeksRow.querySelector("th:first-child");
+      const stickyWidth = stickyHeader ? stickyHeader.getBoundingClientRect().width : 0;
+      const visibleLeft = wrapRect.left + stickyWidth - 0.5;
+      const visibleRight = wrapRect.right + 0.5;
+      elements.weeklyLoadWeeksRow.querySelectorAll("[data-weekly-column]").forEach((headerCell) => {
+        const columnIndex = headerCell.dataset.weeklyColumn || "";
+        const rect = headerCell.getBoundingClientRect();
+        const isFullyVisible = rect.left >= visibleLeft && rect.right <= visibleRight;
+        elements.weeklyTableWrap.querySelectorAll(`[data-weekly-column="${columnIndex}"]`).forEach((cell) => {
+          cell.classList.toggle("is-weekly-column-hidden", !isFullyVisible);
+        });
+      });
     }
 
     function setWidgetDeadlineResult(resultElement, label, hoursValue, developerCount, baseDate) {
@@ -7320,6 +7343,10 @@ __LOCAL_GOLOS_FONT_CSS__
       elements.developerCountInput?.addEventListener("change", () => {
         calculateWidgetDeadline(elements);
       });
+      elements.weeklyTableWrap?.addEventListener("scroll", () => {
+        requestAnimationFrame(() => updateWeeklyColumnVisibility(elements));
+      }, { passive: true });
+      window.addEventListener("resize", () => updateWeeklyColumnVisibility(elements));
       elements.togglePanelButton.addEventListener("click", () => {
         const collapsed = elements.panel.classList.toggle("is-collapsed");
         widgetNode.classList.toggle("is-panel-open", !collapsed);
@@ -9035,7 +9062,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .action-status {{ color: var(--muted); margin: 0 0 18px; min-height: 22px; }}
       .snapshot-capacity-panel {{
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(364px, 468px);
+        grid-template-columns: minmax(0, 1fr) minmax(437px, 562px);
         gap: 16px;
         align-items: stretch;
         margin: 0 0 20px;
@@ -9082,7 +9109,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         display: flex;
         gap: 8px;
         align-items: center;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
       }}
       .snapshot-deadline-input-group {{
         display: flex;
@@ -9097,6 +9124,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         width: 150px;
         padding-left: 8px;
         padding-right: 8px;
+        white-space: nowrap;
       }}
       .snapshot-deadline-result {{
         min-height: 24px;
