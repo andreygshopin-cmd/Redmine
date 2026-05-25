@@ -374,6 +374,10 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     assert '<select data-filter="energy_products">' in body
     assert '<select data-filter="product">' in body
     assert "Получить срез по счетам" in body
+    assert "Экспорт в Excel" in body
+    assert 'id="exportButton"' in body
+    assert "/api/bitrix/invoice-snapshots/export" in body
+    assert "buildExportParams" in body
     assert body.index('id="reloadButton"') < body.index('id="captureSnapshotButton"')
     assert "entities=${encodeURIComponent(entityKey)}" in body
     assert "overflow-x: auto; overflow-y: visible; position: relative" in body
@@ -934,6 +938,67 @@ def testExportBitrixDealSnapshotEndpointReturnsAnsiCsv(monkeypatch) -> None:
     assert "bitrix-deals-2026-05-06.csv" in response.headers["content-disposition"]
     assert "Иванов Иван" in response.content.decode("cp1251")
     assert ";1235;" in response.content.decode("cp1251")
+
+
+def testExportBitrixInvoiceSnapshotEndpointReturnsAnsiCsv(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module.config, "bitrixPortalUrl", "")
+    monkeypatch.setattr(app_module.config, "bitrixCredential", "")
+    monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "roles": ["Admin"], "must_change_password": False})
+    captured: dict[str, object] = {}
+
+    def fakeGetBitrixCrmSnapshotItemsApiPayload(entityType, capturedForDate, page, pageSize, filters):
+        captured["entityType"] = entityType
+        captured["capturedForDate"] = capturedForDate
+        captured["pageSize"] = pageSize
+        captured["filters"] = filters
+        return {
+            "snapshot_run": {"captured_for_date": capturedForDate or "2026-05-08"},
+            "items": [
+                {
+                    "item_id": 6453,
+                    "deal_id": 35421,
+                    "deal_title": "Магнит",
+                    "title": "Счет",
+                    "opportunity": 991.6,
+                    "status_name": "Новый",
+                    "assigned_by_name": "Иванов Иван",
+                    "company_name": "Компания",
+                    "pipeline_stage_invoice": "КОТ/Договор в работе",
+                    "invoice_stage": "Договор",
+                    "begin_date": "2026-05-01",
+                    "close_date": "2026-05-31",
+                    "kot_products": "КОТ",
+                    "products": "Продукт",
+                    "energy_products": "Энергетика",
+                    "product": "Продукт для отчета",
+                    "created_time": "2026-05-01T10:00:00Z",
+                    "updated_time": "2026-05-02T10:00:00Z",
+                }
+            ] if page == 1 else [],
+            "total_count": 1,
+        }
+
+    monkeypatch.setattr(app_module, "getBitrixCrmSnapshotItemsApiPayload", fakeGetBitrixCrmSnapshotItemsApiPayload)
+
+    response = client.get(
+        "/api/bitrix/invoice-snapshots/export?captured_for_date=2026-05-08"
+        "&status_name=Новый&assigned_by_name=Иванов"
+    )
+
+    decoded = response.content.decode("cp1251")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/csv; charset=windows-1251"
+    assert "bitrix-invoices-2026-05-08.csv" in response.headers["content-disposition"]
+    assert captured["entityType"] == "invoice"
+    assert captured["capturedForDate"] == "2026-05-08"
+    assert captured["pageSize"] == 5000
+    assert captured["filters"]["status_name"] == "Новый"
+    assert captured["filters"]["assigned_by_name"] == "Иванов"
+    assert "Магнит" in decoded
+    assert "КОТ/Договор в работе" in decoded
+    assert ";992;" in decoded
 
 
 def testGetTimeReturnsServerTimePayload() -> None:

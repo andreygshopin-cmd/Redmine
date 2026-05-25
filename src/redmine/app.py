@@ -15405,6 +15405,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     captureButtonLabel = "Получить срез по счетам" if isInvoicePage else "Получить срез по лидам"
     entityLabel = "счета" if isInvoicePage else "лиды"
     extraNavButtons = '<a class="button" href="/Bitrix/invoices/summary">Сводный отчет по счетам</a>' if isInvoicePage else ""
+    extraToolbarButtons = '<button class="button" id="exportButton" type="button">Экспорт в Excel</button>' if isInvoicePage else ""
     baseColumnGroups = """
             <col class="crm-col-id">
             <col class="crm-col-deal">
@@ -15625,6 +15626,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
         <button class="button" id="reloadButton" type="button">Показать</button>
         <button class="button" id="captureSnapshotButton" type="button">__CAPTURE_BUTTON_LABEL__</button>
         <button class="button" id="resetFiltersButton" type="button">Сбросить фильтры</button>
+        __EXTRA_TOOLBAR_BUTTONS__
       </div>
       <div class="status" id="statusBox">Загружаю срез...</div>
       <div class="table-wrap">
@@ -15653,11 +15655,13 @@ __EXTRA_HEADER_CELLS__
   </main>
   <script>
     const apiBasePath = "__API_BASE_PATH__";
+    const exportPath = "__API_BASE_PATH__/export";
     const bitrixPath = "__BITRIX_PATH__";
     const entityKey = "__ENTITY_KEY__";
     const entityLabel = "__ENTITY_LABEL__";
     const dateSelect = document.getElementById("snapshotDateSelect");
     const captureButton = document.getElementById("captureSnapshotButton");
+    const exportButton = document.getElementById("exportButton");
     const pageSizeInput = document.getElementById("pageSizeInput");
     const statusBox = document.getElementById("statusBox");
     const tableBody = document.getElementById("tableBody");
@@ -15786,6 +15790,12 @@ __EXTRA_HEADER_CELLS__
       });
       return params;
     }
+    function buildExportParams() {
+      const params = buildParams();
+      params.delete("page");
+      params.delete("page_size");
+      return params;
+    }
     function renderRows(items) {
       if (!Array.isArray(items) || !items.length) {
         tableBody.innerHTML = '<tr><td colspan="__EMPTY_COLSPAN__">Строки не найдены.</td></tr>';
@@ -15888,6 +15898,9 @@ __EXTRA_ROW_CELLS__
       }
     }
     captureButton?.addEventListener("click", captureCurrentEntitySnapshot);
+    exportButton?.addEventListener("click", () => {
+      window.location.href = `${exportPath}?${buildExportParams().toString()}`;
+    });
     document.getElementById("reloadButton")?.addEventListener("click", () => {
       currentPage = 1;
       safeLoadItems();
@@ -15921,7 +15934,7 @@ __EXTRA_ROW_CELLS__
     safeLoadItems();
   </script>
 </body>
-</html>""".replace("__PAGE_TITLE__", pageTitle).replace("__API_BASE_PATH__", apiBasePath).replace("__BITRIX_PATH__", bitrixPath).replace("__ENTITY_KEY__", entityType).replace("__ENTITY_LABEL__", entityLabel).replace("__CAPTURE_BUTTON_LABEL__", captureButtonLabel).replace("__TABLE_CLASS__", tableClass).replace("__EXTRA_NAV_BUTTONS__", extraNavButtons).replace("__BASE_COLUMN_GROUPS__", baseColumnGroups).replace("__BASE_HEADER_CELLS__", baseHeaderCells).replace("__BASE_ROW_CELLS__", baseRowCells).replace("__EXTRA_COLUMN_GROUPS__", extraColumnGroups).replace("__EXTRA_HEADER_CELLS__", extraHeaderCells).replace("__EXTRA_ROW_CELLS__", extraRowCells).replace("__EMPTY_COLSPAN__", emptyColspan)
+</html>""".replace("__PAGE_TITLE__", pageTitle).replace("__API_BASE_PATH__", apiBasePath).replace("__BITRIX_PATH__", bitrixPath).replace("__ENTITY_KEY__", entityType).replace("__ENTITY_LABEL__", entityLabel).replace("__CAPTURE_BUTTON_LABEL__", captureButtonLabel).replace("__TABLE_CLASS__", tableClass).replace("__EXTRA_NAV_BUTTONS__", extraNavButtons).replace("__EXTRA_TOOLBAR_BUTTONS__", extraToolbarButtons).replace("__BASE_COLUMN_GROUPS__", baseColumnGroups).replace("__BASE_HEADER_CELLS__", baseHeaderCells).replace("__BASE_ROW_CELLS__", baseRowCells).replace("__EXTRA_COLUMN_GROUPS__", extraColumnGroups).replace("__EXTRA_HEADER_CELLS__", extraHeaderCells).replace("__EXTRA_ROW_CELLS__", extraRowCells).replace("__EMPTY_COLSPAN__", emptyColspan)
 
 
 def buildBitrixInvoiceSummaryPage() -> str:
@@ -19207,6 +19220,139 @@ def getBitrixInvoiceSnapshotItemsApi(
             created_time=created_time,
             updated_time=updated_time,
         ),
+    )
+
+
+@app.get("/api/bitrix/invoice-snapshots/export")
+def exportBitrixInvoiceSnapshotItemsApi(
+    captured_for_date: str | None = Query(None),
+    item_id: str | None = Query(None),
+    title: str | None = Query(None),
+    status_id: str | None = Query(None),
+    status_name: str | None = Query(None),
+    assigned_by_id: str | None = Query(None),
+    assigned_by_name: str | None = Query(None),
+    opportunity: str | None = Query(None),
+    deal_id: str | None = Query(None),
+    company_id: str | None = Query(None),
+    company_name: str | None = Query(None),
+    category_id: str | None = Query(None),
+    category_name: str | None = Query(None),
+    pipeline_stage_invoice: str | None = Query(None),
+    stage_group: str | None = Query(None),
+    invoice_stage: str | None = Query(None),
+    begin_date: str | None = Query(None),
+    close_date: str | None = Query(None),
+    kot_products: str | None = Query(None),
+    products: str | None = Query(None),
+    energy_products: str | None = Query(None),
+    product: str | None = Query(None),
+    created_time: str | None = Query(None),
+    updated_time: str | None = Query(None),
+) -> Response:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    filters = buildBitrixCrmSnapshotFilters(
+        item_id=item_id,
+        title=title,
+        status_id=status_id,
+        status_name=status_name,
+        assigned_by_id=assigned_by_id,
+        assigned_by_name=assigned_by_name,
+        opportunity=opportunity,
+        deal_id=deal_id,
+        company_id=company_id,
+        company_name=company_name,
+        category_id=category_id,
+        category_name=category_name,
+        pipeline_stage_invoice=pipeline_stage_invoice,
+        stage_group=stage_group,
+        invoice_stage=invoice_stage,
+        begin_date=begin_date,
+        close_date=close_date,
+        kot_products=kot_products,
+        products=products,
+        energy_products=energy_products,
+        product=product,
+        created_time=created_time,
+        updated_time=updated_time,
+    )
+    rows: list[dict[str, object]] = []
+    page = 1
+    snapshotDate = captured_for_date
+    while True:
+        payload = getBitrixCrmSnapshotItemsApiPayload(
+            "invoice",
+            snapshotDate,
+            page,
+            5000,
+            filters,
+        )
+        rows.extend([row for row in payload.get("items", []) if isinstance(row, dict)])
+        snapshotRun = payload.get("snapshot_run") or {}
+        if isinstance(snapshotRun, dict):
+            snapshotDate = str(snapshotRun.get("captured_for_date") or snapshotDate or "")
+        if len(rows) >= int(payload.get("total_count") or 0) or not payload.get("items"):
+            break
+        page += 1
+
+    def roundedAmount(value: object) -> str:
+        if value in (None, ""):
+            return ""
+        try:
+            return str(round(float(value)))
+        except (TypeError, ValueError):
+            return str(value)
+
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";", lineterminator="\r\n")
+    writer.writerow([
+        "ID",
+        "Сделка",
+        "Название",
+        "Сумма",
+        "Статус",
+        "Ответственный",
+        "Компания",
+        "Воронка/стадия/счет",
+        "Стадия",
+        "Дата выставления",
+        "Срок оплаты",
+        "КОТ ПРОДУКТЫ",
+        "Продукты",
+        "Продукты (энергетика)",
+        "Продукт (для отчета)",
+        "Создан",
+        "Обновлен",
+    ])
+    for row in rows:
+        writer.writerow([
+            row.get("item_id") or "",
+            row.get("deal_title") or row.get("deal_id") or "",
+            row.get("title") or "",
+            roundedAmount(row.get("opportunity")),
+            row.get("status_name") or row.get("status_id") or "",
+            row.get("assigned_by_name") or row.get("assigned_by_id") or "",
+            row.get("company_name") or row.get("company_id") or "",
+            row.get("pipeline_stage_invoice") or "",
+            row.get("invoice_stage") or "",
+            row.get("begin_date") or "",
+            row.get("close_date") or "",
+            row.get("kot_products") or "",
+            row.get("products") or "",
+            row.get("energy_products") or "",
+            row.get("product") or "",
+            row.get("created_time") or "",
+            row.get("updated_time") or "",
+        ])
+
+    filenameDate = snapshotDate or date.today().isoformat()
+    content = output.getvalue().encode("cp1251", errors="replace")
+    return Response(
+        content=content,
+        media_type="text/csv; charset=windows-1251",
+        headers={"Content-Disposition": f'attachment; filename="bitrix-invoices-{filenameDate}.csv"'},
     )
 
 
