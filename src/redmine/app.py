@@ -6236,7 +6236,7 @@ __LOCAL_GOLOS_FONT_CSS__
     }
     .weekly-block {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(220px, 0.52fr);
+      grid-template-columns: minmax(0, 0.75fr) minmax(275px, 0.65fr);
       gap: 10px;
       padding: 10px;
     }
@@ -6270,7 +6270,7 @@ __LOCAL_GOLOS_FONT_CSS__
     }
     .calculate-deadline-button {
       min-height: 30px;
-      width: 104px;
+      width: 132px;
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 6px 6px;
@@ -6280,6 +6280,7 @@ __LOCAL_GOLOS_FONT_CSS__
       color: var(--text);
       background: #eef2f5;
       cursor: pointer;
+      white-space: nowrap;
     }
     .deadline-result {
       min-height: 20px;
@@ -9080,12 +9081,14 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
       .snapshot-deadline-controls {{
         display: flex;
         gap: 8px;
-        align-items: end;
+        align-items: center;
         flex-wrap: wrap;
       }}
       .snapshot-deadline-input-group {{
-        display: grid;
+        display: flex;
+        align-items: center;
         gap: 6px;
+        white-space: nowrap;
       }}
       .snapshot-developer-count-input {{
         width: 75px;
