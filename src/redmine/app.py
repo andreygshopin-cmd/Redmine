@@ -6180,6 +6180,10 @@ __LOCAL_GOLOS_FONT_CSS__
       border-collapse: collapse;
       font-size: 0.88rem;
     }
+    .weekly-load-table {
+      width: auto;
+      min-width: 420px;
+    }
     .dashboard-metrics-table th,
     .dashboard-metrics-table td,
     .weekly-load-table th,
@@ -6200,7 +6204,14 @@ __LOCAL_GOLOS_FONT_CSS__
       position: sticky;
       left: 0;
       z-index: 2;
+      width: 62px;
+      min-width: 62px;
+      max-width: 62px;
       background: #eef6f7;
+    }
+    .weekly-load-table th:not(:first-child),
+    .weekly-load-table td:not(:first-child) {
+      min-width: 72px;
     }
     .dashboard-metrics-table thead th,
     .weekly-load-table th {
@@ -6619,7 +6630,7 @@ __LOCAL_GOLOS_FONT_CSS__
                       <table class="weekly-load-table">
                         <tbody>
                           <tr class="weekly-load-weeks-row"><th>Неделя</th><td>—</td></tr>
-                          <tr class="weekly-load-developers-row"><th>Кол-во программ.</th><td>—</td></tr>
+                          <tr class="weekly-load-developers-row"><th>Кол-во</th><td>—</td></tr>
                         </tbody>
                       </table>
                     </div>
@@ -6630,7 +6641,7 @@ __LOCAL_GOLOS_FONT_CSS__
                     </label>
                     <button type="button" class="calculate-deadline-button">Рассчитать срок</button>
                     <div class="deadline-result deadline-remaining-result">Дата завершения (остаток): —</div>
-                    <div class="deadline-result deadline-forecast-result">Дата завершения (прогноз - факт): —</div>
+                    <div class="deadline-result deadline-forecast-result">Дата заверш. (прогноз - факт): —</div>
                   </div>
                   <p class="summary-legend">Количество программистов = сумма часов списаний по задачам проекта за неделю / 40.</p>
                 </div>
@@ -6911,7 +6922,7 @@ __LOCAL_GOLOS_FONT_CSS__
         elements.weeklyLoadWeeksRow.innerHTML = `<th scope="row">Неделя</th>${sourceRows.map((row) => `<th scope="col">${escapeHtml(row?.label || "—")}</th>`).join("") || "<td>—</td>"}`;
       }
       if (elements.weeklyLoadDevelopersRow) {
-        elements.weeklyLoadDevelopersRow.innerHTML = `<th scope="row">Кол-во программ.</th>${sourceRows.map((row) => `<td>${formatHours(row?.developers || 0)}</td>`).join("") || "<td>—</td>"}`;
+        elements.weeklyLoadDevelopersRow.innerHTML = `<th scope="row">Кол-во</th>${sourceRows.map((row) => `<td>${formatHours(row?.developers || 0)}</td>`).join("") || "<td>—</td>"}`;
       }
       if (copyLatestToInput && elements.developerCountInput) {
         const latestRow = sourceRows.length ? sourceRows[sourceRows.length - 1] : null;
@@ -6949,7 +6960,7 @@ __LOCAL_GOLOS_FONT_CSS__
           elements.deadlineResult.classList.remove("is-out-of-year");
         }
         if (elements.forecastDeadlineResult) {
-          elements.forecastDeadlineResult.textContent = "Дата завершения (прогноз - факт): укажите кол-во разработчиков больше 0";
+          elements.forecastDeadlineResult.textContent = "Дата заверш. (прогноз - факт): укажите кол-во разработчиков больше 0";
           elements.forecastDeadlineResult.classList.remove("is-out-of-year");
         }
         return;
@@ -6958,7 +6969,7 @@ __LOCAL_GOLOS_FONT_CSS__
       const forecastMinusFactHours = Number(elements.mainMetricsBody?.dataset.forecastYearHours || 0) - Number(elements.mainMetricsBody?.dataset.factYearHours || 0);
       const baseDate = String(elements.mainMetricsBody?.dataset.baseDate || "");
       setWidgetDeadlineResult(elements.deadlineResult, "Дата завершения (остаток)", remainingHours, developerCount, baseDate);
-      setWidgetDeadlineResult(elements.forecastDeadlineResult, "Дата завершения (прогноз - факт)", forecastMinusFactHours, developerCount, baseDate);
+      setWidgetDeadlineResult(elements.forecastDeadlineResult, "Дата заверш. (прогноз - факт)", forecastMinusFactHours, developerCount, baseDate);
     }
 
     function buildAggregatedDatasets(payload, p1Factor, p2Factor, useRiskPlan) {
