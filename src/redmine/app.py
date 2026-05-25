@@ -6181,7 +6181,7 @@ __LOCAL_GOLOS_FONT_CSS__
       font-size: 0.88rem;
     }
     .weekly-load-table {
-      width: auto;
+      width: 100%;
       min-width: 348px;
     }
     .dashboard-metrics-table th,
@@ -6243,17 +6243,19 @@ __LOCAL_GOLOS_FONT_CSS__
     }
     .weekly-block {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 340px;
+      grid-template-columns: minmax(0, 1fr) max-content;
       gap: 36px;
       padding: 10px;
     }
     .weekly-table-wrap {
       overflow-x: auto;
+      width: 100%;
     }
     .dashboard-deadline-panel {
       display: flex;
       flex-direction: column;
       gap: 6px;
+      justify-self: end;
       min-width: 0;
       font-size: 0.72rem;
       line-height: 1.2;
