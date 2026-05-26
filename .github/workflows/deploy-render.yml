@@ -11,6 +11,9 @@ on:
         required: false
         default: ""
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     name: Trigger Render deploy and verify live SHA

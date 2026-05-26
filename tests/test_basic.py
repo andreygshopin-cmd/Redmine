@@ -95,6 +95,13 @@ def testRenderYamlSchedulesWeeklySnapshotCronJobs() -> None:
     assert "envVarKey: REDMINE_API_KEY" in body
 
 
+def testDeployRenderWorkflowAllowsCheckout() -> None:
+    body = (REPO_ROOT / ".github" / "workflows" / "deploy-render.yml").read_text(encoding="utf-8")
+
+    assert "permissions:" in body
+    assert "contents: read" in body
+
+
 def testRunBitrixSnapshotCaptureJobUsesPagedCapture(monkeypatch) -> None:
     from src.redmine import capture_bitrix_snapshots as bitrix_capture_module
 
