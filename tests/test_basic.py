@@ -195,7 +195,8 @@ def testProjectsSummaryPageUsesFullWidthScrollableTable(monkeypatch) -> None:
     assert "width: calc(100vw - 40px)" in body
     assert "margin-left: calc(50% - 50vw + 20px)" in body
     assert "overflow-x: auto" in body
-    assert "overflow-y: visible" in body
+    assert "overflow-y: auto" in body
+    assert "max-height: calc(100vh - 24px)" in body
     assert "width: max(100%, 250ch)" in body
     assert "min-width: 250ch" in body
     assert "table-layout: fixed" in body
@@ -232,6 +233,53 @@ def testSnapshotDevelopmentTotalMetricsMatchSnapshotIssuesFormula() -> None:
     assert metrics["development_remaining_hours"] == pytest.approx(36.5)
 
 
+def testApplyFeatureForecastsUsesSeparateBugReserveForFeatureAndVirtual() -> None:
+    issues = [
+        {
+            "issue_redmine_id": 501,
+            "tracker_name": "Feature",
+            "status_name": "В работе",
+            "feature_group_issue_redmine_id": 501,
+            "feature_group_is_virtual": False,
+            "is_feature_group_root": True,
+        },
+        {
+            "issue_redmine_id": 502,
+            "tracker_name": "Разработка",
+            "baseline_estimate_hours": 10.0,
+            "volume_hours": 25.0,
+            "risk_volume_hours": 28.0,
+            "feature_group_issue_redmine_id": 501,
+            "feature_group_is_virtual": False,
+        },
+        {
+            "issue_redmine_id": 503,
+            "tracker_name": "Ошибка",
+            "baseline_estimate_hours": 0.0,
+            "volume_hours": 1.0,
+            "risk_volume_hours": 2.0,
+            "feature_group_issue_redmine_id": 501,
+            "feature_group_is_virtual": False,
+        },
+        {
+            "issue_redmine_id": 601,
+            "tracker_name": "Разработка",
+            "baseline_estimate_hours": 4.0,
+            "volume_hours": 11.0,
+            "risk_volume_hours": 11.0,
+            "feature_group_is_virtual": True,
+        },
+    ]
+
+    result = app_module.applyFeatureForecastsToSnapshotIssues(issues, 200.0, 150.0)
+
+    featureRows = [issue for issue in result if issue.get("feature_group_issue_redmine_id") == 501]
+    assert {issue["feature_forecast_hours"] for issue in featureRows} == {35.0}
+    assert {issue["feature_risk_forecast_hours"] for issue in featureRows} == {38.0}
+    assert result[3]["feature_forecast_hours"] == pytest.approx(15.0)
+    assert result[3]["feature_risk_forecast_hours"] == pytest.approx(15.0)
+
+
 def testProjectsSummaryGroupsIncludeSnapshotForecastAndRemaining(monkeypatch) -> None:
     calls = []
 
@@ -265,7 +313,7 @@ def testProjectsSummaryGroupsIncludeSnapshotForecastAndRemaining(monkeypatch) ->
     assert groups[0]["development_forecast_year_hours"] == pytest.approx(82.0)
     assert groups[0]["development_forecast_remaining_hours"] == pytest.approx(72.0)
     assert groups[0]["development_remaining_hours"] == pytest.approx(36.5)
-    assert groups[0]["development_imbalance_hours"] == pytest.approx(2.0)
+    assert groups[0]["development_imbalance_hours"] == pytest.approx(12.0)
     assert groups[0]["snapshot_metrics_date"] == "2026-05-26"
     assert groups[0]["snapshot_metrics_use_risk_plan"] is True
 
@@ -1232,7 +1280,7 @@ def testGetLatestSnapshotIssuesForProjectPageReturnsHtml(monkeypatch) -> None:
     assert "Billing" in body
     assert "Add chart" in body
     assert "Дата завершения (остаток по по заведенным)" in body
-    assert "Остаток по заведенным задачам" in body
+    assert "Остаток по заве- денным задачам" in body
     assert "Прогноз - факт" in body
     assert "summaryDevelopmentYearForecastMinusFact" in body
 
@@ -1332,6 +1380,7 @@ def testGetProjectBurndownPageReturnsChartPage(monkeypatch) -> None:
     assert "Billing" in response.text
     assert "P1 = факт / база" in response.text
     assert "Объем.Прогноз" in response.text
+    assert "P2/100 - 1" in response.text
 
 
 def testSnapshotIssuesPageUsesCleanRussianText(monkeypatch) -> None:

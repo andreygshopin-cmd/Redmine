@@ -5002,6 +5002,23 @@ def isBurndownReadyFeatureStatus(statusName: object) -> bool:
     return normalized.startswith("готов") or normalized in {"закрыта", "решена", "отказ"}
 
 
+def calculateBurndownFeatureForecastHours(
+    baselineTotal: float,
+    developmentVolume: float,
+    bugVolume: float,
+    p1Factor: float,
+    p2Factor: float,
+    isReady: bool,
+) -> float:
+    currentTotal = developmentVolume + bugVolume
+    if isReady:
+        return currentTotal
+
+    forecastFloor = baselineTotal * p1Factor * p2Factor
+    bugForecastFloor = baselineTotal * p1Factor * (p2Factor - 1)
+    return max(developmentVolume + max(bugVolume, bugForecastFloor), forecastFloor)
+
+
 def calculateBurndownBudgetBaselineTotal(issues: list[dict[str, object]]) -> float:
     budgetBaselineTotal = 0.0
 
@@ -5215,8 +5232,10 @@ def applyFeatureForecastsToSnapshotIssues(
             {
                 "rows": [],
                 "baseline_total": 0.0,
-                "current_total": 0.0,
-                "risk_current_total": 0.0,
+                "development_current_total": 0.0,
+                "bug_current_total": 0.0,
+                "risk_development_current_total": 0.0,
+                "risk_bug_current_total": 0.0,
                 "is_ready": False,
                 "status_known": False,
             },
@@ -5229,19 +5248,35 @@ def applyFeatureForecastsToSnapshotIssues(
             continue
 
         group["baseline_total"] = float(group["baseline_total"]) + float(issue.get("baseline_estimate_hours") or 0)
-        group["current_total"] = float(group["current_total"]) + float(issue.get("volume_hours") or 0)
-        group["risk_current_total"] = float(group["risk_current_total"]) + float(issue.get("risk_volume_hours") or 0)
+        trackerName = normalizeBurndownText(issue.get("tracker_name"))
+        if trackerName in {"разработка", "процессы разработки"}:
+            group["development_current_total"] = float(group["development_current_total"]) + float(issue.get("volume_hours") or 0)
+            group["risk_development_current_total"] = float(group["risk_development_current_total"]) + float(issue.get("risk_volume_hours") or 0)
+        elif trackerName == "ошибка":
+            group["bug_current_total"] = float(group["bug_current_total"]) + float(issue.get("volume_hours") or 0)
+            group["risk_bug_current_total"] = float(group["risk_bug_current_total"]) + float(issue.get("risk_volume_hours") or 0)
 
         if not bool(group["status_known"]):
             group["is_ready"] = isBurndownReadyFeatureStatus(issue.get("feature_group_status_name"))
 
     for group in groupsByFeatureId.values():
         baselineTotal = float(group["baseline_total"])
-        currentTotal = float(group["current_total"])
-        riskCurrentTotal = float(group["risk_current_total"])
-        forecastFloor = baselineTotal * p1Factor * p2Factor
-        forecast = currentTotal if bool(group["is_ready"]) else max(currentTotal, forecastFloor)
-        riskForecast = riskCurrentTotal if bool(group["is_ready"]) else max(riskCurrentTotal, forecastFloor)
+        forecast = calculateBurndownFeatureForecastHours(
+            baselineTotal,
+            float(group["development_current_total"]),
+            float(group["bug_current_total"]),
+            p1Factor,
+            p2Factor,
+            bool(group["is_ready"]),
+        )
+        riskForecast = calculateBurndownFeatureForecastHours(
+            baselineTotal,
+            float(group["risk_development_current_total"]),
+            float(group["risk_bug_current_total"]),
+            p1Factor,
+            p2Factor,
+            bool(group["is_ready"]),
+        )
         for issue in group["rows"]:
             issue["feature_forecast_hours"] = forecast
             issue["feature_risk_forecast_hours"] = riskForecast
@@ -6525,6 +6560,16 @@ __LOCAL_GOLOS_FONT_CSS__
       return resultDate;
     }
 
+    function calculateFeatureForecast(baselineTotal, developmentVolume, bugVolume, p1Factor, p2Factor, isReady) {
+      const currentTotal = developmentVolume + bugVolume;
+      if (isReady) {
+        return currentTotal;
+      }
+      const forecastFloor = baselineTotal * p1Factor * p2Factor;
+      const bugForecastFloor = baselineTotal * p1Factor * (p2Factor - 1);
+      return Math.max(developmentVolume + Math.max(bugVolume, bugForecastFloor), forecastFloor);
+    }
+
     function computeSnapshotMetrics(snapshot, p1Factor, p2Factor, useRiskPlan) {
       const groups = Array.isArray(snapshot?.groups) ? snapshot.groups : [];
       let forecast = 0;
@@ -6539,9 +6584,7 @@ __LOCAL_GOLOS_FONT_CSS__
         const bugVolume = Number(useRiskPlan ? (group?.bug_volume_risk || 0) : (group?.bug_volume || 0));
         const developmentRemaining = Number(useRiskPlan ? (group?.development_remaining_risk || 0) : (group?.development_remaining || 0));
         const bugRemaining = Number(useRiskPlan ? (group?.bug_remaining_risk || 0) : (group?.bug_remaining || 0));
-        const currentTotal = developmentVolume + bugVolume;
-        const forecastFloor = baselineTotal * p1Factor * p2Factor;
-        const groupForecast = group?.is_ready ? currentTotal : Math.max(currentTotal, forecastFloor);
+        const groupForecast = calculateFeatureForecast(baselineTotal, developmentVolume, bugVolume, p1Factor, p2Factor, Boolean(group?.is_ready));
         forecast += groupForecast;
         currentDevelopment += developmentVolume;
         currentBugs += bugVolume;
@@ -8160,7 +8203,7 @@ def buildBurndownPage(
             <li>
               <div>
                 <div class="legend-name">Feature и виртуальная Feature</div>
-                <div class="formula-text">Для каждой Feature отдельно собираются объем/остаток по разработке и по ошибкам. Если Feature в статусе «Готов*», «Закрыта», «Решена» или «Отказ», прогноз = разработка + ошибки. Иначе прогноз = max(текущий объем, сумма базовых оценок задач Feature × P1/100 × P2/100). Для задач без Feature считается отдельная виртуальная Feature по тем же правилам.</div>
+                <div class="formula-text">Для каждой Feature отдельно собираются объем/остаток по разработке и по ошибкам. Если Feature в статусе «Готов*», «Закрыта», «Решена» или «Отказ», прогноз = разработка + ошибки. Иначе прогноз = max(объем по разработке + max(объем по ошибкам, сумма базовых оценок задач Feature × P1/100 × (P2/100 - 1)), сумма базовых оценок задач Feature × P1/100 × P2/100). Для задач без Feature считается отдельная виртуальная Feature по тем же правилам.</div>
               </div>
             </li>
           </ul>
@@ -8220,6 +8263,16 @@ def buildBurndownPage(
       return `${{parts[2]}}.${{parts[1]}}.${{parts[0]}}`;
     }}
 
+    function calculateFeatureForecast(baselineTotal, developmentVolume, bugVolume, p1Factor, p2Factor, isReady) {{
+      const currentTotal = developmentVolume + bugVolume;
+      if (isReady) {{
+        return currentTotal;
+      }}
+      const forecastFloor = baselineTotal * p1Factor * p2Factor;
+      const bugForecastFloor = baselineTotal * p1Factor * (p2Factor - 1);
+      return Math.max(developmentVolume + Math.max(bugVolume, bugForecastFloor), forecastFloor);
+    }}
+
     function computeSnapshotMetrics(snapshot, p1Factor, p2Factor, useRiskPlan) {{
       const groups = Array.isArray(snapshot?.groups) ? snapshot.groups : [];
       let forecast = 0;
@@ -8234,9 +8287,7 @@ def buildBurndownPage(
         const bugVolume = Number(useRiskPlan ? (group?.bug_volume_risk || 0) : (group?.bug_volume || 0));
         const developmentRemaining = Number(useRiskPlan ? (group?.development_remaining_risk || 0) : (group?.development_remaining || 0));
         const bugRemaining = Number(useRiskPlan ? (group?.bug_remaining_risk || 0) : (group?.bug_remaining || 0));
-        const currentTotal = developmentVolume + bugVolume;
-        const forecastFloor = baselineTotal * p1Factor * p2Factor;
-        const groupForecast = group?.is_ready ? currentTotal : Math.max(currentTotal, forecastFloor);
+        const groupForecast = calculateFeatureForecast(baselineTotal, developmentVolume, bugVolume, p1Factor, p2Factor, Boolean(group?.is_ready));
 
         forecast += groupForecast;
         currentDevelopment += developmentVolume;
@@ -9458,7 +9509,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <th style="width: 12%"></th>
               <th colspan="3">Планирование</th>
               <th colspan="5">Год</th>
-              <th class="summary-rowspan-head" rowspan="2">Остаток по заведенным задачам</th>
+              <th class="summary-rowspan-head" rowspan="2">Остаток по заве- денным задачам</th>
               <th colspan="5">Весь проект</th>
             </tr>
             <tr>
@@ -17118,14 +17169,14 @@ def _calculateProjectsSummaryForecastRemaining(
 
 
 def _calculateProjectsSummaryImbalance(
-    forecastRemainingHours: object,
+    forecastYearHours: object,
     reportYearLimitHours: object,
 ) -> float | None:
-    forecastRemainingValue = _optionalFloat(forecastRemainingHours)
+    forecastYearValue = _optionalFloat(forecastYearHours)
     reportYearLimitValue = _optionalFloat(reportYearLimitHours)
-    if forecastRemainingValue is None or reportYearLimitValue is None:
+    if forecastYearValue is None or reportYearLimitValue is None:
         return None
-    return forecastRemainingValue - reportYearLimitValue
+    return forecastYearValue - reportYearLimitValue
 
 
 def _buildProjectsSummaryGroups(
@@ -17234,7 +17285,7 @@ def _buildProjectsSummaryGroups(
                 group.get("development_spent_hours_year_average"),
             )
         group["development_imbalance_hours"] = _calculateProjectsSummaryImbalance(
-            group.get("development_forecast_remaining_hours"),
+            group.get("development_forecast_year_hours"),
             group.get("report_year_limit_hours"),
         )
 
@@ -17511,7 +17562,8 @@ def buildProjectsSummaryPage() -> str:
       width: 100%;
       max-width: 100%;
       overflow-x: auto;
-      overflow-y: visible;
+      overflow-y: auto;
+      max-height: calc(100vh - 24px);
       position: relative;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -17969,11 +18021,10 @@ def buildProjectsSummaryPage() -> str:
     }}
 
     function getSummaryImbalanceHours(group) {{
-      const forecastRemaining = getSummaryForecastRemainingHours(group);
-      if (forecastRemaining === null || !hasSummaryValue(group?.report_year_limit_hours)) {{
+      if (!hasSummaryValue(group?.development_forecast_year_hours) || !hasSummaryValue(group?.report_year_limit_hours)) {{
         return null;
       }}
-      return Number(forecastRemaining || 0) - Number(group.report_year_limit_hours || 0);
+      return Number(group.development_forecast_year_hours || 0) - Number(group.report_year_limit_hours || 0);
     }}
 
     function wrapSummaryLink(content, projectId, redmineIdentifier = "", projectName = "") {{
