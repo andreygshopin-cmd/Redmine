@@ -1279,7 +1279,7 @@ def testGetLatestSnapshotIssuesForProjectPageReturnsHtml(monkeypatch) -> None:
     assert "Задачи среза проекта" in body
     assert "Billing" in body
     assert "Add chart" in body
-    assert "Дата завершения (остаток по по заведенным)" in body
+    assert "Дата завершения (остаток по заведенным задачам)" in body
     assert "Остаток по заве- денным задачам" in body
     assert "Прогноз - факт" in body
     assert "summaryDevelopmentYearForecastMinusFact" in body

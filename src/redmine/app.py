@@ -9498,7 +9498,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
             </label>
             <button type="button" class="secondary-button" id="calculateSnapshotDeadlineButton">Рассчитать срок</button>
           </div>
-          <div class="snapshot-deadline-result" id="snapshotDeadlineResult">Дата завершения (остаток по по заведенным): —</div>
+          <div class="snapshot-deadline-result" id="snapshotDeadlineResult">Дата завершения (остаток по заведенным задачам): —</div>
           <div class="snapshot-deadline-result" id="snapshotForecastDeadlineResult">Дата завершения (прогноз - факт): —</div>
         </div>
       </div>
@@ -10011,7 +10011,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         const developerCount = parseSnapshotNumber(snapshotDeveloperCountInput?.value || "");
         if (developerCount <= 0) {{
           if (snapshotDeadlineResult) {{
-            snapshotDeadlineResult.textContent = "Дата завершения (остаток по по заведенным): укажите количество разработчиков больше 0";
+            snapshotDeadlineResult.textContent = "Дата завершения (остаток по заведенным задачам): укажите количество разработчиков больше 0";
           }}
           if (snapshotForecastDeadlineResult) {{
             snapshotForecastDeadlineResult.textContent = "Дата завершения (прогноз - факт): укажите количество разработчиков больше 0";
@@ -10022,7 +10022,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         const remainingHours = getSnapshotSummaryCellHours(summaryDevelopmentTotalRemaining);
         const forecastMinusFactHours = getSnapshotSummaryCellHours(summaryDevelopmentYearForecastMinusFact)
           || (getSnapshotSummaryCellHours(summaryDevelopmentYearForecast) - getSnapshotSummaryCellHours(summaryDevelopmentGrandSpentYear));
-        renderSnapshotDeadlineResult(snapshotDeadlineResult, "Дата завершения (остаток по по заведенным)", remainingHours, developerCount, baseDate);
+        renderSnapshotDeadlineResult(snapshotDeadlineResult, "Дата завершения (остаток по заведенным задачам)", remainingHours, developerCount, baseDate);
         renderSnapshotDeadlineResult(snapshotForecastDeadlineResult, "Дата завершения (прогноз - факт)", forecastMinusFactHours, developerCount, baseDate);
       }}
 
