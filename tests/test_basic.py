@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -195,9 +196,68 @@ def testProjectsSummaryPageUsesFullWidthScrollableTable(monkeypatch) -> None:
     assert "margin-left: calc(50% - 50vw + 20px)" in body
     assert "overflow-x: auto" in body
     assert "overflow-y: visible" in body
-    assert "width: max(100%, 190ch)" in body
-    assert "min-width: 190ch" in body
+    assert "width: max(100%, 220ch)" in body
+    assert "min-width: 220ch" in body
     assert "table-layout: fixed" in body
+    assert "Прогноз по разработке на год" in body
+    assert 'data-filter-key="development_forecast_year_hours"' in body
+    assert 'data-filter-key="development_remaining_hours"' in body
+
+
+def testSnapshotDevelopmentTotalMetricsMatchSnapshotIssuesFormula() -> None:
+    metrics = app_module.buildSnapshotDevelopmentTotalMetrics(
+        {
+            "development_spent_hours": 20.0,
+            "development_process_spent_hours": 5.0,
+            "bug_spent_hours": 3.0,
+            "development_spent_hours_year": 7.0,
+            "development_process_spent_hours_year": 2.0,
+            "bug_spent_hours_year": 1.0,
+        },
+        {
+            "development_total_forecast_hours": 100.0,
+            "development_total_remaining_hours": 36.5,
+        },
+    )
+
+    assert metrics["development_fact_year_hours"] == pytest.approx(10.0)
+    assert metrics["development_fact_total_hours"] == pytest.approx(28.0)
+    assert metrics["development_forecast_year_hours"] == pytest.approx(82.0)
+    assert metrics["development_remaining_hours"] == pytest.approx(36.5)
+
+
+def testProjectsSummaryGroupsIncludeSnapshotForecastAndRemaining(monkeypatch) -> None:
+    calls = []
+
+    def fakeLoadMetrics(projectRedmineId, reportDate, projectIdentifier):
+        calls.append((projectRedmineId, reportDate, projectIdentifier))
+        return {
+            "development_forecast_year_hours": 82.0,
+            "development_remaining_hours": 36.5,
+            "snapshot_date": "2026-05-26",
+            "use_risk_plan": True,
+        }
+
+    monkeypatch.setattr(app_module, "_loadProjectsSummarySnapshotDevelopmentMetrics", fakeLoadMetrics)
+
+    groups = app_module._buildProjectsSummaryGroups(
+        [
+            {
+                "id": 7,
+                "redmine_identifier": "billing",
+                "project_redmine_id": 10,
+                "project_name": "Billing",
+                "development_spent_hours_year": 10.0,
+            }
+        ],
+        date(2026, 5, 26),
+    )
+
+    assert calls == [(10, date(2026, 5, 26), "billing")]
+    assert groups[0]["development_forecast_year_hours"] == pytest.approx(82.0)
+    assert groups[0]["development_remaining_hours"] == pytest.approx(36.5)
+    assert groups[0]["snapshot_metrics_date"] == "2026-05-26"
+    assert groups[0]["snapshot_metrics_use_risk_plan"] is True
 
 
 def testReadBitrixPageReturnsHtmlPage() -> None:

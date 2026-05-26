@@ -4194,6 +4194,30 @@ def buildSnapshotDynamicSummary(
     }
 
 
+def resolveSnapshotUseRiskPlan(planningProjects: list[dict[str, object]] | None) -> bool:
+    projects = list(planningProjects or [])
+    return bool(projects) and all(bool(project.get("use_risk_plan")) for project in projects)
+
+
+def buildSnapshotDevelopmentTotalMetrics(
+    summary: dict[str, object] | None,
+    dynamicMetrics: dict[str, object] | None,
+) -> dict[str, float]:
+    summaryView = buildSnapshotSummaryView(summary)
+    sourceMetrics = dict(dynamicMetrics or {})
+    forecastTotal = float(sourceMetrics.get("development_total_forecast_hours") or 0)
+    remainingTotal = float(sourceMetrics.get("development_total_remaining_hours") or 0)
+    factTotal = float(summaryView["development_grand_spent_hours"] or 0)
+    factYear = float(summaryView["development_grand_spent_hours_year"] or 0)
+    return {
+        "development_fact_year_hours": factYear,
+        "development_forecast_year_hours": forecastTotal - factTotal + factYear,
+        "development_remaining_hours": remainingTotal,
+        "development_fact_total_hours": factTotal,
+        "development_forecast_total_hours": forecastTotal,
+    }
+
+
 def buildSnapshotIssueFiltersPayload(
     issueId: str | None = None,
     subject: str | None = None,
@@ -5464,7 +5488,7 @@ def buildPlanningProjectsPanelHtml(
     planningP2Percent = planningP2Unique[0] if len(planningP2Unique) == 1 else 150.0
     planningP1DefaultUsed = len(planningP1Unique) != 1
     planningP2DefaultUsed = len(planningP2Unique) != 1
-    planningUseRiskPlan = bool(planningProjects) and all(bool(project.get("use_risk_plan")) for project in planningProjects)
+    planningUseRiskPlan = resolveSnapshotUseRiskPlan(planningProjects)
     planningUseRiskPlanAny = any(bool(project.get("use_risk_plan")) for project in planningProjects)
     planningUseRiskPlanDefaultUsed = planningUseRiskPlanAny and not planningUseRiskPlan
     planningProjectsUrl = (
@@ -5756,7 +5780,7 @@ def buildDashboardProjectStatePayload(
     planningP2Percent = planningP2Unique[0] if len(planningP2Unique) == 1 else 150.0
     selectedP1Percent = normalizePlanningPercentValue(p1Value, planningP1Percent) if str(p1Value or "").strip() else planningP1Percent
     selectedP2Percent = normalizePlanningPercentValue(p2Value, planningP2Percent) if str(p2Value or "").strip() else planningP2Percent
-    planningUseRiskPlan = bool(planningProjects) and all(bool(project.get("use_risk_plan")) for project in planningProjects)
+    planningUseRiskPlan = resolveSnapshotUseRiskPlan(planningProjects)
     planningUseRiskPlanAny = any(bool(project.get("use_risk_plan")) for project in planningProjects)
     selectedUseRiskPlan = planningUseRiskPlan if useRiskPlan is None else bool(useRiskPlan)
 
@@ -7578,7 +7602,7 @@ def buildBurndownPage(
     planningP2Mixed = len(planningP2Unique) > 1
     planningP1Percent = planningP1Unique[0] if len(planningP1Unique) == 1 else 150.0
     planningP2Percent = planningP2Unique[0] if len(planningP2Unique) == 1 else 150.0
-    planningUseRiskPlan = bool(planningProjects) and all(bool(project.get("use_risk_plan")) for project in planningProjects)
+    planningUseRiskPlan = resolveSnapshotUseRiskPlan(planningProjects)
     planningUseRiskPlanAny = any(bool(project.get("use_risk_plan")) for project in planningProjects)
     planningP1DefaultUsed = len(planningP1Unique) != 1
     planningP2DefaultUsed = len(planningP2Unique) != 1
@@ -8942,7 +8966,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if any(value not in (None, "") for value in planningReportYearValues)
         else None
     )
-    planningUseRiskPlan = bool(planningProjects) and all(bool(project.get("use_risk_plan")) for project in planningProjects)
+    planningUseRiskPlan = resolveSnapshotUseRiskPlan(planningProjects)
     planningUseRiskPlanAny = any(bool(project.get("use_risk_plan")) for project in planningProjects)
     selectedUseRiskPlan = planningUseRiskPlan
     useRiskPlanDefaultLabelClass = " planning-checkbox-default" if planningUseRiskPlanAny and not planningUseRiskPlan else ""
@@ -8959,6 +8983,10 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     snapshotDynamicSummary = buildSnapshotDynamicSummary(snapshotDynamicSourcePayload.get("issues"))
     snapshotWeeklyDeveloperLoad = buildSnapshotWeeklyDeveloperLoad(projectRedmineId, capturedForDateRaw)
     snapshotDynamicMetrics = snapshotDynamicSummary["risk" if selectedUseRiskPlan else "default"]
+    snapshotDevelopmentTotals = buildSnapshotDevelopmentTotalMetrics(
+        snapshotPayload.get("summary"),
+        snapshotDynamicMetrics,
+    )
     snapshotPageUrl = f"/projects/{projectRedmineId}/latest-snapshot-issues"
     if selectedDate:
         snapshotPageUrl += f"?captured_for_date={quote(selectedDate)}"
@@ -9511,12 +9539,12 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentGrandSpentYear" colspan="2" data-hours="{float(summaryView["development_grand_spent_hours_year"] or 0)}">{formatPageHours(summaryView["development_grand_spent_hours_year"])}</td>
               <td class="summary-empty"></td>
-              <td class="summary-metric" id="summaryDevelopmentYearForecast" data-hours="{float(snapshotDynamicMetrics["development_total_forecast_hours"] or 0) - float(summaryView["development_grand_spent_hours"] or 0) + float(summaryView["development_grand_spent_hours_year"] or 0)}">{formatPageHours(float(snapshotDynamicMetrics["development_total_forecast_hours"] or 0) - float(summaryView["development_grand_spent_hours"] or 0) + float(summaryView["development_grand_spent_hours_year"] or 0))}</td>
-              <td class="summary-metric" id="summaryDevelopmentTotalRemaining" data-hours="{float(snapshotDynamicMetrics["development_total_remaining_hours"] or 0)}">{formatPageHours(snapshotDynamicMetrics["development_total_remaining_hours"])}</td>
+              <td class="summary-metric" id="summaryDevelopmentYearForecast" data-hours="{snapshotDevelopmentTotals["development_forecast_year_hours"]}">{formatPageHours(snapshotDevelopmentTotals["development_forecast_year_hours"])}</td>
+              <td class="summary-metric" id="summaryDevelopmentTotalRemaining" data-hours="{snapshotDevelopmentTotals["development_remaining_hours"]}">{formatPageHours(snapshotDevelopmentTotals["development_remaining_hours"])}</td>
               <td class="summary-metric" id="summaryDevelopmentGrandSpent" colspan="2" data-hours="{float(summaryView["development_grand_spent_hours"] or 0)}">{formatPageHours(summaryView["development_grand_spent_hours"])}</td>
               <td class="summary-empty"></td>
               <td class="summary-metric" id="summaryDevelopmentTotalVolume">{formatPageHours(snapshotDynamicMetrics["development_total_volume_hours"])}</td>
-              <td class="summary-metric" id="summaryDevelopmentTotalForecast" data-hours="{float(snapshotDynamicMetrics["development_total_forecast_hours"] or 0)}">{formatPageHours(snapshotDynamicMetrics["development_total_forecast_hours"])}</td>
+              <td class="summary-metric" id="summaryDevelopmentTotalForecast" data-hours="{snapshotDevelopmentTotals["development_forecast_total_hours"]}">{formatPageHours(snapshotDevelopmentTotals["development_forecast_total_hours"])}</td>
             </tr>
             <tr>
               <th class="summary-section-row">3. Фичи</th>
@@ -17002,7 +17030,60 @@ def getPlanningProjectsPage() -> HTMLResponse:
     return _renderHtmlPage(buildPlanningProjectsPage())
 
 
-def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+def _resolveLatestSnapshotDateOnOrBefore(projectRedmineId: int, reportDate: date) -> str | None:
+    for dateValue in listSnapshotDatesForProject(projectRedmineId):
+        try:
+            snapshotDate = date.fromisoformat(str(dateValue))
+        except ValueError:
+            continue
+        if snapshotDate <= reportDate:
+            return str(dateValue)
+    return None
+
+
+def _loadProjectsSummarySnapshotDevelopmentMetrics(
+    projectRedmineId: int,
+    reportDate: date,
+    projectIdentifier: str,
+) -> dict[str, float | str | bool] | None:
+    snapshotDate = _resolveLatestSnapshotDateOnOrBefore(projectRedmineId, reportDate)
+    if not snapshotDate:
+        return None
+
+    summaryPayload = getFilteredSnapshotIssuesForProjectByDate(
+        projectRedmineId,
+        snapshotDate,
+        page=1,
+        pageSize=1,
+    )
+    if not summaryPayload.get("snapshot_run"):
+        return None
+
+    projectIdentifierRaw = str(projectIdentifier or "").strip()
+    if not projectIdentifierRaw:
+        snapshotRun = summaryPayload.get("snapshot_run")
+        if isinstance(snapshotRun, dict):
+            projectIdentifierRaw = str(snapshotRun.get("project_identifier") or "").strip()
+
+    dynamicPayload = enrichSnapshotPayloadWithFeatureForecasts(
+        listFilteredSnapshotIssuesForProjectByDate(projectRedmineId, snapshotDate),
+        projectIdentifierRaw,
+    )
+    dynamicSummary = buildSnapshotDynamicSummary(dynamicPayload.get("issues"))
+    planningProjects = listPlanningProjectsByRedmineIdentifier(projectIdentifierRaw) if projectIdentifierRaw else []
+    useRiskPlan = resolveSnapshotUseRiskPlan(planningProjects)
+    dynamicMetrics = dynamicSummary["risk" if useRiskPlan else "default"]
+    return {
+        **buildSnapshotDevelopmentTotalMetrics(summaryPayload.get("summary"), dynamicMetrics),
+        "snapshot_date": snapshotDate,
+        "use_risk_plan": useRiskPlan,
+    }
+
+
+def _buildProjectsSummaryGroups(
+    rows: list[dict[str, object]],
+    reportDate: date | None = None,
+) -> list[dict[str, object]]:
     groupedRows: list[dict[str, object]] = []
     groupedByKey: dict[str, dict[str, object]] = {}
 
@@ -17076,6 +17157,26 @@ def _buildProjectsSummaryGroups(rows: list[dict[str, object]]) -> list[dict[str,
             if reportYearLimitValues
             else None
         )
+        group["development_forecast_year_hours"] = None
+        group["development_remaining_hours"] = None
+        group["snapshot_metrics_date"] = None
+        group["snapshot_metrics_use_risk_plan"] = False
+        if reportDate is not None:
+            try:
+                projectRedmineId = int(group.get("project_redmine_id") or 0)
+            except (TypeError, ValueError):
+                projectRedmineId = 0
+            if projectRedmineId:
+                snapshotMetrics = _loadProjectsSummarySnapshotDevelopmentMetrics(
+                    projectRedmineId,
+                    reportDate,
+                    str(group.get("redmine_identifier") or ""),
+                )
+                if snapshotMetrics:
+                    group["development_forecast_year_hours"] = snapshotMetrics.get("development_forecast_year_hours")
+                    group["development_remaining_hours"] = snapshotMetrics.get("development_remaining_hours")
+                    group["snapshot_metrics_date"] = snapshotMetrics.get("snapshot_date")
+                    group["snapshot_metrics_use_risk_plan"] = bool(snapshotMetrics.get("use_risk_plan"))
 
     return groupedRows
 
@@ -17395,8 +17496,8 @@ def buildProjectsSummaryPage() -> str:
     .projects-summary-loading-text {{ font-weight: 700; color: #375d77; }}
     @keyframes projects-summary-spin {{ to {{ transform: rotate(360deg); }} }}
     table {{
-      width: max(100%, 190ch);
-      min-width: 190ch;
+      width: max(100%, 220ch);
+      min-width: 220ch;
       border-collapse: collapse;
       table-layout: fixed;
       background: #ffffff;
@@ -17570,6 +17671,8 @@ def buildProjectsSummaryPage() -> str:
             <tr>
               <th>Идентификатор в Redmine</th>
               <th>Разработка: факт за год, ч</th>
+              <th>Прогноз по разработке на год</th>
+              <th>Остаток</th>
               <th>Направление</th>
               <th>Заказчик</th>
               <th>Название проекта</th>
@@ -17583,6 +17686,8 @@ def buildProjectsSummaryPage() -> str:
             <tr class="summary-filter-row">
               <th><input class="summary-filter-input" data-filter-key="redmine_identifier" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="development_spent_hours_year_average" type="text"></th>
+              <th><input class="summary-filter-input" data-filter-key="development_forecast_year_hours" type="text"></th>
+              <th><input class="summary-filter-input" data-filter-key="development_remaining_hours" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="direction" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="customer" type="text"></th>
               <th><input class="summary-filter-input" data-filter-key="project_name" type="text"></th>
@@ -17595,7 +17700,7 @@ def buildProjectsSummaryPage() -> str:
             </tr>
           </thead>
           <tbody id="projectsSummaryTableBody">
-            <tr><td colspan="11" class="empty-state">Загружаем сводку...</td></tr>
+            <tr><td colspan="13" class="empty-state">Загружаем сводку...</td></tr>
           </tbody>
           <tfoot id="projectsSummaryTableFoot"></tfoot>
         </table>
@@ -17634,6 +17739,8 @@ def buildProjectsSummaryPage() -> str:
     const projectsSummaryColumnKeys = [
       "redmine_identifier",
       "development_spent_hours_year_average",
+      "development_forecast_year_hours",
+      "development_remaining_hours",
       "direction",
       "customer",
       "project_name",
@@ -17656,6 +17763,8 @@ def buildProjectsSummaryPage() -> str:
     ]);
     const projectsSummaryNumericKeys = new Set([
       "development_spent_hours_year_average",
+      "development_forecast_year_hours",
+      "development_remaining_hours",
       "development_limit_hours",
       "report_year_limit_hours",
       "report_year_hours",
@@ -17907,12 +18016,20 @@ def buildProjectsSummaryPage() -> str:
         .map((group) => {{
           const groupIdentifier = String(group.redmine_identifier ?? "");
           const factValue = String(group.development_spent_hours_year_average ?? "");
+          const forecastYearValue = String(group.development_forecast_year_hours ?? "");
+          const remainingValue = String(group.development_remaining_hours ?? "");
           const limitValue = String(group.development_limit_hours ?? "");
           const reportYearLimitValue = String(group.report_year_limit_hours ?? "");
           if (normalizedFilters.redmine_identifier && !normalizeSummaryFilterValue(groupIdentifier).includes(normalizedFilters.redmine_identifier)) {{
             return null;
           }}
           if (normalizedFilters.development_spent_hours_year_average && !normalizeSummaryFilterValue(factValue).includes(normalizedFilters.development_spent_hours_year_average)) {{
+            return null;
+          }}
+          if (normalizedFilters.development_forecast_year_hours && !normalizeSummaryFilterValue(forecastYearValue).includes(normalizedFilters.development_forecast_year_hours)) {{
+            return null;
+          }}
+          if (normalizedFilters.development_remaining_hours && !normalizeSummaryFilterValue(remainingValue).includes(normalizedFilters.development_remaining_hours)) {{
             return null;
           }}
           if (normalizedFilters.development_limit_hours && !normalizeSummaryFilterValue(limitValue).includes(normalizedFilters.development_limit_hours)) {{
@@ -18033,7 +18150,7 @@ def buildProjectsSummaryPage() -> str:
 
     function renderProjectsSummaryRows(groups) {{
       if (!groups.length) {{
-        projectsSummaryTableBody.innerHTML = `<tr><td colspan="11" class="empty-state">${{projectsSummaryStrings.noRows}}</td></tr>`;
+        projectsSummaryTableBody.innerHTML = `<tr><td colspan="13" class="empty-state">${{projectsSummaryStrings.noRows}}</td></tr>`;
         if (projectsSummaryTableFoot) {{
           projectsSummaryTableFoot.innerHTML = "";
         }}
@@ -18060,6 +18177,8 @@ def buildProjectsSummaryPage() -> str:
           ? `<span style="color:#8a97a5;">${{factContent}} (${{projectsSummaryStrings.factFiltered}})</span>`
           : factContent;
         const factCell = `<td class="group-cell${{groupClosedClass}}" rowspan="${{rowSpan}}">${{factLabel}}</td>`;
+        const forecastYearCell = `<td class="group-cell${{groupClosedClass}}" rowspan="${{rowSpan}}">${{formatSummaryHours(group.development_forecast_year_hours)}}</td>`;
+        const remainingCell = `<td class="group-cell${{groupClosedClass}}" rowspan="${{rowSpan}}">${{formatSummaryHours(group.development_remaining_hours)}}</td>`;
         const limitCellVerticalClass = rowSpan > 1 ? "summary-limit-cell-merged" : "summary-limit-cell-single";
         const limitCell = `<td class="group-cell ${{limitCellVerticalClass}}${{groupClosedClass}}" rowspan="${{rowSpan}}">${{hasSummaryValue(group.development_limit_hours) ? wrapSummaryLink(formatSummaryHours(group.development_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName) : formatSummaryHours(group.development_limit_hours)}}</td>`;
         const reportYearLimitCell = `<td class="group-cell ${{limitCellVerticalClass}}${{groupClosedClass}}" rowspan="${{rowSpan}}">${{hasSummaryValue(group.report_year_limit_hours) ? wrapSummaryLink(formatSummaryHours(group.report_year_limit_hours), groupLinkProjectId, groupIdentifier, groupProjectName) : formatSummaryHours(group.report_year_limit_hours)}}</td>`;
@@ -18067,6 +18186,8 @@ def buildProjectsSummaryPage() -> str:
           <tr>
             ${{index === 0 ? identifierCell : ""}}
             ${{index === 0 ? factCell : ""}}
+            ${{index === 0 ? forecastYearCell : ""}}
+            ${{index === 0 ? remainingCell : ""}}
             <td class="${{getProjectsSummaryItemClass(item)}}">${{formatSummaryText(item.direction)}}</td>
             <td class="${{getProjectsSummaryItemClass(item)}}">${{formatSummaryText(item.customer)}}</td>
             <td class="${{getProjectsSummaryItemClass(item)}}">${{wrapSummaryLink(formatSummaryText(item.project_name), item.id, groupIdentifier, item.link_project_name)}}</td>
@@ -18092,6 +18213,10 @@ def buildProjectsSummaryPage() -> str:
 
       let factTotal = 0;
       let factHasValues = false;
+      let forecastYearTotal = 0;
+      let forecastYearHasValues = false;
+      let remainingTotal = 0;
+      let remainingHasValues = false;
       let limitTotal = 0;
       let limitHasValues = false;
       let reportYearLimitTotal = 0;
@@ -18106,6 +18231,18 @@ def buildProjectsSummaryPage() -> str:
         if (Number.isFinite(factValue)) {{
           factTotal += factValue;
           factHasValues = true;
+        }}
+
+        const forecastYearValue = Number(group?.development_forecast_year_hours);
+        if (Number.isFinite(forecastYearValue)) {{
+          forecastYearTotal += forecastYearValue;
+          forecastYearHasValues = true;
+        }}
+
+        const remainingValue = Number(group?.development_remaining_hours);
+        if (Number.isFinite(remainingValue)) {{
+          remainingTotal += remainingValue;
+          remainingHasValues = true;
         }}
 
         const limitValue = Number(group?.development_limit_hours);
@@ -18139,6 +18276,8 @@ def buildProjectsSummaryPage() -> str:
         <tr>
           <td class="totals-label-cell mono">Итого</td>
           <td>${{formatSummaryTotal(factHasValues ? factTotal : null)}}</td>
+          <td>${{formatSummaryTotal(forecastYearHasValues ? forecastYearTotal : null)}}</td>
+          <td>${{formatSummaryTotal(remainingHasValues ? remainingTotal : null)}}</td>
           <td class="totals-spacer-cell" colspan="5"></td>
           <td>${{formatSummaryTotal(limitHasValues ? limitTotal : null)}}</td>
           <td>${{formatSummaryTotal(reportYearLimitHasValues ? reportYearLimitTotal : null)}}</td>
@@ -18161,7 +18300,7 @@ def buildProjectsSummaryPage() -> str:
         setProjectsSummaryLoading(true);
       }}
       projectsSummaryMeta.textContent = projectsSummaryStrings.loading;
-      projectsSummaryTableBody.innerHTML = `<tr><td colspan="11" class="empty-state">${{projectsSummaryStrings.loading}}</td></tr>`;
+      projectsSummaryTableBody.innerHTML = `<tr><td colspan="13" class="empty-state">${{projectsSummaryStrings.loading}}</td></tr>`;
       if (projectsSummaryTableFoot) {{
         projectsSummaryTableFoot.innerHTML = "";
       }}
@@ -18181,7 +18320,7 @@ def buildProjectsSummaryPage() -> str:
         refreshProjectsSummaryView();
       }} catch (error) {{
         projectsSummaryMeta.textContent = projectsSummaryStrings.error;
-        projectsSummaryTableBody.innerHTML = `<tr><td colspan="11" class="empty-state">${{projectsSummaryStrings.loadFailed}}</td></tr>`;
+        projectsSummaryTableBody.innerHTML = `<tr><td colspan="13" class="empty-state">${{projectsSummaryStrings.loadFailed}}</td></tr>`;
         if (projectsSummaryTableFoot) {{
           projectsSummaryTableFoot.innerHTML = "";
         }}
@@ -19598,7 +19737,7 @@ def getProjectsSummaryApiV2(
         enabledOnly=enabled_only,
         versionedOnReportDate=versioned_on_report_date,
     )
-    groups = _buildProjectsSummaryGroups(projects)
+    groups = _buildProjectsSummaryGroups(projects, reportDate)
     return {
         "projects": projects,
         "groups": groups,
@@ -19638,7 +19777,7 @@ def exportProjectsSummaryCsv(
         enabledOnly=enabled_only,
         versionedOnReportDate=versioned_on_report_date,
     )
-    groups = _buildProjectsSummaryGroups(projects)
+    groups = _buildProjectsSummaryGroups(projects, reportDate)
 
     output = io.StringIO(newline="")
     output.write("sep=;\n")
@@ -19647,6 +19786,8 @@ def exportProjectsSummaryCsv(
         [
             "Идентификатор в Redmine",
             "Разработка: факт за год, ч",
+            "Прогноз по разработке на год",
+            "Остаток",
             "Направление",
             "Заказчик",
             "Название проекта",
@@ -19662,6 +19803,8 @@ def exportProjectsSummaryCsv(
         items = list(group.get("items") or [])
         identifier = str(group.get("redmine_identifier") or "")
         factAverage = group.get("development_spent_hours_year_average")
+        forecastYear = group.get("development_forecast_year_hours")
+        remaining = group.get("development_remaining_hours")
         developmentLimit = group.get("development_limit_hours")
         reportYearLimit = group.get("report_year_limit_hours")
         for itemIndex, item in enumerate(items):
@@ -19669,6 +19812,8 @@ def exportProjectsSummaryCsv(
                 [
                     identifier if itemIndex == 0 else "",
                     formatPageHours(factAverage) if itemIndex == 0 and factAverage not in (None, "") else "",
+                    formatPageHours(forecastYear) if itemIndex == 0 and forecastYear not in (None, "") else "",
+                    formatPageHours(remaining) if itemIndex == 0 and remaining not in (None, "") else "",
                     str(item.get("direction") or ""),
                     str(item.get("customer") or ""),
                     str(item.get("project_name") or ""),
