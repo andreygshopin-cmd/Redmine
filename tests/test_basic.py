@@ -176,6 +176,21 @@ def testIndexQuickLinksUseCurrentUserRoles() -> None:
     assert 'href="/admin/users"' not in userBody
 
 
+def testProjectsSummaryPageUsesFullWidthScrollableTable(monkeypatch) -> None:
+    monkeypatch.setattr(app_module, "listPlanningDirections", lambda: ["КОТ"])
+
+    body = app_module.buildProjectsSummaryPage()
+
+    assert "projects-summary-table-panel" in body
+    assert "width: calc(100vw - 40px)" in body
+    assert "margin-left: calc(50% - 50vw + 20px)" in body
+    assert "overflow-x: auto" in body
+    assert "overflow-y: visible" in body
+    assert "width: max(100%, 190ch)" in body
+    assert "min-width: 190ch" in body
+    assert "table-layout: fixed" in body
+
+
 def testReadBitrixPageReturnsHtmlPage() -> None:
     response = readBitrixPage()
     body = response.body.decode("utf-8")

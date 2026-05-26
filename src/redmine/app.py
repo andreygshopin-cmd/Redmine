@@ -17347,10 +17347,20 @@ def buildProjectsSummaryPage() -> str:
       color: var(--muted);
     }}
     .table-wrap {{
-      overflow: visible;
+      width: 100%;
+      max-width: 100%;
+      overflow-x: auto;
+      overflow-y: visible;
+      position: relative;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #ffffff;
+    }}
+    .projects-summary-table-panel {{
+      width: calc(100vw - 40px);
+      max-width: none;
+      margin-left: calc(50% - 50vw + 20px);
+      margin-right: calc(50% - 50vw + 20px);
     }}
     .summary-legend {{
       margin: 12px 0 0;
@@ -17385,9 +17395,10 @@ def buildProjectsSummaryPage() -> str:
     .projects-summary-loading-text {{ font-weight: 700; color: #375d77; }}
     @keyframes projects-summary-spin {{ to {{ transform: rotate(360deg); }} }}
     table {{
-      width: 100%;
-      min-width: 1180px;
+      width: max(100%, 190ch);
+      min-width: 190ch;
       border-collapse: collapse;
+      table-layout: fixed;
       background: #ffffff;
     }}
     th, td {{
@@ -17551,7 +17562,7 @@ def buildProjectsSummaryPage() -> str:
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel projects-summary-table-panel">
       <p class="meta" id="projectsSummaryMeta">Загрузка...</p>
       <div class="table-wrap">
         <table>
