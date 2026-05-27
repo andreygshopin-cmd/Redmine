@@ -646,7 +646,7 @@ def testReadBitrixLeadsPageReturnsDropdownFiltersWithoutPlaceholder() -> None:
     assert "Лиды Bitrix" in body
     assert "Получить срез по лидам" in body
     assert 'href="/Bitrix/leads/compare"' in body
-    assert "Сравнить срезу лидов" in body
+    assert "Сравнить срезы лидов" in body
     assert '<a class="brand" href="/"' in body
     assert "smsit_template/images/logo.svg" in body
     assert 'font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif' in body

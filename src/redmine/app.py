@@ -15515,7 +15515,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     extraNavButtons = (
         '<a class="button" href="/Bitrix/invoices/summary">Сводный отчет по счетам</a>'
         if isInvoicePage
-        else '<a class="button" href="/Bitrix/leads/compare">Сравнить срезу лидов</a>'
+        else '<a class="button" href="/Bitrix/leads/compare">Сравнить срезы лидов</a>'
     )
     extraToolbarButtons = '<button class="button" id="exportButton" type="button">Экспорт в Excel</button>' if isInvoicePage else ""
     baseColumnGroups = """
