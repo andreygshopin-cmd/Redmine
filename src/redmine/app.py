@@ -12809,6 +12809,44 @@ BITRIX_PAGE_HTML = """<!doctype html>
 </html>"""
 
 
+BITRIX_TOP_NAV_HTML = """
+      <nav class="bitrix-top-nav" aria-label="Bitrix навигация">
+        <a class="button bitrix-nav-button bitrix-nav-deals" href="/Bitrix">Сделки</a>
+        <a class="button bitrix-nav-button bitrix-nav-leads" href="/Bitrix/leads">Лиды</a>
+        <a class="button bitrix-nav-button bitrix-nav-invoices" href="/Bitrix/invoices">Счета</a>
+      </nav>
+"""
+
+
+BITRIX_TOP_NAV_CSS = """
+    .bitrix-top-nav {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-left: auto;
+      align-self: flex-start;
+    }
+    .button.bitrix-nav-button {
+      min-width: 112px;
+      border: 0;
+      box-shadow: 0 10px 22px rgba(16, 41, 61, 0.12);
+    }
+    .button.bitrix-nav-deals { background: #16324a; color: #ffffff; }
+    .button.bitrix-nav-leads { background: #ffc600; color: #16324a; }
+    .button.bitrix-nav-invoices { background: #52cee6; color: #16324a; }
+"""
+
+
+def renderBitrixTopNavPage(html: str) -> str:
+    return (
+        html
+        .replace("__BITRIX_TOP_NAV_CSS__", BITRIX_TOP_NAV_CSS)
+        .replace("__BITRIX_TOP_NAV__", BITRIX_TOP_NAV_HTML)
+    )
+
+
 BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
 <html lang="ru">
 <head>
@@ -12938,6 +12976,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
     .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
     .viewport-sticky-table-header { position: fixed; top: 0; z-index: 1000; display: none; overflow: hidden; pointer-events: none; border: 1px solid var(--line); border-bottom: 0; border-radius: 0 0 14px 14px; background: #ffffff; box-shadow: 0 14px 26px rgba(16, 41, 61, 0.12); }
     .viewport-sticky-table-header table { margin: 0; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
+__BITRIX_TOP_NAV_CSS__
   </style>
 </head>
 <body>
@@ -12950,7 +12989,7 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
         <h1>Сравнение срезов сделок</h1>
         <p>По умолчанию сравниваются последний и предпоследний срезы Bitrix.</p>
       </div>
-      <a class="button" href="/Bitrix">К форме сделок</a>
+__BITRIX_TOP_NAV__
     </header>
     <section class="panel">
       <div class="toolbar">
@@ -13470,12 +13509,15 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
 </html>"""
 
 
+def buildBitrixDealSnapshotComparePage() -> str:
+    return renderBitrixTopNavPage(BITRIX_DEAL_COMPARE_PAGE_HTML)
+
+
 def buildBitrixLeadSnapshotComparePage() -> str:
     return (
-        BITRIX_DEAL_COMPARE_PAGE_HTML
+        buildBitrixDealSnapshotComparePage()
         .replace("Сравнение срезов сделок", "Сравнение срезов лидов")
         .replace("/api/bitrix/deal-snapshots/compare", "/api/bitrix/lead-snapshots/compare")
-        .replace('href="/Bitrix">К форме сделок', 'href="/Bitrix/leads">К форме лидов')
         .replace("срезы сделок", "срезы лидов")
         .replace("/crm/deal/details/", "/crm/lead/details/")
     )
@@ -15512,12 +15554,12 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     isInvoicePage = entityType == "invoice"
     captureButtonLabel = "Получить срез по счетам" if isInvoicePage else "Получить срез по лидам"
     entityLabel = "счета" if isInvoicePage else "лиды"
-    extraNavButtons = (
+    extraToolbarButtons = (
         '<a class="button" href="/Bitrix/invoices/summary">Сводный отчет по счетам</a>'
+        '<button class="button" id="exportButton" type="button">Экспорт в Excel</button>'
         if isInvoicePage
         else '<a class="button" href="/Bitrix/leads/compare">Сравнить срезы лидов</a>'
     )
-    extraToolbarButtons = '<button class="button" id="exportButton" type="button">Экспорт в Excel</button>' if isInvoicePage else ""
     baseColumnGroups = """
             <col class="crm-col-id">
             <col class="crm-col-deal">
@@ -15708,6 +15750,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     .pager { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
     .viewport-sticky-table-header { position: fixed; top: 0; z-index: 1000; display: none; overflow: hidden; pointer-events: none; border: 1px solid var(--line); border-bottom: 0; border-radius: 0 0 14px 14px; background: #ffffff; box-shadow: 0 14px 26px rgba(16, 41, 61, 0.12); }
     .viewport-sticky-table-header table { margin: 0; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
+__BITRIX_TOP_NAV_CSS__
   </style>
 </head>
 <body>
@@ -15720,12 +15763,7 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
         <h1>__PAGE_TITLE__</h1>
         <p>Сохраненные срезы Bitrix: дата среза, фильтры по заголовкам и постраничный вывод.</p>
       </div>
-      <div class="pager">
-        <a class="button" href="/Bitrix">Сделки</a>
-        <a class="button" href="/Bitrix/leads">Лиды</a>
-        <a class="button" href="/Bitrix/invoices">Счета</a>
-        __EXTRA_NAV_BUTTONS__
-      </div>
+__BITRIX_TOP_NAV__
     </header>
     <section class="panel">
       <div class="toolbar">
@@ -16046,7 +16084,7 @@ __EXTRA_ROW_CELLS__
     safeLoadItems();
   </script>
 </body>
-</html>""".replace("__PAGE_TITLE__", pageTitle).replace("__API_BASE_PATH__", apiBasePath).replace("__BITRIX_PATH__", bitrixPath).replace("__ENTITY_KEY__", entityType).replace("__ENTITY_LABEL__", entityLabel).replace("__CAPTURE_BUTTON_LABEL__", captureButtonLabel).replace("__TABLE_CLASS__", tableClass).replace("__EXTRA_NAV_BUTTONS__", extraNavButtons).replace("__EXTRA_TOOLBAR_BUTTONS__", extraToolbarButtons).replace("__BASE_COLUMN_GROUPS__", baseColumnGroups).replace("__BASE_HEADER_CELLS__", baseHeaderCells).replace("__BASE_ROW_CELLS__", baseRowCells).replace("__EXTRA_COLUMN_GROUPS__", extraColumnGroups).replace("__EXTRA_HEADER_CELLS__", extraHeaderCells).replace("__EXTRA_ROW_CELLS__", extraRowCells).replace("__EMPTY_COLSPAN__", emptyColspan)
+</html>""".replace("__PAGE_TITLE__", pageTitle).replace("__API_BASE_PATH__", apiBasePath).replace("__BITRIX_PATH__", bitrixPath).replace("__ENTITY_KEY__", entityType).replace("__ENTITY_LABEL__", entityLabel).replace("__CAPTURE_BUTTON_LABEL__", captureButtonLabel).replace("__TABLE_CLASS__", tableClass).replace("__EXTRA_TOOLBAR_BUTTONS__", extraToolbarButtons).replace("__BASE_COLUMN_GROUPS__", baseColumnGroups).replace("__BASE_HEADER_CELLS__", baseHeaderCells).replace("__BASE_ROW_CELLS__", baseRowCells).replace("__EXTRA_COLUMN_GROUPS__", extraColumnGroups).replace("__EXTRA_HEADER_CELLS__", extraHeaderCells).replace("__EXTRA_ROW_CELLS__", extraRowCells).replace("__EMPTY_COLSPAN__", emptyColspan).replace("__BITRIX_TOP_NAV_CSS__", BITRIX_TOP_NAV_CSS).replace("__BITRIX_TOP_NAV__", BITRIX_TOP_NAV_HTML)
 
 
 def buildBitrixInvoiceSummaryPage() -> str:
@@ -16222,6 +16260,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
     .viewport-sticky-table-footer table { margin: 0; border-collapse: collapse; table-layout: fixed; font-size: 0.92rem; }
     .viewport-sticky-table-footer tfoot { position: static; }
     .nav { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+__BITRIX_TOP_NAV_CSS__
   </style>
 </head>
 <body>
@@ -16234,10 +16273,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
         <h1>Сводный отчет по счетам</h1>
         <p>Суммирование счетов по продукту, сделке и месяцам выбранного года на основе последнего сохраненного среза счетов.</p>
       </div>
-      <div class="nav">
-        <a class="button" href="/Bitrix">Сделки</a>
-        <a class="button" href="/Bitrix/invoices">Счета Bitrix</a>
-      </div>
+__BITRIX_TOP_NAV__
     </header>
     <section class="panel">
       <div class="filter-stack">
@@ -16804,7 +16840,7 @@ def buildBitrixInvoiceSummaryPage() -> str:
     loadSummaryOptions();
   </script>
 </body>
-</html>"""
+</html>""".replace("__BITRIX_TOP_NAV_CSS__", BITRIX_TOP_NAV_CSS).replace("__BITRIX_TOP_NAV__", BITRIX_TOP_NAV_HTML)
 
 
 @app.get("/Bitrix/leads", response_class=HTMLResponse)
@@ -16829,7 +16865,7 @@ def readBitrixInvoiceSummaryPage() -> HTMLResponse:
 
 @app.get("/Bitrix/deal-snapshots/compare", response_class=HTMLResponse)
 def readBitrixDealSnapshotComparePage() -> HTMLResponse:
-    return _renderHtmlPage(BITRIX_DEAL_COMPARE_PAGE_HTML)
+    return _renderHtmlPage(buildBitrixDealSnapshotComparePage())
 
 
 @app.get("/login", response_class=HTMLResponse)

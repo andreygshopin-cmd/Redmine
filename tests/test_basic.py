@@ -430,6 +430,11 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
 
     assert "Сравнение срезов сделок" in body
     assert "/api/bitrix/deal-snapshots/compare" in body
+    assert 'class="bitrix-top-nav"' in body
+    assert 'class="button bitrix-nav-button bitrix-nav-deals" href="/Bitrix">Сделки' in body
+    assert 'class="button bitrix-nav-button bitrix-nav-leads" href="/Bitrix/leads">Лиды' in body
+    assert 'class="button bitrix-nav-button bitrix-nav-invoices" href="/Bitrix/invoices">Счета' in body
+    assert "К форме сделок" not in body
     assert "changed-cell" in body
     assert "buildCompareCell" in body
     assert "comparePageSizeInput" in body
@@ -477,7 +482,11 @@ def testReadBitrixLeadSnapshotComparePageReturnsHtmlPage() -> None:
     assert "Сравнение срезов лидов" in body
     assert "/api/bitrix/lead-snapshots/compare" in body
     assert "/crm/lead/details/" in body
-    assert 'href="/Bitrix/leads">К форме лидов' in body
+    assert 'class="bitrix-top-nav"' in body
+    assert 'class="button bitrix-nav-button bitrix-nav-deals" href="/Bitrix">Сделки' in body
+    assert 'class="button bitrix-nav-button bitrix-nav-leads" href="/Bitrix/leads">Лиды' in body
+    assert 'class="button bitrix-nav-button bitrix-nav-invoices" href="/Bitrix/invoices">Счета' in body
+    assert "К форме лидов" not in body
     assert "changed-cell" in body
     assert "comparePageSizeInput" in body
     assert 'data-compare-column-toggle="title" checked' in body
@@ -489,6 +498,10 @@ def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
 
     assert "Счета Bitrix" in body
     assert "/api/bitrix/invoice-snapshots" in body
+    assert 'class="bitrix-top-nav"' in body
+    assert 'class="button bitrix-nav-button bitrix-nav-deals" href="/Bitrix">Сделки' in body
+    assert 'class="button bitrix-nav-button bitrix-nav-leads" href="/Bitrix/leads">Лиды' in body
+    assert 'class="button bitrix-nav-button bitrix-nav-invoices" href="/Bitrix/invoices">Счета' in body
     assert '<a class="brand" href="/"' in body
     assert "smsit_template/images/logo.svg" in body
     assert 'font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif' in body
@@ -551,6 +564,11 @@ def testReadBitrixInvoiceSummaryPageReturnsHtmlPage() -> None:
 
     assert "Сводный отчет по счетам" in body
     assert "/api/bitrix/invoice-snapshots/summary" in body
+    assert 'class="bitrix-top-nav"' in body
+    assert 'class="button bitrix-nav-button bitrix-nav-deals" href="/Bitrix">Сделки' in body
+    assert 'class="button bitrix-nav-button bitrix-nav-leads" href="/Bitrix/leads">Лиды' in body
+    assert 'class="button bitrix-nav-button bitrix-nav-invoices" href="/Bitrix/invoices">Счета' in body
+    assert "Счета Bitrix</a>" not in body
     assert '<a class="brand" href="/"' in body
     assert "smsit_template/images/logo.svg" in body
     assert 'font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif' in body
@@ -647,6 +665,10 @@ def testReadBitrixLeadsPageReturnsDropdownFiltersWithoutPlaceholder() -> None:
     assert "Получить срез по лидам" in body
     assert 'href="/Bitrix/leads/compare"' in body
     assert "Сравнить срезы лидов" in body
+    assert 'class="bitrix-top-nav"' in body
+    assert 'class="button bitrix-nav-button bitrix-nav-deals" href="/Bitrix">Сделки' in body
+    assert 'class="button bitrix-nav-button bitrix-nav-leads" href="/Bitrix/leads">Лиды' in body
+    assert 'class="button bitrix-nav-button bitrix-nav-invoices" href="/Bitrix/invoices">Счета' in body
     assert '<a class="brand" href="/"' in body
     assert "smsit_template/images/logo.svg" in body
     assert 'font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif' in body
