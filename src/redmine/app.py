@@ -41,6 +41,7 @@ from src.redmine.bitrix_client import (
 from src.redmine.config import loadConfig
 from src.redmine.db import (
     checkDatabaseConnection,
+    compareBitrixCrmSnapshots,
     compareBitrixDealSnapshots,
     countPlanningProjects,
     countIssueSnapshotRuns,
@@ -13469,6 +13470,17 @@ BITRIX_DEAL_COMPARE_PAGE_HTML = """<!doctype html>
 </html>"""
 
 
+def buildBitrixLeadSnapshotComparePage() -> str:
+    return (
+        BITRIX_DEAL_COMPARE_PAGE_HTML
+        .replace("Сравнение срезов сделок", "Сравнение срезов лидов")
+        .replace("/api/bitrix/deal-snapshots/compare", "/api/bitrix/lead-snapshots/compare")
+        .replace('href="/Bitrix">К форме сделок', 'href="/Bitrix/leads">К форме лидов')
+        .replace("срезы сделок", "срезы лидов")
+        .replace("/crm/deal/details/", "/crm/lead/details/")
+    )
+
+
 def _normalizePlanningProjectText(value: str | None) -> str | None:
     normalized = str(value or "").strip()
     return normalized or None
@@ -15500,7 +15512,11 @@ def buildBitrixCrmSnapshotPage(entityType: str, pageTitle: str, apiBasePath: str
     isInvoicePage = entityType == "invoice"
     captureButtonLabel = "Получить срез по счетам" if isInvoicePage else "Получить срез по лидам"
     entityLabel = "счета" if isInvoicePage else "лиды"
-    extraNavButtons = '<a class="button" href="/Bitrix/invoices/summary">Сводный отчет по счетам</a>' if isInvoicePage else ""
+    extraNavButtons = (
+        '<a class="button" href="/Bitrix/invoices/summary">Сводный отчет по счетам</a>'
+        if isInvoicePage
+        else '<a class="button" href="/Bitrix/leads/compare">Сравнить срезу лидов</a>'
+    )
     extraToolbarButtons = '<button class="button" id="exportButton" type="button">Экспорт в Excel</button>' if isInvoicePage else ""
     baseColumnGroups = """
             <col class="crm-col-id">
@@ -16794,6 +16810,11 @@ def buildBitrixInvoiceSummaryPage() -> str:
 @app.get("/Bitrix/leads", response_class=HTMLResponse)
 def readBitrixLeadsPage() -> HTMLResponse:
     return _renderHtmlPage(buildBitrixCrmSnapshotPage("lead", "Лиды Bitrix", "/api/bitrix/lead-snapshots", "lead"))
+
+
+@app.get("/Bitrix/leads/compare", response_class=HTMLResponse)
+def readBitrixLeadSnapshotComparePage() -> HTMLResponse:
+    return _renderHtmlPage(buildBitrixLeadSnapshotComparePage())
 
 
 @app.get("/Bitrix/invoices", response_class=HTMLResponse)
@@ -19810,6 +19831,17 @@ def compareBitrixDealSnapshotsApi(
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     return compareBitrixDealSnapshots(left_date, right_date)
+
+
+@app.get("/api/bitrix/lead-snapshots/compare")
+def compareBitrixLeadSnapshotsApi(
+    left_date: str | None = Query(None),
+    right_date: str | None = Query(None),
+) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    return compareBitrixCrmSnapshots("lead", left_date, right_date)
 
 
 @app.get("/snapshot-rules", response_class=HTMLResponse)

@@ -5857,6 +5857,113 @@ def getBitrixInvoiceSummary(
     }
 
 
+def compareBitrixCrmSnapshots(
+    entityType: str,
+    leftDate: str | None = None,
+    rightDate: str | None = None,
+) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    ensureBitrixDealSnapshotTables()
+    runs = listBitrixCrmSnapshotRuns(entityType, 500)
+    if not runs:
+        return {"left_run": None, "right_run": None, "changes": [], "available_dates": []}
+
+    def resolveRun(dateValue: str | None, fallbackIndex: int) -> dict[str, object] | None:
+        if dateValue:
+            for runItem in runs:
+                if str(runItem.get("captured_for_date")) == str(dateValue):
+                    return runItem
+        if len(runs) > fallbackIndex:
+            return runs[fallbackIndex]
+        return None
+
+    rightRun = resolveRun(rightDate, 0)
+    leftRun = resolveRun(leftDate, 1 if len(runs) > 1 else 0)
+    if leftRun is None or rightRun is None:
+        return {
+            "left_run": leftRun,
+            "right_run": rightRun,
+            "changes": [],
+            "available_dates": [str(run["captured_for_date"]) for run in runs],
+        }
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                WITH left_items AS (
+                    SELECT * FROM bitrix_crm_snapshot_items
+                    WHERE snapshot_run_id = :left_run_id AND entity_type = :entity_type
+                ),
+                right_items AS (
+                    SELECT * FROM bitrix_crm_snapshot_items
+                    WHERE snapshot_run_id = :right_run_id AND entity_type = :entity_type
+                )
+                SELECT
+                    COALESCE(l.item_id, r.item_id) AS item_id,
+                    COALESCE(l.item_id, r.item_id) AS deal_id,
+                    l.title AS left_title,
+                    r.title AS right_title,
+                    l.status_id AS left_stage_id,
+                    r.status_id AS right_stage_id,
+                    l.status_name AS left_stage_name,
+                    r.status_name AS right_stage_name,
+                    l.assigned_by_id AS left_assigned_by_id,
+                    r.assigned_by_id AS right_assigned_by_id,
+                    l.assigned_by_name AS left_assigned_by_name,
+                    r.assigned_by_name AS right_assigned_by_name,
+                    l.opportunity AS left_opportunity,
+                    r.opportunity AS right_opportunity,
+                    l.currency_id AS left_currency_id,
+                    r.currency_id AS right_currency_id,
+                    l.company_id AS left_company_id,
+                    r.company_id AS right_company_id,
+                    l.company_name AS left_company_name,
+                    r.company_name AS right_company_name,
+                    l.category_id AS left_category_id,
+                    r.category_id AS right_category_id,
+                    l.category_name AS left_category_name,
+                    r.category_name AS right_category_name,
+                    CASE
+                        WHEN l.item_id IS NULL THEN 'added'
+                        WHEN r.item_id IS NULL THEN 'removed'
+                        ELSE 'changed'
+                    END AS change_type
+                FROM left_items l
+                FULL OUTER JOIN right_items r ON r.item_id = l.item_id
+                WHERE l.item_id IS NULL
+                   OR r.item_id IS NULL
+                   OR l.title IS DISTINCT FROM r.title
+                   OR l.status_id IS DISTINCT FROM r.status_id
+                   OR l.status_name IS DISTINCT FROM r.status_name
+                   OR l.assigned_by_id IS DISTINCT FROM r.assigned_by_id
+                   OR l.assigned_by_name IS DISTINCT FROM r.assigned_by_name
+                   OR l.opportunity IS DISTINCT FROM r.opportunity
+                   OR l.currency_id IS DISTINCT FROM r.currency_id
+                   OR l.company_id IS DISTINCT FROM r.company_id
+                   OR l.company_name IS DISTINCT FROM r.company_name
+                   OR l.category_id IS DISTINCT FROM r.category_id
+                   OR l.category_name IS DISTINCT FROM r.category_name
+                ORDER BY COALESCE(l.item_id, r.item_id) DESC
+                """
+            ),
+            {
+                "entity_type": entityType,
+                "left_run_id": int(leftRun["id"]),
+                "right_run_id": int(rightRun["id"]),
+            },
+        )
+
+    return {
+        "left_run": leftRun,
+        "right_run": rightRun,
+        "changes": [dict(row._mapping) for row in rows],
+        "available_dates": [str(run["captured_for_date"]) for run in runs],
+    }
+
+
 def compareBitrixDealSnapshots(leftDate: str | None = None, rightDate: str | None = None) -> dict[str, object]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")

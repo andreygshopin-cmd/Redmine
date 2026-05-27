@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from src.redmine import app as app_module
 from src.redmine import bitrix_client as bitrix_client_module
-from src.redmine.app import app, getTime, readBitrixDealSnapshotComparePage, readBitrixInvoiceSummaryPage, readBitrixInvoicesPage, readBitrixLeadsPage, readBitrixPage, readRoot
+from src.redmine.app import app, getTime, readBitrixDealSnapshotComparePage, readBitrixInvoiceSummaryPage, readBitrixInvoicesPage, readBitrixLeadSnapshotComparePage, readBitrixLeadsPage, readBitrixPage, readRoot
 from src.redmine.bitrix_client import fetchBitrixUserNames, fetchBitrixUsers
 from src.redmine.config import loadConfig
 from src.redmine.db import chunkSequence, normalizeDatabaseUrl
@@ -471,6 +471,19 @@ def testReadBitrixDealSnapshotComparePageReturnsHtmlPage() -> None:
     assert "<th>Валюта</th>" not in body
 
 
+def testReadBitrixLeadSnapshotComparePageReturnsHtmlPage() -> None:
+    body = readBitrixLeadSnapshotComparePage().body.decode("utf-8")
+
+    assert "Сравнение срезов лидов" in body
+    assert "/api/bitrix/lead-snapshots/compare" in body
+    assert "/crm/lead/details/" in body
+    assert 'href="/Bitrix/leads">К форме лидов' in body
+    assert "changed-cell" in body
+    assert "comparePageSizeInput" in body
+    assert 'data-compare-column-toggle="title" checked' in body
+    assert 'setupViewportStickyTableHeader(".table-wrap", "table")' in body
+
+
 def testReadBitrixInvoicesPageReturnsInvoiceColumns() -> None:
     body = readBitrixInvoicesPage().body.decode("utf-8")
 
@@ -632,6 +645,8 @@ def testReadBitrixLeadsPageReturnsDropdownFiltersWithoutPlaceholder() -> None:
 
     assert "Лиды Bitrix" in body
     assert "Получить срез по лидам" in body
+    assert 'href="/Bitrix/leads/compare"' in body
+    assert "Сравнить срезу лидов" in body
     assert '<a class="brand" href="/"' in body
     assert "smsit_template/images/logo.svg" in body
     assert 'font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif' in body
@@ -890,6 +905,29 @@ def testCompareBitrixDealSnapshotsEndpointReturnsChanges(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["changes"][0]["deal_id"] == 501
+
+
+def testCompareBitrixLeadSnapshotsEndpointReturnsChanges(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: {"login": "tester", "roles": ["Admin"], "must_change_password": False})
+    calls = []
+    monkeypatch.setattr(
+        app_module,
+        "compareBitrixCrmSnapshots",
+        lambda entityType, leftDate, rightDate: calls.append((entityType, leftDate, rightDate)) or {
+            "left_run": {"captured_for_date": leftDate},
+            "right_run": {"captured_for_date": rightDate},
+            "changes": [{"deal_id": 701, "item_id": 701, "change_type": "changed"}],
+            "available_dates": [rightDate, leftDate],
+        },
+    )
+
+    response = client.get("/api/bitrix/lead-snapshots/compare?left_date=2026-05-01&right_date=2026-05-06")
+
+    assert response.status_code == 200
+    assert calls == [("lead", "2026-05-01", "2026-05-06")]
+    assert response.json()["changes"][0]["item_id"] == 701
 
 
 def testGetBitrixDealSnapshotFilterOptionsEndpointReturnsOptions(monkeypatch) -> None:
