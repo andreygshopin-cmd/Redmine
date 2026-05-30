@@ -24,6 +24,7 @@ class Config:
     renderServiceId: str = os.getenv("RENDER_SERVICE_ID", "")
     bitrixPortalUrl: str = os.getenv("BITRIX_PORTAL_URL", "https://sms-it.bitrix24.ru")
     bitrixCredential: str = os.getenv("Btrx", "")
+    snapshotTimezone: str = os.getenv("SNAPSHOT_TIMEZONE", os.getenv("APP_TIMEZONE", "Europe/Samara"))
 
 
 def loadConfig() -> Config:

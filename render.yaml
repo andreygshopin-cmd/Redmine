@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: redmine-api
+    name: redmine-tdfp
     runtime: python
     plan: starter
     buildCommand: pip install -r requirements.txt
@@ -10,6 +10,8 @@ services:
         value: 3.11.9
       - key: APP_ENV
         value: production
+      - key: SNAPSHOT_TIMEZONE
+        value: Europe/Samara
       - key: DATABASE_URL
         fromDatabase:
           name: redmine-db
@@ -21,10 +23,7 @@ services:
       - key: BITRIX_PORTAL_URL
         value: https://sms-it.bitrix24.ru
       - key: Btrx
-        fromService:
-          type: web
-          name: redmine-api
-          envVarKey: Btrx
+        sync: false
 
   # 02:00 Saturday Europe/Samara == 22:00 Friday UTC. Render cron schedules use UTC.
   - type: cron
@@ -39,6 +38,8 @@ services:
         value: 3.11.9
       - key: APP_ENV
         value: production
+      - key: SNAPSHOT_TIMEZONE
+        value: Europe/Samara
       - key: DATABASE_URL
         fromDatabase:
           name: redmine-db
@@ -46,7 +47,10 @@ services:
       - key: BITRIX_PORTAL_URL
         value: https://sms-it.bitrix24.ru
       - key: Btrx
-        sync: false
+        fromService:
+          type: web
+          name: redmine-tdfp
+          envVarKey: Btrx
 
   # 03:00 Saturday Europe/Samara == 23:00 Friday UTC. Render cron schedules use UTC.
   - type: cron
@@ -61,6 +65,8 @@ services:
         value: 3.11.9
       - key: APP_ENV
         value: production
+      - key: SNAPSHOT_TIMEZONE
+        value: Europe/Samara
       - key: DATABASE_URL
         fromDatabase:
           name: redmine-db
@@ -68,12 +74,12 @@ services:
       - key: REDMINE_URL
         fromService:
           type: web
-          name: redmine-api
+          name: redmine-tdfp
           envVarKey: REDMINE_URL
       - key: REDMINE_API_KEY
         fromService:
           type: web
-          name: redmine-api
+          name: redmine-tdfp
           envVarKey: REDMINE_API_KEY
 
 databases:

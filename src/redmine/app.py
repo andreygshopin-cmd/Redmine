@@ -39,6 +39,7 @@ from src.redmine.bitrix_client import (
     fetchBitrixUsers,
 )
 from src.redmine.config import loadConfig
+from src.redmine.dates import getSnapshotBusinessDateIso
 from src.redmine.db import (
     checkDatabaseConnection,
     compareBitrixCrmSnapshots,
@@ -18825,7 +18826,7 @@ def startBitrixSnapshotCapture(entities: str | None = Query(None)) -> dict[str, 
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
     requireBitrixConfig()
 
-    capturedForDate = datetime.now(UTC).date().isoformat()
+    capturedForDate = getSnapshotBusinessDateIso()
     selectedEntities = parseBitrixCaptureEntities(entities)
     selectedEntityKeys = {str(entity["key"]) for entity in selectedEntities}
     try:
@@ -18952,7 +18953,7 @@ def captureBitrixDealSnapshot() -> dict[str, object]:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
     requireBitrixConfig()
 
-    capturedForDate = datetime.now(UTC).date().isoformat()
+    capturedForDate = getSnapshotBusinessDateIso()
     try:
         usersDictionary = refreshBitrixUsersDictionary()
         companiesDictionary = refreshBitrixCompaniesDictionary()
@@ -20845,7 +20846,7 @@ def recaptureIssueSnapshotByProject(project_redmine_id: int) -> dict[str, object
     if not bool(project.get("is_enabled")):
         raise HTTPException(status_code=400, detail="Проект выключен для загрузки")
 
-    capturedForDate = datetime.now(UTC).date().isoformat()
+    capturedForDate = getSnapshotBusinessDateIso()
     deleteIssueSnapshotForProjectDate(project_redmine_id, capturedForDate)
     started = startProjectIssueSnapshotCaptureInBackground(project_redmine_id)
 
@@ -20873,7 +20874,7 @@ def recaptureIssueSnapshots() -> dict[str, object]:
             **getIssueSnapshotCaptureStatus(),
         }
 
-    capturedForDate = datetime.now(UTC).date().isoformat()
+    capturedForDate = getSnapshotBusinessDateIso()
     enabledProjects = [project for project in listStoredProjects() if bool(project.get("is_enabled"))]
 
     for project in enabledProjects:
@@ -21095,6 +21096,8 @@ def health() -> dict[str, object]:
                 "set_me_in_render_dashboard",
             }
         ),
+        "snapshot_timezone": config.snapshotTimezone,
+        "snapshot_business_date": getSnapshotBusinessDateIso(),
         "render_git_commit": os.getenv("RENDER_GIT_COMMIT", ""),
         "render_git_branch": os.getenv("RENDER_GIT_BRANCH", ""),
         "render_service_id": os.getenv("RENDER_SERVICE_ID", ""),

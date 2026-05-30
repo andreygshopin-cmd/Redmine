@@ -11,6 +11,7 @@ import requests
 from requests import HTTPError
 
 from src.redmine.config import loadConfig
+from src.redmine.dates import getSnapshotBusinessDateIso
 from src.redmine.db import (
     appendIssueSnapshotCaptureErrorRecord,
     createIssueSnapshotRun,
@@ -723,9 +724,9 @@ def captureAllIssueSnapshots() -> dict[str, object]:
     if not projects:
         raise RuntimeError("No projects in the database. Refresh projects first.")
 
-    capturedForDate = datetime.now(UTC).date().isoformat()
+    capturedForDate = getSnapshotBusinessDateIso()
     captureYear = int(capturedForDate[:4])
-    closedOnCutoff = f"{datetime.now(UTC).year - 1}-01-01"
+    closedOnCutoff = f"{captureYear - 1}-01-01"
     activeProjects = [project for project in projects if bool(project.get("is_enabled"))]
     pendingProjects = listProjectsWithoutSnapshotForDate(capturedForDate)
     createdRuns = 0
@@ -901,9 +902,9 @@ def captureIssueSnapshotForProject(projectRedmineId: int) -> dict[str, object]:
     if project is None:
         raise RuntimeError(f"Project {projectRedmineId} not found")
 
-    capturedForDate = datetime.now(UTC).date().isoformat()
+    capturedForDate = getSnapshotBusinessDateIso()
     captureYear = int(capturedForDate[:4])
-    closedOnCutoff = f"{datetime.now(UTC).year - 1}-01-01"
+    closedOnCutoff = f"{captureYear - 1}-01-01"
     projectName = str(project.get("name") or "")
 
     updateIssueSnapshotCaptureStatus(

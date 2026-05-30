@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -9,6 +9,7 @@ from src.redmine import bitrix_client as bitrix_client_module
 from src.redmine.app import app, getTime, readBitrixDealSnapshotComparePage, readBitrixInvoiceSummaryPage, readBitrixInvoicesPage, readBitrixLeadSnapshotComparePage, readBitrixLeadsPage, readBitrixPage, readRoot
 from src.redmine.bitrix_client import fetchBitrixUserNames, fetchBitrixUsers
 from src.redmine.config import loadConfig
+from src.redmine.dates import getSnapshotBusinessDateIso
 from src.redmine.db import chunkSequence, normalizeDatabaseUrl
 from src.redmine.redmine_client import (
     applySpentHoursYearByIssue,
@@ -82,9 +83,25 @@ def testLoadConfigReturnsObject() -> None:
     assert config.bitrixPortalUrl.startswith("https://")
 
 
+def testSnapshotBusinessDateUsesSamaraTimezoneByDefault() -> None:
+    assert getSnapshotBusinessDateIso(datetime(2026, 5, 29, 22, 0, tzinfo=UTC)) == "2026-05-30"
+    assert getSnapshotBusinessDateIso(datetime(2026, 5, 29, 19, 0, tzinfo=UTC)) == "2026-05-29"
+
+
+def testHealthShowsSnapshotDateSettings() -> None:
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["snapshot_timezone"] == "Europe/Samara"
+    assert payload["snapshot_business_date"]
+
+
 def testRenderYamlSchedulesWeeklySnapshotCronJobs() -> None:
     body = (REPO_ROOT / "render.yaml").read_text(encoding="utf-8")
 
+    assert "name: redmine-tdfp" in body
+    assert "name: redmine-api" not in body
     assert "name: redmine-bitrix-snapshot-cron" in body
     assert 'schedule: "0 22 * * FRI"' in body
     assert "startCommand: python -m src.redmine.capture_bitrix_snapshots" in body
