@@ -2863,6 +2863,27 @@ def _snapshotIssueFieldSql(alias: str, fieldName: str) -> str:
     return f"{alias}.{fieldName}" if alias else fieldName
 
 
+def _snapshotIssueHasChildrenSql(alias: str = "") -> str:
+    issueIdSql = _snapshotIssueFieldSql(alias, "issue_redmine_id")
+    if alias:
+        return f"""
+            EXISTS (
+                SELECT 1
+                FROM snapshot_items child
+                WHERE child.parent_issue_redmine_id = {issueIdSql}
+            )
+        """.strip()
+
+    return """
+        EXISTS (
+            SELECT 1
+            FROM issue_snapshot_items child
+            WHERE child.snapshot_run_id = issue_snapshot_items.snapshot_run_id
+              AND child.parent_issue_redmine_id = issue_snapshot_items.issue_redmine_id
+        )
+    """.strip()
+
+
 def _buildSnapshotIssueMetricsSql(alias: str = "") -> tuple[str, str, str, str]:
     trackerSql = f"LOWER(TRIM(COALESCE({_snapshotIssueFieldSql(alias, 'tracker_name')}, '')))"
     statusSql = f"LOWER(TRIM(COALESCE({_snapshotIssueFieldSql(alias, 'status_name')}, '')))"
@@ -2871,18 +2892,24 @@ def _buildSnapshotIssueMetricsSql(alias: str = "") -> tuple[str, str, str, str]:
     riskEstimatedSql = f"COALESCE({_snapshotIssueFieldSql(alias, 'risk_estimate_hours')}, {_snapshotIssueFieldSql(alias, 'estimated_hours')}, 0)"
     spentSql = f"COALESCE({_snapshotIssueFieldSql(alias, 'spent_hours')}, 0)"
     closedStatusesSql = "('закрыта', 'решена', 'отказ')"
+    hasChildrenSql = _snapshotIssueHasChildrenSql(alias)
 
     volumeSql = f"""
         CASE
             WHEN {trackerSql} = 'разработка' THEN
                 CASE
+                    WHEN {hasChildrenSql} THEN 0
                     WHEN {statusSql} IN {closedStatusesSql} THEN {spentSql}
                     ELSE GREATEST({baselineSql}, {estimatedSql}, {spentSql})
                 END
             WHEN {trackerSql} = 'процессы разработки' THEN
-                GREATEST({estimatedSql}, {spentSql})
+                CASE
+                    WHEN {hasChildrenSql} THEN 0
+                    ELSE GREATEST({estimatedSql}, {spentSql})
+                END
             WHEN {trackerSql} = 'ошибка' THEN
                 CASE
+                    WHEN {hasChildrenSql} THEN 0
                     WHEN {statusSql} IN {closedStatusesSql} THEN {spentSql}
                     ELSE GREATEST({estimatedSql}, {spentSql})
                 END
@@ -2894,13 +2921,18 @@ def _buildSnapshotIssueMetricsSql(alias: str = "") -> tuple[str, str, str, str]:
         CASE
             WHEN {trackerSql} = 'разработка' THEN
                 CASE
+                    WHEN {hasChildrenSql} THEN 0
                     WHEN {statusSql} IN {closedStatusesSql} THEN {spentSql}
                     ELSE GREATEST({baselineSql}, {riskEstimatedSql}, {spentSql})
                 END
             WHEN {trackerSql} = 'процессы разработки' THEN
-                GREATEST({riskEstimatedSql}, {spentSql})
+                CASE
+                    WHEN {hasChildrenSql} THEN 0
+                    ELSE GREATEST({riskEstimatedSql}, {spentSql})
+                END
             WHEN {trackerSql} = 'ошибка' THEN
                 CASE
+                    WHEN {hasChildrenSql} THEN 0
                     WHEN {statusSql} IN {closedStatusesSql} THEN {spentSql}
                     ELSE GREATEST({riskEstimatedSql}, {spentSql})
                 END

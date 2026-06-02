@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from src.redmine import app as app_module
 from src.redmine import bitrix_client as bitrix_client_module
+from src.redmine import db as db_module
 from src.redmine.app import app, getTime, readBitrixDealSnapshotComparePage, readBitrixInvoiceSummaryPage, readBitrixInvoicesPage, readBitrixLeadSnapshotComparePage, readBitrixLeadsPage, readBitrixPage, readRoot
 from src.redmine.bitrix_client import fetchBitrixUserNames, fetchBitrixUsers
 from src.redmine.config import loadConfig
@@ -295,6 +296,52 @@ def testApplyFeatureForecastsUsesSeparateBugReserveForFeatureAndVirtual() -> Non
     assert {issue["feature_risk_forecast_hours"] for issue in featureRows} == {38.0}
     assert result[3]["feature_forecast_hours"] == pytest.approx(15.0)
     assert result[3]["feature_risk_forecast_hours"] == pytest.approx(15.0)
+
+
+def testBurndownFeatureGroupsDoNotCountParentIssueVolume() -> None:
+    groups = app_module.buildBurndownFeatureGroups(
+        [
+            {
+                "issue_redmine_id": 501,
+                "tracker_name": "Feature",
+                "status_name": "В работе",
+                "parent_issue_redmine_id": None,
+            },
+            {
+                "issue_redmine_id": 502,
+                "tracker_name": "Разработка",
+                "status_name": "В работе",
+                "baseline_estimate_hours": 10.0,
+                "estimated_hours": 20.0,
+                "risk_estimate_hours": 30.0,
+                "spent_hours": 5.0,
+                "parent_issue_redmine_id": 501,
+            },
+            {
+                "issue_redmine_id": 503,
+                "tracker_name": "Разработка",
+                "status_name": "В работе",
+                "baseline_estimate_hours": 2.0,
+                "estimated_hours": 4.0,
+                "risk_estimate_hours": 6.0,
+                "spent_hours": 1.0,
+                "parent_issue_redmine_id": 502,
+            },
+        ]
+    )
+
+    group = groups[0]
+    assert group["development_volume"] == pytest.approx(4.0)
+    assert group["development_volume_risk"] == pytest.approx(6.0)
+
+
+def testSnapshotIssueVolumeSqlZeroesIssuesWithChildren() -> None:
+    volumeSql, riskVolumeSql, remainingSql, riskRemainingSql = db_module._buildSnapshotIssueMetricsSql()
+
+    assert "child.parent_issue_redmine_id = issue_snapshot_items.issue_redmine_id" in volumeSql
+    assert "child.parent_issue_redmine_id = issue_snapshot_items.issue_redmine_id" in riskVolumeSql
+    assert "parent_issue_redmine_id" not in remainingSql
+    assert "parent_issue_redmine_id" not in riskRemainingSql
 
 
 def testProjectsSummaryGroupsIncludeSnapshotForecastAndRemaining(monkeypatch) -> None:
