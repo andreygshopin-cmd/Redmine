@@ -476,6 +476,15 @@ def ensureIssueSnapshotTables() -> None:
             connection.execute(
                 text(
                     """
+                    CREATE INDEX IF NOT EXISTS idx_issue_snapshot_items_run_parent
+                    ON issue_snapshot_items(snapshot_run_id, parent_issue_redmine_id)
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_issue_snapshot_time_entries_run_entry_unique
                     ON issue_snapshot_time_entries(snapshot_run_id, time_entry_redmine_id)
                     """
@@ -2864,15 +2873,8 @@ def _snapshotIssueFieldSql(alias: str, fieldName: str) -> str:
 
 
 def _snapshotIssueHasChildrenSql(alias: str = "") -> str:
-    issueIdSql = _snapshotIssueFieldSql(alias, "issue_redmine_id")
     if alias:
-        return f"""
-            EXISTS (
-                SELECT 1
-                FROM snapshot_items child
-                WHERE child.parent_issue_redmine_id = {issueIdSql}
-            )
-        """.strip()
+        return f"COALESCE({_snapshotIssueFieldSql(alias, 'has_children')}, FALSE)"
 
     return """
         EXISTS (
@@ -3094,28 +3096,36 @@ def _buildSnapshotIssueHierarchyQuery(baseWhereSql: str, paginated: bool) -> str
                 FROM issue_snapshot_items
                 WHERE snapshot_run_id = :snapshot_run_id
             ),
+            child_parent_ids AS (
+                SELECT DISTINCT parent_issue_redmine_id
+                FROM snapshot_items
+                WHERE parent_issue_redmine_id IS NOT NULL
+            ),
             filtered_items AS (
                 SELECT
-                    issue_redmine_id,
-                    subject,
-                    tracker_name,
-                    status_name,
-                    priority_name,
-                    assigned_to_name,
-                    fixed_version_name,
-                    done_ratio,
-                    baseline_estimate_hours,
-                    estimated_hours,
-                    risk_estimate_hours,
-                    spent_hours,
-                    spent_hours_year,
-                    start_date,
-                    due_date,
-                    created_on,
-                    updated_on,
-                    closed_on,
-                    parent_issue_redmine_id
+                    issue_snapshot_items.issue_redmine_id,
+                    issue_snapshot_items.subject,
+                    issue_snapshot_items.tracker_name,
+                    issue_snapshot_items.status_name,
+                    issue_snapshot_items.priority_name,
+                    issue_snapshot_items.assigned_to_name,
+                    issue_snapshot_items.fixed_version_name,
+                    issue_snapshot_items.done_ratio,
+                    issue_snapshot_items.baseline_estimate_hours,
+                    issue_snapshot_items.estimated_hours,
+                    issue_snapshot_items.risk_estimate_hours,
+                    issue_snapshot_items.spent_hours,
+                    issue_snapshot_items.spent_hours_year,
+                    issue_snapshot_items.start_date,
+                    issue_snapshot_items.due_date,
+                    issue_snapshot_items.created_on,
+                    issue_snapshot_items.updated_on,
+                    issue_snapshot_items.closed_on,
+                    issue_snapshot_items.parent_issue_redmine_id,
+                    CASE WHEN child_parent_ids.parent_issue_redmine_id IS NOT NULL THEN TRUE ELSE FALSE END AS has_children
                 FROM issue_snapshot_items
+                LEFT JOIN child_parent_ids
+                    ON child_parent_ids.parent_issue_redmine_id = issue_snapshot_items.issue_redmine_id
                 WHERE {baseWhereSql}
             ),
             item_chain AS (
