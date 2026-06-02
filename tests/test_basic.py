@@ -333,15 +333,17 @@ def testBurndownFeatureGroupsDoNotCountParentIssueVolume() -> None:
     group = groups[0]
     assert group["development_volume"] == pytest.approx(4.0)
     assert group["development_volume_risk"] == pytest.approx(6.0)
+    assert group["development_remaining"] == pytest.approx(3.0)
+    assert group["development_remaining_risk"] == pytest.approx(5.0)
 
 
-def testSnapshotIssueVolumeSqlZeroesIssuesWithChildren() -> None:
+def testSnapshotIssueMetricSqlZeroesVolumeAndRemainingForIssuesWithChildren() -> None:
     volumeSql, riskVolumeSql, remainingSql, riskRemainingSql = db_module._buildSnapshotIssueMetricsSql()
 
     assert "child.parent_issue_redmine_id = issue_snapshot_items.issue_redmine_id" in volumeSql
     assert "child.parent_issue_redmine_id = issue_snapshot_items.issue_redmine_id" in riskVolumeSql
-    assert "parent_issue_redmine_id" not in remainingSql
-    assert "parent_issue_redmine_id" not in riskRemainingSql
+    assert "child.parent_issue_redmine_id = issue_snapshot_items.issue_redmine_id" in remainingSql
+    assert "child.parent_issue_redmine_id = issue_snapshot_items.issue_redmine_id" in riskRemainingSql
 
 
 def testProjectsSummaryGroupsIncludeSnapshotForecastAndRemaining(monkeypatch) -> None:

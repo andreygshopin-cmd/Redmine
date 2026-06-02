@@ -5176,7 +5176,9 @@ def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str
                 riskRemaining = max(0.0, max(baselineEstimateHours, riskPlanHours) - factHours)
             if hasChildren:
                 volume = 0.0
+                remaining = 0.0
                 riskVolume = 0.0
+                riskRemaining = 0.0
             group["development_volume"] = float(group["development_volume"]) + volume
             group["development_remaining"] = float(group["development_remaining"]) + remaining
             group["development_volume_risk"] = float(group["development_volume_risk"]) + riskVolume
@@ -5202,7 +5204,9 @@ def buildBurndownFeatureGroups(issues: list[dict[str, object]]) -> list[dict[str
                 riskRemaining = max(0.0, riskPlanHours - factHours)
             if hasChildren:
                 volume = 0.0
+                remaining = 0.0
                 riskVolume = 0.0
+                riskRemaining = 0.0
             group["bug_volume"] = float(group["bug_volume"]) + volume
             group["bug_remaining"] = float(group["bug_remaining"]) + remaining
             group["bug_volume_risk"] = float(group["bug_volume_risk"]) + riskVolume

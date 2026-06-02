@@ -2944,12 +2944,14 @@ def _buildSnapshotIssueMetricsSql(alias: str = "") -> tuple[str, str, str, str]:
         CASE
             WHEN {trackerSql} = 'разработка' THEN
                 CASE
+                    WHEN {hasChildrenSql} THEN 0
                     WHEN {statusSql} IN {closedStatusesSql} THEN 0
                     ELSE GREATEST(0, GREATEST({baselineSql}, {estimatedSql}) - {spentSql})
                 END
             WHEN {trackerSql} = 'процессы разработки' THEN 0
             WHEN {trackerSql} = 'ошибка' THEN
                 CASE
+                    WHEN {hasChildrenSql} THEN 0
                     WHEN {statusSql} IN {closedStatusesSql} THEN 0
                     ELSE GREATEST(0, {estimatedSql} - {spentSql})
                 END
@@ -2961,12 +2963,14 @@ def _buildSnapshotIssueMetricsSql(alias: str = "") -> tuple[str, str, str, str]:
         CASE
             WHEN {trackerSql} = 'разработка' THEN
                 CASE
+                    WHEN {hasChildrenSql} THEN 0
                     WHEN {statusSql} IN {closedStatusesSql} THEN 0
                     ELSE GREATEST(0, GREATEST({baselineSql}, {riskEstimatedSql}) - {spentSql})
                 END
             WHEN {trackerSql} = 'процессы разработки' THEN 0
             WHEN {trackerSql} = 'ошибка' THEN
                 CASE
+                    WHEN {hasChildrenSql} THEN 0
                     WHEN {statusSql} IN {closedStatusesSql} THEN 0
                     ELSE GREATEST(0, {riskEstimatedSql} - {spentSql})
                 END
