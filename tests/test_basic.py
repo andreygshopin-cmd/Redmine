@@ -1390,7 +1390,18 @@ def testGetLatestSnapshotIssuesForProjectPageReturnsHtml(monkeypatch) -> None:
     monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
     monkeypatch.setattr(app_module, "listStoredProjects", lambda: [])
     monkeypatch.setattr(app_module, "listPlanningProjectsByRedmineIdentifier", lambda redmineIdentifier: [])
-    monkeypatch.setattr(app_module, "getSnapshotTimeEntriesForProjectByDateRange", lambda *args, **kwargs: {"time_entries": []})
+    monkeypatch.setattr(
+        app_module,
+        "getSnapshotTimeEntriesForProjectByDateRange",
+        lambda *args, **kwargs: {
+            "time_entries": [
+                {
+                    "spent_on": "2026-04-13",
+                    "hours": 40.0,
+                }
+            ]
+        },
+    )
 
     def fakeGetFilteredSnapshotIssuesForProjectByDate(projectRedmineId, capturedForDate=None, filters=None, page=1, pageSize=1000):
         return buildSnapshotIssuesPayload(projectRedmineId, "2026-04-13")
@@ -1409,6 +1420,9 @@ def testGetLatestSnapshotIssuesForProjectPageReturnsHtml(monkeypatch) -> None:
     assert "Остаток по заве- денным задачам" in body
     assert "Прогноз - факт" in body
     assert "summaryDevelopmentYearForecastMinusFact" in body
+    assert 'class="snapshot-weekly-link"' in body
+    assert 'target="_blank"' in body
+    assert "/projects/10/time-entries?captured_for_date=2026-04-13&amp;date_from=2026-04-13&amp;date_to=2026-04-13" in body
 
 
 def testGetProjectBurndownPageReturnsChartPage(monkeypatch) -> None:

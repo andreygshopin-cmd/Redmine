@@ -9090,12 +9090,26 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
     for dateValue in availableDates:
         selectedAttr = " selected" if dateValue == selectedDate else ""
         optionsHtml.append(f'<option value="{escape(dateValue)}"{selectedAttr}>{escape(dateValue)}</option>')
+
+    def buildSnapshotWeeklyTimeEntriesUrl(row: dict[str, object]) -> str:
+        queryParts: list[str] = []
+        weekStart = str(row.get("week_start") or "").strip()
+        weekEnd = str(row.get("week_end") or "").strip()
+        if capturedForDateRaw:
+            queryParts.append(f"captured_for_date={quote(capturedForDateRaw)}")
+        if weekStart:
+            queryParts.append(f"date_from={quote(weekStart)}")
+        if weekEnd:
+            queryParts.append(f"date_to={quote(weekEnd)}")
+        queryString = "&".join(queryParts)
+        return f"/projects/{projectRedmineId}/time-entries" + (f"?{queryString}" if queryString else "")
+
     weeklyLoadWeekCellsHtml = "".join(
         f'<th scope="col">{escape(str(row.get("label") or "—"))}</th>'
         for row in snapshotWeeklyDeveloperLoad
     )
     weeklyLoadDeveloperCellsHtml = "".join(
-        f'<td>{formatPageHours(row.get("developers"))}</td>'
+        f'<td><a class="snapshot-weekly-link" href="{escape(buildSnapshotWeeklyTimeEntriesUrl(row))}" target="_blank" rel="noreferrer">{formatPageHours(row.get("developers"))}</a></td>'
         for row in snapshotWeeklyDeveloperLoad
     )
     latestWeeklyDeveloperCount = (
@@ -9231,6 +9245,17 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         background: #ffffff;
         text-transform: none;
         font-size: 0.95rem;
+      }}
+      .snapshot-weekly-link {{
+        color: inherit;
+        text-decoration: underline;
+        text-decoration-style: dotted;
+        text-decoration-color: rgba(55, 93, 119, 0.45);
+        text-underline-offset: 4px;
+      }}
+      .snapshot-weekly-link:hover {{
+        color: #375d77;
+        text-decoration-color: #375d77;
       }}
       .snapshot-capacity-card {{
         border: 1px solid var(--line);
@@ -9997,13 +10022,29 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         return resultDate;
       }}
 
+      function buildSnapshotWeeklyTimeEntriesUrl(row) {{
+        const params = new URLSearchParams();
+        const capturedDate = String(currentSnapshotCapturedForDate || getSelectedSnapshotDate() || selectedSnapshotDate || "");
+        if (capturedDate) {{
+          params.set("captured_for_date", capturedDate);
+        }}
+        if (row?.week_start) {{
+          params.set("date_from", String(row.week_start));
+        }}
+        if (row?.week_end) {{
+          params.set("date_to", String(row.week_end));
+        }}
+        const query = params.toString();
+        return `/projects/{projectRedmineId}/time-entries${{query ? `?${{query}}` : ""}}`;
+      }}
+
       function renderSnapshotWeeklyDeveloperLoad(rows, copyLatestToInput = false) {{
         const sourceRows = Array.isArray(rows) ? rows : [];
         if (snapshotWeeklyLoadWeeksRow) {{
           snapshotWeeklyLoadWeeksRow.innerHTML = `<th scope="row">Неделя</th>${{sourceRows.map((row) => `<th scope="col">${{escapeHtml(row?.label || "—")}}</th>`).join("")}}`;
         }}
         if (snapshotWeeklyLoadDevelopersRow) {{
-          snapshotWeeklyLoadDevelopersRow.innerHTML = `<th scope="row">Количество программистов</th>${{sourceRows.map((row) => `<td>${{formatFilterHours(row?.developers || 0)}}</td>`).join("")}}`;
+          snapshotWeeklyLoadDevelopersRow.innerHTML = `<th scope="row">Количество программистов</th>${{sourceRows.map((row) => `<td><a class="snapshot-weekly-link" href="${{escapeHtml(buildSnapshotWeeklyTimeEntriesUrl(row))}}" target="_blank" rel="noreferrer">${{formatFilterHours(row?.developers || 0)}}</a></td>`).join("")}}`;
         }}
         if (copyLatestToInput && snapshotDeveloperCountInput) {{
           const latestRow = sourceRows.length ? sourceRows[sourceRows.length - 1] : null;
