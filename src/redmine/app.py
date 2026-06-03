@@ -3808,6 +3808,22 @@ def formatSnapshotPageDateTime(value: object) -> str:
     return str(value).replace("T", " ").replace("+00:00", " UTC")
 
 
+SNAPSHOT_DEVELOPMENT_TIME_ENTRY_TRACKERS = (
+    "Ошибка",
+    "Процессы разработки",
+    "Разработка",
+)
+SNAPSHOT_DEVELOPMENT_TIME_ENTRY_TRACKER_KEYS = {
+    str(trackerName).strip().lower()
+    for trackerName in SNAPSHOT_DEVELOPMENT_TIME_ENTRY_TRACKERS
+}
+
+
+def _isSnapshotDevelopmentTimeEntry(entry: dict[str, object]) -> bool:
+    trackerName = str(entry.get("issue_tracker_name") or "").strip().lower()
+    return trackerName in SNAPSHOT_DEVELOPMENT_TIME_ENTRY_TRACKER_KEYS
+
+
 def buildSnapshotWeeklyDeveloperLoad(
     projectRedmineId: int,
     capturedForDate: str | None,
@@ -3848,6 +3864,8 @@ def buildSnapshotWeeklyDeveloperLoad(
         weekStart = spentOn - timedelta(days=spentOn.weekday())
         weekKey = weekStart.isoformat()
         if weekKey not in hoursByWeekStart:
+            continue
+        if not _isSnapshotDevelopmentTimeEntry(entry):
             continue
         try:
             hoursByWeekStart[weekKey] += float(entry.get("hours") or 0)
@@ -11059,6 +11077,12 @@ def _applySnapshotTimeEntriesFilters(
     return filteredEntries
 
 
+def _buildDefaultSnapshotTimeEntryFilters() -> dict[str, list[str]]:
+    return {
+        "issue_tracker_name": list(SNAPSHOT_DEVELOPMENT_TIME_ENTRY_TRACKERS),
+    }
+
+
 def buildSnapshotTimeEntriesPage(
     projectRedmineId: int,
     capturedForDate: str | None,
@@ -11210,10 +11234,13 @@ def buildSnapshotTimeEntriesPage(
         compareUrl=comparePageUrl,
     )
 
-    filteredEntries = _applySnapshotTimeEntriesFilters(timeEntries)
+    defaultTimeEntryFilters = _buildDefaultSnapshotTimeEntryFilters()
+    filteredEntries = _applySnapshotTimeEntriesFilters(timeEntries, defaultTimeEntryFilters)
     totalHours = sum(float(entry.get("hours") or 0) for entry in filteredEntries)
     timeEntriesJson = json.dumps(timeEntries, ensure_ascii=False, default=str)
     columnConfigJson = json.dumps(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG, ensure_ascii=False)
+    redmineIssueUrlBase = f"{(config.redmineUrl or 'https://redmine.sms-it.ru').rstrip('/')}/issues/"
+    redmineIssueUrlBaseJson = json.dumps(redmineIssueUrlBase, ensure_ascii=False)
     exportUrlBase = f"/projects/{projectRedmineId}/time-entries/export.csv"
     filterOptionsByKey: dict[str, list[str]] = {}
     for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG:
@@ -11242,8 +11269,12 @@ def buildSnapshotTimeEntriesPage(
     for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG:
         columnKey = str(column["key"])
         if columnKey in SNAPSHOT_TIME_ENTRY_MULTISELECT_KEYS:
+            defaultSelectedValues = {
+                str(value or "").strip().lower()
+                for value in defaultTimeEntryFilters.get(columnKey, [])
+            }
             optionsHtml = "".join(
-                f'<option value="{escape(optionValue)}">{escape(optionValue)}</option>'
+                f'<option value="{escape(optionValue)}"{" selected" if optionValue.strip().lower() in defaultSelectedValues else ""}>{escape(optionValue)}</option>'
                 for optionValue in filterOptionsByKey.get(columnKey, [])
             )
             filterCellsList.append(
@@ -11371,6 +11402,17 @@ def buildSnapshotTimeEntriesPage(
     }}
     tr:last-child td {{ border-bottom: 0; }}
     .mono {{ font-family: Consolas, "Courier New", monospace; white-space: nowrap; }}
+    .time-entry-redmine-link {{
+      color: inherit;
+      text-decoration: underline;
+      text-decoration-style: dotted;
+      text-decoration-color: rgba(55, 93, 119, 0.45);
+      text-underline-offset: 4px;
+    }}
+    .time-entry-redmine-link:hover {{
+      color: #375d77;
+      text-decoration-color: #375d77;
+    }}
     .filter-input-table {{ width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; font-size: 0.82rem; line-height: 1.2; background: #ffffff; color: var(--text); }}
     .filter-select-table {{ min-height: 78px; padding-top: 4px; padding-bottom: 4px; }}
     {columnWidthCss}
@@ -11439,6 +11481,7 @@ def buildSnapshotTimeEntriesPage(
       const timeEntryColumns = {columnConfigJson};
       const timeEntryFilterOptionsByKey = {filterOptionsByKeyJson};
       const allTimeEntries = {timeEntriesJson};
+      const redmineIssueUrlBase = {redmineIssueUrlBaseJson};
       const timeEntriesTable = document.getElementById("snapshotTimeEntriesTable");
       const timeEntriesTableWrap = document.querySelector(".table-wrap");
       const timeEntriesTableBody = document.getElementById("snapshotTimeEntriesTableBody");
@@ -11518,6 +11561,19 @@ def buildSnapshotTimeEntriesPage(
           return formatDateTime(value);
         }}
         return String(value);
+      }}
+
+      function renderTimeEntryCellHtml(entry, column) {{
+        const renderedValue = renderTimeEntryCell(entry, column);
+        if (column.key !== "issue_redmine_id" || renderedValue === "—") {{
+          return escapeHtml(renderedValue);
+        }}
+        const issueId = String(entry?.issue_redmine_id ?? "").trim();
+        if (!/^\\d+$/.test(issueId)) {{
+          return escapeHtml(renderedValue);
+        }}
+        const issueUrl = `${{redmineIssueUrlBase}}${{encodeURIComponent(issueId)}}`;
+        return `<a class="time-entry-redmine-link" href="${{escapeHtml(issueUrl)}}" target="_blank" rel="noreferrer">${{escapeHtml(renderedValue)}}</a>`;
       }}
 
       function getTimeEntryColumn(key) {{
@@ -11632,7 +11688,7 @@ def buildSnapshotTimeEntriesPage(
             if (column.mono) {{
               valueClasses.push("mono");
             }}
-            return `<td class="${{valueClasses.join(" ")}}">${{escapeHtml(renderTimeEntryCell(entry, column))}}</td>`;
+            return `<td class="${{valueClasses.join(" ")}}">${{renderTimeEntryCellHtml(entry, column)}}</td>`;
           }}).join("");
           return `<tr>${{cells}}</tr>`;
         }}).join("");
