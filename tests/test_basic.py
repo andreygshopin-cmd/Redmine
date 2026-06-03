@@ -204,6 +204,17 @@ def testIndexQuickLinksUseCurrentUserRoles() -> None:
     assert 'href="/admin/users"' not in userBody
 
 
+def testAndreyDashboardHasFourProjectStateWidgets() -> None:
+    widgets = app_module.DASHBOARD_USER_CONFIGS["andrey.shopin@sms-a.ru"]["widgets"]
+
+    assert [widget["id"] for widget in widgets] == [
+        "project-state-1",
+        "project-state-2",
+        "project-state-3",
+        "project-state-4",
+    ]
+
+
 def testProjectsSummaryPageUsesFullWidthScrollableTable(monkeypatch) -> None:
     monkeypatch.setattr(app_module, "listPlanningDirections", lambda: ["КОТ"])
 
@@ -1720,12 +1731,113 @@ def testGroupedSnapshotTimeEntriesPageShowsDevelopmentEntriesForDashboard(monkey
     assert response.status_code == 200
     body = response.text
     assert "Проекты: Billing, Support" in body
-    assert "Найдено записей: 2" in body
-    assert "Сумма часов: 80,0" in body
+    assert 'id="timeEntriesVisibleCount">2</span>' in body
+    assert 'id="timeEntriesHoursSummary">80,0</span>' in body
+    assert "Выгрузить Excel" in body
+    assert "Сбросить фильтр" in body
+    assert 'value="Разработка" selected' in body
     assert "https://redmine.sms-it.ru/issues/325010" in body
     assert "https://redmine.sms-it.ru/issues/325020" in body
+    assert "https://redmine.sms-it.ru/issues/326010" not in body
+    assert "https://redmine.sms-it.ru/issues/326020" not in body
+
+
+def testSnapshotTimeEntriesExcelExportAppliesFilters(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
+    monkeypatch.setattr(
+        app_module,
+        "getSnapshotTimeEntriesForProjectByDateRange",
+        lambda *args, **kwargs: {
+            "snapshot_run": {
+                "project_redmine_id": 10,
+                "project_identifier": "billing",
+                "captured_for_date": "2026-04-13",
+            },
+            "time_entries": [
+                {
+                    "id": 1,
+                    "issue_redmine_id": 325869,
+                    "issue_tracker_name": "Разработка",
+                    "hours": 2.5,
+                    "spent_on": "2026-04-13",
+                },
+                {
+                    "id": 2,
+                    "issue_redmine_id": 325870,
+                    "issue_tracker_name": "Поддержка",
+                    "hours": 7.5,
+                    "spent_on": "2026-04-13",
+                },
+            ],
+        },
+    )
+
+    response = client.get(
+        "/projects/10/time-entries/export.xls?captured_for_date=2026-04-13&date_from=2026-04-13&date_to=2026-04-13&issue_tracker_name=Разработка"
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/vnd.ms-excel; charset=windows-1251"
+    body = response.content.decode("cp1251")
+    assert "325869" in body
+    assert "325870" not in body
+    assert "2,5" in body
+
+
+def testGroupedSnapshotTimeEntriesExcelExportAppliesFilters(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
+    monkeypatch.setattr(app_module, "ensureProjectsTable", lambda: None)
+    monkeypatch.setattr(
+        app_module,
+        "listStoredProjects",
+        lambda: [
+            {"redmine_id": 10, "name": "Billing", "identifier": "billing"},
+            {"redmine_id": 20, "name": "Support", "identifier": "support"},
+        ],
+    )
+
+    def fakeTimeEntries(projectRedmineId, *args, **kwargs):
+        return {
+            "snapshot_run": {
+                "project_redmine_id": projectRedmineId,
+                "project_identifier": "billing" if projectRedmineId == 10 else "support",
+                "captured_for_date": "2026-04-13",
+            },
+            "time_entries": [
+                {
+                    "id": projectRedmineId,
+                    "project_redmine_id": projectRedmineId,
+                    "issue_redmine_id": 325000 + projectRedmineId,
+                    "issue_tracker_name": "Ошибка",
+                    "hours": 4.0,
+                    "spent_on": "2026-04-13",
+                },
+                {
+                    "id": projectRedmineId + 100,
+                    "project_redmine_id": projectRedmineId,
+                    "issue_redmine_id": 326000 + projectRedmineId,
+                    "issue_tracker_name": "Поддержка",
+                    "hours": 8.0,
+                    "spent_on": "2026-04-13",
+                },
+            ],
+        }
+
+    monkeypatch.setattr(app_module, "getSnapshotTimeEntriesForProjectByDateRange", fakeTimeEntries)
+
+    response = client.get(
+        "/time-entries/export.xls?project_redmine_id=10&project_redmine_id=20&captured_for_date=2026-04-13&date_from=2026-04-13&date_to=2026-04-13&issue_tracker_name=Ошибка"
+    )
+
+    assert response.status_code == 200
+    body = response.content.decode("cp1251")
+    assert "325010" in body
+    assert "325020" in body
     assert "326010" not in body
     assert "326020" not in body
+    assert "8,0" in body
 
 
 def testAdminUsersPageShowsDashboardButtonForConfiguredUser(monkeypatch) -> None:

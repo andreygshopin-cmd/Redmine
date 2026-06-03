@@ -143,6 +143,18 @@ DASHBOARD_USER_CONFIGS: dict[str, dict[str, object]] = {
                 "title": "Состояние проекта",
                 "default_project_offset": 1,
             },
+            {
+                "id": "project-state-3",
+                "type": "project_state",
+                "title": "Состояние проекта",
+                "default_project_offset": 2,
+            },
+            {
+                "id": "project-state-4",
+                "type": "project_state",
+                "title": "Состояние проекта",
+                "default_project_offset": 3,
+            },
         ],
     },
     "stanislav.shidlovskiy@sms-a.ru": {
@@ -11116,6 +11128,69 @@ def _applySnapshotTimeEntriesFilters(
     return filteredEntries
 
 
+def _buildSnapshotTimeEntryFiltersFromQueryParams(queryParams: object) -> dict[str, object]:
+    filters: dict[str, object] = {}
+    for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG:
+        columnKey = str(column["key"])
+        if columnKey in SNAPSHOT_TIME_ENTRY_MULTISELECT_KEYS:
+            getList = getattr(queryParams, "getlist", None)
+            values = getList(columnKey) if callable(getList) else []
+            singleValue = getattr(queryParams, "get", lambda _key, _default=None: _default)(columnKey)
+            filters[columnKey] = values or singleValue
+        else:
+            filters[columnKey] = getattr(queryParams, "get", lambda _key, _default=None: _default)(columnKey)
+    return filters
+
+
+def _buildSnapshotTimeEntriesExcelResponse(
+    timeEntries: list[dict[str, object]],
+    fileName: str,
+    title: str = "Списание времени",
+) -> Response:
+    totalHours = sum(float(entry.get("hours") or 0) for entry in timeEntries)
+    output = io.StringIO(newline="")
+    output.write("""<!doctype html>
+<html>
+<head>
+  <meta charset="windows-1251">
+  <style>
+    table { border-collapse: collapse; }
+    th, td { border: 1px solid #999; padding: 4px 6px; vertical-align: top; }
+    th { background: #eef6f7; font-weight: 700; }
+    tfoot td { font-weight: 700; background: #f8fbfd; }
+  </style>
+</head>
+<body>
+""")
+    output.write(f"<h1>{escape(title)}</h1>\n")
+    output.write("<table>\n<thead><tr>")
+    for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG:
+        output.write(f"<th>{escape(str(column['label']))}</th>")
+    output.write("</tr></thead>\n<tbody>\n")
+    for entry in timeEntries:
+        output.write("<tr>")
+        for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG:
+            columnKey = str(column["key"])
+            output.write(f"<td>{escape(_formatSnapshotTimeEntryCellValue(columnKey, entry.get(columnKey)))}</td>")
+        output.write("</tr>\n")
+    output.write("</tbody>\n<tfoot><tr>")
+    for index, column in enumerate(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG):
+        columnKey = str(column["key"])
+        if index == 0:
+            output.write(f"<td>Итого: {len(timeEntries)}</td>")
+        elif columnKey == "hours":
+            output.write(f"<td>{escape(formatPageHours(totalHours))}</td>")
+        else:
+            output.write("<td></td>")
+    output.write("</tr></tfoot>\n</table>\n</body>\n</html>")
+    content = output.getvalue().encode("cp1251", errors="replace")
+    return Response(
+        content=content,
+        media_type="application/vnd.ms-excel; charset=windows-1251",
+        headers={"Content-Disposition": f'attachment; filename="{fileName}"'},
+    )
+
+
 def _buildDefaultSnapshotTimeEntryFilters() -> dict[str, list[str]]:
     return {
         "issue_tracker_name": list(SNAPSHOT_DEVELOPMENT_TIME_ENTRY_TRACKERS),
@@ -11281,6 +11356,7 @@ def buildSnapshotTimeEntriesPage(
     redmineIssueUrlBase = f"{(config.redmineUrl or 'https://redmine.sms-it.ru').rstrip('/')}/issues/"
     redmineIssueUrlBaseJson = json.dumps(redmineIssueUrlBase, ensure_ascii=False)
     exportUrlBase = f"/projects/{projectRedmineId}/time-entries/export.csv"
+    exportExcelUrlBase = f"/projects/{projectRedmineId}/time-entries/export.xls"
     filterOptionsByKey: dict[str, list[str]] = {}
     for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG:
         columnKey = str(column["key"])
@@ -11480,6 +11556,7 @@ def buildSnapshotTimeEntriesPage(
       <div class="table-actions">
         <button type="submit">Показать</button>
         <button type="button" class="secondary" id="exportTimeEntriesCsvButton">Выгрузить CSV</button>
+        <button type="button" class="secondary" id="exportTimeEntriesExcelButton">Выгрузить Excel</button>
         <button type="button" class="secondary" id="resetTimeEntryFiltersButton">Сбросить фильтр</button>
       </div>
     </form>
@@ -11533,6 +11610,7 @@ def buildSnapshotTimeEntriesPage(
       const timeEntriesNextPageButton = document.getElementById("timeEntriesNextPageButton");
       const timeEntriesPaginationInfo = document.getElementById("timeEntriesPaginationInfo");
       const exportTimeEntriesCsvButton = document.getElementById("exportTimeEntriesCsvButton");
+      const exportTimeEntriesExcelButton = document.getElementById("exportTimeEntriesExcelButton");
       const resetTimeEntryFiltersButton = document.getElementById("resetTimeEntryFiltersButton");
       const timeEntriesSummaryLabelCell = document.querySelector("tfoot .summary-label");
       const timeEntriesFilterInputs = Array.from(document.querySelectorAll("[data-filter-key]"));
@@ -11808,6 +11886,11 @@ def buildSnapshotTimeEntriesPage(
         window.location.href = `{exportUrlBase}?${{params.toString()}}`;
       }});
 
+      exportTimeEntriesExcelButton?.addEventListener("click", () => {{
+        const params = buildTimeEntriesExportParams();
+        window.location.href = `{exportExcelUrlBase}?${{params.toString()}}`;
+      }});
+
       timeEntriesForm?.addEventListener("submit", () => {{
         setTimeEntriesLoading(true);
       }});
@@ -11864,29 +11947,89 @@ def buildGroupedSnapshotTimeEntriesPage(
                 item["project_name"] = (storedProjectsById.get(projectId) or {}).get("name") or f"Проект {projectId}"
             timeEntries.append(item)
 
-    filteredEntries = _applySnapshotTimeEntriesFilters(timeEntries, _buildDefaultSnapshotTimeEntryFilters())
+    defaultTimeEntryFilters = _buildDefaultSnapshotTimeEntryFilters()
+    filteredEntries = _applySnapshotTimeEntriesFilters(timeEntries, defaultTimeEntryFilters)
     totalHours = sum(float(entry.get("hours") or 0) for entry in filteredEntries)
     redmineIssueUrlBase = f"{(config.redmineUrl or 'https://redmine.sms-it.ru').rstrip('/')}/issues/"
+    redmineIssueUrlBaseJson = json.dumps(redmineIssueUrlBase, ensure_ascii=False)
+    timeEntriesJson = json.dumps(timeEntries, ensure_ascii=False, default=str)
+    columnConfigJson = json.dumps(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG, ensure_ascii=False)
+    filterOptionsByKey: dict[str, list[str]] = {}
+    for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG:
+        columnKey = str(column["key"])
+        if columnKey not in SNAPSHOT_TIME_ENTRY_MULTISELECT_KEYS:
+            continue
+        optionValues = sorted(
+            {
+                _formatSnapshotTimeEntryCellValue(columnKey, entry.get(columnKey))
+                for entry in timeEntries
+            },
+            key=lambda value: str(value).lower(),
+        )
+        filterOptionsByKey[columnKey] = optionValues
+    columnWidthCss = "\n".join(
+        f'.col-{columnKey} {{ width: {columnWidth}; min-width: {columnWidth}; max-width: {columnWidth}; }}'
+        for columnKey, columnWidth in SNAPSHOT_TIME_ENTRY_FIXED_WIDTHS.items()
+    )
     selectedProjectInputs = "".join(
         f'<input type="hidden" name="project_redmine_id" value="{projectId}">'
         for projectId in projectIds
     )
+    selectedProjectIdsJson = json.dumps(projectIds, ensure_ascii=False)
     projectNames = [
         str((storedProjectsById.get(projectId) or {}).get("name") or f"Проект {projectId}")
         for projectId in projectIds
     ]
     projectsLabel = ", ".join(projectNames) if projectNames else "проекты не выбраны"
     headerCells = "".join(
-        f'<th>{escape(str(column["label"]))}</th>'
+        f'<th class="col-{escape(str(column["key"]))}" data-column-key="{escape(str(column["key"]))}">{escape(str(column["label"]))}</th>'
         for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG
     )
+    filterCellsList: list[str] = []
+    for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG:
+        columnKey = str(column["key"])
+        if columnKey in SNAPSHOT_TIME_ENTRY_MULTISELECT_KEYS:
+            defaultSelectedValues = {
+                str(value or "").strip().lower()
+                for value in defaultTimeEntryFilters.get(columnKey, [])
+            }
+            optionsHtml = "".join(
+                f'<option value="{escape(optionValue)}"{" selected" if optionValue.strip().lower() in defaultSelectedValues else ""}>{escape(optionValue)}</option>'
+                for optionValue in filterOptionsByKey.get(columnKey, [])
+            )
+            filterCellsList.append(
+                f'<th class="col-{escape(columnKey)}"><select class="filter-input-table filter-select-table" data-filter-key="{escape(columnKey)}" multiple size="3">{optionsHtml}</select></th>'
+            )
+        else:
+            filterCellsList.append(
+                f'<th class="col-{escape(columnKey)}"><input class="filter-input-table" type="text" data-filter-key="{escape(columnKey)}"></th>'
+            )
+    filterCells = "".join(filterCellsList)
+    footerCellsList: list[str] = []
+    for index, column in enumerate(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG):
+        columnKey = str(column["key"])
+        if index == 0:
+            footerCellsList.append(
+                f'<th class="summary-label">Итого: <span id="timeEntriesFilteredCount">{len(filteredEntries)}</span></th>'
+            )
+            continue
+        if columnKey == "hours":
+            footerCellsList.append(
+                f'<th class="summary-value" data-summary-key="{escape(columnKey)}">{escape(formatPageHours(totalHours))}</th>'
+            )
+        else:
+            footerCellsList.append("<th></th>")
+    footerCells = "".join(footerCellsList)
     rowCells: list[str] = []
     for entry in filteredEntries:
         cells: list[str] = []
         for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG:
             columnKey = str(column["key"])
             renderedValue = _formatSnapshotTimeEntryCellValue(columnKey, entry.get(columnKey))
-            cellClass = "mono" if bool(column.get("mono")) else ""
+            cellClasses = [f"col-{columnKey}"]
+            if bool(column.get("mono")):
+                cellClasses.append("mono")
+            cellClass = " ".join(cellClasses)
             if columnKey == "issue_redmine_id" and renderedValue != "—" and str(entry.get("issue_redmine_id") or "").strip().isdigit():
                 issueId = str(entry.get("issue_redmine_id") or "").strip()
                 issueUrl = f"{redmineIssueUrlBase}{quote(issueId)}"
@@ -11922,13 +12065,21 @@ def buildGroupedSnapshotTimeEntriesPage(
     .toolbar input {{ border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }}
     .toolbar button {{ border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #eef2f5; color: var(--text); }}
     .summary-note {{ color: var(--muted); font-size: 0.94rem; }}
-    .table-wrap {{ overflow: auto; max-height: calc(100vh - 230px); border: 1px solid var(--line); border-radius: 8px; }}
+    .table-actions {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
+    .secondary {{ background: #eef2f5; color: var(--text); border: 1px solid var(--line); }}
+    .table-wrap {{ overflow: auto; max-height: calc(100vh - 250px); border: 1px solid var(--line); border-radius: 8px; }}
     table {{ width: 100%; min-width: 2200px; border-collapse: separate; border-spacing: 0; table-layout: fixed; }}
     th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }}
-    thead th {{ position: sticky; top: 0; z-index: 2; background: var(--header); color: #426179; text-transform: uppercase; font-size: 0.74rem; }}
+    thead .header-row th {{ position: sticky; top: 0; z-index: 3; background: var(--header); color: #426179; text-transform: uppercase; font-size: 0.74rem; }}
+    thead .filter-row th {{ position: sticky; top: 39px; z-index: 2; background: #f8fbfd; padding-top: 6px; padding-bottom: 6px; }}
+    tfoot .footer-row th {{ position: sticky; bottom: 0; z-index: 3; background: #ffffff; color: #173b5a; font-size: 0.92rem; box-shadow: inset 0 1px 0 var(--line); }}
     .mono {{ font-family: Consolas, "Courier New", monospace; white-space: nowrap; }}
     .time-entry-redmine-link {{ color: inherit; text-decoration: underline; text-decoration-style: dotted; text-decoration-color: rgba(55, 93, 119, 0.45); text-underline-offset: 4px; }}
     .time-entry-redmine-link:hover {{ color: #375d77; text-decoration-color: #375d77; }}
+    .filter-input-table {{ width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; font-size: 0.82rem; line-height: 1.2; background: #ffffff; color: var(--text); }}
+    .filter-select-table {{ min-height: 78px; padding-top: 4px; padding-bottom: 4px; }}
+    .summary-label, .summary-value {{ font-weight: 700; white-space: nowrap; }}
+    {columnWidthCss}
   </style>
 </head>
 <body>
@@ -11947,14 +12098,221 @@ def buildGroupedSnapshotTimeEntriesPage(
         <input type="date" name="date_to" value="{escape(selectedDateTo)}">
       </label>
       <button type="submit">Показать</button>
+      <div class="table-actions">
+        <button type="button" class="secondary" id="exportTimeEntriesExcelButton">Выгрузить Excel</button>
+        <button type="button" class="secondary" id="resetTimeEntryFiltersButton">Сбросить фильтр</button>
+      </div>
     </form>
-    <p class="summary-note">Фильтр: трекеры задач Ошибка, Процессы разработки, Разработка. Найдено записей: {len(filteredEntries)}. Сумма часов: {formatPageHours(totalHours)}.</p>
+    <p class="summary-note">Фильтр: трекеры задач Ошибка, Процессы разработки, Разработка. Найдено записей: <span id="timeEntriesVisibleCount">{len(filteredEntries)}</span>. Сумма часов: <span id="timeEntriesHoursSummary">{formatPageHours(totalHours)}</span>.</p>
     <div class="table-wrap">
-      <table>
-        <thead><tr>{headerCells}</tr></thead>
-        <tbody>{bodyRows}</tbody>
+      <table id="snapshotTimeEntriesTable">
+        <thead>
+          <tr class="header-row">{headerCells}</tr>
+          <tr class="filter-row">{filterCells}</tr>
+        </thead>
+        <tbody id="snapshotTimeEntriesTableBody">{bodyRows}</tbody>
+        <tfoot>
+          <tr class="footer-row">{footerCells}</tr>
+        </tfoot>
       </table>
     </div>
+    <script>
+      const timeEntryColumns = {columnConfigJson};
+      const allTimeEntries = {timeEntriesJson};
+      const selectedProjectIds = {selectedProjectIdsJson};
+      const redmineIssueUrlBase = {redmineIssueUrlBaseJson};
+      const timeEntriesTableBody = document.getElementById("snapshotTimeEntriesTableBody");
+      const timeEntriesVisibleCount = document.getElementById("timeEntriesVisibleCount");
+      const timeEntriesHoursSummary = document.getElementById("timeEntriesHoursSummary");
+      const exportTimeEntriesExcelButton = document.getElementById("exportTimeEntriesExcelButton");
+      const resetTimeEntryFiltersButton = document.getElementById("resetTimeEntryFiltersButton");
+      const timeEntriesFilterInputs = Array.from(document.querySelectorAll("[data-filter-key]"));
+
+      function escapeHtml(value) {{
+        return String(value ?? "").replace(/[&<>"']/g, (char) => ({{
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        }}[char] || char));
+      }}
+
+      function formatHours(value) {{
+        const parsed = Number(value ?? 0);
+        return Number.isFinite(parsed) ? parsed.toFixed(1).replace(".", ",") : "0,0";
+      }}
+
+      function formatDateTime(value) {{
+        if (!value) {{
+          return "—";
+        }}
+        return String(value).replace("T", " ").replace("+00:00", " UTC");
+      }}
+
+      function renderTimeEntryCell(entry, column) {{
+        const value = entry?.[column.key];
+        if (value === null || value === undefined || value === "") {{
+          return "—";
+        }}
+        if (column.key === "hours") {{
+          return formatHours(value);
+        }}
+        if (column.key === "created_on" || column.key === "updated_on") {{
+          return formatDateTime(value);
+        }}
+        return String(value);
+      }}
+
+      function renderTimeEntryCellHtml(entry, column) {{
+        const renderedValue = renderTimeEntryCell(entry, column);
+        if (column.key !== "issue_redmine_id" || renderedValue === "—") {{
+          return escapeHtml(renderedValue);
+        }}
+        const issueId = String(entry?.issue_redmine_id ?? "").trim();
+        if (!/^\\d+$/.test(issueId)) {{
+          return escapeHtml(renderedValue);
+        }}
+        const issueUrl = `${{redmineIssueUrlBase}}${{encodeURIComponent(issueId)}}`;
+        return `<a class="time-entry-redmine-link" href="${{escapeHtml(issueUrl)}}" target="_blank" rel="noreferrer">${{escapeHtml(renderedValue)}}</a>`;
+      }}
+
+      function getTimeEntryColumn(key) {{
+        return timeEntryColumns.find((column) => column.key === key) || null;
+      }}
+
+      function getCurrentTimeEntryFilters() {{
+        const filters = {{}};
+        for (const input of timeEntriesFilterInputs) {{
+          const filterKey = String(input.dataset.filterKey || "");
+          if (input instanceof HTMLSelectElement && input.multiple) {{
+            const selectedValues = Array.from(input.selectedOptions)
+              .map((option) => String(option.value || "").trim().toLowerCase())
+              .filter(Boolean);
+            if (selectedValues.length) {{
+              filters[filterKey] = selectedValues;
+            }}
+            continue;
+          }}
+          const filterValue = String(input.value || "").trim().toLowerCase();
+          if (filterValue) {{
+            filters[filterKey] = filterValue;
+          }}
+        }}
+        return filters;
+      }}
+
+      function getFilteredTimeEntries() {{
+        const filters = getCurrentTimeEntryFilters();
+        const activeKeys = Object.keys(filters).filter((key) => {{
+          const value = filters[key];
+          return Array.isArray(value) ? value.length > 0 : Boolean(value);
+        }});
+        if (!activeKeys.length) {{
+          return allTimeEntries.slice();
+        }}
+        return allTimeEntries.filter((entry) => activeKeys.every((key) => {{
+          const column = getTimeEntryColumn(key);
+          if (!column) {{
+            return true;
+          }}
+          const renderedValue = renderTimeEntryCell(entry, column).toLowerCase();
+          const filterValue = filters[key];
+          if (Array.isArray(filterValue)) {{
+            return filterValue.includes(renderedValue);
+          }}
+          return renderedValue.includes(filterValue);
+        }}));
+      }}
+
+      function updateTimeEntrySummary(filteredEntries) {{
+        const totalHours = filteredEntries.reduce((sum, entry) => sum + Number(entry?.hours || 0), 0);
+        timeEntriesVisibleCount.textContent = String(filteredEntries.length);
+        timeEntriesHoursSummary.textContent = formatHours(totalHours);
+        const countCell = document.getElementById("timeEntriesFilteredCount");
+        if (countCell) {{
+          countCell.textContent = String(filteredEntries.length);
+        }}
+        const hoursSummaryCell = document.querySelector('tfoot [data-summary-key="hours"]');
+        if (hoursSummaryCell) {{
+          hoursSummaryCell.textContent = formatHours(totalHours);
+        }}
+      }}
+
+      function renderTimeEntriesRows(entries) {{
+        if (!entries.length) {{
+          timeEntriesTableBody.innerHTML = `<tr><td colspan="${{timeEntryColumns.length}}">За выбранный период списания времени не найдены.</td></tr>`;
+          return;
+        }}
+        timeEntriesTableBody.innerHTML = entries.map((entry) => {{
+          const cells = timeEntryColumns.map((column) => {{
+            const valueClasses = [`col-${{column.key}}`];
+            if (column.mono) {{
+              valueClasses.push("mono");
+            }}
+            return `<td class="${{valueClasses.join(" ")}}">${{renderTimeEntryCellHtml(entry, column)}}</td>`;
+          }}).join("");
+          return `<tr>${{cells}}</tr>`;
+        }}).join("");
+      }}
+
+      function rerenderTimeEntries() {{
+        const filteredEntries = getFilteredTimeEntries();
+        updateTimeEntrySummary(filteredEntries);
+        renderTimeEntriesRows(filteredEntries);
+      }}
+
+      function buildTimeEntriesExportParams() {{
+        const params = new URLSearchParams();
+        selectedProjectIds.forEach((projectId) => params.append("project_redmine_id", String(projectId)));
+        const capturedForDateInput = document.querySelector('[name="captured_for_date"]');
+        const dateFromInput = document.querySelector('[name="date_from"]');
+        const dateToInput = document.querySelector('[name="date_to"]');
+        if (capturedForDateInput?.value) {{
+          params.set("captured_for_date", capturedForDateInput.value);
+        }}
+        if (dateFromInput?.value) {{
+          params.set("date_from", dateFromInput.value);
+        }}
+        if (dateToInput?.value) {{
+          params.set("date_to", dateToInput.value);
+        }}
+        const filters = getCurrentTimeEntryFilters();
+        for (const [key, value] of Object.entries(filters)) {{
+          if (Array.isArray(value)) {{
+            value.forEach((item) => params.append(key, item));
+          }} else if (value) {{
+            params.set(key, value);
+          }}
+        }}
+        return params;
+      }}
+
+      timeEntriesFilterInputs.forEach((input) => {{
+        const eventName = input instanceof HTMLSelectElement ? "change" : "input";
+        input.addEventListener(eventName, () => rerenderTimeEntries());
+      }});
+
+      resetTimeEntryFiltersButton?.addEventListener("click", () => {{
+        timeEntriesFilterInputs.forEach((input) => {{
+          if (input instanceof HTMLSelectElement && input.multiple) {{
+            Array.from(input.options).forEach((option) => {{
+              option.selected = false;
+            }});
+            return;
+          }}
+          input.value = "";
+        }});
+        rerenderTimeEntries();
+      }});
+
+      exportTimeEntriesExcelButton?.addEventListener("click", () => {{
+        const params = buildTimeEntriesExportParams();
+        window.location.href = `/time-entries/export.xls?${{params.toString()}}`;
+      }});
+
+      rerenderTimeEntries();
+    </script>
   </main>
 </body>
 </html>"""
@@ -20840,6 +21198,59 @@ def getGroupedSnapshotTimeEntriesPage(
     )
 
 
+@app.get("/time-entries/export.xls")
+def exportGroupedSnapshotTimeEntriesExcel(
+    request: Request,
+    project_redmine_id: list[int] = Query([]),
+    captured_for_date: str | None = Query(None, description="Дата среза в формате YYYY-MM-DD"),
+    date_from: str | None = Query(None, description="Дата начала периода в формате YYYY-MM-DD"),
+    date_to: str | None = Query(None, description="Дата конца периода в формате YYYY-MM-DD"),
+) -> Response:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+    ensureProjectsTable()
+
+    today = date.today()
+    selectedCapturedForDate = _normalizeSnapshotTimeEntriesDateValue(captured_for_date, today.isoformat())
+    selectedDateFrom = _normalizeSnapshotTimeEntriesDateValue(date_from, date(today.year, 1, 1).isoformat())
+    selectedDateTo = _normalizeSnapshotTimeEntriesDateValue(date_to, today.isoformat())
+    if selectedDateFrom > selectedDateTo:
+        selectedDateFrom, selectedDateTo = selectedDateTo, selectedDateFrom
+
+    projectIds = sorted({int(projectId) for projectId in project_redmine_id if int(projectId or 0) > 0})
+    storedProjectsById = {
+        int(project.get("redmine_id") or 0): project
+        for project in listStoredProjects()
+        if int(project.get("redmine_id") or 0) > 0
+    }
+    timeEntries: list[dict[str, object]] = []
+    for projectId in projectIds:
+        try:
+            snapshotPayload = getSnapshotTimeEntriesForProjectByDateRange(
+                projectId,
+                selectedCapturedForDate,
+                selectedDateFrom,
+                selectedDateTo,
+            )
+        except Exception:
+            continue
+        for entry in snapshotPayload.get("time_entries") or []:
+            item = dict(entry)
+            item.setdefault("project_redmine_id", projectId)
+            if not item.get("project_name"):
+                item["project_name"] = (storedProjectsById.get(projectId) or {}).get("name") or f"Проект {projectId}"
+            timeEntries.append(item)
+
+    filters = _buildSnapshotTimeEntryFiltersFromQueryParams(request.query_params)
+    filters.pop("project_redmine_id", None)
+    exportEntries = _applySnapshotTimeEntriesFilters(timeEntries, filters)
+    projectPart = "_".join(str(projectId) for projectId in projectIds) or "projects"
+    fileName = f"time_entries_{projectPart}_{selectedCapturedForDate}_{selectedDateFrom}_{selectedDateTo}.xls"
+    return _buildSnapshotTimeEntriesExcelResponse(exportEntries, fileName)
+
+
 @app.get("/projects/{project_redmine_id}/time-entries/export.csv")
 def exportProjectSnapshotTimeEntriesCsv(
     request: Request,
@@ -20928,6 +21339,43 @@ def exportProjectSnapshotTimeEntriesCsv(
         media_type="text/csv; charset=windows-1251",
         headers={"Content-Disposition": f'attachment; filename="{fileName}"'},
     )
+
+
+@app.get("/projects/{project_redmine_id}/time-entries/export.xls")
+def exportProjectSnapshotTimeEntriesExcel(
+    request: Request,
+    project_redmine_id: int,
+    captured_for_date: str | None = Query(None, description="Дата среза в формате YYYY-MM-DD"),
+    date_from: str | None = Query(None, description="Дата начала периода в формате YYYY-MM-DD"),
+    date_to: str | None = Query(None, description="Дата конца периода в формате YYYY-MM-DD"),
+) -> Response:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+    today = date.today()
+    selectedCapturedForDate = _normalizeSnapshotTimeEntriesDateValue(captured_for_date, today.isoformat())
+    selectedDateFrom = _normalizeSnapshotTimeEntriesDateValue(date_from, date(today.year, 1, 1).isoformat())
+    selectedDateTo = _normalizeSnapshotTimeEntriesDateValue(date_to, today.isoformat())
+    if selectedDateFrom > selectedDateTo:
+        selectedDateFrom, selectedDateTo = selectedDateTo, selectedDateFrom
+
+    payload = getSnapshotTimeEntriesForProjectByDateRange(
+        project_redmine_id,
+        selectedCapturedForDate,
+        selectedDateFrom,
+        selectedDateTo,
+    )
+    snapshotRun = payload.get("snapshot_run")
+    if snapshotRun is None:
+        raise HTTPException(status_code=404, detail="Срез проекта не найден")
+
+    filters = _buildSnapshotTimeEntryFiltersFromQueryParams(request.query_params)
+    exportEntries = _applySnapshotTimeEntriesFilters(list(payload.get("time_entries") or []), filters)
+    fileIdentifier = str(snapshotRun.get("project_identifier") or f"project_{project_redmine_id}")
+    safeIdentifier = "".join(character if character.isalnum() or character in {"-", "_"} else "_" for character in fileIdentifier)
+    fileName = f"time_entries_{safeIdentifier}_{selectedCapturedForDate}_{selectedDateFrom}_{selectedDateTo}.xls"
+    return _buildSnapshotTimeEntriesExcelResponse(exportEntries, fileName)
 
 
 @app.get("/projects/{project_redmine_id}/compare-snapshots", response_class=HTMLResponse)
