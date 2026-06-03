@@ -175,6 +175,8 @@ DASHBOARD_USER_CONFIGS: dict[str, dict[str, object]] = {
         ],
     },
 }
+DASHBOARD_WIDGET_MAX_PROJECTS = 8
+DASHBOARD_WIDGET_MAX_INTERVAL_DAYS = 120
 
 LOCAL_GOLOS_FONT_CSS = """
     @font-face {
@@ -5855,6 +5857,8 @@ def buildDashboardProjectStatePayload(
     chartEndDate = normalizeDashboardDate(endDateValue, defaultEndDate)
     if chartStartDate > chartEndDate:
         chartStartDate, chartEndDate = chartEndDate, chartStartDate
+    if (chartEndDate - chartStartDate).days > DASHBOARD_WIDGET_MAX_INTERVAL_DAYS:
+        chartStartDate = chartEndDate - timedelta(days=DASHBOARD_WIDGET_MAX_INTERVAL_DAYS)
 
     planningP1Values = [
         normalizePlanningPercentValue(project.get("p1"), 150.0)
@@ -17784,6 +17788,19 @@ def getDashboardProjectStateApi(
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     _requireDashboardAccess(request, dashboard_login)
+    selectedProjectIds = {
+        int(projectId)
+        for projectId in project_redmine_ids
+        if int(projectId or 0) > 0
+    }
+    if len(selectedProjectIds) > DASHBOARD_WIDGET_MAX_PROJECTS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "В виджете выбрано слишком много проектов. "
+                f"Оставьте не более {DASHBOARD_WIDGET_MAX_PROJECTS} проектов и нажмите «Отобразить без сохранения»."
+            ),
+        )
     ensureProjectsTable()
     ensureIssueSnapshotTables()
     ensurePlanningProjectsTable()
