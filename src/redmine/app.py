@@ -6111,6 +6111,13 @@ __LOCAL_GOLOS_FONT_CSS__
       margin: 0;
       font-size: 1.25rem;
     }
+    .widget-head-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
     .widget-name-label {
       grid-column: 1 / -1;
       margin-bottom: 2px;
@@ -6118,6 +6125,7 @@ __LOCAL_GOLOS_FONT_CSS__
     .widget-title-input {
       max-width: 520px;
     }
+    .header-load-widget-button,
     .toggle-panel-button,
     .show-widget-button,
     .display-widget-button,
@@ -6132,6 +6140,7 @@ __LOCAL_GOLOS_FONT_CSS__
       background: #eef2f5;
       cursor: pointer;
     }
+    .header-load-widget-button { background: var(--blue); color: #ffffff; border-color: var(--blue); }
     .show-widget-button { background: var(--blue); color: #ffffff; border-color: var(--blue); }
     .display-widget-button { background: #eef2f5; color: var(--text); border-color: var(--line); }
     .show-widget-button,
@@ -6748,7 +6757,10 @@ __LOCAL_GOLOS_FONT_CSS__
         <section class="widget project-state-widget" data-widget-id="${escapeHtml(widget.id)}">
           <div class="widget-head">
             <h2 class="widget-title">${escapeHtml(widgetTitle)}</h2>
-            <button type="button" class="toggle-panel-button">Панель настройки</button>
+            <div class="widget-head-actions">
+              <button type="button" class="header-load-widget-button">Показать</button>
+              <button type="button" class="toggle-panel-button">Панель настройки</button>
+            </div>
           </div>
           <div class="widget-panel is-collapsed">
             <label class="widget-name-label">Наименование виджета
@@ -6855,6 +6867,7 @@ __LOCAL_GOLOS_FONT_CSS__
     function getWidgetElements(widgetNode) {
       return {
         panel: widgetNode.querySelector(".widget-panel"),
+        headerLoadButton: widgetNode.querySelector(".header-load-widget-button"),
         togglePanelButton: widgetNode.querySelector(".toggle-panel-button"),
         widgetTitle: widgetNode.querySelector(".widget-title"),
         titleInput: widgetNode.querySelector(".widget-title-input"),
@@ -7459,6 +7472,9 @@ __LOCAL_GOLOS_FONT_CSS__
       elements.loadingOverlay.classList.add("is-visible");
       elements.status.textContent = shouldRenderChart ? "Загружаем состояние проекта..." : "Загружаем параметры проектов...";
       elements.showButton.disabled = true;
+      if (elements.headerLoadButton) {
+        elements.headerLoadButton.disabled = true;
+      }
       if (elements.displayButton) {
         elements.displayButton.disabled = true;
       }
@@ -7524,6 +7540,9 @@ __LOCAL_GOLOS_FONT_CSS__
           state.abortController = null;
           elements.loadingOverlay.classList.remove("is-visible");
           elements.showButton.disabled = false;
+          if (elements.headerLoadButton) {
+            elements.headerLoadButton.disabled = false;
+          }
           if (elements.displayButton) {
             elements.displayButton.disabled = false;
           }
@@ -7633,6 +7652,12 @@ __LOCAL_GOLOS_FONT_CSS__
         updateParameters: false,
         saveSettings: true,
       }));
+      elements.headerLoadButton?.addEventListener("click", () => loadWidget(widgetNode, {
+        resetFromPlanning: false,
+        renderChart: true,
+        updateParameters: true,
+        saveSettings: false,
+      }));
       elements.displayButton?.addEventListener("click", () => loadWidget(widgetNode, {
         resetFromPlanning: false,
         renderChart: true,
@@ -7646,12 +7671,9 @@ __LOCAL_GOLOS_FONT_CSS__
         || widgetSettings.p2
         || widgetSettings.use_risk_plan !== undefined
       );
-      enqueueDashboardWidgetAutoLoad(widgetNode, {
-        resetFromPlanning: !hasSavedSettings,
-        renderChart: true,
-        updateParameters: true,
-        saveSettings: false,
-      });
+      elements.status.textContent = hasSavedSettings
+        ? "Настройки виджета загружены. Для построения диаграммы нажмите «Показать»."
+        : "Выберите проекты в панели настройки или нажмите «Показать» для настройки по умолчанию.";
     }
 
     dashboardGrid.innerHTML = (dashboardBootstrap.widgets || []).map(buildWidgetHtml).join("");
