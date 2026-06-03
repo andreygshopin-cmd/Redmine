@@ -6539,6 +6539,7 @@ __LOCAL_GOLOS_FONT_CSS__
     const dashboardLogin = document.getElementById("dashboardLogin");
     const dashboardGrid = document.getElementById("dashboardGrid");
     const widgetStates = new Map();
+    let dashboardAutoLoadQueue = Promise.resolve();
     dashboardLogin.textContent = dashboardBootstrap.login || "";
 
     function escapeHtml(value) {
@@ -7443,11 +7444,17 @@ __LOCAL_GOLOS_FONT_CSS__
 
     async function loadWidget(widgetNode, options = {}) {
       const elements = getWidgetElements(widgetNode);
+      const state = getWidgetState(widgetNode);
       const resetFromPlanning = Boolean(options.resetFromPlanning);
       const shouldRenderChart = options.renderChart !== false;
       const shouldUpdateParameters = options.updateParameters !== false;
       const shouldSaveSettings = Boolean(options.saveSettings);
       const projectIds = getSelectedProjectIds(widgetNode);
+      if (state.abortController) {
+        state.abortController.abort();
+      }
+      const abortController = new AbortController();
+      state.abortController = abortController;
       elements.loadingOverlay.classList.add("is-visible");
       elements.status.textContent = shouldRenderChart ? "Загружаем состояние проекта..." : "Загружаем параметры проектов...";
       elements.showButton.disabled = true;
@@ -7471,7 +7478,9 @@ __LOCAL_GOLOS_FONT_CSS__
           params.set("use_risk_plan_present", "1");
           if (elements.riskPlanCheckbox.checked) params.set("use_risk_plan", "1");
         }
-        const response = await fetch(`/api/dashboards/${encodeURIComponent(dashboardBootstrap.login)}/project-state?${params.toString()}`);
+        const response = await fetch(`/api/dashboards/${encodeURIComponent(dashboardBootstrap.login)}/project-state?${params.toString()}`, {
+          signal: abortController.signal,
+        });
         const payload = await response.json();
         if (!response.ok) {
           throw new Error(payload.detail || "Не удалось загрузить виджет.");
@@ -7504,20 +7513,34 @@ __LOCAL_GOLOS_FONT_CSS__
           await saveDashboardSettings();
         }
       } catch (error) {
-        elements.status.textContent = String(error.message || error);
+        if (error?.name === "AbortError") {
+          elements.status.textContent = "";
+        } else {
+          elements.status.textContent = String(error.message || error);
+        }
       } finally {
-        elements.loadingOverlay.classList.remove("is-visible");
-        elements.showButton.disabled = false;
-        if (elements.displayButton) {
-          elements.displayButton.disabled = false;
-        }
-        if (elements.confirmProjectsButton) {
-          elements.confirmProjectsButton.disabled = false;
-        }
-        if (elements.applyCurrentProjectsButton) {
-          elements.applyCurrentProjectsButton.disabled = false;
+        if (state.abortController === abortController) {
+          state.abortController = null;
+          elements.loadingOverlay.classList.remove("is-visible");
+          elements.showButton.disabled = false;
+          if (elements.displayButton) {
+            elements.displayButton.disabled = false;
+          }
+          if (elements.confirmProjectsButton) {
+            elements.confirmProjectsButton.disabled = false;
+          }
+          if (elements.applyCurrentProjectsButton) {
+            elements.applyCurrentProjectsButton.disabled = false;
+          }
         }
       }
+    }
+
+    function enqueueDashboardWidgetAutoLoad(widgetNode, options = {}) {
+      dashboardAutoLoadQueue = dashboardAutoLoadQueue
+        .catch(() => undefined)
+        .then(() => loadWidget(widgetNode, options));
+      return dashboardAutoLoadQueue;
     }
 
     function initializeWidget(widgetNode) {
@@ -7622,7 +7645,7 @@ __LOCAL_GOLOS_FONT_CSS__
         || widgetSettings.p2
         || widgetSettings.use_risk_plan !== undefined
       );
-      loadWidget(widgetNode, {
+      enqueueDashboardWidgetAutoLoad(widgetNode, {
         resetFromPlanning: !hasSavedSettings,
         renderChart: true,
         updateParameters: true,
