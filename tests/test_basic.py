@@ -1475,7 +1475,7 @@ def testGetLatestSnapshotIssuesForProjectPageReturnsHtml(monkeypatch) -> None:
     assert "summaryDevelopmentYearForecastMinusFact" in body
     assert 'class="snapshot-weekly-link"' in body
     assert 'target="_blank"' in body
-    assert "/projects/10/time-entries?captured_for_date=2026-04-13&amp;date_from=2026-04-13&amp;date_to=2026-04-13" in body
+    assert "/time-entries?project_redmine_id=10&amp;captured_for_date=2026-04-13&amp;date_from=2026-04-13&amp;date_to=2026-04-13" in body
 
 
 def testGetProjectBurndownPageReturnsChartPage(monkeypatch) -> None:
@@ -1659,7 +1659,15 @@ def testSnapshotTimeEntriesPageDefaultsToDevelopmentTrackersAndLinksIssueIds(mon
         },
     )
 
-    response = client.get("/projects/10/time-entries?captured_for_date=2026-04-13&date_from=2026-04-13&date_to=2026-04-13")
+    redirectResponse = client.get(
+        "/projects/10/time-entries?captured_for_date=2026-04-13&date_from=2026-04-13&date_to=2026-04-13",
+        follow_redirects=False,
+    )
+
+    assert redirectResponse.status_code == 303
+    assert redirectResponse.headers["location"] == "/time-entries?project_redmine_id=10&captured_for_date=2026-04-13&date_from=2026-04-13&date_to=2026-04-13"
+
+    response = client.get("/time-entries?project_redmine_id=10&captured_for_date=2026-04-13&date_from=2026-04-13&date_to=2026-04-13")
 
     assert response.status_code == 200
     body = response.text

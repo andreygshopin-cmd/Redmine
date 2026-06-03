@@ -7129,9 +7129,6 @@ __LOCAL_GOLOS_FONT_CSS__
         params.set("date_to", String(row.week_end));
       }
       const query = params.toString();
-      if (projectIds.length === 1) {
-        return `/projects/${projectIds[0]}/time-entries${query ? `?${query}` : ""}`;
-      }
       return `/time-entries${query ? `?${query}` : ""}`;
     }
 
@@ -7649,9 +7646,12 @@ __LOCAL_GOLOS_FONT_CSS__
         || widgetSettings.p2
         || widgetSettings.use_risk_plan !== undefined
       );
-      elements.status.textContent = hasSavedSettings
-        ? "Настройки виджета загружены. Для построения диаграммы нажмите «Отобразить без сохранения» или «Применить и сохранить»."
-        : "Выберите проекты и нажмите «Применить», затем построите диаграмму кнопкой «Отобразить без сохранения» или «Применить и сохранить».";
+      enqueueDashboardWidgetAutoLoad(widgetNode, {
+        resetFromPlanning: !hasSavedSettings,
+        renderChart: true,
+        updateParameters: true,
+        saveSettings: false,
+      });
     }
 
     dashboardGrid.innerHTML = (dashboardBootstrap.widgets || []).map(buildWidgetHtml).join("");
@@ -9186,6 +9186,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 
     def buildSnapshotWeeklyTimeEntriesUrl(row: dict[str, object]) -> str:
         queryParts: list[str] = []
+        queryParts.append(f"project_redmine_id={quote(str(projectRedmineId))}")
         weekStart = str(row.get("week_start") or "").strip()
         weekEnd = str(row.get("week_end") or "").strip()
         if capturedForDateRaw:
@@ -9195,7 +9196,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if weekEnd:
             queryParts.append(f"date_to={quote(weekEnd)}")
         queryString = "&".join(queryParts)
-        return f"/projects/{projectRedmineId}/time-entries" + (f"?{queryString}" if queryString else "")
+        return "/time-entries" + (f"?{queryString}" if queryString else "")
 
     weeklyLoadWeekCellsHtml = "".join(
         f'<th scope="col">{escape(str(row.get("label") or "—"))}</th>'
@@ -10117,6 +10118,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
 
       function buildSnapshotWeeklyTimeEntriesUrl(row) {{
         const params = new URLSearchParams();
+        params.append("project_redmine_id", String({projectRedmineId}));
         const capturedDate = String(currentSnapshotCapturedForDate || getSelectedSnapshotDate() || selectedSnapshotDate || "");
         if (capturedDate) {{
           params.set("captured_for_date", capturedDate);
@@ -10128,7 +10130,7 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
           params.set("date_to", String(row.week_end));
         }}
         const query = params.toString();
-        return `/projects/{projectRedmineId}/time-entries${{query ? `?${{query}}` : ""}}`;
+        return `/time-entries${{query ? `?${{query}}` : ""}}`;
       }}
 
       function renderSnapshotWeeklyDeveloperLoad(rows, copyLatestToInput = false) {{
@@ -10965,7 +10967,8 @@ def buildLatestSnapshotIssuesPageClean(projectRedmineId: int, capturedForDate: s
         if (selectedTimeEntriesDate) {{
           params.set("captured_for_date", selectedTimeEntriesDate);
         }}
-        window.location.href = `/projects/{projectRedmineId}/time-entries?${{params.toString()}}`;
+        params.append("project_redmine_id", String({projectRedmineId}));
+        window.location.href = `/time-entries?${{params.toString()}}`;
       }});
 
       snapshotPrevPageButton?.addEventListener("click", () => {{
@@ -21191,26 +21194,24 @@ def exportProjectLatestSnapshotIssuesCsv(
     )
 
 
-@app.get("/projects/{project_redmine_id}/time-entries", response_class=HTMLResponse)
+@app.get("/projects/{project_redmine_id}/time-entries")
 def getProjectSnapshotTimeEntriesPage(
     project_redmine_id: int,
     captured_for_date: str | None = Query(None, description="Дата среза в формате YYYY-MM-DD"),
     date_from: str | None = Query(None, description="Дата начала периода в формате YYYY-MM-DD"),
     date_to: str | None = Query(None, description="Дата конца периода в формате YYYY-MM-DD"),
-) -> HTMLResponse:
+) -> RedirectResponse:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
-    ensureIssueSnapshotTables()
-    ensureProjectsTable()
-    return _renderHtmlPage(
-        buildSnapshotTimeEntriesPage(
-            project_redmine_id,
-            captured_for_date,
-            date_from,
-            date_to,
-        )
-    )
+    queryParts = [f"project_redmine_id={quote(str(project_redmine_id))}"]
+    if captured_for_date:
+        queryParts.append(f"captured_for_date={quote(captured_for_date)}")
+    if date_from:
+        queryParts.append(f"date_from={quote(date_from)}")
+    if date_to:
+        queryParts.append(f"date_to={quote(date_to)}")
+    return RedirectResponse(url=f"/time-entries?{'&'.join(queryParts)}", status_code=303)
 
 
 @app.get("/time-entries", response_class=HTMLResponse)
