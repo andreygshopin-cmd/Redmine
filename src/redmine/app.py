@@ -11063,6 +11063,7 @@ SNAPSHOT_TIME_ENTRY_MULTISELECT_KEYS = {
     "issue_status_name",
     "activity_name",
 }
+SNAPSHOT_TIME_ENTRIES_MAX_RANGE_DAYS = 31
 
 SNAPSHOT_TIME_ENTRY_FIXED_WIDTHS = {
     "id": "8ch",
@@ -11944,11 +11945,14 @@ def buildGroupedSnapshotTimeEntriesPage(
     dateTo: str | None,
 ) -> str:
     today = date.today()
+    shouldLoadTimeEntries = bool(str(dateFrom or "").strip() or str(dateTo or "").strip())
     selectedCapturedForDate = _normalizeSnapshotTimeEntriesDateValue(capturedForDate, today.isoformat())
     selectedDateFrom = _normalizeSnapshotTimeEntriesDateValue(dateFrom, date(today.year, 1, 1).isoformat())
     selectedDateTo = _normalizeSnapshotTimeEntriesDateValue(dateTo, today.isoformat())
     if selectedDateFrom > selectedDateTo:
         selectedDateFrom, selectedDateTo = selectedDateTo, selectedDateFrom
+    selectedRangeDays = (date.fromisoformat(selectedDateTo) - date.fromisoformat(selectedDateFrom)).days + 1
+    isTimeEntriesRangeTooLarge = selectedRangeDays > SNAPSHOT_TIME_ENTRIES_MAX_RANGE_DAYS
 
     projectIds = sorted({int(projectId) for projectId in projectRedmineIds if int(projectId or 0) > 0})
     storedProjectsById = {
@@ -11957,22 +11961,23 @@ def buildGroupedSnapshotTimeEntriesPage(
         if int(project.get("redmine_id") or 0) > 0
     }
     timeEntries: list[dict[str, object]] = []
-    for projectId in projectIds:
-        try:
-            snapshotPayload = getSnapshotTimeEntriesForProjectByDateRange(
-                projectId,
-                selectedCapturedForDate,
-                selectedDateFrom,
-                selectedDateTo,
-            )
-        except Exception:
-            continue
-        for entry in snapshotPayload.get("time_entries") or []:
-            item = dict(entry)
-            item.setdefault("project_redmine_id", projectId)
-            if not item.get("project_name"):
-                item["project_name"] = (storedProjectsById.get(projectId) or {}).get("name") or f"Проект {projectId}"
-            timeEntries.append(item)
+    if shouldLoadTimeEntries and not isTimeEntriesRangeTooLarge:
+        for projectId in projectIds:
+            try:
+                snapshotPayload = getSnapshotTimeEntriesForProjectByDateRange(
+                    projectId,
+                    selectedCapturedForDate,
+                    selectedDateFrom,
+                    selectedDateTo,
+                )
+            except Exception:
+                continue
+            for entry in snapshotPayload.get("time_entries") or []:
+                item = dict(entry)
+                item.setdefault("project_redmine_id", projectId)
+                if not item.get("project_name"):
+                    item["project_name"] = (storedProjectsById.get(projectId) or {}).get("name") or f"Проект {projectId}"
+                timeEntries.append(item)
 
     defaultTimeEntryFilters = _buildDefaultSnapshotTimeEntryFilters()
     filteredEntries = _applySnapshotTimeEntriesFilters(timeEntries, defaultTimeEntryFilters)
@@ -12066,9 +12071,14 @@ def buildGroupedSnapshotTimeEntriesPage(
             else:
                 cells.append(f'<td class="{cellClass}">{escape(renderedValue)}</td>')
         rowCells.append(f"<tr>{''.join(cells)}</tr>")
-    bodyRows = "".join(rowCells) or (
-        f'<tr><td colspan="{len(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG)}">За выбранный период списания времени не найдены.</td></tr>'
-    )
+    if rowCells:
+        bodyRows = "".join(rowCells)
+    elif shouldLoadTimeEntries and isTimeEntriesRangeTooLarge:
+        bodyRows = f'<tr><td colspan="{len(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG)}">Период слишком большой для быстрой загрузки. Выберите период не больше {SNAPSHOT_TIME_ENTRIES_MAX_RANGE_DAYS} дней.</td></tr>'
+    elif shouldLoadTimeEntries:
+        bodyRows = f'<tr><td colspan="{len(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG)}">За выбранный период списания времени не найдены.</td></tr>'
+    else:
+        bodyRows = f'<tr><td colspan="{len(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG)}">Укажите период и нажмите «Показать».</td></tr>'
 
     return f"""<!doctype html>
 <html lang="ru">
@@ -21256,6 +21266,11 @@ def exportGroupedSnapshotTimeEntriesExcel(
     selectedDateTo = _normalizeSnapshotTimeEntriesDateValue(date_to, today.isoformat())
     if selectedDateFrom > selectedDateTo:
         selectedDateFrom, selectedDateTo = selectedDateTo, selectedDateFrom
+    if (date.fromisoformat(selectedDateTo) - date.fromisoformat(selectedDateFrom)).days + 1 > SNAPSHOT_TIME_ENTRIES_MAX_RANGE_DAYS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Период выгрузки списаний времени не должен превышать {SNAPSHOT_TIME_ENTRIES_MAX_RANGE_DAYS} дней.",
+        )
 
     projectIds = sorted({int(projectId) for projectId in project_redmine_id if int(projectId or 0) > 0})
     storedProjectsById = {
@@ -21345,6 +21360,11 @@ def exportProjectSnapshotTimeEntriesCsv(
     selectedDateTo = _normalizeSnapshotTimeEntriesDateValue(date_to, today.isoformat())
     if selectedDateFrom > selectedDateTo:
         selectedDateFrom, selectedDateTo = selectedDateTo, selectedDateFrom
+    if (date.fromisoformat(selectedDateTo) - date.fromisoformat(selectedDateFrom)).days + 1 > SNAPSHOT_TIME_ENTRIES_MAX_RANGE_DAYS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Период выгрузки списаний времени не должен превышать {SNAPSHOT_TIME_ENTRIES_MAX_RANGE_DAYS} дней.",
+        )
 
     payload = getSnapshotTimeEntriesForProjectByDateRange(
         project_redmine_id,
@@ -21397,6 +21417,11 @@ def exportProjectSnapshotTimeEntriesExcel(
     selectedDateTo = _normalizeSnapshotTimeEntriesDateValue(date_to, today.isoformat())
     if selectedDateFrom > selectedDateTo:
         selectedDateFrom, selectedDateTo = selectedDateTo, selectedDateFrom
+    if (date.fromisoformat(selectedDateTo) - date.fromisoformat(selectedDateFrom)).days + 1 > SNAPSHOT_TIME_ENTRIES_MAX_RANGE_DAYS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Период выгрузки списаний времени не должен превышать {SNAPSHOT_TIME_ENTRIES_MAX_RANGE_DAYS} дней.",
+        )
 
     payload = getSnapshotTimeEntriesForProjectByDateRange(
         project_redmine_id,
