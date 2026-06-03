@@ -7645,12 +7645,9 @@ __LOCAL_GOLOS_FONT_CSS__
         || widgetSettings.p2
         || widgetSettings.use_risk_plan !== undefined
       );
-      enqueueDashboardWidgetAutoLoad(widgetNode, {
-        resetFromPlanning: !hasSavedSettings,
-        renderChart: true,
-        updateParameters: true,
-        saveSettings: false,
-      });
+      elements.status.textContent = hasSavedSettings
+        ? "Настройки виджета загружены. Для построения диаграммы нажмите «Отобразить без сохранения» или «Применить и сохранить»."
+        : "Выберите проекты и нажмите «Применить», затем построите диаграмму кнопкой «Отобразить без сохранения» или «Применить и сохранить».";
     }
 
     dashboardGrid.innerHTML = (dashboardBootstrap.widgets || []).map(buildWidgetHtml).join("");
