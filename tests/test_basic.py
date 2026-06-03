@@ -367,6 +367,27 @@ def testSnapshotWeeklyDeveloperLoadUsesDevelopmentTrackersOnly(monkeypatch) -> N
     assert rows[0]["developers"] == pytest.approx(2.0)
 
 
+def testDashboardWeeklyDeveloperLoadUsesDevelopmentTrackersOnly(monkeypatch) -> None:
+    def fakeTimeEntries(projectRedmineId, *args, **kwargs):
+        return {
+            "time_entries": [
+                {"spent_on": "2026-04-13", "hours": 40.0, "issue_tracker_name": "Разработка"},
+                {"spent_on": "2026-04-13", "hours": 20.0, "issue_tracker_name": "Ошибка"},
+                {"spent_on": "2026-04-13", "hours": 20.0, "issue_tracker_name": "Процессы разработки"},
+                {"spent_on": "2026-04-13", "hours": 40.0, "issue_tracker_name": "Поддержка"},
+            ]
+        }
+
+    monkeypatch.setattr(app_module, "getSnapshotTimeEntriesForProjectByDateRange", fakeTimeEntries)
+
+    rows = app_module.buildDashboardWeeklyDeveloperLoad([10, 20], "2026-04-13", weeks=1)
+
+    assert rows[0]["hours"] == pytest.approx(160.0)
+    assert rows[0]["developers"] == pytest.approx(4.0)
+    assert rows[0]["project_redmine_ids"] == [10, 20]
+    assert rows[0]["captured_for_date"] == "2026-04-13"
+
+
 def testProjectsSummaryGroupsIncludeSnapshotForecastAndRemaining(monkeypatch) -> None:
     calls = []
 
@@ -1639,6 +1660,72 @@ def testSnapshotTimeEntriesPageDefaultsToDevelopmentTrackersAndLinksIssueIds(mon
     assert 'id="timeEntriesHoursSummary">80,0</span>' in body
     assert 'const redmineIssueUrlBase = "https://redmine.sms-it.ru/issues/";' in body
     assert "time-entry-redmine-link" in body
+
+
+def testGroupedSnapshotTimeEntriesPageShowsDevelopmentEntriesForDashboard(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module.config, "redmineUrl", "https://redmine.sms-it.ru")
+    monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
+    monkeypatch.setattr(app_module, "ensureProjectsTable", lambda: None)
+    monkeypatch.setattr(
+        app_module,
+        "listStoredProjects",
+        lambda: [
+            {"redmine_id": 10, "name": "Billing", "identifier": "billing"},
+            {"redmine_id": 20, "name": "Support", "identifier": "support"},
+        ],
+    )
+
+    def fakeTimeEntries(projectRedmineId, *args, **kwargs):
+        return {
+            "snapshot_run": {
+                "project_redmine_id": projectRedmineId,
+                "project_name": "Billing" if projectRedmineId == 10 else "Support",
+                "project_identifier": "billing" if projectRedmineId == 10 else "support",
+                "captured_for_date": "2026-04-13",
+            },
+            "time_entries": [
+                {
+                    "id": projectRedmineId,
+                    "project_redmine_id": projectRedmineId,
+                    "project_name": "Billing" if projectRedmineId == 10 else "Support",
+                    "issue_redmine_id": 325000 + projectRedmineId,
+                    "issue_tracker_name": "Разработка",
+                    "issue_status_name": "В работе",
+                    "activity_name": "Development",
+                    "hours": 40.0,
+                    "spent_on": "2026-04-13",
+                },
+                {
+                    "id": projectRedmineId + 100,
+                    "project_redmine_id": projectRedmineId,
+                    "project_name": "Billing" if projectRedmineId == 10 else "Support",
+                    "issue_redmine_id": 326000 + projectRedmineId,
+                    "issue_tracker_name": "Поддержка",
+                    "issue_status_name": "В работе",
+                    "activity_name": "Support",
+                    "hours": 40.0,
+                    "spent_on": "2026-04-13",
+                },
+            ],
+            "available_dates": ["2026-04-13"],
+        }
+
+    monkeypatch.setattr(app_module, "getSnapshotTimeEntriesForProjectByDateRange", fakeTimeEntries)
+
+    response = client.get(
+        "/time-entries?project_redmine_id=10&project_redmine_id=20&captured_for_date=2026-04-13&date_from=2026-04-13&date_to=2026-04-13"
+    )
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Проекты: Billing, Support" in body
+    assert "Найдено записей: 2" in body
+    assert "Сумма часов: 80,0" in body
+    assert "https://redmine.sms-it.ru/issues/325010" in body
+    assert "https://redmine.sms-it.ru/issues/325020" in body
+    assert "326010" not in body
+    assert "326020" not in body
 
 
 def testAdminUsersPageShowsDashboardButtonForConfiguredUser(monkeypatch) -> None:

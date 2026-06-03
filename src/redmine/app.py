@@ -3931,6 +3931,8 @@ def buildDashboardWeeklyDeveloperLoad(
             weekKey = weekStart.isoformat()
             if weekKey not in hoursByWeekStart:
                 continue
+            if not _isSnapshotDevelopmentTimeEntry(entry):
+                continue
             try:
                 hoursByWeekStart[weekKey] += float(entry.get("hours") or 0)
             except (TypeError, ValueError):
@@ -3947,6 +3949,8 @@ def buildDashboardWeeklyDeveloperLoad(
                 "label": f"{weekStart.strftime('%d.%m')}-{weekEnd.strftime('%d.%m')}",
                 "hours": hours,
                 "developers": hours / 40.0,
+                "captured_for_date": normalizedDate,
+                "project_redmine_ids": projectIds,
             }
         )
     return rows
@@ -6343,6 +6347,17 @@ __LOCAL_GOLOS_FONT_CSS__
     .weekly-load-table td:not(:first-child) {
       min-width: 58px;
     }
+    .weekly-load-link {
+      color: inherit;
+      text-decoration: underline;
+      text-decoration-style: dotted;
+      text-decoration-color: rgba(55, 93, 119, 0.45);
+      text-underline-offset: 4px;
+    }
+    .weekly-load-link:hover {
+      color: #375d77;
+      text-decoration-color: #375d77;
+    }
     .weekly-load-table .is-weekly-column-hidden {
       visibility: hidden;
     }
@@ -7079,13 +7094,37 @@ __LOCAL_GOLOS_FONT_CSS__
       `;
     }
 
+    function buildDashboardWeeklyTimeEntriesUrl(row) {
+      const params = new URLSearchParams();
+      const projectIds = Array.isArray(row?.project_redmine_ids) ? row.project_redmine_ids : [];
+      projectIds
+        .map((value) => Number(value || 0))
+        .filter((value) => Number.isFinite(value) && value > 0)
+        .forEach((projectId) => params.append("project_redmine_id", String(projectId)));
+      const capturedDate = String(row?.captured_for_date || "");
+      if (capturedDate) {
+        params.set("captured_for_date", capturedDate);
+      }
+      if (row?.week_start) {
+        params.set("date_from", String(row.week_start));
+      }
+      if (row?.week_end) {
+        params.set("date_to", String(row.week_end));
+      }
+      const query = params.toString();
+      if (projectIds.length === 1) {
+        return `/projects/${projectIds[0]}/time-entries${query ? `?${query}` : ""}`;
+      }
+      return `/time-entries${query ? `?${query}` : ""}`;
+    }
+
     function renderWeeklyDeveloperLoad(elements, rows, copyLatestToInput = false) {
       const sourceRows = Array.isArray(rows) ? rows : [];
       if (elements.weeklyLoadWeeksRow) {
         elements.weeklyLoadWeeksRow.innerHTML = `<th scope="row">Неделя</th>${sourceRows.map((row, index) => `<th scope="col" data-weekly-column="${index}">${escapeHtml(row?.label || "—")}</th>`).join("") || "<td>—</td>"}`;
       }
       if (elements.weeklyLoadDevelopersRow) {
-        elements.weeklyLoadDevelopersRow.innerHTML = `<th scope="row">Кол-во</th>${sourceRows.map((row, index) => `<td data-weekly-column="${index}">${formatHours(row?.developers || 0)}</td>`).join("") || "<td>—</td>"}`;
+        elements.weeklyLoadDevelopersRow.innerHTML = `<th scope="row">Кол-во</th>${sourceRows.map((row, index) => `<td data-weekly-column="${index}"><a class="weekly-load-link" href="${escapeHtml(buildDashboardWeeklyTimeEntriesUrl(row))}" target="_blank" rel="noreferrer">${formatHours(row?.developers || 0)}</a></td>`).join("") || "<td>—</td>"}`;
       }
       if (copyLatestToInput && elements.developerCountInput) {
         const latestRow = sourceRows.length ? sourceRows[sourceRows.length - 1] : null;
@@ -11783,6 +11822,139 @@ def buildSnapshotTimeEntriesPage(
       window.addEventListener("resize", updateTimeEntriesTableViewportHeight);
       window.addEventListener("scroll", updateTimeEntriesTableViewportHeight, {{ passive: true }});
     </script>
+  </main>
+</body>
+</html>"""
+
+
+def buildGroupedSnapshotTimeEntriesPage(
+    projectRedmineIds: list[int],
+    capturedForDate: str | None,
+    dateFrom: str | None,
+    dateTo: str | None,
+) -> str:
+    today = date.today()
+    selectedCapturedForDate = _normalizeSnapshotTimeEntriesDateValue(capturedForDate, today.isoformat())
+    selectedDateFrom = _normalizeSnapshotTimeEntriesDateValue(dateFrom, date(today.year, 1, 1).isoformat())
+    selectedDateTo = _normalizeSnapshotTimeEntriesDateValue(dateTo, today.isoformat())
+    if selectedDateFrom > selectedDateTo:
+        selectedDateFrom, selectedDateTo = selectedDateTo, selectedDateFrom
+
+    projectIds = sorted({int(projectId) for projectId in projectRedmineIds if int(projectId or 0) > 0})
+    storedProjectsById = {
+        int(project.get("redmine_id") or 0): project
+        for project in listStoredProjects()
+        if int(project.get("redmine_id") or 0) > 0
+    }
+    timeEntries: list[dict[str, object]] = []
+    for projectId in projectIds:
+        try:
+            snapshotPayload = getSnapshotTimeEntriesForProjectByDateRange(
+                projectId,
+                selectedCapturedForDate,
+                selectedDateFrom,
+                selectedDateTo,
+            )
+        except Exception:
+            continue
+        for entry in snapshotPayload.get("time_entries") or []:
+            item = dict(entry)
+            item.setdefault("project_redmine_id", projectId)
+            if not item.get("project_name"):
+                item["project_name"] = (storedProjectsById.get(projectId) or {}).get("name") or f"Проект {projectId}"
+            timeEntries.append(item)
+
+    filteredEntries = _applySnapshotTimeEntriesFilters(timeEntries, _buildDefaultSnapshotTimeEntryFilters())
+    totalHours = sum(float(entry.get("hours") or 0) for entry in filteredEntries)
+    redmineIssueUrlBase = f"{(config.redmineUrl or 'https://redmine.sms-it.ru').rstrip('/')}/issues/"
+    selectedProjectInputs = "".join(
+        f'<input type="hidden" name="project_redmine_id" value="{projectId}">'
+        for projectId in projectIds
+    )
+    projectNames = [
+        str((storedProjectsById.get(projectId) or {}).get("name") or f"Проект {projectId}")
+        for projectId in projectIds
+    ]
+    projectsLabel = ", ".join(projectNames) if projectNames else "проекты не выбраны"
+    headerCells = "".join(
+        f'<th>{escape(str(column["label"]))}</th>'
+        for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG
+    )
+    rowCells: list[str] = []
+    for entry in filteredEntries:
+        cells: list[str] = []
+        for column in SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG:
+            columnKey = str(column["key"])
+            renderedValue = _formatSnapshotTimeEntryCellValue(columnKey, entry.get(columnKey))
+            cellClass = "mono" if bool(column.get("mono")) else ""
+            if columnKey == "issue_redmine_id" and renderedValue != "—" and str(entry.get("issue_redmine_id") or "").strip().isdigit():
+                issueId = str(entry.get("issue_redmine_id") or "").strip()
+                issueUrl = f"{redmineIssueUrlBase}{quote(issueId)}"
+                cells.append(
+                    f'<td class="{cellClass}"><a class="time-entry-redmine-link" href="{escape(issueUrl)}" target="_blank" rel="noreferrer">{escape(renderedValue)}</a></td>'
+                )
+            else:
+                cells.append(f'<td class="{cellClass}">{escape(renderedValue)}</td>')
+        rowCells.append(f"<tr>{''.join(cells)}</tr>")
+    bodyRows = "".join(rowCells) or (
+        f'<tr><td colspan="{len(SNAPSHOT_TIME_ENTRY_COLUMN_CONFIG)}">За выбранный период списания времени не найдены.</td></tr>'
+    )
+
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Списание времени</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {{ --line: #d9e5eb; --text: #16324a; --muted: #64798d; --header: #eef6f7; }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; font-family: "Golos Text", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif; background: #ffffff; color: var(--text); }}
+    main {{ max-width: 1720px; margin: 0 auto; padding: 24px 20px 48px; }}
+    h1 {{ margin: 18px 0 12px; font-size: clamp(1.85rem, 4vw, 2.65rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 400; }}
+    .meta {{ color: var(--muted); margin: 0 0 18px; }}
+    .toolbar {{ display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin: 0 0 18px; }}
+    .toolbar label {{ display: flex; flex-direction: column; gap: 6px; font-weight: 600; }}
+    .toolbar input {{ border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }}
+    .toolbar button {{ border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; background: #eef2f5; color: var(--text); }}
+    .summary-note {{ color: var(--muted); font-size: 0.94rem; }}
+    .table-wrap {{ overflow: auto; max-height: calc(100vh - 230px); border: 1px solid var(--line); border-radius: 8px; }}
+    table {{ width: 100%; min-width: 2200px; border-collapse: separate; border-spacing: 0; table-layout: fixed; }}
+    th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }}
+    thead th {{ position: sticky; top: 0; z-index: 2; background: var(--header); color: #426179; text-transform: uppercase; font-size: 0.74rem; }}
+    .mono {{ font-family: Consolas, "Courier New", monospace; white-space: nowrap; }}
+    .time-entry-redmine-link {{ color: inherit; text-decoration: underline; text-decoration-style: dotted; text-decoration-color: rgba(55, 93, 119, 0.45); text-underline-offset: 4px; }}
+    .time-entry-redmine-link:hover {{ color: #375d77; text-decoration-color: #375d77; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Списание времени</h1>
+    <p class="meta">Проекты: {escape(projectsLabel)}. Дата среза: {escape(selectedCapturedForDate)}. Период: {escape(selectedDateFrom)} - {escape(selectedDateTo)}.</p>
+    <form class="toolbar" method="get">
+      {selectedProjectInputs}
+      <label>Дата среза
+        <input type="date" name="captured_for_date" value="{escape(selectedCapturedForDate)}">
+      </label>
+      <label>Дата от
+        <input type="date" name="date_from" value="{escape(selectedDateFrom)}">
+      </label>
+      <label>Дата до
+        <input type="date" name="date_to" value="{escape(selectedDateTo)}">
+      </label>
+      <button type="submit">Показать</button>
+    </form>
+    <p class="summary-note">Фильтр: трекеры задач Ошибка, Процессы разработки, Разработка. Найдено записей: {len(filteredEntries)}. Сумма часов: {formatPageHours(totalHours)}.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>{headerCells}</tr></thead>
+        <tbody>{bodyRows}</tbody>
+      </table>
+    </div>
   </main>
 </body>
 </html>"""
@@ -20638,6 +20810,28 @@ def getProjectSnapshotTimeEntriesPage(
     ensureProjectsTable()
     return _renderHtmlPage(
         buildSnapshotTimeEntriesPage(
+            project_redmine_id,
+            captured_for_date,
+            date_from,
+            date_to,
+        )
+    )
+
+
+@app.get("/time-entries", response_class=HTMLResponse)
+def getGroupedSnapshotTimeEntriesPage(
+    project_redmine_id: list[int] = Query([]),
+    captured_for_date: str | None = Query(None, description="Дата среза в формате YYYY-MM-DD"),
+    date_from: str | None = Query(None, description="Дата начала периода в формате YYYY-MM-DD"),
+    date_to: str | None = Query(None, description="Дата конца периода в формате YYYY-MM-DD"),
+) -> HTMLResponse:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureIssueSnapshotTables()
+    ensureProjectsTable()
+    return _renderHtmlPage(
+        buildGroupedSnapshotTimeEntriesPage(
             project_redmine_id,
             captured_for_date,
             date_from,
