@@ -86,6 +86,7 @@ from src.redmine.db import (
     listSnapshotDatesForProject,
     listStoredProjects,
     listUsers,
+    listWeeklyClosedFeatureReport,
     pruneUnchangedIssueSnapshots,
     seedInitialUsers,
     storeUserPasswordResetToken,
@@ -2026,6 +2027,13 @@ PAGE_HTML = """<!doctype html>
       align-items: center;
     }
 
+    .stacked-actions {
+      display: inline-flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: stretch;
+    }
+
     button {
       border: 0;
       border-radius: 6px;
@@ -2046,6 +2054,7 @@ PAGE_HTML = """<!doctype html>
     #refreshProjectsButton,
     #planningProjectsPageButton,
     #projectsSummaryPageButton,
+    #weeklyClosedFeaturesReportButton,
     #recaptureSnapshotsButton,
     #strangeIssuesPageButton,
     #deleteSnapshotsButton,
@@ -2058,6 +2067,7 @@ PAGE_HTML = """<!doctype html>
     #refreshProjectsButton:hover,
     #planningProjectsPageButton:hover,
     #projectsSummaryPageButton:hover,
+    #weeklyClosedFeaturesReportButton:hover,
     #recaptureSnapshotsButton:hover,
     #strangeIssuesPageButton:hover,
     #deleteSnapshotsButton:hover,
@@ -2086,6 +2096,12 @@ PAGE_HTML = """<!doctype html>
       background: var(--yellow-109);
       color: var(--blue-302);
       box-shadow: 0 14px 24px rgba(255, 198, 0, 0.24);
+    }
+
+    #weeklyClosedFeaturesReportButton {
+      background: var(--yellow-109);
+      color: var(--blue-302);
+      box-shadow: 0 14px 24px rgba(255, 198, 0, 0.2);
     }
 
     #captureSnapshotsButton:hover {
@@ -2556,7 +2572,10 @@ PAGE_HTML = """<!doctype html>
         <p>Получает список проектов из Redmine, добавляет новые записи и обновляет измененные.</p>
         <div class="row">
 <button id="refreshProjectsButton" type="button">Синхронизация с Redmine</button>
-          <button id="projectsSummaryPageButton" type="button">Сводка по проектам</button>
+          <span class="stacked-actions">
+            <button id="projectsSummaryPageButton" type="button">Сводка по проектам</button>
+            <button id="weeklyClosedFeaturesReportButton" type="button">Отчет по неделям</button>
+          </span>
           <button id="planningProjectsPageButton" type="button">Планирование проектов</button>
         </div>
         <div class="status" id="projectsStatus"></div>
@@ -2933,6 +2952,7 @@ PAGE_HTML = """<!doctype html>
         ["#project-actions p", "textContent", "Получает список проектов из Redmine, добавляет новые записи и обновляет измененные."],
         ["#refreshProjectsButton", "textContent", "Синхронизация с Redmine"],
         ["#projectsSummaryPageButton", "textContent", "Сводка по проектам"],
+        ["#weeklyClosedFeaturesReportButton", "textContent", "Отчет по неделям"],
         ["#snapshot-actions h2", "textContent", "Получение срезов задач"],
         ["#snapshot-actions p", "textContent", "Запрашивает срезы только для тех проектов, по которым на сегодняшнюю дату еще нет записи в базе данных."],
         ["#captureSnapshotsButton", "textContent", "Получить срезы задач"],
@@ -3633,6 +3653,9 @@ PAGE_HTML = """<!doctype html>
     refreshProjectsButton.addEventListener("click", refreshProjects);
     projectsSummaryPageButton.addEventListener("click", () => {
       window.location.href = "/projects-summary";
+    });
+    weeklyClosedFeaturesReportButton.addEventListener("click", () => {
+      window.location.href = "/weekly-closed-features";
     });
     planningProjectsPageButton.addEventListener("click", () => {
       window.location.href = "/planning-projects";
@@ -19361,6 +19384,209 @@ def buildProjectsSummaryPage() -> str:
 </html>"""
 
 
+def buildWeeklyClosedFeaturesReportPage(capturedForDate: str | None = None) -> str:
+    payload = listWeeklyClosedFeatureReport(capturedForDate)
+    availableDates = [str(value) for value in payload.get("available_dates") or []]
+    selectedDate = str(payload.get("selected_date") or "")
+    rows = list(payload.get("rows") or [])
+    redmineIssueUrlBase = f"{(config.redmineUrl or 'https://redmine.sms-it.ru').rstrip('/')}/issues/"
+    dateOptions = "".join(
+        f'<option value="{escape(dateValue)}"{" selected" if dateValue == selectedDate else ""}>{escape(dateValue)}</option>'
+        for dateValue in availableDates
+    )
+
+    rowHtmlParts: list[str] = []
+    for row in rows:
+        featureId = str(row.get("feature_redmine_id") or "").strip()
+        issueUrl = f"{redmineIssueUrlBase}{quote(featureId)}" if featureId.isdigit() else ""
+        featureLink = (
+            f'<a class="feature-link mono" href="{escape(issueUrl)}" target="_blank" rel="noreferrer">{escape(featureId)}</a>'
+            if issueUrl
+            else f'<span class="mono">{escape(featureId or "—")}</span>'
+        )
+        rowHtmlParts.append(
+            "<tr>"
+            f"<td>{escape(str(row.get('project_name') or '—'))}</td>"
+            f"<td>{featureLink}</td>"
+            f"<td>{escape(str(row.get('feature_subject') or '—'))}</td>"
+            f"<td>{escape(str(row.get('previous_captured_for_date') or '—'))}</td>"
+            f"<td>{escape(str(row.get('previous_status_name') or '—'))}</td>"
+            f"<td>{escape(str(row.get('status_name') or '—'))}</td>"
+            f"<td class=\"number-cell\">{formatPageHours(row.get('baseline_estimate_hours'))}</td>"
+            f"<td class=\"number-cell\">{formatPageHours(row.get('development_plan_hours'))}</td>"
+            f"<td class=\"number-cell\">{formatPageHours(row.get('development_risk_plan_hours'))}</td>"
+            f"<td class=\"number-cell\">{formatPageHours(row.get('development_fact_hours'))}</td>"
+            f"<td class=\"number-cell\">{formatPageHours(row.get('bug_plan_hours'))}</td>"
+            f"<td class=\"number-cell\">{formatPageHours(row.get('bug_risk_plan_hours'))}</td>"
+            f"<td class=\"number-cell\">{formatPageHours(row.get('bug_fact_hours'))}</td>"
+            "</tr>"
+        )
+
+    tableBody = "".join(rowHtmlParts) or (
+        '<tr><td colspan="13" class="empty-cell">За выбранную неделю Feature, ставшие Готово*, не найдены.</td></tr>'
+    )
+
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Отчет по закрытым фичам за неделю</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+__LOCAL_GOLOS_FONT_CSS__
+    :root {{
+      --text: #16324a;
+      --muted: #64798d;
+      --line: #d9e5eb;
+      --header: #eef6f7;
+      --blue: #375d77;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      background: #ffffff;
+      color: var(--text);
+    }}
+    main {{
+      max-width: none;
+      width: 100%;
+      padding: 24px 20px 48px;
+    }}
+    .brand {{
+      display: inline-flex;
+      width: 220px;
+      min-height: 70px;
+      align-items: center;
+      margin-bottom: 12px;
+    }}
+    .brand img {{ width: 100%; height: auto; display: block; }}
+    h1 {{
+      margin: 4px 0 8px;
+      font-size: clamp(1.85rem, 4vw, 2.65rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
+    }}
+    .lead {{ margin: 0 0 20px; color: var(--muted); line-height: 1.55; }}
+    .toolbar {{
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #ffffff;
+    }}
+    label {{ display: flex; flex-direction: column; gap: 6px; font-weight: 700; }}
+    select {{
+      min-width: 170px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px 10px;
+      font: inherit;
+      color: var(--text);
+      background: #ffffff;
+    }}
+    button {{
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px 14px;
+      font: inherit;
+      font-weight: 700;
+      color: var(--text);
+      background: #eef2f5;
+      cursor: pointer;
+    }}
+    .report-meta {{ margin: 0 0 12px; color: var(--muted); }}
+    .table-wrap {{
+      overflow: auto;
+      max-height: calc(100vh - 260px);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #ffffff;
+    }}
+    table {{
+      width: 100%;
+      min-width: 1800px;
+      border-collapse: separate;
+      border-spacing: 0;
+      table-layout: fixed;
+    }}
+    th, td {{
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }}
+    thead th {{
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--header);
+      color: #426179;
+      text-transform: uppercase;
+      font-size: 0.76rem;
+      line-height: 1.2;
+    }}
+    .mono {{ font-family: Consolas, "Courier New", monospace; white-space: nowrap; }}
+    .number-cell {{ text-align: right; white-space: nowrap; }}
+    .feature-link {{
+      color: inherit;
+      text-decoration: underline;
+      text-decoration-style: dotted;
+      text-decoration-color: rgba(55, 93, 119, 0.45);
+      text-underline-offset: 4px;
+    }}
+    .feature-link:hover {{ color: var(--blue); text-decoration-color: var(--blue); }}
+    .empty-cell {{ color: var(--muted); text-align: center; padding: 22px; }}
+  </style>
+</head>
+<body>
+  <main>
+    <a class="brand" href="/" aria-label="На главную">
+      <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+    </a>
+    <h1>Отчет по закрытым фичам за неделю</h1>
+    <p class="lead">Показываются Feature, у которых статус в выбранном срезе стал «Готов*», а в опорном срезе за неделю до него еще не был «Готов*».</p>
+    <form class="toolbar" method="get">
+      <label>Дата среза
+        <select name="captured_for_date">{dateOptions}</select>
+      </label>
+      <button type="submit">Показать</button>
+    </form>
+    <p class="report-meta">Дата среза: {escape(selectedDate or "—")}. Найдено Feature: {len(rows)}.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Проект Redmine</th>
+            <th>Feature</th>
+            <th>Тема Feature</th>
+            <th>Опорный срез</th>
+            <th>Статус был</th>
+            <th>Статус стал</th>
+            <th>Базовая оценка</th>
+            <th>План по разработке</th>
+            <th>План с рисками по разработке</th>
+            <th>Факт по разработке</th>
+            <th>План по ошибкам</th>
+            <th>План с рисками по ошибкам</th>
+            <th>Факт по ошибкам</th>
+          </tr>
+        </thead>
+        <tbody>{tableBody}</tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>""".replace("__LOCAL_GOLOS_FONT_CSS__", LOCAL_GOLOS_FONT_CSS)
+
+
 @app.get("/projects-summary", response_class=HTMLResponse)
 def getProjectsSummaryPage() -> HTMLResponse:
     if not config.databaseUrl:
@@ -19370,6 +19596,18 @@ def getProjectsSummaryPage() -> HTMLResponse:
     ensureIssueSnapshotTables()
     ensurePlanningProjectsTable()
     return _renderHtmlPage(buildProjectsSummaryPage())
+
+
+@app.get("/weekly-closed-features", response_class=HTMLResponse)
+def getWeeklyClosedFeaturesReportPage(
+    captured_for_date: str | None = Query(None, description="Дата среза YYYY-MM-DD"),
+) -> HTMLResponse:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+    return _renderHtmlPage(buildWeeklyClosedFeaturesReportPage(captured_for_date))
 
 
 @app.get("/strange-snapshot-issues", response_class=HTMLResponse)

@@ -2641,6 +2641,216 @@ def listSnapshotDatesForProject(projectRedmineId: int) -> list[str]:
         return [str(row.captured_for_date) for row in rows]
 
 
+def listWeeklyClosedFeatureReport(snapshotDate: str | None = None) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        dateRows = connection.execute(
+            text(
+                """
+                SELECT DISTINCT captured_for_date
+                FROM issue_snapshot_runs
+                ORDER BY captured_for_date DESC
+                """
+            )
+        )
+        availableDates = [str(row[0]) for row in dateRows]
+        selectedDate = str(snapshotDate or "").strip() or (availableDates[0] if availableDates else "")
+        if not selectedDate:
+            return {"selected_date": "", "available_dates": [], "rows": []}
+
+        rows = connection.execute(
+            text(
+                """
+                WITH RECURSIVE current_runs AS (
+                    SELECT DISTINCT ON (r.project_redmine_id)
+                        r.id,
+                        r.project_redmine_id,
+                        COALESCE(p.name, r.project_name) AS project_name,
+                        COALESCE(p.identifier, r.project_identifier) AS project_identifier,
+                        r.captured_for_date
+                    FROM issue_snapshot_runs r
+                    LEFT JOIN projects p
+                        ON p.redmine_id = r.project_redmine_id
+                    WHERE r.captured_for_date = CAST(:selected_date AS DATE)
+                    ORDER BY r.project_redmine_id, r.captured_at DESC, r.id DESC
+                ),
+                previous_runs AS (
+                    SELECT DISTINCT ON (r.project_redmine_id)
+                        r.id,
+                        r.project_redmine_id,
+                        r.captured_for_date
+                    FROM issue_snapshot_runs r
+                    JOIN current_runs cr
+                        ON cr.project_redmine_id = r.project_redmine_id
+                    WHERE r.captured_for_date <= (CAST(:selected_date AS DATE) - INTERVAL '7 days')::date
+                    ORDER BY r.project_redmine_id, r.captured_for_date DESC, r.captured_at DESC, r.id DESC
+                ),
+                current_items AS (
+                    SELECT
+                        cr.project_redmine_id,
+                        cr.project_name,
+                        cr.project_identifier,
+                        cr.captured_for_date,
+                        i.issue_redmine_id,
+                        i.subject,
+                        i.tracker_name,
+                        i.status_name,
+                        i.parent_issue_redmine_id,
+                        i.baseline_estimate_hours,
+                        i.estimated_hours,
+                        i.risk_estimate_hours,
+                        i.spent_hours
+                    FROM current_runs cr
+                    JOIN issue_snapshot_items i
+                        ON i.snapshot_run_id = cr.id
+                ),
+                previous_features AS (
+                    SELECT
+                        pr.project_redmine_id,
+                        pr.captured_for_date AS previous_captured_for_date,
+                        i.issue_redmine_id,
+                        i.status_name AS previous_status_name
+                    FROM previous_runs pr
+                    JOIN issue_snapshot_items i
+                        ON i.snapshot_run_id = pr.id
+                    WHERE LOWER(TRIM(COALESCE(i.tracker_name, ''))) = 'feature'
+                ),
+                changed_features AS (
+                    SELECT
+                        ci.project_redmine_id,
+                        ci.project_name,
+                        ci.project_identifier,
+                        ci.captured_for_date,
+                        pf.previous_captured_for_date,
+                        ci.issue_redmine_id,
+                        ci.subject,
+                        ci.status_name,
+                        pf.previous_status_name,
+                        COALESCE(ci.baseline_estimate_hours, 0) AS baseline_estimate_hours
+                    FROM current_items ci
+                    JOIN previous_features pf
+                        ON pf.project_redmine_id = ci.project_redmine_id
+                       AND pf.issue_redmine_id = ci.issue_redmine_id
+                    WHERE LOWER(TRIM(COALESCE(ci.tracker_name, ''))) = 'feature'
+                      AND LOWER(TRIM(COALESCE(ci.status_name, ''))) LIKE 'готов%'
+                      AND LOWER(TRIM(COALESCE(pf.previous_status_name, ''))) NOT LIKE 'готов%'
+                ),
+                item_chain AS (
+                    SELECT
+                        ci.project_redmine_id,
+                        ci.issue_redmine_id AS original_issue_redmine_id,
+                        ci.issue_redmine_id AS current_issue_redmine_id,
+                        ci.parent_issue_redmine_id AS next_parent_issue_redmine_id,
+                        LOWER(TRIM(COALESCE(ci.tracker_name, ''))) AS current_tracker_name
+                    FROM current_items ci
+                    UNION ALL
+                    SELECT
+                        item_chain.project_redmine_id,
+                        item_chain.original_issue_redmine_id,
+                        parent.issue_redmine_id AS current_issue_redmine_id,
+                        parent.parent_issue_redmine_id AS next_parent_issue_redmine_id,
+                        LOWER(TRIM(COALESCE(parent.tracker_name, ''))) AS current_tracker_name
+                    FROM item_chain
+                    JOIN current_items parent
+                        ON parent.project_redmine_id = item_chain.project_redmine_id
+                       AND parent.issue_redmine_id = item_chain.next_parent_issue_redmine_id
+                    WHERE item_chain.next_parent_issue_redmine_id IS NOT NULL
+                      AND item_chain.current_tracker_name <> 'feature'
+                ),
+                feature_links AS (
+                    SELECT
+                        project_redmine_id,
+                        original_issue_redmine_id,
+                        current_issue_redmine_id AS feature_issue_redmine_id
+                    FROM item_chain
+                    WHERE current_tracker_name = 'feature'
+                )
+                SELECT
+                    cf.project_redmine_id,
+                    cf.project_name,
+                    cf.project_identifier,
+                    cf.captured_for_date,
+                    cf.previous_captured_for_date,
+                    cf.issue_redmine_id AS feature_redmine_id,
+                    cf.subject AS feature_subject,
+                    cf.status_name,
+                    cf.previous_status_name,
+                    cf.baseline_estimate_hours,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN LOWER(TRIM(COALESCE(child.tracker_name, ''))) IN ('разработка', 'процессы разработки')
+                            THEN COALESCE(child.estimated_hours, 0)
+                            ELSE 0
+                        END
+                    ), 0) AS development_plan_hours,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN LOWER(TRIM(COALESCE(child.tracker_name, ''))) IN ('разработка', 'процессы разработки')
+                            THEN COALESCE(child.risk_estimate_hours, child.estimated_hours, 0)
+                            ELSE 0
+                        END
+                    ), 0) AS development_risk_plan_hours,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN LOWER(TRIM(COALESCE(child.tracker_name, ''))) IN ('разработка', 'процессы разработки')
+                            THEN COALESCE(child.spent_hours, 0)
+                            ELSE 0
+                        END
+                    ), 0) AS development_fact_hours,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN LOWER(TRIM(COALESCE(child.tracker_name, ''))) = 'ошибка'
+                            THEN COALESCE(child.estimated_hours, 0)
+                            ELSE 0
+                        END
+                    ), 0) AS bug_plan_hours,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN LOWER(TRIM(COALESCE(child.tracker_name, ''))) = 'ошибка'
+                            THEN COALESCE(child.risk_estimate_hours, child.estimated_hours, 0)
+                            ELSE 0
+                        END
+                    ), 0) AS bug_risk_plan_hours,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN LOWER(TRIM(COALESCE(child.tracker_name, ''))) = 'ошибка'
+                            THEN COALESCE(child.spent_hours, 0)
+                            ELSE 0
+                        END
+                    ), 0) AS bug_fact_hours
+                FROM changed_features cf
+                LEFT JOIN feature_links fl
+                    ON fl.project_redmine_id = cf.project_redmine_id
+                   AND fl.feature_issue_redmine_id = cf.issue_redmine_id
+                LEFT JOIN current_items child
+                    ON child.project_redmine_id = fl.project_redmine_id
+                   AND child.issue_redmine_id = fl.original_issue_redmine_id
+                GROUP BY
+                    cf.project_redmine_id,
+                    cf.project_name,
+                    cf.project_identifier,
+                    cf.captured_for_date,
+                    cf.previous_captured_for_date,
+                    cf.issue_redmine_id,
+                    cf.subject,
+                    cf.status_name,
+                    cf.previous_status_name,
+                    cf.baseline_estimate_hours
+                ORDER BY LOWER(cf.project_name), cf.issue_redmine_id
+                """
+            ),
+            {"selected_date": selectedDate},
+        )
+
+        return {
+            "selected_date": selectedDate,
+            "available_dates": availableDates,
+            "rows": [dict(row._mapping) for row in rows],
+        }
+
+
 def getSnapshotIssuesForProjectByDate(projectRedmineId: int, capturedForDate: str | None) -> dict[str, object]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")

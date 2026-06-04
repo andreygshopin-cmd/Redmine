@@ -202,6 +202,8 @@ def testIndexQuickLinksUseCurrentUserRoles() -> None:
     assert 'href="/dashboards/' not in userBody
     assert 'href="/Bitrix"' not in userBody
     assert 'href="/admin/users"' not in userBody
+    assert "Отчет по неделям" in adminBody
+    assert "/weekly-closed-features" in adminBody
 
 
 def testAndreyDashboardHasFourProjectStateWidgets() -> None:
@@ -237,6 +239,65 @@ def testProjectsSummaryPageUsesFullWidthScrollableTable(monkeypatch) -> None:
     assert 'data-filter-key="development_forecast_remaining_hours"' in body
     assert 'data-filter-key="development_remaining_hours"' in body
     assert 'data-filter-key="development_imbalance_hours"' in body
+
+
+def testWeeklyClosedFeaturesReportPageRendersRows(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "redmineUrl", "https://redmine.sms-it.ru")
+    monkeypatch.setattr(
+        app_module,
+        "listWeeklyClosedFeatureReport",
+        lambda capturedForDate=None: {
+            "selected_date": capturedForDate or "2026-04-18",
+            "available_dates": ["2026-04-18", "2026-04-11"],
+            "rows": [
+                {
+                    "project_name": "Billing",
+                    "feature_redmine_id": 123,
+                    "feature_subject": "Закрытая фича",
+                    "previous_captured_for_date": "2026-04-11",
+                    "previous_status_name": "В работе",
+                    "status_name": "Готово(КОТ)",
+                    "baseline_estimate_hours": 10,
+                    "development_plan_hours": 20,
+                    "development_risk_plan_hours": 25,
+                    "development_fact_hours": 18,
+                    "bug_plan_hours": 3,
+                    "bug_risk_plan_hours": 4,
+                    "bug_fact_hours": 2,
+                }
+            ],
+        },
+    )
+
+    body = app_module.buildWeeklyClosedFeaturesReportPage("2026-04-18")
+
+    assert "Отчет по закрытым фичам за неделю" in body
+    assert "Billing" in body
+    assert "https://redmine.sms-it.ru/issues/123" in body
+    assert "Закрытая фича" in body
+    assert "Готово(КОТ)" in body
+    assert "25,0" in body
+    assert "4,0" in body
+
+
+def testWeeklyClosedFeaturesRouteUsesSelectedDate(monkeypatch) -> None:
+    calls: list[str | None] = []
+
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://example/db")
+    monkeypatch.setattr(app_module, "ensureProjectsTable", lambda: None)
+    monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
+    monkeypatch.setattr(
+        app_module,
+        "listWeeklyClosedFeatureReport",
+        lambda capturedForDate=None: calls.append(capturedForDate)
+        or {"selected_date": "2026-04-18", "available_dates": ["2026-04-18"], "rows": []},
+    )
+
+    response = client.get("/weekly-closed-features?captured_for_date=2026-04-18")
+
+    assert response.status_code == 200
+    assert calls == ["2026-04-18"]
+    assert "Отчет по закрытым фичам за неделю" in response.text
 
 
 def testSnapshotDevelopmentTotalMetricsMatchSnapshotIssuesFormula() -> None:
