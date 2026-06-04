@@ -22161,7 +22161,7 @@ def getRedmineProjectCustomFieldDiagnostics(
 
 
 @app.get("/health")
-def health() -> dict[str, object]:
+async def health() -> dict[str, object]:
     bitrixCredentialNormalized = str(config.bitrixCredential or "").strip()
     return {
         "status": "ok",

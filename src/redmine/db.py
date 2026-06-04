@@ -2646,6 +2646,7 @@ def listWeeklyClosedFeatureReport(snapshotDate: str | None = None) -> dict[str, 
         raise RuntimeError("DATABASE_URL is not set")
 
     with engine.connect() as connection:
+        connection.execute(text("SET LOCAL statement_timeout TO '15s'"))
         dateRows = connection.execute(
             text(
                 """
@@ -2737,35 +2738,43 @@ def listWeeklyClosedFeatureReport(snapshotDate: str | None = None) -> dict[str, 
                       AND LOWER(TRIM(COALESCE(ci.status_name, ''))) LIKE 'готов%'
                       AND LOWER(TRIM(COALESCE(pf.previous_status_name, ''))) NOT LIKE 'готов%'
                 ),
-                item_chain AS (
+                feature_tree AS (
                     SELECT
                         ci.project_redmine_id,
-                        ci.issue_redmine_id AS original_issue_redmine_id,
-                        ci.issue_redmine_id AS current_issue_redmine_id,
-                        ci.parent_issue_redmine_id AS next_parent_issue_redmine_id,
-                        LOWER(TRIM(COALESCE(ci.tracker_name, ''))) AS current_tracker_name
+                        cf.issue_redmine_id AS feature_issue_redmine_id,
+                        ci.issue_redmine_id,
+                        ci.parent_issue_redmine_id,
+                        ci.tracker_name,
+                        ci.estimated_hours,
+                        ci.risk_estimate_hours,
+                        ci.spent_hours,
+                        ARRAY[ci.issue_redmine_id]::BIGINT[] AS visited_issue_ids,
+                        1 AS depth
                     FROM current_items ci
+                    JOIN changed_features cf
+                        ON cf.project_redmine_id = ci.project_redmine_id
+                       AND ci.parent_issue_redmine_id = cf.issue_redmine_id
+                    WHERE ci.issue_redmine_id <> cf.issue_redmine_id
+
                     UNION ALL
+
                     SELECT
-                        item_chain.project_redmine_id,
-                        item_chain.original_issue_redmine_id,
-                        parent.issue_redmine_id AS current_issue_redmine_id,
-                        parent.parent_issue_redmine_id AS next_parent_issue_redmine_id,
-                        LOWER(TRIM(COALESCE(parent.tracker_name, ''))) AS current_tracker_name
-                    FROM item_chain
-                    JOIN current_items parent
-                        ON parent.project_redmine_id = item_chain.project_redmine_id
-                       AND parent.issue_redmine_id = item_chain.next_parent_issue_redmine_id
-                    WHERE item_chain.next_parent_issue_redmine_id IS NOT NULL
-                      AND item_chain.current_tracker_name <> 'feature'
-                ),
-                feature_links AS (
-                    SELECT
-                        project_redmine_id,
-                        original_issue_redmine_id,
-                        current_issue_redmine_id AS feature_issue_redmine_id
-                    FROM item_chain
-                    WHERE current_tracker_name = 'feature'
+                        ft.project_redmine_id,
+                        ft.feature_issue_redmine_id,
+                        child.issue_redmine_id,
+                        child.parent_issue_redmine_id,
+                        child.tracker_name,
+                        child.estimated_hours,
+                        child.risk_estimate_hours,
+                        child.spent_hours,
+                        ft.visited_issue_ids || child.issue_redmine_id,
+                        ft.depth + 1
+                    FROM feature_tree ft
+                    JOIN current_items child
+                        ON child.project_redmine_id = ft.project_redmine_id
+                       AND child.parent_issue_redmine_id = ft.issue_redmine_id
+                    WHERE ft.depth < 20
+                      AND NOT child.issue_redmine_id = ANY(ft.visited_issue_ids)
                 )
                 SELECT
                     cf.project_redmine_id,
@@ -2780,53 +2789,50 @@ def listWeeklyClosedFeatureReport(snapshotDate: str | None = None) -> dict[str, 
                     cf.baseline_estimate_hours,
                     COALESCE(SUM(
                         CASE
-                            WHEN LOWER(TRIM(COALESCE(child.tracker_name, ''))) IN ('разработка', 'процессы разработки')
-                            THEN COALESCE(child.estimated_hours, 0)
+                            WHEN LOWER(TRIM(COALESCE(ft.tracker_name, ''))) IN ('разработка', 'процессы разработки')
+                            THEN COALESCE(ft.estimated_hours, 0)
                             ELSE 0
                         END
                     ), 0) AS development_plan_hours,
                     COALESCE(SUM(
                         CASE
-                            WHEN LOWER(TRIM(COALESCE(child.tracker_name, ''))) IN ('разработка', 'процессы разработки')
-                            THEN COALESCE(child.risk_estimate_hours, child.estimated_hours, 0)
+                            WHEN LOWER(TRIM(COALESCE(ft.tracker_name, ''))) IN ('разработка', 'процессы разработки')
+                            THEN COALESCE(ft.risk_estimate_hours, ft.estimated_hours, 0)
                             ELSE 0
                         END
                     ), 0) AS development_risk_plan_hours,
                     COALESCE(SUM(
                         CASE
-                            WHEN LOWER(TRIM(COALESCE(child.tracker_name, ''))) IN ('разработка', 'процессы разработки')
-                            THEN COALESCE(child.spent_hours, 0)
+                            WHEN LOWER(TRIM(COALESCE(ft.tracker_name, ''))) IN ('разработка', 'процессы разработки')
+                            THEN COALESCE(ft.spent_hours, 0)
                             ELSE 0
                         END
                     ), 0) AS development_fact_hours,
                     COALESCE(SUM(
                         CASE
-                            WHEN LOWER(TRIM(COALESCE(child.tracker_name, ''))) = 'ошибка'
-                            THEN COALESCE(child.estimated_hours, 0)
+                            WHEN LOWER(TRIM(COALESCE(ft.tracker_name, ''))) = 'ошибка'
+                            THEN COALESCE(ft.estimated_hours, 0)
                             ELSE 0
                         END
                     ), 0) AS bug_plan_hours,
                     COALESCE(SUM(
                         CASE
-                            WHEN LOWER(TRIM(COALESCE(child.tracker_name, ''))) = 'ошибка'
-                            THEN COALESCE(child.risk_estimate_hours, child.estimated_hours, 0)
+                            WHEN LOWER(TRIM(COALESCE(ft.tracker_name, ''))) = 'ошибка'
+                            THEN COALESCE(ft.risk_estimate_hours, ft.estimated_hours, 0)
                             ELSE 0
                         END
                     ), 0) AS bug_risk_plan_hours,
                     COALESCE(SUM(
                         CASE
-                            WHEN LOWER(TRIM(COALESCE(child.tracker_name, ''))) = 'ошибка'
-                            THEN COALESCE(child.spent_hours, 0)
+                            WHEN LOWER(TRIM(COALESCE(ft.tracker_name, ''))) = 'ошибка'
+                            THEN COALESCE(ft.spent_hours, 0)
                             ELSE 0
                         END
                     ), 0) AS bug_fact_hours
                 FROM changed_features cf
-                LEFT JOIN feature_links fl
-                    ON fl.project_redmine_id = cf.project_redmine_id
-                   AND fl.feature_issue_redmine_id = cf.issue_redmine_id
-                LEFT JOIN current_items child
-                    ON child.project_redmine_id = fl.project_redmine_id
-                   AND child.issue_redmine_id = fl.original_issue_redmine_id
+                LEFT JOIN feature_tree ft
+                    ON ft.project_redmine_id = cf.project_redmine_id
+                   AND ft.feature_issue_redmine_id = cf.issue_redmine_id
                 GROUP BY
                     cf.project_redmine_id,
                     cf.project_name,
