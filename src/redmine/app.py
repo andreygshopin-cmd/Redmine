@@ -19604,7 +19604,7 @@ def buildWeeklyFeatureMetricChartHtml(
         '<section class="chart-panel">'
         "<h2>График выбранного параметра</h2>"
         f'<p class="chart-note">Параметр: {escape(metricLabel)}. Значения показаны в процентах. '
-        "Для каждой точки числитель и знаменатель суммируются по всем Feature проекта.</p>"
+        "Для каждой точки числитель и знаменатель суммируются только по Feature проекта, которые за неделю к этой дате стали Готов*.</p>"
         '<div class="chart-scroll">'
         + "".join(svgParts)
         + "</div>"

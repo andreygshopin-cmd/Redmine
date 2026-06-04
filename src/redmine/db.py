@@ -2915,7 +2915,30 @@ def listWeeklyFeatureMetricTrend(snapshotDate: str | None = None) -> dict[str, o
                         ON p.redmine_id = r.project_redmine_id
                     ORDER BY r.captured_for_date, r.project_redmine_id, r.captured_at DESC, r.id DESC
                 ),
-                features AS (
+                previous_runs AS (
+                    SELECT DISTINCT ON (lr.captured_for_date, lr.project_redmine_id)
+                        lr.captured_for_date AS current_captured_for_date,
+                        r.id,
+                        r.project_redmine_id,
+                        r.captured_for_date AS previous_captured_for_date
+                    FROM latest_runs lr
+                    JOIN issue_snapshot_runs r
+                        ON r.project_redmine_id = lr.project_redmine_id
+                       AND r.captured_for_date <= (lr.captured_for_date - INTERVAL '7 days')::date
+                    ORDER BY lr.captured_for_date, lr.project_redmine_id, r.captured_for_date DESC, r.captured_at DESC, r.id DESC
+                ),
+                previous_features AS (
+                    SELECT
+                        pr.current_captured_for_date,
+                        pr.project_redmine_id,
+                        i.issue_redmine_id,
+                        i.status_name AS previous_status_name
+                    FROM previous_runs pr
+                    JOIN issue_snapshot_items i
+                        ON i.snapshot_run_id = pr.id
+                    WHERE LOWER(TRIM(COALESCE(i.tracker_name, ''))) = 'feature'
+                ),
+                changed_features AS (
                     SELECT
                         lr.id AS snapshot_run_id,
                         lr.project_redmine_id,
@@ -2927,14 +2950,20 @@ def listWeeklyFeatureMetricTrend(snapshotDate: str | None = None) -> dict[str, o
                     FROM latest_runs lr
                     JOIN issue_snapshot_items i
                         ON i.snapshot_run_id = lr.id
+                    JOIN previous_features pf
+                        ON pf.project_redmine_id = lr.project_redmine_id
+                       AND pf.current_captured_for_date = lr.captured_for_date
+                       AND pf.issue_redmine_id = i.issue_redmine_id
                     WHERE LOWER(TRIM(COALESCE(i.tracker_name, ''))) = 'feature'
+                      AND LOWER(TRIM(COALESCE(i.status_name, ''))) LIKE 'готов%'
+                      AND LOWER(TRIM(COALESCE(pf.previous_status_name, ''))) NOT LIKE 'готов%'
                 ),
                 feature_tree AS (
                     SELECT
-                        f.snapshot_run_id,
-                        f.project_redmine_id,
-                        f.captured_for_date,
-                        f.feature_issue_redmine_id,
+                        cf.snapshot_run_id,
+                        cf.project_redmine_id,
+                        cf.captured_for_date,
+                        cf.feature_issue_redmine_id,
                         child.issue_redmine_id,
                         child.tracker_name,
                         child.parent_issue_redmine_id,
@@ -2943,11 +2972,11 @@ def listWeeklyFeatureMetricTrend(snapshotDate: str | None = None) -> dict[str, o
                         child.spent_hours,
                         ARRAY[child.issue_redmine_id::BIGINT] AS visited_issue_ids,
                         1 AS depth
-                    FROM features f
+                    FROM changed_features cf
                     JOIN issue_snapshot_items child
-                        ON child.snapshot_run_id = f.snapshot_run_id
-                       AND child.parent_issue_redmine_id = f.feature_issue_redmine_id
-                    WHERE child.issue_redmine_id <> f.feature_issue_redmine_id
+                        ON child.snapshot_run_id = cf.snapshot_run_id
+                       AND child.parent_issue_redmine_id = cf.feature_issue_redmine_id
+                    WHERE child.issue_redmine_id <> cf.feature_issue_redmine_id
 
                     UNION ALL
 
@@ -2979,7 +3008,7 @@ def listWeeklyFeatureMetricTrend(snapshotDate: str | None = None) -> dict[str, o
                         project_identifier,
                         captured_for_date,
                         SUM(baseline_estimate_hours) AS baseline_hours
-                    FROM features
+                    FROM changed_features
                     GROUP BY
                         snapshot_run_id,
                         project_redmine_id,
