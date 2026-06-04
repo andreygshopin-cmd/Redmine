@@ -268,8 +268,39 @@ def testWeeklyClosedFeaturesReportPageRendersRows(monkeypatch) -> None:
             ],
         },
     )
+    monkeypatch.setattr(
+        app_module,
+        "listWeeklyFeatureMetricTrend",
+        lambda capturedForDate=None: {
+            "selected_date": capturedForDate or "2026-04-18",
+            "available_dates": ["2026-04-18", "2026-04-11"],
+            "trend_dates": ["2026-04-11", "2026-04-18"],
+            "rows": [
+                {
+                    "project_redmine_id": 10,
+                    "project_name": "Billing",
+                    "project_identifier": "billing",
+                    "captured_for_date": "2026-04-11",
+                    "baseline_hours": 10,
+                    "development_plan_hours": 20,
+                    "development_fact_hours": 10,
+                    "bug_fact_hours": 1,
+                },
+                {
+                    "project_redmine_id": 10,
+                    "project_name": "Billing",
+                    "project_identifier": "billing",
+                    "captured_for_date": "2026-04-18",
+                    "baseline_hours": 10,
+                    "development_plan_hours": 20,
+                    "development_fact_hours": 18,
+                    "bug_fact_hours": 2,
+                },
+            ],
+        },
+    )
 
-    body = app_module.buildWeeklyClosedFeaturesReportPage("2026-04-18")
+    body = app_module.buildWeeklyClosedFeaturesReportPage("2026-04-18", "dev_fact_to_plan")
 
     assert "Отчет по закрытым фичам за неделю" in body
     assert "Billing" in body
@@ -278,10 +309,15 @@ def testWeeklyClosedFeaturesReportPageRendersRows(monkeypatch) -> None:
     assert "Готово(КОТ)" in body
     assert "25,0" in body
     assert "4,0" in body
+    assert 'name="metric"' in body
+    assert "факт по разработке / план" in body
+    assert "weekly-feature-chart" in body
+    assert "90,0%" in body
 
 
 def testWeeklyClosedFeaturesRouteUsesSelectedDate(monkeypatch) -> None:
     calls: list[str | None] = []
+    trendCalls: list[str | None] = []
 
     monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://example/db")
     monkeypatch.setattr(app_module, "ensureProjectsTable", lambda: None)
@@ -292,12 +328,20 @@ def testWeeklyClosedFeaturesRouteUsesSelectedDate(monkeypatch) -> None:
         lambda capturedForDate=None: calls.append(capturedForDate)
         or {"selected_date": "2026-04-18", "available_dates": ["2026-04-18"], "rows": []},
     )
+    monkeypatch.setattr(
+        app_module,
+        "listWeeklyFeatureMetricTrend",
+        lambda capturedForDate=None: trendCalls.append(capturedForDate)
+        or {"selected_date": "2026-04-18", "available_dates": ["2026-04-18"], "trend_dates": [], "rows": []},
+    )
 
-    response = client.get("/weekly-closed-features?captured_for_date=2026-04-18")
+    response = client.get("/weekly-closed-features?captured_for_date=2026-04-18&metric=plan_to_base")
 
     assert response.status_code == 200
     assert calls == ["2026-04-18"]
+    assert trendCalls == ["2026-04-18"]
     assert "Отчет по закрытым фичам за неделю" in response.text
+    assert "план / база" in response.text
 
 
 def testSnapshotDevelopmentTotalMetricsMatchSnapshotIssuesFormula() -> None:

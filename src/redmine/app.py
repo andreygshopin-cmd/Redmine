@@ -87,6 +87,7 @@ from src.redmine.db import (
     listStoredProjects,
     listUsers,
     listWeeklyClosedFeatureReport,
+    listWeeklyFeatureMetricTrend,
     pruneUnchangedIssueSnapshots,
     seedInitialUsers,
     storeUserPasswordResetToken,
@@ -19384,15 +19385,237 @@ def buildProjectsSummaryPage() -> str:
 </html>"""
 
 
-def buildWeeklyClosedFeaturesReportPage(capturedForDate: str | None = None) -> str:
+WEEKLY_FEATURE_METRIC_OPTIONS = [
+    ("fact_dev_bug_to_base", "факт по разработке и ошибкам / база"),
+    ("bug_fact_to_dev_fact", "факт по ошибкам / факт по разработке"),
+    ("dev_fact_to_base", "факт по разработке / база"),
+    ("dev_fact_to_plan", "факт по разработке / план"),
+    ("plan_to_base", "план / база"),
+]
+WEEKLY_FEATURE_METRIC_LABELS = dict(WEEKLY_FEATURE_METRIC_OPTIONS)
+
+
+def normalizeWeeklyFeatureMetricKey(metricKey: str | None) -> str:
+    resolvedKey = str(metricKey or "").strip()
+    if resolvedKey in WEEKLY_FEATURE_METRIC_LABELS:
+        return resolvedKey
+    return WEEKLY_FEATURE_METRIC_OPTIONS[0][0]
+
+
+def _weeklyFeatureMetricParts(row: dict[str, object], metricKey: str) -> tuple[float, float]:
+    baselineHours = float(row.get("baseline_hours") or 0)
+    developmentPlanHours = float(row.get("development_plan_hours") or 0)
+    developmentFactHours = float(row.get("development_fact_hours") or 0)
+    bugFactHours = float(row.get("bug_fact_hours") or 0)
+
+    if metricKey == "bug_fact_to_dev_fact":
+        return bugFactHours, developmentFactHours
+    if metricKey == "dev_fact_to_base":
+        return developmentFactHours, baselineHours
+    if metricKey == "dev_fact_to_plan":
+        return developmentFactHours, developmentPlanHours
+    if metricKey == "plan_to_base":
+        return developmentPlanHours, baselineHours
+    return developmentFactHours + bugFactHours, baselineHours
+
+
+def _formatWeeklyFeatureChartDate(value: str) -> str:
+    try:
+        return date.fromisoformat(value).strftime("%d.%m")
+    except ValueError:
+        return value
+
+
+def _formatWeeklyFeatureChartValue(value: float) -> str:
+    return f"{value:.1f}".replace(".", ",")
+
+
+def buildWeeklyFeatureMetricChartHtml(
+    trendPayload: dict[str, object],
+    metricKey: str,
+    trendError: str = "",
+) -> str:
+    if trendError:
+        return (
+            '<section class="chart-panel">'
+            "<h2>График выбранного параметра</h2>"
+            f'<p class="empty-cell">Не удалось построить график: {escape(trendError)}</p>'
+            "</section>"
+        )
+
+    trendDates = [str(value) for value in trendPayload.get("trend_dates") or []]
+    rows = [row for row in trendPayload.get("rows") or [] if isinstance(row, dict)]
+    if not trendDates or not rows:
+        return (
+            '<section class="chart-panel">'
+            "<h2>График выбранного параметра</h2>"
+            '<p class="empty-cell">Нет данных для графика с начала года.</p>'
+            "</section>"
+        )
+
+    projectSeries: dict[str, dict[str, object]] = {}
+    for row in rows:
+        numerator, denominator = _weeklyFeatureMetricParts(row, metricKey)
+        if denominator <= 0:
+            continue
+        value = numerator / denominator * 100
+        projectKey = str(row.get("project_redmine_id") or row.get("project_identifier") or row.get("project_name") or "")
+        if not projectKey:
+            continue
+        series = projectSeries.setdefault(
+            projectKey,
+            {
+                "name": str(row.get("project_name") or projectKey),
+                "values": {},
+            },
+        )
+        valuesByDate = series["values"]
+        if isinstance(valuesByDate, dict):
+            valuesByDate[str(row.get("captured_for_date") or "")] = value
+
+    allValues = [
+        float(value)
+        for series in projectSeries.values()
+        for value in (series.get("values") or {}).values()
+        if value is not None
+    ]
+    if not allValues:
+        return (
+            '<section class="chart-panel">'
+            "<h2>График выбранного параметра</h2>"
+            '<p class="empty-cell">Нет точек с ненулевым знаменателем для выбранного параметра.</p>'
+            "</section>"
+        )
+
+    svgWidth = 1180
+    svgHeight = 430
+    marginLeft = 64
+    marginRight = 24
+    marginTop = 26
+    marginBottom = 68
+    plotWidth = svgWidth - marginLeft - marginRight
+    plotHeight = svgHeight - marginTop - marginBottom
+    rawMax = max(allValues)
+    chartMax = max(10.0, (((rawMax * 1.12) // 10) + 1) * 10)
+    if rawMax <= 100:
+        chartMax = max(100.0, chartMax)
+
+    def xForIndex(index: int) -> float:
+        if len(trendDates) <= 1:
+            return marginLeft + plotWidth / 2
+        return marginLeft + plotWidth * index / (len(trendDates) - 1)
+
+    def yForValue(value: float) -> float:
+        return marginTop + plotHeight - (value / chartMax * plotHeight)
+
+    palette = [
+        "#375D77",
+        "#FF6C0E",
+        "#52CEE6",
+        "#FFC600",
+        "#2F8F6B",
+        "#B45F06",
+        "#7A6BB7",
+        "#D9534F",
+        "#4A90A4",
+        "#8C6D31",
+    ]
+
+    svgParts: list[str] = [
+        f'<svg class="weekly-feature-chart" viewBox="0 0 {svgWidth} {svgHeight}" role="img" aria-label="График выбранного параметра">',
+        f'<rect x="0" y="0" width="{svgWidth}" height="{svgHeight}" rx="12" fill="#ffffff"/>',
+        f'<line x1="{marginLeft}" y1="{marginTop + plotHeight}" x2="{marginLeft + plotWidth}" y2="{marginTop + plotHeight}" stroke="#d9e5eb"/>',
+        f'<line x1="{marginLeft}" y1="{marginTop}" x2="{marginLeft}" y2="{marginTop + plotHeight}" stroke="#d9e5eb"/>',
+    ]
+
+    for tickIndex in range(5):
+        value = chartMax * tickIndex / 4
+        y = yForValue(value)
+        svgParts.append(f'<line x1="{marginLeft}" y1="{y:.2f}" x2="{marginLeft + plotWidth}" y2="{y:.2f}" stroke="#eef3f5"/>')
+        svgParts.append(
+            f'<text x="{marginLeft - 10}" y="{y + 4:.2f}" text-anchor="end" class="chart-axis-label">'
+            f'{escape(_formatWeeklyFeatureChartValue(value))}%</text>'
+        )
+
+    labelStep = max(1, len(trendDates) // 10)
+    for index, dateValue in enumerate(trendDates):
+        if index % labelStep != 0 and index != len(trendDates) - 1:
+            continue
+        x = xForIndex(index)
+        svgParts.append(f'<line x1="{x:.2f}" y1="{marginTop + plotHeight}" x2="{x:.2f}" y2="{marginTop + plotHeight + 5}" stroke="#d9e5eb"/>')
+        svgParts.append(
+            f'<text x="{x:.2f}" y="{marginTop + plotHeight + 24}" text-anchor="middle" class="chart-axis-label">'
+            f'{escape(_formatWeeklyFeatureChartDate(dateValue))}</text>'
+        )
+
+    legendParts: list[str] = []
+    for projectIndex, (projectKey, series) in enumerate(
+        sorted(projectSeries.items(), key=lambda item: str(item[1].get("name") or "").lower())
+    ):
+        valuesByDate = series.get("values") if isinstance(series.get("values"), dict) else {}
+        points: list[tuple[float, float, float]] = []
+        for dateIndex, dateValue in enumerate(trendDates):
+            value = valuesByDate.get(dateValue) if isinstance(valuesByDate, dict) else None
+            if value is None:
+                continue
+            points.append((xForIndex(dateIndex), yForValue(float(value)), float(value)))
+        if not points:
+            continue
+        color = palette[projectIndex % len(palette)]
+        pathData = " ".join(
+            f"{'M' if pointIndex == 0 else 'L'} {x:.2f} {y:.2f}"
+            for pointIndex, (x, y, _value) in enumerate(points)
+        )
+        svgParts.append(f'<path d="{pathData}" fill="none" stroke="{color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>')
+        for x, y, value in points:
+            svgParts.append(
+                f'<circle cx="{x:.2f}" cy="{y:.2f}" r="3.2" fill="{color}">'
+                f'<title>{escape(str(series.get("name") or projectKey))}: {escape(_formatWeeklyFeatureChartValue(value))}%</title>'
+                "</circle>"
+            )
+        legendParts.append(
+            '<span class="chart-legend-item">'
+            f'<span class="chart-legend-swatch" style="background:{color}"></span>'
+            f'{escape(str(series.get("name") or projectKey))}'
+            "</span>"
+        )
+
+    svgParts.append("</svg>")
+    metricLabel = WEEKLY_FEATURE_METRIC_LABELS.get(metricKey, WEEKLY_FEATURE_METRIC_LABELS[WEEKLY_FEATURE_METRIC_OPTIONS[0][0]])
+    return (
+        '<section class="chart-panel">'
+        "<h2>График выбранного параметра</h2>"
+        f'<p class="chart-note">Параметр: {escape(metricLabel)}. Значения показаны в процентах. '
+        "Для каждой точки числитель и знаменатель суммируются по всем Feature проекта.</p>"
+        '<div class="chart-scroll">'
+        + "".join(svgParts)
+        + "</div>"
+        f'<div class="chart-legend">{"".join(legendParts)}</div>'
+        "</section>"
+    )
+
+
+def buildWeeklyClosedFeaturesReportPage(capturedForDate: str | None = None, metricKey: str | None = None) -> str:
     payload = listWeeklyClosedFeatureReport(capturedForDate)
     availableDates = [str(value) for value in payload.get("available_dates") or []]
     selectedDate = str(payload.get("selected_date") or "")
     rows = list(payload.get("rows") or [])
+    selectedMetricKey = normalizeWeeklyFeatureMetricKey(metricKey)
+    try:
+        trendPayload = listWeeklyFeatureMetricTrend(selectedDate)
+        trendError = ""
+    except Exception as error:  # pragma: no cover - protects the page from a slow report query in production.
+        trendPayload = {"selected_date": selectedDate, "available_dates": availableDates, "trend_dates": [], "rows": []}
+        trendError = str(error)
+    chartHtml = buildWeeklyFeatureMetricChartHtml(trendPayload, selectedMetricKey, trendError)
     redmineIssueUrlBase = f"{(config.redmineUrl or 'https://redmine.sms-it.ru').rstrip('/')}/issues/"
     dateOptions = "".join(
         f'<option value="{escape(dateValue)}"{" selected" if dateValue == selectedDate else ""}>{escape(dateValue)}</option>'
         for dateValue in availableDates
+    )
+    metricOptions = "".join(
+        f'<option value="{escape(key)}"{" selected" if key == selectedMetricKey else ""}>{escape(label)}</option>'
+        for key, label in WEEKLY_FEATURE_METRIC_OPTIONS
     )
 
     rowHtmlParts: list[str] = []
@@ -19502,6 +19725,59 @@ __LOCAL_GOLOS_FONT_CSS__
       background: #eef2f5;
       cursor: pointer;
     }}
+    .chart-panel {{
+      margin: 0 0 18px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #ffffff;
+    }}
+    .chart-panel h2 {{
+      margin: 0 0 8px;
+      font-size: 1.15rem;
+      color: var(--text);
+    }}
+    .chart-note {{
+      margin: 0 0 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }}
+    .chart-scroll {{
+      width: 100%;
+      overflow-x: auto;
+    }}
+    .weekly-feature-chart {{
+      display: block;
+      width: 100%;
+      min-width: 920px;
+      height: auto;
+    }}
+    .chart-axis-label {{
+      fill: var(--muted);
+      font: 12px "Golos", "Segoe UI", sans-serif;
+    }}
+    .chart-legend {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      max-height: 96px;
+      overflow: auto;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.86rem;
+    }}
+    .chart-legend-item {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }}
+    .chart-legend-swatch {{
+      width: 22px;
+      height: 3px;
+      border-radius: 999px;
+      display: inline-block;
+    }}
     .report-meta {{ margin: 0 0 12px; color: var(--muted); }}
     .table-wrap {{
       overflow: auto;
@@ -19554,11 +19830,15 @@ __LOCAL_GOLOS_FONT_CSS__
     <h1>Отчет по закрытым фичам за неделю</h1>
     <p class="lead">Показываются Feature, у которых статус в выбранном срезе стал «Готов*», а в опорном срезе за неделю до него еще не был «Готов*».</p>
     <form class="toolbar" method="get">
+      <label>Параметр
+        <select name="metric">{metricOptions}</select>
+      </label>
       <label>Дата среза
         <select name="captured_for_date">{dateOptions}</select>
       </label>
       <button type="submit">Показать</button>
     </form>
+    {chartHtml}
     <p class="report-meta">Дата среза: {escape(selectedDate or "—")}. Найдено Feature: {len(rows)}.</p>
     <div class="table-wrap">
       <table>
@@ -19601,13 +19881,14 @@ def getProjectsSummaryPage() -> HTMLResponse:
 @app.get("/weekly-closed-features", response_class=HTMLResponse)
 def getWeeklyClosedFeaturesReportPage(
     captured_for_date: str | None = Query(None, description="Дата среза YYYY-MM-DD"),
+    metric: str | None = Query(None, description="Параметр графика"),
 ) -> HTMLResponse:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
 
     ensureProjectsTable()
     ensureIssueSnapshotTables()
-    return _renderHtmlPage(buildWeeklyClosedFeaturesReportPage(captured_for_date))
+    return _renderHtmlPage(buildWeeklyClosedFeaturesReportPage(captured_for_date, metric))
 
 
 @app.get("/strange-snapshot-issues", response_class=HTMLResponse)
