@@ -344,6 +344,64 @@ def testWeeklyClosedFeaturesRouteUsesSelectedDate(monkeypatch) -> None:
     assert "план / база" in response.text
 
 
+def testWeeklyFeatureMetricChartSupportsHiddenProjects() -> None:
+    body = app_module.buildWeeklyFeatureMetricChartHtml(
+        {
+            "trend_dates": ["2026-04-11"],
+            "rows": [
+                {
+                    "project_redmine_id": 10,
+                    "project_name": "Billing",
+                    "captured_for_date": "2026-04-11",
+                    "baseline_hours": 10,
+                    "development_plan_hours": 20,
+                    "development_fact_hours": 18,
+                    "bug_fact_hours": 2,
+                }
+            ],
+        },
+        "fact_dev_bug_to_base",
+        {"10"},
+    )
+
+    assert 'data-project-key="10"' in body
+    assert 'data-project-name="Billing"' in body
+    assert 'data-value="200,0"' in body
+    assert "chart-project-toggle" in body
+    assert "is-hidden" in body
+    assert 'data-date="11.04"' in body
+
+
+def testWeeklyClosedFeaturesSettingsPreserveUserSettings(monkeypatch) -> None:
+    saved: dict[str, object] = {}
+    existingSettings = {"widgets": {"project-state-1": {"title": "Dashboard"}}}
+
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://example/db")
+    monkeypatch.setattr(app_module, "ensureUsersTable", lambda: None)
+    monkeypatch.setattr(
+        app_module,
+        "getUserByLogin",
+        lambda login: {"login": login, "dashboard_settings": existingSettings},
+    )
+
+    def fakeUpdateUserDashboardSettings(login, settings):
+        saved["login"] = login
+        saved["settings"] = settings
+        return {"dashboard_settings": settings}
+
+    monkeypatch.setattr(app_module, "updateUserDashboardSettings", fakeUpdateUserDashboardSettings)
+
+    response = client.post(
+        "/api/weekly-closed-features/settings",
+        json={"hidden_project_keys": ["10", "20", "10", ""]},
+    )
+
+    assert response.status_code == 200
+    assert saved["login"] == "tester"
+    assert saved["settings"]["widgets"] == existingSettings["widgets"]
+    assert saved["settings"]["weekly_closed_features_report"]["hidden_project_keys"] == ["10", "20"]
+
+
 def testSnapshotDevelopmentTotalMetricsMatchSnapshotIssuesFormula() -> None:
     metrics = app_module.buildSnapshotDevelopmentTotalMetrics(
         {

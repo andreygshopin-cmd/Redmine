@@ -559,6 +559,10 @@ class DashboardSettingsPayload(BaseModel):
     settings: dict[str, object] = {}
 
 
+class WeeklyFeatureReportSettingsPayload(BaseModel):
+    hidden_project_keys: list[str] = []
+
+
 def _buildRedmineApiSession() -> requests.Session:
     session = requests.Session()
     session.headers.update({"X-Redmine-API-Key": config.apiKey})
@@ -19433,6 +19437,7 @@ def _formatWeeklyFeatureChartValue(value: float) -> str:
 def buildWeeklyFeatureMetricChartHtml(
     trendPayload: dict[str, object],
     metricKey: str,
+    hiddenProjectKeys: set[str] | None = None,
     trendError: str = "",
 ) -> str:
     if trendError:
@@ -19521,6 +19526,7 @@ def buildWeeklyFeatureMetricChartHtml(
         "#8C6D31",
     ]
 
+    hiddenProjectKeys = hiddenProjectKeys or set()
     svgParts: list[str] = [
         f'<svg class="weekly-feature-chart" viewBox="0 0 {svgWidth} {svgHeight}" role="img" aria-label="График выбранного параметра">',
         f'<rect x="0" y="0" width="{svgWidth}" height="{svgHeight}" rx="12" fill="#ffffff"/>',
@@ -19553,31 +19559,43 @@ def buildWeeklyFeatureMetricChartHtml(
         sorted(projectSeries.items(), key=lambda item: str(item[1].get("name") or "").lower())
     ):
         valuesByDate = series.get("values") if isinstance(series.get("values"), dict) else {}
-        points: list[tuple[float, float, float]] = []
+        points: list[tuple[float, float, float, str]] = []
         for dateIndex, dateValue in enumerate(trendDates):
             value = valuesByDate.get(dateValue) if isinstance(valuesByDate, dict) else None
             if value is None:
                 continue
-            points.append((xForIndex(dateIndex), yForValue(float(value)), float(value)))
+            points.append((xForIndex(dateIndex), yForValue(float(value)), float(value), dateValue))
         if not points:
             continue
         color = palette[projectIndex % len(palette)]
+        isHidden = str(projectKey) in hiddenProjectKeys
+        hiddenClass = " is-hidden" if isHidden else ""
+        escapedProjectKey = escape(str(projectKey))
+        escapedProjectName = escape(str(series.get("name") or projectKey))
         pathData = " ".join(
             f"{'M' if pointIndex == 0 else 'L'} {x:.2f} {y:.2f}"
-            for pointIndex, (x, y, _value) in enumerate(points)
+            for pointIndex, (x, y, _value, _dateValue) in enumerate(points)
         )
-        svgParts.append(f'<path d="{pathData}" fill="none" stroke="{color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>')
-        for x, y, value in points:
+        svgParts.append(
+            f'<path class="chart-series{hiddenClass}" data-project-key="{escapedProjectKey}" '
+            f'd="{pathData}" fill="none" stroke="{color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>'
+        )
+        for x, y, value, pointDate in points:
+            formattedValue = _formatWeeklyFeatureChartValue(value)
             svgParts.append(
-                f'<circle cx="{x:.2f}" cy="{y:.2f}" r="3.2" fill="{color}">'
-                f'<title>{escape(str(series.get("name") or projectKey))}: {escape(_formatWeeklyFeatureChartValue(value))}%</title>'
+                f'<circle class="chart-point{hiddenClass}" data-project-key="{escapedProjectKey}" '
+                f'data-project-name="{escapedProjectName}" data-value="{escape(formattedValue)}" '
+                f'data-date="{escape(_formatWeeklyFeatureChartDate(pointDate))}" '
+                f'cx="{x:.2f}" cy="{y:.2f}" r="3.2" fill="{color}">'
+                f'<title>{escapedProjectName}: {escape(formattedValue)}%</title>'
                 "</circle>"
             )
         legendParts.append(
-            '<span class="chart-legend-item">'
+            f'<label class="chart-legend-item{" is-muted" if isHidden else ""}">'
+            f'<input class="chart-project-toggle" type="checkbox" data-project-key="{escapedProjectKey}"{" checked" if not isHidden else ""}>'
             f'<span class="chart-legend-swatch" style="background:{color}"></span>'
-            f'{escape(str(series.get("name") or projectKey))}'
-            "</span>"
+            f'{escapedProjectName}'
+            "</label>"
         )
 
     svgParts.append("</svg>")
@@ -19595,7 +19613,11 @@ def buildWeeklyFeatureMetricChartHtml(
     )
 
 
-def buildWeeklyClosedFeaturesReportPage(capturedForDate: str | None = None, metricKey: str | None = None) -> str:
+def buildWeeklyClosedFeaturesReportPage(
+    capturedForDate: str | None = None,
+    metricKey: str | None = None,
+    hiddenProjectKeys: list[str] | set[str] | None = None,
+) -> str:
     payload = listWeeklyClosedFeatureReport(capturedForDate)
     availableDates = [str(value) for value in payload.get("available_dates") or []]
     selectedDate = str(payload.get("selected_date") or "")
@@ -19607,7 +19629,8 @@ def buildWeeklyClosedFeaturesReportPage(capturedForDate: str | None = None, metr
     except Exception as error:  # pragma: no cover - protects the page from a slow report query in production.
         trendPayload = {"selected_date": selectedDate, "available_dates": availableDates, "trend_dates": [], "rows": []}
         trendError = "запрос к базе данных выполнялся слишком долго; попробуйте обновить страницу позже."
-    chartHtml = buildWeeklyFeatureMetricChartHtml(trendPayload, selectedMetricKey, trendError)
+    hiddenProjectKeySet = {str(value) for value in (hiddenProjectKeys or []) if str(value).strip()}
+    chartHtml = buildWeeklyFeatureMetricChartHtml(trendPayload, selectedMetricKey, hiddenProjectKeySet, trendError)
     redmineIssueUrlBase = f"{(config.redmineUrl or 'https://redmine.sms-it.ru').rstrip('/')}/issues/"
     dateOptions = "".join(
         f'<option value="{escape(dateValue)}"{" selected" if dateValue == selectedDate else ""}>{escape(dateValue)}</option>'
@@ -19617,6 +19640,7 @@ def buildWeeklyClosedFeaturesReportPage(capturedForDate: str | None = None, metr
         f'<option value="{escape(key)}"{" selected" if key == selectedMetricKey else ""}>{escape(label)}</option>'
         for key, label in WEEKLY_FEATURE_METRIC_OPTIONS
     )
+    hiddenProjectKeysJson = json.dumps(sorted(hiddenProjectKeySet), ensure_ascii=False)
 
     rowHtmlParts: list[str] = []
     for row in rows:
@@ -19771,12 +19795,46 @@ __LOCAL_GOLOS_FONT_CSS__
       align-items: center;
       gap: 6px;
       white-space: nowrap;
+      cursor: pointer;
+    }}
+    .chart-legend-item.is-muted {{
+      opacity: 0.42;
+    }}
+    .chart-legend-item input {{
+      width: 14px;
+      height: 14px;
+      margin: 0;
     }}
     .chart-legend-swatch {{
       width: 22px;
       height: 3px;
       border-radius: 999px;
       display: inline-block;
+    }}
+    .chart-series.is-hidden,
+    .chart-point.is-hidden {{
+      display: none;
+    }}
+    .chart-point {{
+      cursor: crosshair;
+    }}
+    .chart-tooltip {{
+      position: fixed;
+      z-index: 30;
+      display: none;
+      max-width: min(360px, calc(100vw - 32px));
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: 0 10px 24px rgba(22, 50, 74, 0.14);
+      color: var(--text);
+      font-size: 0.84rem;
+      pointer-events: none;
+    }}
+    .chart-tooltip strong {{
+      display: block;
+      margin-bottom: 2px;
     }}
     .report-meta {{ margin: 0 0 12px; color: var(--muted); }}
     .table-wrap {{
@@ -19867,9 +19925,120 @@ __LOCAL_GOLOS_FONT_CSS__
         <tbody>{tableBody}</tbody>
       </table>
     </div>
+    <div class="chart-tooltip" id="weeklyFeatureChartTooltip" role="tooltip"></div>
   </main>
+  <script>
+    const weeklyFeatureHiddenProjectKeys = new Set({hiddenProjectKeysJson});
+    const weeklyFeatureTooltip = document.getElementById("weeklyFeatureChartTooltip");
+
+    function applyWeeklyFeatureProjectVisibility() {{
+      document.querySelectorAll(".chart-series, .chart-point").forEach((node) => {{
+        const projectKey = String(node.getAttribute("data-project-key") || "");
+        node.classList.toggle("is-hidden", weeklyFeatureHiddenProjectKeys.has(projectKey));
+      }});
+      document.querySelectorAll(".chart-project-toggle").forEach((checkbox) => {{
+        const projectKey = String(checkbox.getAttribute("data-project-key") || "");
+        const isVisible = !weeklyFeatureHiddenProjectKeys.has(projectKey);
+        checkbox.checked = isVisible;
+        checkbox.closest(".chart-legend-item")?.classList.toggle("is-muted", !isVisible);
+      }});
+    }}
+
+    async function saveWeeklyFeatureProjectVisibility() {{
+      try {{
+        await fetch("/api/weekly-closed-features/settings", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{ hidden_project_keys: Array.from(weeklyFeatureHiddenProjectKeys) }}),
+        }});
+      }} catch (error) {{
+        console.warn("Не удалось сохранить настройки легенды отчета.", error);
+      }}
+    }}
+
+    document.addEventListener("change", (event) => {{
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement) || !target.classList.contains("chart-project-toggle")) {{
+        return;
+      }}
+      const projectKey = String(target.getAttribute("data-project-key") || "");
+      if (!projectKey) {{
+        return;
+      }}
+      if (target.checked) {{
+        weeklyFeatureHiddenProjectKeys.delete(projectKey);
+      }} else {{
+        weeklyFeatureHiddenProjectKeys.add(projectKey);
+      }}
+      applyWeeklyFeatureProjectVisibility();
+      saveWeeklyFeatureProjectVisibility();
+    }});
+
+    function showWeeklyFeatureTooltip(point, event) {{
+      if (!weeklyFeatureTooltip || point.classList.contains("is-hidden")) {{
+        return;
+      }}
+      const projectName = String(point.getAttribute("data-project-name") || "");
+      const value = String(point.getAttribute("data-value") || "");
+      const dateValue = String(point.getAttribute("data-date") || "");
+      weeklyFeatureTooltip.innerHTML = `<strong>${{projectName}}</strong><span>${{dateValue}}: ${{value}}%</span>`;
+      weeklyFeatureTooltip.style.display = "block";
+      const offset = 14;
+      const tooltipRect = weeklyFeatureTooltip.getBoundingClientRect();
+      const left = Math.min(window.innerWidth - tooltipRect.width - 12, event.clientX + offset);
+      const top = Math.min(window.innerHeight - tooltipRect.height - 12, event.clientY + offset);
+      weeklyFeatureTooltip.style.left = `${{Math.max(12, left)}}px`;
+      weeklyFeatureTooltip.style.top = `${{Math.max(12, top)}}px`;
+    }}
+
+    document.addEventListener("pointermove", (event) => {{
+      const target = event.target;
+      if (target instanceof SVGCircleElement && target.classList.contains("chart-point")) {{
+        showWeeklyFeatureTooltip(target, event);
+      }}
+    }});
+    document.addEventListener("pointerleave", (event) => {{
+      const target = event.target;
+      if (target instanceof SVGCircleElement && target.classList.contains("chart-point") && weeklyFeatureTooltip) {{
+        weeklyFeatureTooltip.style.display = "none";
+      }}
+    }}, true);
+    applyWeeklyFeatureProjectVisibility();
+  </script>
 </body>
 </html>""".replace("__LOCAL_GOLOS_FONT_CSS__", LOCAL_GOLOS_FONT_CSS)
+
+
+def _getWeeklyFeatureReportHiddenProjectKeys(user: dict[str, object] | None) -> list[str]:
+    settings = _parseDashboardSettings(user.get("dashboard_settings") if user else {})
+    reportSettings = settings.get("weekly_closed_features_report")
+    if not isinstance(reportSettings, dict):
+        return []
+    rawKeys = reportSettings.get("hidden_project_keys")
+    if not isinstance(rawKeys, list):
+        return []
+    return [str(value) for value in rawKeys if str(value).strip()]
+
+
+def _saveWeeklyFeatureReportHiddenProjectKeys(login: str, hiddenProjectKeys: list[str]) -> dict[str, object]:
+    userRow = getUserByLogin(login)
+    if not userRow:
+        raise HTTPException(status_code=404, detail="Пользователь не найден.")
+    settings = _parseDashboardSettings(userRow.get("dashboard_settings"))
+    reportSettings = settings.get("weekly_closed_features_report")
+    if not isinstance(reportSettings, dict):
+        reportSettings = {}
+    normalizedKeys: list[str] = []
+    for value in hiddenProjectKeys:
+        key = str(value or "").strip()
+        if key and key not in normalizedKeys:
+            normalizedKeys.append(key)
+    reportSettings["hidden_project_keys"] = normalizedKeys[:1000]
+    settings["weekly_closed_features_report"] = reportSettings
+    updated = updateUserDashboardSettings(login, settings)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Пользователь не найден.")
+    return _parseDashboardSettings(updated.get("dashboard_settings"))
 
 
 @app.get("/projects-summary", response_class=HTMLResponse)
@@ -19885,6 +20054,7 @@ def getProjectsSummaryPage() -> HTMLResponse:
 
 @app.get("/weekly-closed-features", response_class=HTMLResponse)
 def getWeeklyClosedFeaturesReportPage(
+    request: Request,
     captured_for_date: str | None = Query(None, description="Дата среза YYYY-MM-DD"),
     metric: str | None = Query(None, description="Параметр графика"),
 ) -> HTMLResponse:
@@ -19893,7 +20063,25 @@ def getWeeklyClosedFeaturesReportPage(
 
     ensureProjectsTable()
     ensureIssueSnapshotTables()
-    return _renderHtmlPage(buildWeeklyClosedFeaturesReportPage(captured_for_date, metric))
+    user = getattr(request.state, "current_user", None) or _getCurrentUser(request)
+    hiddenProjectKeys = _getWeeklyFeatureReportHiddenProjectKeys(user)
+    return _renderHtmlPage(buildWeeklyClosedFeaturesReportPage(captured_for_date, metric, hiddenProjectKeys))
+
+
+@app.post("/api/weekly-closed-features/settings")
+def saveWeeklyClosedFeaturesSettings(
+    request: Request,
+    payload: WeeklyFeatureReportSettingsPayload,
+) -> dict[str, object]:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureUsersTable()
+    user = _requireAuthenticatedUser(request)
+    login = str(user.get("login") or "").strip()
+    settings = _saveWeeklyFeatureReportHiddenProjectKeys(login, payload.hidden_project_keys)
+    reportSettings = settings.get("weekly_closed_features_report")
+    return {"settings": reportSettings if isinstance(reportSettings, dict) else {}}
 
 
 @app.get("/strange-snapshot-issues", response_class=HTMLResponse)
