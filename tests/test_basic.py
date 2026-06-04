@@ -339,7 +339,7 @@ def testWeeklyClosedFeaturesRouteUsesSelectedDate(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert calls == ["2026-04-18"]
-    assert trendCalls == ["2026-04-18"]
+    assert trendCalls == [None]
     assert "Отчет по закрытым фичам за неделю" in response.text
     assert "план / база" in response.text
 

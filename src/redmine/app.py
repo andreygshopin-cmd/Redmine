@@ -19602,11 +19602,11 @@ def buildWeeklyClosedFeaturesReportPage(capturedForDate: str | None = None, metr
     rows = list(payload.get("rows") or [])
     selectedMetricKey = normalizeWeeklyFeatureMetricKey(metricKey)
     try:
-        trendPayload = listWeeklyFeatureMetricTrend(selectedDate)
+        trendPayload = listWeeklyFeatureMetricTrend()
         trendError = ""
     except Exception as error:  # pragma: no cover - protects the page from a slow report query in production.
         trendPayload = {"selected_date": selectedDate, "available_dates": availableDates, "trend_dates": [], "rows": []}
-        trendError = str(error)
+        trendError = "запрос к базе данных выполнялся слишком долго; попробуйте обновить страницу позже."
     chartHtml = buildWeeklyFeatureMetricChartHtml(trendPayload, selectedMetricKey, trendError)
     redmineIssueUrlBase = f"{(config.redmineUrl or 'https://redmine.sms-it.ru').rstrip('/')}/issues/"
     dateOptions = "".join(
@@ -19833,12 +19833,17 @@ __LOCAL_GOLOS_FONT_CSS__
       <label>Параметр
         <select name="metric">{metricOptions}</select>
       </label>
+      <input type="hidden" name="captured_for_date" value="{escape(selectedDate)}">
+      <button type="submit">Показать</button>
+    </form>
+    {chartHtml}
+    <form class="toolbar" method="get">
+      <input type="hidden" name="metric" value="{escape(selectedMetricKey)}">
       <label>Дата среза
         <select name="captured_for_date">{dateOptions}</select>
       </label>
       <button type="submit">Показать</button>
     </form>
-    {chartHtml}
     <p class="report-meta">Дата среза: {escape(selectedDate or "—")}. Найдено Feature: {len(rows)}.</p>
     <div class="table-wrap">
       <table>

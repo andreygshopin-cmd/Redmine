@@ -2862,7 +2862,7 @@ def listWeeklyFeatureMetricTrend(snapshotDate: str | None = None) -> dict[str, o
         raise RuntimeError("DATABASE_URL is not set")
 
     with engine.connect() as connection:
-        connection.execute(text("SET LOCAL statement_timeout TO '15s'"))
+        connection.execute(text("SET LOCAL statement_timeout TO '25s'"))
         dateRows = connection.execute(
             text(
                 """
@@ -2873,7 +2873,9 @@ def listWeeklyFeatureMetricTrend(snapshotDate: str | None = None) -> dict[str, o
             )
         )
         availableDates = [str(row[0]) for row in dateRows]
-        selectedDate = str(snapshotDate or "").strip() or (availableDates[0] if availableDates else "")
+        # The trend is always built for the whole year up to the latest available snapshot.
+        # The page's selected snapshot date is used only for the weekly closed-feature table.
+        selectedDate = availableDates[0] if availableDates else ""
         if not selectedDate:
             return {"selected_date": "", "available_dates": [], "trend_dates": [], "rows": []}
 
@@ -2913,56 +2915,39 @@ def listWeeklyFeatureMetricTrend(snapshotDate: str | None = None) -> dict[str, o
                         ON p.redmine_id = r.project_redmine_id
                     ORDER BY r.captured_for_date, r.project_redmine_id, r.captured_at DESC, r.id DESC
                 ),
-                current_items AS (
+                features AS (
                     SELECT
                         lr.id AS snapshot_run_id,
                         lr.project_redmine_id,
                         lr.project_name,
                         lr.project_identifier,
                         lr.captured_for_date,
-                        i.issue_redmine_id,
-                        i.tracker_name,
-                        i.parent_issue_redmine_id,
-                        i.baseline_estimate_hours,
-                        i.estimated_hours,
-                        i.risk_estimate_hours,
-                        i.spent_hours
+                        i.issue_redmine_id AS feature_issue_redmine_id,
+                        COALESCE(i.baseline_estimate_hours, 0) AS baseline_estimate_hours
                     FROM latest_runs lr
                     JOIN issue_snapshot_items i
                         ON i.snapshot_run_id = lr.id
-                ),
-                features AS (
-                    SELECT
-                        snapshot_run_id,
-                        project_redmine_id,
-                        project_name,
-                        project_identifier,
-                        captured_for_date,
-                        issue_redmine_id AS feature_issue_redmine_id,
-                        COALESCE(baseline_estimate_hours, 0) AS baseline_estimate_hours
-                    FROM current_items
-                    WHERE LOWER(TRIM(COALESCE(tracker_name, ''))) = 'feature'
+                    WHERE LOWER(TRIM(COALESCE(i.tracker_name, ''))) = 'feature'
                 ),
                 feature_tree AS (
                     SELECT
-                        ci.snapshot_run_id,
-                        ci.project_redmine_id,
-                        ci.captured_for_date,
+                        f.snapshot_run_id,
+                        f.project_redmine_id,
+                        f.captured_for_date,
                         f.feature_issue_redmine_id,
-                        ci.issue_redmine_id,
-                        ci.tracker_name,
-                        ci.parent_issue_redmine_id,
-                        ci.estimated_hours,
-                        ci.risk_estimate_hours,
-                        ci.spent_hours,
-                        ARRAY[ci.issue_redmine_id::BIGINT] AS visited_issue_ids,
+                        child.issue_redmine_id,
+                        child.tracker_name,
+                        child.parent_issue_redmine_id,
+                        child.estimated_hours,
+                        child.risk_estimate_hours,
+                        child.spent_hours,
+                        ARRAY[child.issue_redmine_id::BIGINT] AS visited_issue_ids,
                         1 AS depth
-                    FROM current_items ci
-                    JOIN features f
-                        ON f.snapshot_run_id = ci.snapshot_run_id
-                       AND f.project_redmine_id = ci.project_redmine_id
-                       AND ci.parent_issue_redmine_id = f.feature_issue_redmine_id
-                    WHERE ci.issue_redmine_id <> f.feature_issue_redmine_id
+                    FROM features f
+                    JOIN issue_snapshot_items child
+                        ON child.snapshot_run_id = f.snapshot_run_id
+                       AND child.parent_issue_redmine_id = f.feature_issue_redmine_id
+                    WHERE child.issue_redmine_id <> f.feature_issue_redmine_id
 
                     UNION ALL
 
@@ -2980,9 +2965,8 @@ def listWeeklyFeatureMetricTrend(snapshotDate: str | None = None) -> dict[str, o
                         ft.visited_issue_ids || child.issue_redmine_id::BIGINT,
                         ft.depth + 1
                     FROM feature_tree ft
-                    JOIN current_items child
+                    JOIN issue_snapshot_items child
                         ON child.snapshot_run_id = ft.snapshot_run_id
-                       AND child.project_redmine_id = ft.project_redmine_id
                        AND child.parent_issue_redmine_id = ft.issue_redmine_id
                     WHERE ft.depth < 20
                       AND NOT child.issue_redmine_id::BIGINT = ANY(ft.visited_issue_ids)
