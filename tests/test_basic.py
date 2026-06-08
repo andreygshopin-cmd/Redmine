@@ -108,7 +108,7 @@ def testRenderYamlSchedulesWeeklySnapshotCronJobs() -> None:
     assert "startCommand: python -m src.redmine.capture_bitrix_snapshots" in body
     assert "envVarKey: Btrx" in body
     assert "name: redmine-snapshot-cron" in body
-    assert 'schedule: "0 23 * * FRI"' in body
+    assert 'schedule: "0 22 * * MON"' in body
     assert "startCommand: python -m src.redmine.capture_snapshots" in body
     assert "envVarKey: REDMINE_URL" in body
     assert "envVarKey: REDMINE_API_KEY" in body

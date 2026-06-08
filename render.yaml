@@ -52,12 +52,12 @@ services:
           name: redmine-tdfp
           envVarKey: Btrx
 
-  # 03:00 Saturday Europe/Samara == 23:00 Friday UTC. Render cron schedules use UTC.
+  # 02:00 Tuesday Europe/Samara == 22:00 Monday UTC. Render cron schedules use UTC.
   - type: cron
     name: redmine-snapshot-cron
     runtime: python
     plan: starter
-    schedule: "0 23 * * FRI"
+    schedule: "0 22 * * MON"
     buildCommand: pip install -r requirements.txt
     startCommand: python -m src.redmine.capture_snapshots
     envVars:
