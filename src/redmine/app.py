@@ -19407,6 +19407,19 @@ def normalizeWeeklyFeatureMetricKey(metricKey: str | None) -> str:
     return WEEKLY_FEATURE_METRIC_OPTIONS[0][0]
 
 
+def normalizeWeeklyFeatureChartYMax(rawValue: str | float | int | None) -> float | None:
+    valueText = str(rawValue or "").strip().replace(",", ".")
+    if not valueText:
+        return None
+    try:
+        value = float(valueText)
+    except ValueError:
+        return None
+    if value <= 0:
+        return None
+    return value
+
+
 def _weeklyFeatureMetricParts(row: dict[str, object], metricKey: str) -> tuple[float, float]:
     baselineHours = float(row.get("baseline_hours") or 0)
     developmentPlanHours = float(row.get("development_plan_hours") or 0)
@@ -19440,6 +19453,7 @@ def buildWeeklyFeatureMetricChartHtml(
     metricKey: str,
     hiddenProjectKeys: set[str] | None = None,
     trendError: str = "",
+    yMax: float | None = None,
 ) -> str:
     if trendError:
         return (
@@ -19502,9 +19516,12 @@ def buildWeeklyFeatureMetricChartHtml(
     plotWidth = svgWidth - marginLeft - marginRight
     plotHeight = svgHeight - marginTop - marginBottom
     rawMax = max(allValues)
-    chartMax = max(10.0, (((rawMax * 1.12) // 10) + 1) * 10)
-    if rawMax <= 100:
-        chartMax = max(100.0, chartMax)
+    if yMax is not None and yMax > 0:
+        chartMax = float(yMax)
+    else:
+        chartMax = max(10.0, (((rawMax * 1.12) // 10) + 1) * 10)
+        if rawMax <= 100:
+            chartMax = max(100.0, chartMax)
 
     def xForIndex(index: int) -> float:
         if len(trendDates) <= 1:
@@ -19512,7 +19529,8 @@ def buildWeeklyFeatureMetricChartHtml(
         return marginLeft + plotWidth * index / (len(trendDates) - 1)
 
     def yForValue(value: float) -> float:
-        return marginTop + plotHeight - (value / chartMax * plotHeight)
+        boundedValue = min(max(value, 0.0), chartMax)
+        return marginTop + plotHeight - (boundedValue / chartMax * plotHeight)
 
     palette = [
         "#375D77",
@@ -19605,7 +19623,7 @@ def buildWeeklyFeatureMetricChartHtml(
         '<section class="chart-panel">'
         "<h2>График выбранного параметра</h2>"
         f'<p class="chart-note">Параметр: {escape(metricLabel)}. Значения показаны в процентах. '
-        "Для каждой точки числитель и знаменатель суммируются только по Feature проекта, которые за неделю к этой дате стали Готов*.</p>"
+        "Для каждой точки числитель и знаменатель суммируются только по Feature проекта, которые за неделю к этой дате стали Готов*, Закрыта, Решена или Отказ.</p>"
         '<div class="chart-scroll">'
         + "".join(svgParts)
         + "</div>"
@@ -20099,12 +20117,15 @@ def buildWeeklyClosedFeaturesReportPage(
     capturedForDate: str | None = None,
     metricKey: str | None = None,
     hiddenProjectKeys: list[str] | set[str] | None = None,
+    yMax: str | float | int | None = None,
 ) -> str:
     payload = listWeeklyClosedFeatureReport(capturedForDate)
     availableDates = [str(value) for value in payload.get("available_dates") or []]
     selectedDate = str(payload.get("selected_date") or "")
     rows = list(payload.get("rows") or [])
     selectedMetricKey = normalizeWeeklyFeatureMetricKey(metricKey)
+    selectedYMax = normalizeWeeklyFeatureChartYMax(yMax)
+    selectedYMaxText = "" if selectedYMax is None else _formatWeeklyFeatureChartValue(selectedYMax)
     try:
         trendPayload = listWeeklyFeatureMetricTrend()
         trendError = ""
@@ -20112,7 +20133,13 @@ def buildWeeklyClosedFeaturesReportPage(
         trendPayload = {"selected_date": selectedDate, "available_dates": availableDates, "trend_dates": [], "rows": []}
         trendError = "запрос к базе данных выполнялся слишком долго; попробуйте обновить страницу позже."
     hiddenProjectKeySet = {str(value) for value in (hiddenProjectKeys or []) if str(value).strip()}
-    chartHtml = buildWeeklyFeatureMetricChartHtml(trendPayload, selectedMetricKey, hiddenProjectKeySet, trendError)
+    chartHtml = buildWeeklyFeatureMetricChartHtml(
+        trendPayload,
+        selectedMetricKey,
+        hiddenProjectKeySet,
+        trendError,
+        selectedYMax,
+    )
     redmineIssueUrlBase = f"{(config.redmineUrl or 'https://redmine.sms-it.ru').rstrip('/')}/issues/"
     dateOptions = "".join(
         f'<option value="{escape(dateValue)}"{" selected" if dateValue == selectedDate else ""}>{escape(dateValue)}</option>'
@@ -20152,7 +20179,7 @@ def buildWeeklyClosedFeaturesReportPage(
         )
 
     tableBody = "".join(rowHtmlParts) or (
-        '<tr><td colspan="13" class="empty-cell">За выбранную неделю Feature, ставшие Готово*, не найдены.</td></tr>'
+        '<tr><td colspan="13" class="empty-cell">За выбранную неделю Feature, ставшие Готов*, Закрыта, Решена или Отказ, не найдены.</td></tr>'
     )
 
     return f"""<!doctype html>
@@ -20211,7 +20238,7 @@ __LOCAL_GOLOS_FONT_CSS__
       background: #ffffff;
     }}
     label {{ display: flex; flex-direction: column; gap: 6px; font-weight: 700; }}
-    select {{
+    select, input {{
       min-width: 170px;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -20220,6 +20247,7 @@ __LOCAL_GOLOS_FONT_CSS__
       color: var(--text);
       background: #ffffff;
     }}
+    .axis-limit-input {{ min-width: 130px; width: 130px; }}
     button {{
       min-height: 40px;
       border: 1px solid var(--line);
@@ -20368,10 +20396,13 @@ __LOCAL_GOLOS_FONT_CSS__
       <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
     </a>
     <h1>Отчет по закрытым фичам за неделю</h1>
-    <p class="lead">Показываются Feature, у которых статус в выбранном срезе стал «Готов*», а в опорном срезе за неделю до него еще не был «Готов*».</p>
+    <p class="lead">Показываются Feature, у которых статус в выбранном срезе стал «Готов*», «Закрыта», «Решена» или «Отказ», а в опорном срезе за неделю до него еще не был одним из этих статусов.</p>
     <form class="toolbar" method="get">
       <label>Параметр
         <select name="metric">{metricOptions}</select>
+      </label>
+      <label>Верхняя граница Y, %
+        <input class="axis-limit-input" name="y_max" type="number" min="0" step="0.1" value="{escape(selectedYMaxText)}">
       </label>
       <input type="hidden" name="captured_for_date" value="{escape(selectedDate)}">
       <button type="submit">Показать</button>
@@ -20379,6 +20410,7 @@ __LOCAL_GOLOS_FONT_CSS__
     {chartHtml}
     <form class="toolbar" method="get">
       <input type="hidden" name="metric" value="{escape(selectedMetricKey)}">
+      <input type="hidden" name="y_max" value="{escape(selectedYMaxText)}">
       <label>Дата среза
         <select name="captured_for_date">{dateOptions}</select>
       </label>
@@ -20551,6 +20583,7 @@ def getWeeklyClosedFeaturesReportPage(
     request: Request,
     captured_for_date: str | None = Query(None, description="Дата среза YYYY-MM-DD"),
     metric: str | None = Query(None, description="Параметр графика"),
+    y_max: str | None = Query(None, description="Верхняя граница оси Y в процентах"),
 ) -> HTMLResponse:
     if not config.databaseUrl:
         raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
@@ -20559,7 +20592,7 @@ def getWeeklyClosedFeaturesReportPage(
     ensureIssueSnapshotTables()
     user = getattr(request.state, "current_user", None) or _getCurrentUser(request)
     hiddenProjectKeys = _getWeeklyFeatureReportHiddenProjectKeys(user)
-    return _renderHtmlPage(buildWeeklyClosedFeaturesReportPage(captured_for_date, metric, hiddenProjectKeys))
+    return _renderHtmlPage(buildWeeklyClosedFeaturesReportPage(captured_for_date, metric, hiddenProjectKeys, y_max))
 
 
 @app.post("/api/weekly-closed-features/settings")

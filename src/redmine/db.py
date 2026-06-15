@@ -2735,8 +2735,14 @@ def listWeeklyClosedFeatureReport(snapshotDate: str | None = None) -> dict[str, 
                         ON pf.project_redmine_id = ci.project_redmine_id
                        AND pf.issue_redmine_id = ci.issue_redmine_id
                     WHERE LOWER(TRIM(COALESCE(ci.tracker_name, ''))) = 'feature'
-                      AND LOWER(TRIM(COALESCE(ci.status_name, ''))) LIKE 'готов%'
-                      AND LOWER(TRIM(COALESCE(pf.previous_status_name, ''))) NOT LIKE 'готов%'
+                      AND (
+                          LOWER(TRIM(COALESCE(ci.status_name, ''))) LIKE 'готов%'
+                          OR LOWER(TRIM(COALESCE(ci.status_name, ''))) IN ('закрыта', 'решена', 'отказ')
+                      )
+                      AND NOT (
+                          LOWER(TRIM(COALESCE(pf.previous_status_name, ''))) LIKE 'готов%'
+                          OR LOWER(TRIM(COALESCE(pf.previous_status_name, ''))) IN ('закрыта', 'решена', 'отказ')
+                      )
                 ),
                 feature_tree AS (
                     SELECT
@@ -3056,8 +3062,14 @@ def listWeeklyFeatureMetricTrend(snapshotDate: str | None = None) -> dict[str, o
                        AND pf.current_captured_for_date = lr.captured_for_date
                        AND pf.issue_redmine_id = i.issue_redmine_id
                     WHERE LOWER(TRIM(COALESCE(i.tracker_name, ''))) = 'feature'
-                      AND LOWER(TRIM(COALESCE(i.status_name, ''))) LIKE 'готов%'
-                      AND LOWER(TRIM(COALESCE(pf.previous_status_name, ''))) NOT LIKE 'готов%'
+                      AND (
+                          LOWER(TRIM(COALESCE(i.status_name, ''))) LIKE 'готов%'
+                          OR LOWER(TRIM(COALESCE(i.status_name, ''))) IN ('закрыта', 'решена', 'отказ')
+                      )
+                      AND NOT (
+                          LOWER(TRIM(COALESCE(pf.previous_status_name, ''))) LIKE 'готов%'
+                          OR LOWER(TRIM(COALESCE(pf.previous_status_name, ''))) IN ('закрыта', 'решена', 'отказ')
+                      )
                 ),
                 feature_tree AS (
                     SELECT
