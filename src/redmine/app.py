@@ -19632,6 +19632,17 @@ def buildWeeklyFeatureMetricChartHtml(
     )
 
 
+def buildWeeklyFeatureMetricChartPlaceholderHtml() -> str:
+    return (
+        '<section class="chart-panel">'
+        "<h2>График выбранного параметра</h2>"
+        '<p class="empty-cell">'
+        "График не обновлялся. Для построения или перерисовки нажмите «Показать» в параметрах графика."
+        "</p>"
+        "</section>"
+    )
+
+
 def buildWeeklyReportPage(capturedForDate: str | None = None) -> str:
     payload = listWeeklyClosedTasksReport(capturedForDate)
     availableDates = [str(value) for value in payload.get("available_dates") or []]
@@ -20118,6 +20129,7 @@ def buildWeeklyClosedFeaturesReportPage(
     metricKey: str | None = None,
     hiddenProjectKeys: list[str] | set[str] | None = None,
     yMax: str | float | int | None = None,
+    refreshChart: bool = False,
 ) -> str:
     payload = listWeeklyClosedFeatureReport(capturedForDate)
     availableDates = [str(value) for value in payload.get("available_dates") or []]
@@ -20126,20 +20138,28 @@ def buildWeeklyClosedFeaturesReportPage(
     selectedMetricKey = normalizeWeeklyFeatureMetricKey(metricKey)
     selectedYMax = normalizeWeeklyFeatureChartYMax(yMax)
     selectedYMaxText = "" if selectedYMax is None else _formatWeeklyFeatureChartValue(selectedYMax)
-    try:
-        trendPayload = listWeeklyFeatureMetricTrend()
-        trendError = ""
-    except Exception as error:  # pragma: no cover - protects the page from a slow report query in production.
-        trendPayload = {"selected_date": selectedDate, "available_dates": availableDates, "trend_dates": [], "rows": []}
+    if refreshChart:
+        trendQuerySucceeded = False
+        try:
+            trendPayload = listWeeklyFeatureMetricTrend()
+            trendError = ""
+            trendQuerySucceeded = True
+        except Exception as error:  # pragma: no cover - protects the page from a slow report query in production.
+            trendPayload = {"selected_date": selectedDate, "available_dates": availableDates, "trend_dates": [], "rows": []}
         trendError = "запрос к базе данных выполнялся слишком долго; попробуйте обновить страницу позже."
+    if refreshChart and trendQuerySucceeded:
+        trendError = ""
     hiddenProjectKeySet = {str(value) for value in (hiddenProjectKeys or []) if str(value).strip()}
-    chartHtml = buildWeeklyFeatureMetricChartHtml(
-        trendPayload,
-        selectedMetricKey,
-        hiddenProjectKeySet,
-        trendError,
-        selectedYMax,
-    )
+    if refreshChart:
+        chartHtml = buildWeeklyFeatureMetricChartHtml(
+            trendPayload,
+            selectedMetricKey,
+            hiddenProjectKeySet,
+            trendError,
+            selectedYMax,
+        )
+    else:
+        chartHtml = buildWeeklyFeatureMetricChartPlaceholderHtml()
     redmineIssueUrlBase = f"{(config.redmineUrl or 'https://redmine.sms-it.ru').rstrip('/')}/issues/"
     dateOptions = "".join(
         f'<option value="{escape(dateValue)}"{" selected" if dateValue == selectedDate else ""}>{escape(dateValue)}</option>'
@@ -20405,6 +20425,7 @@ __LOCAL_GOLOS_FONT_CSS__
         <input class="axis-limit-input" name="y_max" type="number" min="0" step="0.1" value="{escape(selectedYMaxText)}">
       </label>
       <input type="hidden" name="captured_for_date" value="{escape(selectedDate)}">
+      <input type="hidden" name="refresh_chart" value="1">
       <button type="submit">Показать</button>
     </form>
     {chartHtml}
@@ -20592,7 +20613,8 @@ def getWeeklyClosedFeaturesReportPage(
     ensureIssueSnapshotTables()
     user = getattr(request.state, "current_user", None) or _getCurrentUser(request)
     hiddenProjectKeys = _getWeeklyFeatureReportHiddenProjectKeys(user)
-    return _renderHtmlPage(buildWeeklyClosedFeaturesReportPage(captured_for_date, metric, hiddenProjectKeys, y_max))
+    refreshChart = str(request.query_params.get("refresh_chart") or "").strip() == "1"
+    return _renderHtmlPage(buildWeeklyClosedFeaturesReportPage(captured_for_date, metric, hiddenProjectKeys, y_max, refreshChart))
 
 
 @app.post("/api/weekly-closed-features/settings")

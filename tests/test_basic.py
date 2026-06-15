@@ -362,7 +362,12 @@ def testWeeklyClosedFeaturesReportPageRendersRows(monkeypatch) -> None:
         },
     )
 
-    body = app_module.buildWeeklyClosedFeaturesReportPage("2026-04-18", "dev_fact_to_plan", yMax="50")
+    body = app_module.buildWeeklyClosedFeaturesReportPage(
+        "2026-04-18",
+        "dev_fact_to_plan",
+        yMax="50",
+        refreshChart=True,
+    )
 
     assert "Отчет по закрытым фичам за неделю" in body
     assert "Billing" in body
@@ -384,6 +389,7 @@ def testWeeklyClosedFeaturesRouteUsesSelectedDate(monkeypatch) -> None:
     calls: list[str | None] = []
     trendCalls: list[str | None] = []
     capturedYMax: list[object] = []
+    capturedRefreshChart: list[bool] = []
 
     monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://example/db")
     monkeypatch.setattr(app_module, "ensureProjectsTable", lambda: None)
@@ -402,9 +408,10 @@ def testWeeklyClosedFeaturesRouteUsesSelectedDate(monkeypatch) -> None:
     )
     originalBuildPage = app_module.buildWeeklyClosedFeaturesReportPage
 
-    def wrappedBuildPage(capturedForDate=None, metricKey=None, hiddenProjectKeys=None, yMax=None):
+    def wrappedBuildPage(capturedForDate=None, metricKey=None, hiddenProjectKeys=None, yMax=None, refreshChart=False):
         capturedYMax.append(yMax)
-        return originalBuildPage(capturedForDate, metricKey, hiddenProjectKeys, yMax)
+        capturedRefreshChart.append(refreshChart)
+        return originalBuildPage(capturedForDate, metricKey, hiddenProjectKeys, yMax, refreshChart)
 
     monkeypatch.setattr(app_module, "buildWeeklyClosedFeaturesReportPage", wrappedBuildPage)
 
@@ -412,10 +419,21 @@ def testWeeklyClosedFeaturesRouteUsesSelectedDate(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert calls == ["2026-04-18"]
-    assert trendCalls == [None]
+    assert trendCalls == []
     assert capturedYMax == ["75"]
+    assert capturedRefreshChart == [False]
     assert "Отчет по закрытым фичам за неделю" in response.text
     assert "план / база" in response.text
+
+    response = client.get(
+        "/weekly-closed-features?captured_for_date=2026-04-18&metric=plan_to_base&y_max=75&refresh_chart=1"
+    )
+
+    assert response.status_code == 200
+    assert calls == ["2026-04-18", "2026-04-18"]
+    assert trendCalls == [None]
+    assert capturedYMax == ["75", "75"]
+    assert capturedRefreshChart == [False, True]
 
 
 def testWeeklyFeatureMetricChartSupportsHiddenProjects() -> None:
