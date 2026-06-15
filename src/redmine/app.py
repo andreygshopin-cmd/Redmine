@@ -20141,7 +20141,7 @@ def buildWeeklyClosedFeaturesReportPage(
     if refreshChart:
         trendQuerySucceeded = False
         try:
-            trendPayload = listWeeklyFeatureMetricTrend()
+            trendPayload = listWeeklyFeatureMetricTrend(selectedDate)
             trendError = ""
             trendQuerySucceeded = True
         except Exception as error:  # pragma: no cover - protects the page from a slow report query in production.
@@ -20408,16 +20408,56 @@ __LOCAL_GOLOS_FONT_CSS__
     }}
     .feature-link:hover {{ color: var(--blue); text-decoration-color: var(--blue); }}
     .empty-cell {{ color: var(--muted); text-align: center; padding: 22px; }}
+    .loading-overlay {{
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(2px);
+    }}
+    .loading-overlay.is-visible {{ display: flex; }}
+    .loading-card {{
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 18px 22px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #ffffff;
+      box-shadow: 0 18px 44px rgba(22, 50, 74, 0.18);
+      color: var(--text);
+      font-weight: 700;
+    }}
+    .loading-spinner {{
+      width: 34px;
+      height: 34px;
+      border: 4px solid #d9e5eb;
+      border-top-color: var(--blue);
+      border-radius: 999px;
+      animation: loading-spin 0.85s linear infinite;
+    }}
+    @keyframes loading-spin {{
+      to {{ transform: rotate(360deg); }}
+    }}
   </style>
 </head>
 <body>
+  <div class="loading-overlay" id="weeklyFeatureLoadingOverlay" aria-live="polite" aria-busy="true">
+    <div class="loading-card">
+      <span class="loading-spinner" aria-hidden="true"></span>
+      <span>Строим график...</span>
+    </div>
+  </div>
   <main>
     <a class="brand" href="/" aria-label="На главную">
       <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
     </a>
     <h1>Отчет по закрытым фичам за неделю</h1>
     <p class="lead">Показываются Feature, у которых статус в выбранном срезе стал «Готов*», «Закрыта», «Решена» или «Отказ», а в опорном срезе за неделю до него еще не был одним из этих статусов.</p>
-    <form class="toolbar" method="get">
+    <form class="toolbar" method="get" id="weeklyFeatureChartForm">
       <label>Параметр
         <select name="metric">{metricOptions}</select>
       </label>
@@ -20465,6 +20505,12 @@ __LOCAL_GOLOS_FONT_CSS__
   <script>
     const weeklyFeatureHiddenProjectKeys = new Set({hiddenProjectKeysJson});
     const weeklyFeatureTooltip = document.getElementById("weeklyFeatureChartTooltip");
+    const weeklyFeatureChartForm = document.getElementById("weeklyFeatureChartForm");
+    const weeklyFeatureLoadingOverlay = document.getElementById("weeklyFeatureLoadingOverlay");
+
+    weeklyFeatureChartForm?.addEventListener("submit", () => {{
+      weeklyFeatureLoadingOverlay?.classList.add("is-visible");
+    }});
 
     function applyWeeklyFeatureProjectVisibility() {{
       document.querySelectorAll(".chart-series, .chart-point").forEach((node) => {{

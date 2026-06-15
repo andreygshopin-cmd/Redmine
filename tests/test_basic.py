@@ -378,6 +378,7 @@ def testWeeklyClosedFeaturesReportPageRendersRows(monkeypatch) -> None:
     assert "4,0" in body
     assert 'name="metric"' in body
     assert 'name="y_max"' in body
+    assert 'id="weeklyFeatureLoadingOverlay"' in body
     assert "Верхняя граница Y, %" in body
     assert "факт по разработке / план" in body
     assert "weekly-feature-chart" in body
@@ -431,7 +432,7 @@ def testWeeklyClosedFeaturesRouteUsesSelectedDate(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert calls == ["2026-04-18", "2026-04-18"]
-    assert trendCalls == [None]
+    assert trendCalls == ["2026-04-18"]
     assert capturedYMax == ["75", "75"]
     assert capturedRefreshChart == [False, True]
 

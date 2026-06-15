@@ -449,6 +449,15 @@ def ensureIssueSnapshotTables() -> None:
             connection.execute(
                 text(
                     """
+                    CREATE INDEX IF NOT EXISTS idx_issue_snapshot_runs_date_project_captured
+                    ON issue_snapshot_runs(captured_for_date, project_redmine_id, captured_at DESC, id DESC)
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_issue_snapshot_runs_project_date_unique
                     ON issue_snapshot_runs(project_redmine_id, captured_for_date)
                     """
@@ -460,6 +469,15 @@ def ensureIssueSnapshotTables() -> None:
                     """
                     CREATE INDEX IF NOT EXISTS idx_issue_snapshot_items_run
                     ON issue_snapshot_items(snapshot_run_id)
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_issue_snapshot_items_run_issue
+                    ON issue_snapshot_items(snapshot_run_id, issue_redmine_id)
                     """
                 )
             )
@@ -2969,7 +2987,7 @@ def listWeeklyFeatureMetricTrend(snapshotDate: str | None = None) -> dict[str, o
         raise RuntimeError("DATABASE_URL is not set")
 
     with engine.connect() as connection:
-        connection.execute(text("SET LOCAL statement_timeout TO '25s'"))
+        connection.execute(text("SET LOCAL statement_timeout TO '90s'"))
         dateRows = connection.execute(
             text(
                 """
@@ -2980,9 +2998,7 @@ def listWeeklyFeatureMetricTrend(snapshotDate: str | None = None) -> dict[str, o
             )
         )
         availableDates = [str(row[0]) for row in dateRows]
-        # The trend is always built for the whole year up to the latest available snapshot.
-        # The page's selected snapshot date is used only for the weekly closed-feature table.
-        selectedDate = availableDates[0] if availableDates else ""
+        selectedDate = str(snapshotDate or "").strip() or (availableDates[0] if availableDates else "")
         if not selectedDate:
             return {"selected_date": "", "available_dates": [], "trend_dates": [], "rows": []}
 
