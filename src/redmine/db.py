@@ -2857,6 +2857,107 @@ def listWeeklyClosedFeatureReport(snapshotDate: str | None = None) -> dict[str, 
         }
 
 
+def listWeeklyClosedTasksReport(snapshotDate: str | None = None) -> dict[str, object]:
+    if engine is None:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    with engine.connect() as connection:
+        connection.execute(text("SET LOCAL statement_timeout TO '15s'"))
+        dateRows = connection.execute(
+            text(
+                """
+                SELECT DISTINCT captured_for_date
+                FROM issue_snapshot_runs
+                ORDER BY captured_for_date DESC
+                """
+            )
+        )
+        availableDates = [str(row[0]) for row in dateRows]
+        selectedDate = str(snapshotDate or "").strip() or (availableDates[0] if availableDates else "")
+        if not selectedDate:
+            return {"selected_date": "", "available_dates": [], "rows": []}
+
+        rows = connection.execute(
+            text(
+                """
+                WITH current_runs AS (
+                    SELECT DISTINCT ON (r.project_redmine_id)
+                        r.id,
+                        r.project_redmine_id,
+                        COALESCE(p.name, r.project_name) AS project_name,
+                        COALESCE(p.identifier, r.project_identifier) AS project_identifier,
+                        r.captured_for_date
+                    FROM issue_snapshot_runs r
+                    LEFT JOIN projects p
+                        ON p.redmine_id = r.project_redmine_id
+                    WHERE r.captured_for_date = CAST(:selected_date AS DATE)
+                    ORDER BY r.project_redmine_id, r.captured_at DESC, r.id DESC
+                ),
+                previous_runs AS (
+                    SELECT DISTINCT ON (r.project_redmine_id)
+                        r.id,
+                        r.project_redmine_id,
+                        r.captured_for_date
+                    FROM issue_snapshot_runs r
+                    JOIN current_runs cr
+                        ON cr.project_redmine_id = r.project_redmine_id
+                    WHERE r.captured_for_date <= (CAST(:selected_date AS DATE) - INTERVAL '7 days')::date
+                    ORDER BY r.project_redmine_id, r.captured_for_date DESC, r.captured_at DESC, r.id DESC
+                ),
+                first_time_entries AS (
+                    SELECT
+                        cr.project_redmine_id,
+                        te.issue_redmine_id,
+                        MIN(te.spent_on) AS first_spent_on
+                    FROM current_runs cr
+                    JOIN issue_snapshot_time_entries te
+                        ON te.snapshot_run_id = cr.id
+                    WHERE te.issue_redmine_id IS NOT NULL
+                    GROUP BY cr.project_redmine_id, te.issue_redmine_id
+                )
+                SELECT
+                    cr.project_redmine_id,
+                    cr.project_name,
+                    cr.project_identifier,
+                    cr.captured_for_date,
+                    pr.captured_for_date AS previous_captured_for_date,
+                    ci.issue_redmine_id,
+                    ci.subject,
+                    ci.tracker_name,
+                    ci.status_name,
+                    pi.status_name AS previous_status_name,
+                    ci.baseline_estimate_hours,
+                    ci.estimated_hours,
+                    ci.risk_estimate_hours,
+                    ci.spent_hours,
+                    fte.first_spent_on
+                FROM current_runs cr
+                JOIN previous_runs pr
+                    ON pr.project_redmine_id = cr.project_redmine_id
+                JOIN issue_snapshot_items ci
+                    ON ci.snapshot_run_id = cr.id
+                JOIN issue_snapshot_items pi
+                    ON pi.snapshot_run_id = pr.id
+                   AND pi.issue_redmine_id = ci.issue_redmine_id
+                LEFT JOIN first_time_entries fte
+                    ON fte.project_redmine_id = cr.project_redmine_id
+                   AND fte.issue_redmine_id = ci.issue_redmine_id
+                WHERE LOWER(TRIM(COALESCE(ci.status_name, ''))) IN ('закрыта', 'решена')
+                  AND LOWER(TRIM(COALESCE(pi.status_name, ''))) NOT IN ('закрыта', 'решена')
+                  AND LOWER(TRIM(COALESCE(ci.tracker_name, ''))) <> 'feature'
+                ORDER BY LOWER(cr.project_name), ci.issue_redmine_id
+                """
+            ),
+            {"selected_date": selectedDate},
+        )
+
+        return {
+            "selected_date": selectedDate,
+            "available_dates": availableDates,
+            "rows": [dict(row._mapping) for row in rows],
+        }
+
+
 def listWeeklyFeatureMetricTrend(snapshotDate: str | None = None) -> dict[str, object]:
     if engine is None:
         raise RuntimeError("DATABASE_URL is not set")

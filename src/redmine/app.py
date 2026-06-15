@@ -87,6 +87,7 @@ from src.redmine.db import (
     listStoredProjects,
     listUsers,
     listWeeklyClosedFeatureReport,
+    listWeeklyClosedTasksReport,
     listWeeklyFeatureMetricTrend,
     pruneUnchangedIssueSnapshots,
     seedInitialUsers,
@@ -2579,7 +2580,7 @@ PAGE_HTML = """<!doctype html>
 <button id="refreshProjectsButton" type="button">Синхронизация с Redmine</button>
           <span class="stacked-actions">
             <button id="projectsSummaryPageButton" type="button">Сводка по проектам</button>
-            <button id="weeklyClosedFeaturesReportButton" type="button">Отчет по неделям</button>
+            <button id="weeklyClosedFeaturesReportButton" type="button">Отчет за неделю</button>
           </span>
           <button id="planningProjectsPageButton" type="button">Планирование проектов</button>
         </div>
@@ -2957,7 +2958,7 @@ PAGE_HTML = """<!doctype html>
         ["#project-actions p", "textContent", "Получает список проектов из Redmine, добавляет новые записи и обновляет измененные."],
         ["#refreshProjectsButton", "textContent", "Синхронизация с Redmine"],
         ["#projectsSummaryPageButton", "textContent", "Сводка по проектам"],
-        ["#weeklyClosedFeaturesReportButton", "textContent", "Отчет по неделям"],
+        ["#weeklyClosedFeaturesReportButton", "textContent", "Отчет за неделю"],
         ["#snapshot-actions h2", "textContent", "Получение срезов задач"],
         ["#snapshot-actions p", "textContent", "Запрашивает срезы только для тех проектов, по которым на сегодняшнюю дату еще нет записи в базе данных."],
         ["#captureSnapshotsButton", "textContent", "Получить срезы задач"],
@@ -3660,7 +3661,7 @@ PAGE_HTML = """<!doctype html>
       window.location.href = "/projects-summary";
     });
     weeklyClosedFeaturesReportButton.addEventListener("click", () => {
-      window.location.href = "/weekly-closed-features";
+      window.location.href = "/weekly-report";
     });
     planningProjectsPageButton.addEventListener("click", () => {
       window.location.href = "/planning-projects";
@@ -19613,6 +19614,487 @@ def buildWeeklyFeatureMetricChartHtml(
     )
 
 
+def buildWeeklyReportPage(capturedForDate: str | None = None) -> str:
+    payload = listWeeklyClosedTasksReport(capturedForDate)
+    availableDates = [str(value) for value in payload.get("available_dates") or []]
+    selectedDate = str(payload.get("selected_date") or "")
+    rows = list(payload.get("rows") or [])
+    redmineIssueUrlBase = f"{(config.redmineUrl or 'https://redmine.sms-it.ru').rstrip('/')}/issues/"
+    dateOptions = "".join(
+        f'<option value="{escape(dateValue)}"{" selected" if dateValue == selectedDate else ""}>{escape(dateValue)}</option>'
+        for dateValue in availableDates
+    )
+    serializedRows: list[dict[str, object]] = []
+    for row in rows:
+        issueId = str(row.get("issue_redmine_id") or "").strip()
+        serializedRows.append(
+            {
+                "project_name": str(row.get("project_name") or "—"),
+                "project_identifier": str(row.get("project_identifier") or ""),
+                "previous_captured_for_date": str(row.get("previous_captured_for_date") or "—"),
+                "issue_redmine_id": issueId,
+                "issue_url": f"{redmineIssueUrlBase}{quote(issueId)}" if issueId.isdigit() else "",
+                "subject": str(row.get("subject") or "—"),
+                "tracker_name": str(row.get("tracker_name") or "—"),
+                "previous_status_name": str(row.get("previous_status_name") or "—"),
+                "status_name": str(row.get("status_name") or "—"),
+                "baseline_estimate_hours": row.get("baseline_estimate_hours"),
+                "estimated_hours": row.get("estimated_hours"),
+                "risk_estimate_hours": row.get("risk_estimate_hours"),
+                "spent_hours": row.get("spent_hours"),
+                "first_spent_on": str(row.get("first_spent_on") or "—"),
+            }
+        )
+
+    rowsJson = json.dumps(serializedRows, ensure_ascii=False, default=str).replace("</", "<\\/")
+    return """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Отчет за неделю</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style>
+__LOCAL_GOLOS_FONT_CSS__
+    :root {
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --panel-soft: #f5fafb;
+      --line: #d9e5eb;
+      --text: #16324a;
+      --muted: #64798d;
+      --blue: #375d77;
+      --yellow: #ffc600;
+      --cyan: #52cee6;
+      --orange: #ff6c0e;
+      --header: #eef6f7;
+      --shadow: 0 14px 32px rgba(22, 50, 74, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Golos", "Segoe UI Variable", "Segoe UI", Tahoma, sans-serif;
+      background: linear-gradient(180deg, #ffffff 0%, #f6fafc 100%);
+      color: var(--text);
+    }
+    main {
+      width: 100%;
+      max-width: none;
+      margin: 0 auto;
+      padding: 24px 20px 48px;
+    }
+    .brand {
+      display: inline-flex;
+      width: 220px;
+      min-height: 70px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .brand img { width: 100%; height: auto; display: block; }
+    h1 {
+      margin: 4px 0 8px;
+      font-size: clamp(1.85rem, 4vw, 2.65rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 400;
+    }
+    .lead {
+      margin: 0 0 20px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: 16px;
+      margin-bottom: 18px;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 12px;
+    }
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    input, select {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px 10px;
+      min-height: 40px;
+      font: inherit;
+      color: var(--text);
+      background: #ffffff;
+    }
+    .page-size-input { width: 120px; }
+    button, .button-link {
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px 14px;
+      font: inherit;
+      font-weight: 700;
+      color: var(--text);
+      background: #eef2f5;
+      text-decoration: none;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .feature-report-button {
+      background: var(--yellow);
+      border-color: rgba(255, 198, 0, 0.55);
+    }
+    .meta {
+      margin: 0 0 12px;
+      color: var(--muted);
+    }
+    .table-wrap {
+      width: 100%;
+      max-height: calc(100vh - 295px);
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #ffffff;
+    }
+    table {
+      width: 100%;
+      min-width: 1680px;
+      table-layout: fixed;
+      border-collapse: separate;
+      border-spacing: 0;
+      background: #ffffff;
+    }
+    th, td {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+      overflow-wrap: anywhere;
+    }
+    thead tr:first-child th {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      background: var(--header);
+      color: #426179;
+      text-transform: uppercase;
+      font-size: 0.76rem;
+      line-height: 1.18;
+    }
+    thead tr:nth-child(2) th {
+      position: sticky;
+      top: 44px;
+      z-index: 2;
+      background: #f6fafb;
+      padding: 6px 8px;
+    }
+    .filter-input {
+      width: 100%;
+      min-height: 32px;
+      padding: 5px 7px;
+      border-radius: 6px;
+      font-size: 0.84rem;
+    }
+    .project-col { width: 22ch; }
+    .issue-col { width: 12ch; }
+    .subject-col { width: 40ch; }
+    .tracker-col { width: 18ch; }
+    .status-col { width: 16ch; }
+    .date-col { width: 15ch; }
+    .hours-col { width: 14ch; }
+    .number-cell { text-align: right; white-space: nowrap; }
+    .mono { font-family: Consolas, "Courier New", monospace; white-space: nowrap; }
+    .redmine-link {
+      color: inherit;
+      text-decoration: underline;
+      text-decoration-style: dotted;
+      text-decoration-color: rgba(55, 93, 119, 0.45);
+      text-underline-offset: 4px;
+    }
+    .redmine-link:hover {
+      color: var(--blue);
+      text-decoration-color: var(--blue);
+    }
+    .empty-cell {
+      padding: 24px;
+      text-align: center;
+      color: var(--muted);
+    }
+    .pager {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="brand" href="/" aria-label="На главную">
+      <img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ">
+    </a>
+    <h1>Отчет за неделю</h1>
+    <p class="lead">Задачи, которые за последнюю неделю к выбранному срезу сменили статус на «Закрыта» или «Решена». Сравнение выполняется с датой минус 7 дней или ближайшим более ранним срезом.</p>
+
+    <section class="panel">
+      <form class="toolbar" method="get">
+        <label>Дата среза
+          <select name="captured_for_date">__DATE_OPTIONS__</select>
+        </label>
+        <label>Записей на странице
+          <input class="page-size-input" id="pageSizeInput" type="number" min="1" step="1" value="1000">
+        </label>
+        <button type="submit">Показать</button>
+        <button id="exportExcelButton" type="button">Выгрузить в Excel</button>
+        <a class="button-link feature-report-button" href="/weekly-closed-features">Отчет по фичам</a>
+      </form>
+    </section>
+
+    <section class="panel">
+      <p class="meta" id="weeklyReportMeta">Дата среза: __SELECTED_DATE__. Найдено задач: __ROW_COUNT__.</p>
+      <div class="table-wrap">
+        <table id="weeklyReportTable">
+          <thead>
+            <tr>
+              <th class="project-col" data-sort-key="project_name">Проект Redmine</th>
+              <th class="issue-col" data-sort-key="issue_redmine_id">ID задачи</th>
+              <th class="subject-col" data-sort-key="subject">Тема задачи</th>
+              <th class="tracker-col" data-sort-key="tracker_name">Трекер</th>
+              <th class="date-col" data-sort-key="previous_captured_for_date">Опорный срез</th>
+              <th class="status-col" data-sort-key="previous_status_name">Статус был</th>
+              <th class="status-col" data-sort-key="status_name">Статус стал</th>
+              <th class="hours-col" data-sort-key="baseline_estimate_hours">Базовая оценка</th>
+              <th class="hours-col" data-sort-key="estimated_hours">План, ч</th>
+              <th class="hours-col" data-sort-key="risk_estimate_hours">План с рисками, ч</th>
+              <th class="hours-col" data-sort-key="spent_hours">Факт, ч</th>
+              <th class="date-col" data-sort-key="first_spent_on">Дата первого списания</th>
+            </tr>
+            <tr>
+              <th><input class="filter-input" data-filter-key="project_name" type="text"></th>
+              <th><input class="filter-input" data-filter-key="issue_redmine_id" type="text"></th>
+              <th><input class="filter-input" data-filter-key="subject" type="text"></th>
+              <th><input class="filter-input" data-filter-key="tracker_name" type="text"></th>
+              <th><input class="filter-input" data-filter-key="previous_captured_for_date" type="text"></th>
+              <th><input class="filter-input" data-filter-key="previous_status_name" type="text"></th>
+              <th><input class="filter-input" data-filter-key="status_name" type="text"></th>
+              <th><input class="filter-input" data-filter-key="baseline_estimate_hours" type="text"></th>
+              <th><input class="filter-input" data-filter-key="estimated_hours" type="text"></th>
+              <th><input class="filter-input" data-filter-key="risk_estimate_hours" type="text"></th>
+              <th><input class="filter-input" data-filter-key="spent_hours" type="text"></th>
+              <th><input class="filter-input" data-filter-key="first_spent_on" type="text"></th>
+            </tr>
+          </thead>
+          <tbody id="weeklyReportTableBody"></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button id="prevPageButton" type="button">Назад</button>
+        <span id="pageInfo">—</span>
+        <button id="nextPageButton" type="button">Вперед</button>
+      </div>
+    </section>
+  </main>
+  <script>
+    const weeklyReportRows = __ROWS_JSON__;
+    const selectedDate = "__SELECTED_DATE_JS__";
+    const tableBody = document.getElementById("weeklyReportTableBody");
+    const pageSizeInput = document.getElementById("pageSizeInput");
+    const pageInfo = document.getElementById("pageInfo");
+    const prevPageButton = document.getElementById("prevPageButton");
+    const nextPageButton = document.getElementById("nextPageButton");
+    const exportExcelButton = document.getElementById("exportExcelButton");
+    const filters = {};
+    let currentPage = 1;
+    let sortState = { key: "project_name", direction: "asc" };
+    let currentFilteredRows = [];
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function normalize(value) {
+      return String(value ?? "").trim().toLowerCase();
+    }
+
+    function formatHours(value) {
+      const number = Number(value || 0);
+      if (!Number.isFinite(number)) return "0,0";
+      return number.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    }
+
+    function cellValue(row, key) {
+      if (["baseline_estimate_hours", "estimated_hours", "risk_estimate_hours", "spent_hours"].includes(key)) {
+        return formatHours(row[key]);
+      }
+      return row[key] ?? "";
+    }
+
+    function rowMatchesFilters(row) {
+      return Object.entries(filters).every(([key, value]) => {
+        if (!value) return true;
+        return normalize(cellValue(row, key)).includes(value);
+      });
+    }
+
+    function compareRows(left, right) {
+      const key = sortState.key;
+      const direction = sortState.direction === "desc" ? -1 : 1;
+      const leftValue = left[key];
+      const rightValue = right[key];
+      const leftNumber = Number(leftValue);
+      const rightNumber = Number(rightValue);
+      if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+        return (leftNumber - rightNumber) * direction;
+      }
+      return String(leftValue ?? "").localeCompare(String(rightValue ?? ""), "ru") * direction;
+    }
+
+    function renderRows() {
+      const pageSize = Math.max(1, Number(pageSizeInput?.value || 1000));
+      currentFilteredRows = weeklyReportRows.filter(rowMatchesFilters).sort(compareRows);
+      const pageCount = Math.max(1, Math.ceil(currentFilteredRows.length / pageSize));
+      currentPage = Math.min(Math.max(1, currentPage), pageCount);
+      const start = (currentPage - 1) * pageSize;
+      const pageRows = currentFilteredRows.slice(start, start + pageSize);
+
+      if (!pageRows.length) {
+        tableBody.innerHTML = '<tr><td colspan="12" class="empty-cell">Задачи не найдены.</td></tr>';
+      } else {
+        tableBody.innerHTML = pageRows.map((row) => {
+          const issueId = escapeHtml(row.issue_redmine_id || "—");
+          const issueCell = row.issue_url
+            ? `<a class="redmine-link mono" href="${escapeHtml(row.issue_url)}" target="_blank" rel="noreferrer">${issueId}</a>`
+            : `<span class="mono">${issueId}</span>`;
+          return `<tr>
+            <td>${escapeHtml(row.project_name)}</td>
+            <td>${issueCell}</td>
+            <td>${escapeHtml(row.subject)}</td>
+            <td>${escapeHtml(row.tracker_name)}</td>
+            <td>${escapeHtml(row.previous_captured_for_date)}</td>
+            <td>${escapeHtml(row.previous_status_name)}</td>
+            <td>${escapeHtml(row.status_name)}</td>
+            <td class="number-cell">${formatHours(row.baseline_estimate_hours)}</td>
+            <td class="number-cell">${formatHours(row.estimated_hours)}</td>
+            <td class="number-cell">${formatHours(row.risk_estimate_hours)}</td>
+            <td class="number-cell">${formatHours(row.spent_hours)}</td>
+            <td>${escapeHtml(row.first_spent_on)}</td>
+          </tr>`;
+        }).join("");
+      }
+      pageInfo.textContent = `Страница ${currentPage} из ${pageCount}. По фильтру: ${currentFilteredRows.length} из ${weeklyReportRows.length}.`;
+      prevPageButton.disabled = currentPage <= 1;
+      nextPageButton.disabled = currentPage >= pageCount;
+    }
+
+    document.querySelectorAll(".filter-input").forEach((input) => {
+      const key = String(input.dataset.filterKey || "");
+      input.addEventListener("input", () => {
+        filters[key] = normalize(input.value);
+        currentPage = 1;
+        renderRows();
+      });
+    });
+
+    document.querySelectorAll("th[data-sort-key]").forEach((header) => {
+      header.addEventListener("click", () => {
+        const key = String(header.dataset.sortKey || "");
+        if (sortState.key === key) {
+          sortState.direction = sortState.direction === "asc" ? "desc" : "asc";
+        } else {
+          sortState = { key, direction: "asc" };
+        }
+        renderRows();
+      });
+    });
+
+    pageSizeInput?.addEventListener("change", () => {
+      currentPage = 1;
+      renderRows();
+    });
+    prevPageButton?.addEventListener("click", () => {
+      currentPage -= 1;
+      renderRows();
+    });
+    nextPageButton?.addEventListener("click", () => {
+      currentPage += 1;
+      renderRows();
+    });
+
+    function exportVisibleRowsToExcel() {
+      const headers = [
+        "Проект Redmine",
+        "ID задачи",
+        "Тема задачи",
+        "Трекер",
+        "Опорный срез",
+        "Статус был",
+        "Статус стал",
+        "Базовая оценка",
+        "План, ч",
+        "План с рисками, ч",
+        "Факт, ч",
+        "Дата первого списания",
+      ];
+      const bodyRows = currentFilteredRows.map((row) => [
+        row.project_name,
+        row.issue_redmine_id,
+        row.subject,
+        row.tracker_name,
+        row.previous_captured_for_date,
+        row.previous_status_name,
+        row.status_name,
+        formatHours(row.baseline_estimate_hours),
+        formatHours(row.estimated_hours),
+        formatHours(row.risk_estimate_hours),
+        formatHours(row.spent_hours),
+        row.first_spent_on,
+      ]);
+      const tableHtml = `<html><head><meta charset="utf-8"></head><body><table border="1"><thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${bodyRows.map((cells) => `<tr>${cells.map((cell) => `<td>${escapeHtml(cell ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
+      const blob = new Blob([tableHtml], { type: "application/vnd.ms-excel;charset=utf-8" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `weekly_report_${selectedDate || "latest"}.xls`;
+      document.body.appendChild(link);
+      link.click();
+      URL.revokeObjectURL(link.href);
+      link.remove();
+    }
+
+    exportExcelButton?.addEventListener("click", exportVisibleRowsToExcel);
+    renderRows();
+  </script>
+</body>
+</html>""".replace("__LOCAL_GOLOS_FONT_CSS__", LOCAL_GOLOS_FONT_CSS).replace(
+        "__DATE_OPTIONS__", dateOptions
+    ).replace(
+        "__SELECTED_DATE__", escape(selectedDate or "—")
+    ).replace(
+        "__SELECTED_DATE_JS__", escape(selectedDate)
+    ).replace(
+        "__ROW_COUNT__", str(len(rows))
+    ).replace(
+        "__ROWS_JSON__", rowsJson
+    )
+
+
 def buildWeeklyClosedFeaturesReportPage(
     capturedForDate: str | None = None,
     metricKey: str | None = None,
@@ -20050,6 +20532,18 @@ def getProjectsSummaryPage() -> HTMLResponse:
     ensureIssueSnapshotTables()
     ensurePlanningProjectsTable()
     return _renderHtmlPage(buildProjectsSummaryPage())
+
+
+@app.get("/weekly-report", response_class=HTMLResponse)
+def getWeeklyReportPage(
+    captured_for_date: str | None = Query(None, description="Дата среза YYYY-MM-DD"),
+) -> HTMLResponse:
+    if not config.databaseUrl:
+        raise HTTPException(status_code=400, detail="DATABASE_URL is not set")
+
+    ensureProjectsTable()
+    ensureIssueSnapshotTables()
+    return _renderHtmlPage(buildWeeklyReportPage(captured_for_date))
 
 
 @app.get("/weekly-closed-features", response_class=HTMLResponse)

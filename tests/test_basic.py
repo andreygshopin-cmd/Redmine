@@ -202,8 +202,8 @@ def testIndexQuickLinksUseCurrentUserRoles() -> None:
     assert 'href="/dashboards/' not in userBody
     assert 'href="/Bitrix"' not in userBody
     assert 'href="/admin/users"' not in userBody
-    assert "Отчет по неделям" in adminBody
-    assert "/weekly-closed-features" in adminBody
+    assert "Отчет за неделю" in adminBody
+    assert "/weekly-report" in adminBody
 
 
 def testAndreyDashboardHasFourProjectStateWidgets() -> None:
@@ -239,6 +239,68 @@ def testProjectsSummaryPageUsesFullWidthScrollableTable(monkeypatch) -> None:
     assert 'data-filter-key="development_forecast_remaining_hours"' in body
     assert 'data-filter-key="development_remaining_hours"' in body
     assert 'data-filter-key="development_imbalance_hours"' in body
+
+
+def testWeeklyReportPageRendersClosedTasks(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "redmineUrl", "https://redmine.sms-it.ru")
+    monkeypatch.setattr(
+        app_module,
+        "listWeeklyClosedTasksReport",
+        lambda capturedForDate=None: {
+            "selected_date": capturedForDate or "2026-04-18",
+            "available_dates": ["2026-04-18", "2026-04-11"],
+            "rows": [
+                {
+                    "project_name": "Billing",
+                    "project_identifier": "billing",
+                    "previous_captured_for_date": "2026-04-11",
+                    "issue_redmine_id": 501,
+                    "subject": "Закрытая задача",
+                    "tracker_name": "Разработка",
+                    "previous_status_name": "В работе",
+                    "status_name": "Закрыта",
+                    "baseline_estimate_hours": 10,
+                    "estimated_hours": 12,
+                    "risk_estimate_hours": 15,
+                    "spent_hours": 11,
+                    "first_spent_on": "2026-04-12",
+                }
+            ],
+        },
+    )
+
+    body = app_module.buildWeeklyReportPage("2026-04-18")
+
+    assert "Отчет за неделю" in body
+    assert "Отчет по фичам" in body
+    assert "/weekly-closed-features" in body
+    assert "https://redmine.sms-it.ru/issues/501" in body
+    assert "Закрытая задача" in body
+    assert "Записей на странице" in body
+    assert "Выгрузить в Excel" in body
+    assert 'data-filter-key="tracker_name"' in body
+    assert "table-layout: fixed" in body
+    assert "position: sticky" in body
+
+
+def testWeeklyReportRouteUsesSelectedDate(monkeypatch) -> None:
+    calls: list[str | None] = []
+
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://example/db")
+    monkeypatch.setattr(app_module, "ensureProjectsTable", lambda: None)
+    monkeypatch.setattr(app_module, "ensureIssueSnapshotTables", lambda: None)
+    monkeypatch.setattr(
+        app_module,
+        "listWeeklyClosedTasksReport",
+        lambda capturedForDate=None: calls.append(capturedForDate)
+        or {"selected_date": "2026-04-18", "available_dates": ["2026-04-18"], "rows": []},
+    )
+
+    response = client.get("/weekly-report?captured_for_date=2026-04-18")
+
+    assert response.status_code == 200
+    assert calls == ["2026-04-18"]
+    assert "Отчет за неделю" in response.text
 
 
 def testWeeklyClosedFeaturesReportPageRendersRows(monkeypatch) -> None:
