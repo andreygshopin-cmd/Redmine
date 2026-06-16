@@ -19475,10 +19475,6 @@ def buildWeeklyFeatureMetricChartHtml(
 
     projectSeries: dict[str, dict[str, object]] = {}
     for row in rows:
-        numerator, denominator = _weeklyFeatureMetricParts(row, metricKey)
-        if denominator <= 0:
-            continue
-        value = numerator / denominator * 100
         projectKey = str(row.get("project_redmine_id") or row.get("project_identifier") or row.get("project_name") or "")
         if not projectKey:
             continue
@@ -19487,11 +19483,20 @@ def buildWeeklyFeatureMetricChartHtml(
             {
                 "name": str(row.get("project_name") or projectKey),
                 "values": {},
+                "no_data_dates": set(),
             },
         )
+        dateValue = str(row.get("captured_for_date") or "")
+        numerator, denominator = _weeklyFeatureMetricParts(row, metricKey)
+        if denominator <= 0:
+            noDataDates = series.get("no_data_dates")
+            if isinstance(noDataDates, set) and dateValue:
+                noDataDates.add(dateValue)
+            continue
+        value = numerator / denominator * 100
         valuesByDate = series["values"]
-        if isinstance(valuesByDate, dict):
-            valuesByDate[str(row.get("captured_for_date") or "")] = value
+        if isinstance(valuesByDate, dict) and dateValue:
+            valuesByDate[dateValue] = value
 
     allValues = [
         float(value)
@@ -19499,7 +19504,8 @@ def buildWeeklyFeatureMetricChartHtml(
         for value in (series.get("values") or {}).values()
         if value is not None
     ]
-    if not allValues:
+    hasNoDataPoints = any(series.get("no_data_dates") for series in projectSeries.values())
+    if not allValues and not hasNoDataPoints:
         return (
             '<section class="chart-panel">'
             "<h2>График выбранного параметра</h2>"
@@ -19515,7 +19521,7 @@ def buildWeeklyFeatureMetricChartHtml(
     marginBottom = 68
     plotWidth = svgWidth - marginLeft - marginRight
     plotHeight = svgHeight - marginTop - marginBottom
-    rawMax = max(allValues)
+    rawMax = max(allValues) if allValues else 0.0
     if yMax is not None and yMax > 0:
         chartMax = float(yMax)
     else:
@@ -19578,27 +19584,31 @@ def buildWeeklyFeatureMetricChartHtml(
         sorted(projectSeries.items(), key=lambda item: str(item[1].get("name") or "").lower())
     ):
         valuesByDate = series.get("values") if isinstance(series.get("values"), dict) else {}
+        noDataDates = series.get("no_data_dates") if isinstance(series.get("no_data_dates"), set) else set()
         points: list[tuple[float, float, float, str]] = []
+        noDataPoints: list[tuple[float, float, str]] = []
         for dateIndex, dateValue in enumerate(trendDates):
             value = valuesByDate.get(dateValue) if isinstance(valuesByDate, dict) else None
-            if value is None:
-                continue
-            points.append((xForIndex(dateIndex), yForValue(float(value)), float(value), dateValue))
-        if not points:
+            if value is not None:
+                points.append((xForIndex(dateIndex), yForValue(float(value)), float(value), dateValue))
+            elif dateValue in noDataDates:
+                noDataPoints.append((xForIndex(dateIndex), yForValue(0), dateValue))
+        if not points and not noDataPoints:
             continue
         color = palette[projectIndex % len(palette)]
         isHidden = str(projectKey) in hiddenProjectKeys
         hiddenClass = " is-hidden" if isHidden else ""
         escapedProjectKey = escape(str(projectKey))
         escapedProjectName = escape(str(series.get("name") or projectKey))
-        pathData = " ".join(
-            f"{'M' if pointIndex == 0 else 'L'} {x:.2f} {y:.2f}"
-            for pointIndex, (x, y, _value, _dateValue) in enumerate(points)
-        )
-        svgParts.append(
-            f'<path class="chart-series{hiddenClass}" data-project-key="{escapedProjectKey}" '
-            f'd="{pathData}" fill="none" stroke="{color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>'
-        )
+        if points:
+            pathData = " ".join(
+                f"{'M' if pointIndex == 0 else 'L'} {x:.2f} {y:.2f}"
+                for pointIndex, (x, y, _value, _dateValue) in enumerate(points)
+            )
+            svgParts.append(
+                f'<path class="chart-series{hiddenClass}" data-project-key="{escapedProjectKey}" '
+                f'd="{pathData}" fill="none" stroke="{color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>'
+            )
         for x, y, value, pointDate in points:
             formattedValue = _formatWeeklyFeatureChartValue(value)
             svgParts.append(
@@ -19607,6 +19617,15 @@ def buildWeeklyFeatureMetricChartHtml(
                 f'data-date="{escape(_formatWeeklyFeatureChartDate(pointDate))}" '
                 f'cx="{x:.2f}" cy="{y:.2f}" r="3.2" fill="{color}">'
                 f'<title>{escapedProjectName}: {escape(formattedValue)}%</title>'
+                "</circle>"
+            )
+        for x, y, pointDate in noDataPoints:
+            svgParts.append(
+                f'<circle class="chart-point chart-point-no-data{hiddenClass}" data-project-key="{escapedProjectKey}" '
+                f'data-project-name="{escapedProjectName}" data-value="нет данных" '
+                f'data-date="{escape(_formatWeeklyFeatureChartDate(pointDate))}" '
+                f'cx="{x:.2f}" cy="{y:.2f}" r="4.2" fill="#ffffff" stroke="{color}" stroke-width="2" stroke-dasharray="2 2">'
+                f'<title>{escapedProjectName}: нет данных, знаменатель равен 0</title>'
                 "</circle>"
             )
         legendParts.append(

@@ -465,6 +465,34 @@ def testWeeklyFeatureMetricChartSupportsHiddenProjects() -> None:
     assert 'data-date="11.04"' in body
 
 
+def testWeeklyFeatureMetricChartShowsProjectsWithoutDenominator() -> None:
+    body = app_module.buildWeeklyFeatureMetricChartHtml(
+        {
+            "trend_dates": ["2026-06-13"],
+            "rows": [
+                {
+                    "project_redmine_id": 365,
+                    "project_name": "Звк",
+                    "captured_for_date": "2026-06-13",
+                    "baseline_hours": 0,
+                    "development_plan_hours": 0,
+                    "development_fact_hours": 3,
+                    "bug_fact_hours": 1,
+                }
+            ],
+        },
+        "fact_dev_bug_to_base",
+        set(),
+    )
+
+    assert 'data-project-key="365"' in body
+    assert 'data-project-name="Звк"' in body
+    assert 'data-value="нет данных"' in body
+    assert "chart-point-no-data" in body
+    assert "знаменатель равен 0" in body
+    assert "chart-project-toggle" in body
+
+
 def testWeeklyClosedFeaturesSettingsPreserveUserSettings(monkeypatch) -> None:
     saved: dict[str, object] = {}
     existingSettings = {"widgets": {"project-state-1": {"title": "Dashboard"}}}
