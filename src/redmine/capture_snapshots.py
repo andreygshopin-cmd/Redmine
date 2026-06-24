@@ -24,6 +24,10 @@ def main() -> None:
         f"{result['remaining_projects']} projects still remain, "
         f"{len(skippedProjects)} skipped projects."
     )
+    for skippedProject in skippedProjects:
+        projectName = skippedProject.get("project_name") or skippedProject.get("project_redmine_id") or "unknown project"
+        reason = skippedProject.get("reason") or "unknown reason"
+        print(f"Skipped {projectName}: {reason}")
 
 
 if __name__ == "__main__":

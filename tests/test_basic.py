@@ -2398,6 +2398,52 @@ def testCaptureIssueSnapshotsUsesCurrentYearSpentHours(monkeypatch) -> None:
     assert created_payloads[0][0]["spent_hours_year"] == 5.5
 
 
+def testCaptureIssueSnapshotsContinuesWhenProjectRefreshFails(monkeypatch) -> None:
+    from requests import RequestException
+    from src.redmine import snapshots as snapshots_module
+
+    monkeypatch.setattr(snapshots_module, "loadConfig", lambda: app_module.config)
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module.config, "redmineUrl", "https://redmine.example.com")
+    monkeypatch.setattr(app_module.config, "apiKey", "secret")
+    monkeypatch.setattr(snapshots_module, "ensureProjectsTable", lambda: None)
+    monkeypatch.setattr(snapshots_module, "ensureIssueSnapshotTables", lambda: None)
+    monkeypatch.setattr(
+        snapshots_module,
+        "fetchAllProjectsFromRedmine",
+        lambda redmineUrl, apiKey: (_ for _ in ()).throw(RequestException("temporary redmine outage")),
+    )
+    monkeypatch.setattr(snapshots_module, "storeMissingProjects", lambda projects: 1)
+    monkeypatch.setattr(
+        snapshots_module,
+        "listStoredProjects",
+        lambda: [{"redmine_id": 1, "name": "Alpha", "identifier": "alpha"}],
+    )
+    monkeypatch.setattr(
+        snapshots_module,
+        "listProjectsWithoutSnapshotForDate",
+        lambda capturedForDate: [{"redmine_id": 1, "name": "Alpha", "identifier": "alpha"}],
+    )
+    monkeypatch.setattr(
+        snapshots_module,
+        "fetchAllIssuesForProject",
+        lambda redmineUrl, apiKey, projectIdentifier, projectRedmineId, **kwargs: [{"issue_redmine_id": 10}],
+    )
+    monkeypatch.setattr(
+        snapshots_module,
+        "fetchAllTimeEntriesForProject",
+        lambda redmineUrl, apiKey, projectIdentifier, projectRedmineId, **kwargs: [],
+    )
+    monkeypatch.setattr(snapshots_module, "createIssueSnapshotRun", lambda *args, **kwargs: 101)
+    monkeypatch.setattr(snapshots_module, "listRecentIssueSnapshotRuns", lambda: [])
+
+    result = snapshots_module.captureAllIssueSnapshots()
+
+    assert result["created_runs"] == 1
+    assert result["skipped_projects"][0]["project_name"] == "Redmine project list"
+    assert "temporary redmine outage" in result["skipped_projects"][0]["reason"]
+
+
 def testCaptureIssueSnapshotsEndpointSkipsForbiddenProject(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
     monkeypatch.setattr(app_module.config, "redmineUrl", "https://redmine.example.com")

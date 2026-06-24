@@ -8,7 +8,7 @@ import tempfile
 from threading import Lock
 
 import requests
-from requests import HTTPError
+from requests import HTTPError, RequestException
 
 from src.redmine.config import loadConfig
 from src.redmine.dates import getSnapshotBusinessDateIso
@@ -718,8 +718,18 @@ def captureAllIssueSnapshots() -> dict[str, object]:
     ensureProjectsTable()
     ensureIssueSnapshotTables()
 
-    redmineProjects = fetchAllProjectsFromRedmine(config.redmineUrl, config.apiKey)
-    storeMissingProjects(redmineProjects)
+    skippedProjects = []
+    try:
+        redmineProjects = fetchAllProjectsFromRedmine(config.redmineUrl, config.apiKey)
+        storeMissingProjects(redmineProjects)
+    except RequestException as error:
+        skippedProjects.append(
+            {
+                "project_redmine_id": None,
+                "project_name": "Redmine project list",
+                "reason": f"Project list refresh failed: {error}",
+            }
+        )
     projects = listStoredProjects()
     if not projects:
         raise RuntimeError("No projects in the database. Refresh projects first.")
@@ -731,7 +741,6 @@ def captureAllIssueSnapshots() -> dict[str, object]:
     pendingProjects = listProjectsWithoutSnapshotForDate(capturedForDate)
     createdRuns = 0
     capturedIssues = 0
-    skippedProjects = []
     alreadyCapturedProjects = len(activeProjects) - len(pendingProjects)
 
     updateIssueSnapshotCaptureStatus(
@@ -812,7 +821,7 @@ def captureAllIssueSnapshots() -> dict[str, object]:
                     progressCallback=updateTimeProgress,
                 )
                 spentHoursByIssue = buildSpentHoursByIssueForYear(timeEntries, captureYear)
-            except HTTPError as error:
+            except RequestException as error:
                 skippedProjects.append(
                     {
                         "project_redmine_id": project["redmine_id"],
