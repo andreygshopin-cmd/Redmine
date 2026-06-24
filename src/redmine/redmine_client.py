@@ -163,7 +163,13 @@ def buildSpentHoursByIssueForYear(
 
 def buildSession(apiKey: str) -> requests.Session:
     session = requests.Session()
-    session.headers.update({"X-Redmine-API-Key": apiKey})
+    session.headers.update(
+        {
+            "X-Redmine-API-Key": apiKey,
+            "Accept": "application/json",
+            "User-Agent": "redmine-tdfp-snapshot/1.0 (+https://redmine-tdfp.onrender.com)",
+        }
+    )
     return session
 
 

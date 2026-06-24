@@ -14,6 +14,7 @@ from src.redmine.dates import getSnapshotBusinessDateIso
 from src.redmine.db import chunkSequence, normalizeDatabaseUrl
 from src.redmine.redmine_client import (
     applySpentHoursYearByIssue,
+    buildSession,
     normalizeIssue,
     normalizeProject,
     parseRedmineDate,
@@ -1687,6 +1688,14 @@ def testNormalizeIssueMapsFields() -> None:
     assert issue["fixed_version_name"] == "Sprint 1"
     assert issue["baseline_estimate_hours"] == 32.0
     assert issue["created_on"] == "2026-04-01T10:00:00+00:00"
+
+
+def testBuildRedmineSessionUsesApiFriendlyHeaders() -> None:
+    session = buildSession("secret")
+
+    assert session.headers["X-Redmine-API-Key"] == "secret"
+    assert session.headers["Accept"] == "application/json"
+    assert session.headers["User-Agent"].startswith("redmine-tdfp-snapshot/")
 
 
 def testParseRedmineDateAllowsEmptyValue() -> None:
