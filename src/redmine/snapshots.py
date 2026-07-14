@@ -25,7 +25,9 @@ from src.redmine.db import (
     writeIssueSnapshotCaptureStatusRecord,
 )
 from src.redmine.redmine_client import (
+    applySpentHoursByIssue,
     applySpentHoursYearByIssue,
+    buildSpentHoursByIssue,
     buildSpentHoursByIssueForYear,
     fetchAllIssuesForProject,
     fetchAllProjectsFromRedmine,
@@ -820,7 +822,8 @@ def captureAllIssueSnapshots() -> dict[str, object]:
                     toDate=capturedForDate,
                     progressCallback=updateTimeProgress,
                 )
-                spentHoursByIssue = buildSpentHoursByIssueForYear(timeEntries, captureYear)
+                spentHoursByIssue = buildSpentHoursByIssue(timeEntries)
+                spentHoursByIssueForYear = buildSpentHoursByIssueForYear(timeEntries, captureYear)
             except RequestException as error:
                 skippedProjects.append(
                     {
@@ -840,7 +843,8 @@ def captureAllIssueSnapshots() -> dict[str, object]:
                 )
                 continue
 
-            applySpentHoursYearByIssue(issues, spentHoursByIssue)
+            applySpentHoursByIssue(issues, spentHoursByIssue)
+            applySpentHoursYearByIssue(issues, spentHoursByIssueForYear)
             snapshotRunId = createIssueSnapshotRun(capturedForDate, project, issues, timeEntries=timeEntries)
             if snapshotRunId is None:
                 updateIssueSnapshotCaptureStatus(
@@ -978,8 +982,10 @@ def captureIssueSnapshotForProject(projectRedmineId: int) -> dict[str, object]:
             toDate=capturedForDate,
             progressCallback=updateTimeProgress,
         )
-        spentHoursByIssue = buildSpentHoursByIssueForYear(timeEntries, captureYear)
-        applySpentHoursYearByIssue(issues, spentHoursByIssue)
+        spentHoursByIssue = buildSpentHoursByIssue(timeEntries)
+        spentHoursByIssueForYear = buildSpentHoursByIssueForYear(timeEntries, captureYear)
+        applySpentHoursByIssue(issues, spentHoursByIssue)
+        applySpentHoursYearByIssue(issues, spentHoursByIssueForYear)
         snapshotRunId = createIssueSnapshotRun(capturedForDate, project, issues, timeEntries=timeEntries)
 
         createdRuns = 1 if snapshotRunId is not None else 0

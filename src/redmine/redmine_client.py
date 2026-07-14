@@ -140,6 +140,34 @@ def applySpentHoursYearByIssue(
     return issues
 
 
+def applySpentHoursByIssue(
+    issues: list[dict[str, object]],
+    spentHoursByIssue: dict[int, float],
+) -> list[dict[str, object]]:
+    for issue in issues:
+        issue["spent_hours"] = spentHoursByIssue.get(int(issue["issue_redmine_id"]), 0.0)
+
+    return issues
+
+
+def buildSpentHoursByIssue(
+    timeEntries: list[dict[str, object]],
+) -> dict[int, float]:
+    spentHoursByIssue: dict[int, float] = {}
+
+    for entry in timeEntries:
+        issueId = entry.get("issue_redmine_id")
+        if issueId is None:
+            continue
+
+        normalizedIssueId = int(issueId)
+        spentHoursByIssue[normalizedIssueId] = spentHoursByIssue.get(normalizedIssueId, 0.0) + float(
+            entry.get("hours") or 0.0
+        )
+
+    return spentHoursByIssue
+
+
 def buildSpentHoursByIssueForYear(
     timeEntries: list[dict[str, object]],
     year: int,

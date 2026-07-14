@@ -13,7 +13,9 @@ from src.redmine.config import loadConfig
 from src.redmine.dates import getSnapshotBusinessDateIso
 from src.redmine.db import chunkSequence, normalizeDatabaseUrl
 from src.redmine.redmine_client import (
+    applySpentHoursByIssue,
     applySpentHoursYearByIssue,
+    buildSpentHoursByIssue,
     buildSession,
     normalizeIssue,
     normalizeProject,
@@ -1714,6 +1716,31 @@ def testApplySpentHoursYearByIssueOverridesWithYearValue() -> None:
     assert result[1]["spent_hours_year"] == 0.0
 
 
+def testApplySpentHoursByIssueOverridesWithTimeEntryValue() -> None:
+    issues = [
+        {"issue_redmine_id": 10, "spent_hours": 99.0},
+        {"issue_redmine_id": 11, "spent_hours": 88.0},
+    ]
+
+    result = applySpentHoursByIssue(issues, {10: 5.5})
+
+    assert result[0]["spent_hours"] == 5.5
+    assert result[1]["spent_hours"] == 0.0
+
+
+def testBuildSpentHoursByIssueSumsAllTimeEntriesForIssue() -> None:
+    result = buildSpentHoursByIssue(
+        [
+            {"issue_redmine_id": 10, "hours": 5.5, "spent_on": "2026-05-10"},
+            {"issue_redmine_id": 10, "hours": 2.0, "spent_on": "2025-05-10"},
+            {"issue_redmine_id": 11, "hours": 1.0, "spent_on": "2026-05-10"},
+            {"issue_redmine_id": None, "hours": 100.0, "spent_on": "2026-05-10"},
+        ]
+    )
+
+    assert result == {10: 7.5, 11: 1.0}
+
+
 def testGetProjectsEndpointReturnsStoredProjects(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
     monkeypatch.setattr(app_module, "ensureProjectsTable", lambda: None)
@@ -2403,7 +2430,7 @@ def testCaptureIssueSnapshotsUsesCurrentYearSpentHours(monkeypatch) -> None:
     result = snapshots_module.captureAllIssueSnapshots()
 
     assert result["created_runs"] == 1
-    assert created_payloads[0][0]["spent_hours"] == 99.0
+    assert created_payloads[0][0]["spent_hours"] == 5.5
     assert created_payloads[0][0]["spent_hours_year"] == 5.5
 
 
