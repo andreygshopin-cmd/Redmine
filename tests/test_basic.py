@@ -331,6 +331,25 @@ def testBitrixSalesAnalysisCalculatesCoreMetrics(monkeypatch) -> None:
     assert report["leads"]["sources_created_year"][0]["name"] == "Сайт"
 
 
+def testBitrixSalesAnalysisEndpointReturnsReportForAdmin(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "bitrixCredential", "1/token")
+    monkeypatch.setattr(
+        app_module,
+        "buildBitrixSalesAnalysisReport",
+        lambda portalUrl, credential, year: {
+            "year": year,
+            "deals": {"open_count": 10},
+            "leads": {"active_count": 20},
+        },
+    )
+
+    response = client.get("/api/internal/bitrix/sales-analysis?year=2026")
+
+    assert response.status_code == 200
+    assert response.json()["deals"]["open_count"] == 10
+    assert response.json()["leads"]["active_count"] == 20
+
+
 def testRenderYamlSchedulesWeeklySnapshotCronJobs() -> None:
     body = (REPO_ROOT / "render.yaml").read_text(encoding="utf-8")
 
