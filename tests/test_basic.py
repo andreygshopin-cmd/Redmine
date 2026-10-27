@@ -101,6 +101,129 @@ def testHealthShowsSnapshotDateSettings() -> None:
     assert payload["snapshot_business_date"]
 
 
+def testBitrixActivityLookupUsesBatchesAndYearFilter(monkeypatch) -> None:
+    capturedPayloads = []
+
+    def fakeCall(portalUrl, credential, method, payload, timeout):
+        capturedPayloads.append((method, payload, timeout))
+        return {
+            "result": {
+                "result": {
+                    "deal_10": [{"ID": "501"}],
+                    "deal_20": [],
+                },
+                "result_error": {},
+            }
+        }
+
+    monkeypatch.setattr(bitrix_client_module, "callBitrixRestMethod", fakeCall)
+
+    result = bitrix_client_module.fetchBitrixDealIdsWithActivitiesForYear(
+        "https://example.bitrix24.ru",
+        "1/token",
+        [10, 20],
+        2026,
+    )
+
+    assert result == {10}
+    assert capturedPayloads[0][0] == "batch"
+    assert capturedPayloads[0][2] == 90
+    command = capturedPayloads[0][1]["cmd"]["deal_10"]
+    assert command.startswith("crm.activity.list?")
+    assert "filter%5BOWNER_ID%5D=10" in command
+    assert "filter%5B%3E%3DCREATED%5D=2026-01-01" in command
+    assert "filter%5B%3CCREATED%5D=2027-01-01" in command
+
+
+def testBitrixInvoiceLookupUsesIssueDateYearFilter(monkeypatch) -> None:
+    captured = {}
+
+    def fakeFetch(portalUrl, credential, **kwargs):
+        captured.update(kwargs)
+        return {"items": []}
+
+    monkeypatch.setattr(bitrix_client_module, "fetchAllBitrixCrmItems", fakeFetch)
+
+    bitrix_client_module.fetchBitrixInvoicesForYear("https://example.bitrix24.ru", "1/token", 2026)
+
+    assert captured["entityTypeId"] == 31
+    assert captured["filters"] == {
+        ">=begindate": "2026-01-01",
+        "<begindate": "2027-01-01",
+    }
+    assert "parentId2" in captured["selectFields"]
+
+
+def testBitrixDealAttentionReportBuildsBothLists(monkeypatch) -> None:
+    monkeypatch.setattr(
+        bitrix_client_module,
+        "fetchAllBitrixDeals",
+        lambda portalUrl, credential: {
+            "items": [
+                {"id": 1, "title": "Без активности", "stageId": "AGREE", "categoryId": 0, "assignedById": 7},
+                {"id": 2, "title": "С активностью", "stageId": "AGREE", "categoryId": 0, "assignedById": 7},
+                {"id": 3, "title": "Без счета", "stageId": "CONTRACT", "categoryId": 0, "assignedById": 8},
+                {"id": 4, "title": "Со счетом", "stageId": "CONTRACT", "categoryId": 0, "assignedById": 8},
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        bitrix_client_module,
+        "fetchBitrixDealDictionaries",
+        lambda *args, **kwargs: {
+            "stage_names": {"AGREE": "Согласование договора", "CONTRACT": "Договор в работе"},
+            "category_names": {0: "Общая воронка"},
+            "assigned_by_names": {7: "Иванов Иван", 8: "Петров Петр"},
+        },
+    )
+    monkeypatch.setattr(
+        bitrix_client_module,
+        "fetchBitrixDealIdsWithActivitiesForYear",
+        lambda portalUrl, credential, dealIds, year: {2},
+    )
+    monkeypatch.setattr(
+        bitrix_client_module,
+        "fetchBitrixInvoicesForYear",
+        lambda portalUrl, credential, year: {"items": [{"id": 100, "parentId2": 4}]},
+    )
+
+    report = bitrix_client_module.buildBitrixDealAttentionReport(
+        "https://example.bitrix24.ru",
+        "1/token",
+        2026,
+    )
+
+    assert [item["id"] for item in report["agreement_without_activities"]] == [1]
+    assert [item["id"] for item in report["contract_without_invoices"]] == [3]
+    assert report["agreement_without_activities"][0]["assigned_by"] == "Иванов Иван"
+    assert report["contract_without_invoices"][0]["category"] == "Общая воронка"
+
+
+def testInternalBitrixDealAttentionReportAllowsServiceToken(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
+    monkeypatch.setattr(app_module.config, "renderApiKey", "report-token")
+    monkeypatch.setattr(app_module.config, "bitrixCredential", "1/token")
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: None)
+    monkeypatch.setattr(
+        app_module,
+        "buildBitrixDealAttentionReport",
+        lambda portalUrl, credential, year: {
+            "year": year,
+            "agreement_without_activities": [{"id": 10}],
+            "contract_without_invoices": [{"id": 20}],
+        },
+    )
+
+    response = client.get(
+        "/api/internal/bitrix/deal-attention?year=2026",
+        headers={"Authorization": "Bearer report-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["agreement_without_activities"] == [{"id": 10}]
+    assert response.json()["contract_without_invoices"] == [{"id": 20}]
+
+
 def testRenderYamlSchedulesWeeklySnapshotCronJobs() -> None:
     body = (REPO_ROOT / "render.yaml").read_text(encoding="utf-8")
 

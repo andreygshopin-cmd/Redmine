@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import re
 from time import perf_counter
+from urllib.parse import urlencode
 
 import requests
 
@@ -365,6 +366,7 @@ def fetchAllBitrixCrmItems(
     *,
     entityTypeId: int,
     selectFields: list[str] | None = None,
+    filters: dict[str, object] | None = None,
 ) -> dict[str, object]:
     restContext = buildBitrixRestContext(portalUrl, credential)
     items: list[dict[str, object]] = []
@@ -376,7 +378,7 @@ def fetchAllBitrixCrmItems(
             **restContext.defaultPayload,
             "entityTypeId": entityTypeId,
             "select": selectFields or BITRIX_CRM_COMMON_SELECT_FIELDS,
-            "filter": {},
+            "filter": dict(filters or {}),
             "order": {"id": "DESC"},
             "start": start,
         }
@@ -522,6 +524,174 @@ def fetchAllBitrixInvoices(portalUrl: str, credential: str) -> dict[str, object]
     )
     payload.update(extraFieldInfo)
     return payload
+
+
+def _normalizeBitrixId(value: object) -> int | None:
+    try:
+        normalized = int(value or 0)
+    except (TypeError, ValueError):
+        return None
+    return normalized if normalized > 0 else None
+
+
+def _chunkValues(values: list[int], size: int) -> list[list[int]]:
+    return [values[index:index + size] for index in range(0, len(values), size)]
+
+
+def fetchBitrixDealIdsWithActivitiesForYear(
+    portalUrl: str,
+    credential: str,
+    dealIds: list[int],
+    year: int,
+) -> set[int]:
+    normalizedDealIds = sorted({value for value in (_normalizeBitrixId(item) for item in dealIds) if value})
+    if not normalizedDealIds:
+        return set()
+
+    periodStart = f"{int(year):04d}-01-01T00:00:00+04:00"
+    periodEnd = f"{int(year) + 1:04d}-01-01T00:00:00+04:00"
+    dealIdsWithActivities: set[int] = set()
+
+    for dealIdChunk in _chunkValues(normalizedDealIds, 50):
+        commands = {}
+        for dealId in dealIdChunk:
+            query = urlencode(
+                {
+                    "order[ID]": "DESC",
+                    "filter[OWNER_TYPE_ID]": BITRIX_DEAL_ENTITY_TYPE_ID,
+                    "filter[OWNER_ID]": dealId,
+                    "filter[>=CREATED]": periodStart,
+                    "filter[<CREATED]": periodEnd,
+                    "select[0]": "ID",
+                    "start": 0,
+                }
+            )
+            commands[f"deal_{dealId}"] = f"crm.activity.list?{query}"
+
+        responsePayload = callBitrixRestMethod(
+            portalUrl,
+            credential,
+            "batch",
+            {"halt": 0, "cmd": commands},
+            timeout=90,
+        )
+        batchResult = responsePayload.get("result") or {}
+        commandResults = batchResult.get("result") if isinstance(batchResult, dict) else {}
+        commandErrors = batchResult.get("result_error") if isinstance(batchResult, dict) else {}
+        if commandErrors:
+            firstCommand, firstError = next(iter(commandErrors.items()))
+            raise RuntimeError(f"Bitrix activity batch failed for {firstCommand}: {firstError}")
+
+        for commandName, activities in (commandResults or {}).items():
+            if not activities:
+                continue
+            dealId = _normalizeBitrixId(str(commandName).removeprefix("deal_"))
+            if dealId:
+                dealIdsWithActivities.add(dealId)
+
+    return dealIdsWithActivities
+
+
+def fetchBitrixInvoicesForYear(portalUrl: str, credential: str, year: int) -> dict[str, object]:
+    return fetchAllBitrixCrmItems(
+        portalUrl,
+        credential,
+        entityTypeId=BITRIX_INVOICE_ENTITY_TYPE_ID,
+        selectFields=["id", "title", "parentId2", "begindate", "createdTime"],
+        filters={
+            ">=begindate": f"{int(year):04d}-01-01",
+            "<begindate": f"{int(year) + 1:04d}-01-01",
+        },
+    )
+
+
+def buildBitrixDealAttentionReport(portalUrl: str, credential: str, year: int) -> dict[str, object]:
+    dealsPayload = fetchAllBitrixDeals(portalUrl, credential)
+    deals = [item for item in dealsPayload.get("items") or [] if isinstance(item, dict)]
+    categoryIds = [
+        categoryId
+        for categoryId in (_normalizeBitrixId(item.get("categoryId")) for item in deals)
+        if categoryId is not None
+    ]
+    assignedByIds = [
+        assignedById
+        for assignedById in (_normalizeBitrixId(item.get("assignedById")) for item in deals)
+        if assignedById is not None
+    ]
+    dictionaries = fetchBitrixDealDictionaries(
+        portalUrl,
+        credential,
+        categoryIds,
+        assignedByIds=assignedByIds,
+    )
+    stageNames = dictionaries.get("stage_names") or {}
+    categoryNames = dictionaries.get("category_names") or {}
+    assignedByNames = dictionaries.get("assigned_by_names") or {}
+
+    def stageName(deal: dict[str, object]) -> str:
+        stageId = str(deal.get("stageId") or "")
+        categoryId = _normalizeBitrixId(deal.get("categoryId")) or 0
+        return str(stageNames.get(f"{categoryId}:{stageId}") or stageNames.get(stageId) or stageId)
+
+    agreementDeals = [deal for deal in deals if stageName(deal).strip().casefold() == "согласование договора"]
+    contractDeals = [deal for deal in deals if stageName(deal).strip().casefold() == "договор в работе"]
+
+    dealIdsWithActivities = fetchBitrixDealIdsWithActivitiesForYear(
+        portalUrl,
+        credential,
+        [dealId for dealId in (_normalizeBitrixId(item.get("id")) for item in agreementDeals) if dealId],
+        year,
+    )
+    invoicesPayload = fetchBitrixInvoicesForYear(portalUrl, credential, year)
+    dealIdsWithInvoices = {
+        dealId
+        for dealId in (
+            _normalizeBitrixId(item.get("parentId2"))
+            for item in invoicesPayload.get("items") or []
+            if isinstance(item, dict)
+        )
+        if dealId
+    }
+
+    def normalizeDeal(deal: dict[str, object]) -> dict[str, object]:
+        dealId = _normalizeBitrixId(deal.get("id"))
+        categoryId = _normalizeBitrixId(deal.get("categoryId")) or 0
+        assignedById = _normalizeBitrixId(deal.get("assignedById"))
+        return {
+            "id": dealId,
+            "title": deal.get("title") or "",
+            "stage": stageName(deal),
+            "category": categoryNames.get(categoryId) or str(categoryId),
+            "assigned_by_id": assignedById,
+            "assigned_by": assignedByNames.get(assignedById) or str(assignedById or ""),
+            "created_time": deal.get("createdTime"),
+            "updated_time": deal.get("updatedTime"),
+            "url": f"{portalUrl.rstrip('/')}/crm/deal/details/{dealId}/" if dealId else "",
+        }
+
+    agreementWithoutActivities = [
+        normalizeDeal(deal)
+        for deal in agreementDeals
+        if _normalizeBitrixId(deal.get("id")) not in dealIdsWithActivities
+    ]
+    contractWithoutInvoices = [
+        normalizeDeal(deal)
+        for deal in contractDeals
+        if _normalizeBitrixId(deal.get("id")) not in dealIdsWithInvoices
+    ]
+    agreementWithoutActivities.sort(key=lambda item: int(item.get("id") or 0), reverse=True)
+    contractWithoutInvoices.sort(key=lambda item: int(item.get("id") or 0), reverse=True)
+
+    return {
+        "year": int(year),
+        "activity_date_field": "CREATED",
+        "invoice_date_field": "begindate",
+        "agreement_stage_total": len(agreementDeals),
+        "agreement_without_activities": agreementWithoutActivities,
+        "contract_stage_total": len(contractDeals),
+        "contract_without_invoices": contractWithoutInvoices,
+        "invoices_in_year": len(invoicesPayload.get("items") or []),
+    }
 
 
 def fetchBitrixDealDictionaries(
