@@ -254,6 +254,17 @@ def testBitrixSalesAnalysisCalculatesCoreMetrics(monkeypatch) -> None:
             "createdTime": "2026-02-01T10:00:00+04:00",
             "movedTime": "2026-05-01T10:00:00+04:00",
         },
+        {
+            "id": 4,
+            "title": "Long contract",
+            "stageId": "CONTRACT",
+            "stageSemanticId": "P",
+            "categoryId": 0,
+            "assignedById": 8,
+            "opportunity": 5000,
+            "createdTime": "2025-01-01T10:00:00+04:00",
+            "lastActivityTime": "2025-02-01T10:00:00+04:00",
+        },
     ]
     leads = [
         {
@@ -294,7 +305,12 @@ def testBitrixSalesAnalysisCalculatesCoreMetrics(monkeypatch) -> None:
         bitrix_analysis_module,
         "fetchBitrixDealDictionaries",
         lambda *args, **kwargs: {
-            "stage_names": {"WORK": "В работе", "WON": "Успех", "LOSE": "Проиграна"},
+            "stage_names": {
+                "WORK": "В работе",
+                "WON": "Успех",
+                "LOSE": "Проиграна",
+                "CONTRACT": "Договор в работе",
+            },
             "category_names": {0: "Основная"},
         },
     )
@@ -320,11 +336,14 @@ def testBitrixSalesAnalysisCalculatesCoreMetrics(monkeypatch) -> None:
         asOfDate=date(2026, 10, 27),
     )
 
-    assert report["deals"]["open_count"] == 1
-    assert report["deals"]["open_amount"] == 1000
+    assert report["deals"]["open_count"] == 2
+    assert report["deals"]["open_amount"] == 6000
+    assert report["deals"]["controlled_open_count"] == 1
+    assert report["deals"]["controlled_open_amount"] == 1000
     assert report["deals"]["win_rate_percent"] == 50.0
     assert report["deals"]["stale_30_count"] == 1
     assert report["deals"]["with_overdue_activity"] == 1
+    assert report["deals"]["stages"][0]["excluded_from_control"] is True
     assert report["leads"]["active_count"] == 1
     assert report["leads"]["conversion_percent"] == 100.0
     assert report["leads"]["without_phone_and_email"] == 1

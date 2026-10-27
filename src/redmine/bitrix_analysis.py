@@ -44,6 +44,7 @@ LEAD_ANALYSIS_FIELDS = [
     "hasPhone",
     "hasEmail",
 ]
+DEAL_CONTROL_EXCLUDED_STAGES = {"договор в работе", "тендер/закупка"}
 
 
 def _chunks(values: list[int], size: int = 50) -> list[list[int]]:
@@ -372,22 +373,28 @@ def buildBitrixSalesAnalysisReport(
     def isStale(item: dict[str, object], days: int) -> bool:
         return _activityAge(item, reportDate) >= days
 
-    openDealIds = {_normalizeId(item.get("id")) for item in openDeals}
+    def isControlledDeal(item: dict[str, object]) -> bool:
+        return dealStageName(item).strip().casefold() not in DEAL_CONTROL_EXCLUDED_STAGES
+
     openLeadIds = {_normalizeId(item.get("id")) for item in openLeads}
-    openDealIds.discard(None)
     openLeadIds.discard(None)
+    controlledOpenDeals = [item for item in openDeals if isControlledDeal(item)]
+    controlledOpenDealIds = {_normalizeId(item.get("id")) for item in controlledOpenDeals}
+    controlledOpenDealIds.discard(None)
 
     def buildDealGroup(name: str, values: list[dict[str, object]]) -> dict[str, object]:
         openValues = [item for item in values if _isOpen(item)]
+        controlledValues = [item for item in openValues if isControlledDeal(item)]
         wins = [item for item in values if item in dealWinsYear]
         losses = [item for item in values if item in dealLossesYear]
         return {
             "name": name,
             "open_count": len(openValues),
             "open_amount": _roundAmount(sum(_asFloat(item.get("opportunity")) for item in openValues)),
-            "stale_30_count": sum(1 for item in openValues if isStale(item, 30)),
+            "controlled_open_count": len(controlledValues),
+            "stale_30_count": sum(1 for item in controlledValues if isStale(item, 30)),
             "without_planned_activity": sum(
-                1 for item in openValues if _normalizeId(item.get("id")) not in pendingDealIds
+                1 for item in controlledValues if _normalizeId(item.get("id")) not in pendingDealIds
             ),
             "won_year": len(wins),
             "lost_year": len(losses),
@@ -397,19 +404,25 @@ def buildBitrixSalesAnalysisReport(
     pipelineRows = _groupRows(deals, categoryName, buildDealGroup)
     pipelineRows.sort(key=lambda row: (-int(row["open_amount"]), str(row["name"])))
 
+    def buildDealStageGroup(name: str, values: list[dict[str, object]]) -> dict[str, object]:
+        isExcluded = name.strip().casefold() in DEAL_CONTROL_EXCLUDED_STAGES
+        controlledValues = [] if isExcluded else values
+        return {
+            "name": name,
+            "excluded_from_control": isExcluded,
+            "open_count": len(values),
+            "open_amount": _roundAmount(sum(_asFloat(item.get("opportunity")) for item in values)),
+            "stale_30_count": sum(1 for item in controlledValues if isStale(item, 30)),
+            "stale_60_count": sum(1 for item in controlledValues if isStale(item, 60)),
+            "without_planned_activity": sum(
+                1 for item in controlledValues if _normalizeId(item.get("id")) not in pendingDealIds
+            ),
+        }
+
     dealStageRows = _groupRows(
         openDeals,
         dealStageName,
-        lambda name, values: {
-            "name": name,
-            "open_count": len(values),
-            "open_amount": _roundAmount(sum(_asFloat(item.get("opportunity")) for item in values)),
-            "stale_30_count": sum(1 for item in values if isStale(item, 30)),
-            "stale_60_count": sum(1 for item in values if isStale(item, 60)),
-            "without_planned_activity": sum(
-                1 for item in values if _normalizeId(item.get("id")) not in pendingDealIds
-            ),
-        },
+        buildDealStageGroup,
     )
     dealStageRows.sort(key=lambda row: (-int(row["open_amount"]), str(row["name"])))
 
@@ -468,6 +481,7 @@ def buildBitrixSalesAnalysisReport(
             "last_activity_time": item.get("lastActivityTime"),
             "has_planned_activity": dealId in pendingDealIds,
             "has_overdue_activity": dealId in overdueDealIds,
+            "problem_reasons": dealProblemReasons(item),
             "url": f"{portalUrl.rstrip('/')}/crm/deal/details/{dealId}/" if dealId else "",
         }
 
@@ -483,11 +497,34 @@ def buildBitrixSalesAnalysisReport(
             "last_activity_time": item.get("lastActivityTime"),
             "has_planned_activity": leadId in pendingLeadIds,
             "has_overdue_activity": leadId in overdueLeadIds,
+            "problem_reasons": leadProblemReasons(item),
             "url": f"{portalUrl.rstrip('/')}/crm/lead/details/{leadId}/" if leadId else "",
         }
 
+    def dealProblemReasons(item: dict[str, object]) -> list[str]:
+        dealId = _normalizeId(item.get("id"))
+        reasons: list[str] = []
+        if isStale(item, 30):
+            reasons.append(f"Нет активности {_activityAge(item, reportDate)} дн.")
+        if dealId not in pendingDealIds:
+            reasons.append("Нет следующего действия")
+        if dealId in overdueDealIds:
+            reasons.append("Есть просроченная активность")
+        return reasons
+
+    def leadProblemReasons(item: dict[str, object]) -> list[str]:
+        leadId = _normalizeId(item.get("id"))
+        reasons: list[str] = []
+        if isStale(item, 7):
+            reasons.append(f"Нет активности {_activityAge(item, reportDate)} дн.")
+        if leadId not in pendingLeadIds:
+            reasons.append("Нет следующего действия")
+        if leadId in overdueLeadIds:
+            reasons.append("Есть просроченная активность")
+        return reasons
+
     staleDeals = sorted(
-        [item for item in openDeals if isStale(item, 30)],
+        [item for item in controlledOpenDeals if isStale(item, 30)],
         key=lambda item: (_asFloat(item.get("opportunity")), _activityAge(item, reportDate)),
         reverse=True,
     )
@@ -496,8 +533,42 @@ def buildBitrixSalesAnalysisReport(
         key=lambda item: _activityAge(item, reportDate),
         reverse=True,
     )
-    overdueDeals = [item for item in openDeals if _normalizeId(item.get("id")) in overdueDealIds]
+    overdueDeals = [item for item in controlledOpenDeals if _normalizeId(item.get("id")) in overdueDealIds]
     overdueDeals.sort(key=lambda item: _asFloat(item.get("opportunity")), reverse=True)
+
+    priorityByResponsible: dict[str, dict[str, list[dict[str, object]]]] = {}
+    for name in sorted({responsibleName(item) for item in [*controlledOpenDeals, *openLeads]}):
+        problemDeals = [
+            item
+            for item in controlledOpenDeals
+            if responsibleName(item) == name and dealProblemReasons(item)
+        ]
+        problemDeals.sort(
+            key=lambda item: (
+                _asFloat(item.get("opportunity")),
+                len(dealProblemReasons(item)),
+                _activityAge(item, reportDate),
+            ),
+            reverse=True,
+        )
+        problemLeads = [
+            item
+            for item in openLeads
+            if responsibleName(item) == name and leadProblemReasons(item)
+        ]
+        problemLeads.sort(
+            key=lambda item: (
+                1 if str(item.get("sourceId") or "") == "WEB" else 0,
+                1 if _normalizeId(item.get("id")) not in pendingLeadIds else 0,
+                1 if _normalizeId(item.get("id")) in overdueLeadIds else 0,
+                _activityAge(item, reportDate),
+            ),
+            reverse=True,
+        )
+        priorityByResponsible[name] = {
+            "deals": [dealDetails(item) for item in problemDeals[:10]],
+            "leads": [leadDetails(item) for item in problemLeads[:10]],
+        }
 
     dealClosedYearCount = len(dealWinsYear) + len(dealLossesYear)
     leadClosedYearCount = len(leadWinsYear) + len(leadLossesYear)
@@ -508,28 +579,34 @@ def buildBitrixSalesAnalysisReport(
             "closed_event_date": "movedTime",
             "staleness_date": "lastActivityTime, with createdTime fallback",
             "planned_activity": "crm.activity.list with COMPLETED=N",
+            "deal_control_excluded_stages": sorted(DEAL_CONTROL_EXCLUDED_STAGES),
         },
+        "priority_by_responsible": priorityByResponsible,
         "deals": {
             "total": len(deals),
             "created_year": len(dealsCreatedYear),
             "open_count": len(openDeals),
             "open_amount": _roundAmount(sum(_asFloat(item.get("opportunity")) for item in openDeals)),
+            "controlled_open_count": len(controlledOpenDeals),
+            "controlled_open_amount": _roundAmount(
+                sum(_asFloat(item.get("opportunity")) for item in controlledOpenDeals)
+            ),
             "won_year": len(dealWinsYear),
             "won_amount_year": _roundAmount(sum(_asFloat(item.get("opportunity")) for item in dealWinsYear)),
             "lost_year": len(dealLossesYear),
             "lost_amount_year": _roundAmount(sum(_asFloat(item.get("opportunity")) for item in dealLossesYear)),
             "closed_year": dealClosedYearCount,
             "win_rate_percent": _percent(len(dealWinsYear), dealClosedYearCount),
-            "stale_30_count": sum(1 for item in openDeals if isStale(item, 30)),
+            "stale_30_count": sum(1 for item in controlledOpenDeals if isStale(item, 30)),
             "stale_30_amount": _roundAmount(
-                sum(_asFloat(item.get("opportunity")) for item in openDeals if isStale(item, 30))
+                sum(_asFloat(item.get("opportunity")) for item in controlledOpenDeals if isStale(item, 30))
             ),
-            "stale_60_count": sum(1 for item in openDeals if isStale(item, 60)),
-            "stale_90_count": sum(1 for item in openDeals if isStale(item, 90)),
+            "stale_60_count": sum(1 for item in controlledOpenDeals if isStale(item, 60)),
+            "stale_90_count": sum(1 for item in controlledOpenDeals if isStale(item, 90)),
             "without_planned_activity": sum(
-                1 for item in openDeals if _normalizeId(item.get("id")) not in pendingDealIds
+                1 for item in controlledOpenDeals if _normalizeId(item.get("id")) not in pendingDealIds
             ),
-            "with_overdue_activity": len(openDealIds & overdueDealIds),
+            "with_overdue_activity": len(controlledOpenDealIds & overdueDealIds),
             "zero_amount_count": sum(1 for item in openDeals if _asFloat(item.get("opportunity")) <= 0),
             "without_company_count": sum(1 for item in openDeals if not _normalizeId(item.get("companyId"))),
             "pipelines": pipelineRows,
