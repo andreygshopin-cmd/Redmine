@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.redmine import app as app_module
+from src.redmine import bitrix_analysis as bitrix_analysis_module
 from src.redmine import bitrix_client as bitrix_client_module
 from src.redmine import db as db_module
 from src.redmine.app import app, getTime, readBitrixDealSnapshotComparePage, readBitrixInvoiceSummaryPage, readBitrixInvoicesPage, readBitrixLeadSnapshotComparePage, readBitrixLeadsPage, readBitrixPage, readRoot
@@ -216,6 +217,118 @@ def testBitrixDealAttentionReportEndpointReturnsReportForAdmin(monkeypatch) -> N
     assert response.status_code == 200
     assert response.json()["agreement_without_activities"] == [{"id": 10}]
     assert response.json()["contract_without_invoices"] == [{"id": 20}]
+
+
+def testBitrixSalesAnalysisCalculatesCoreMetrics(monkeypatch) -> None:
+    deals = [
+        {
+            "id": 1,
+            "title": "Open stale",
+            "stageId": "WORK",
+            "stageSemanticId": "P",
+            "categoryId": 0,
+            "assignedById": 7,
+            "opportunity": 1000,
+            "createdTime": "2026-01-01T10:00:00+04:00",
+            "lastActivityTime": "2026-08-01T10:00:00+04:00",
+        },
+        {
+            "id": 2,
+            "title": "Won",
+            "stageId": "WON",
+            "stageSemanticId": "S",
+            "categoryId": 0,
+            "assignedById": 7,
+            "opportunity": 2000,
+            "createdTime": "2026-02-01T10:00:00+04:00",
+            "movedTime": "2026-04-01T10:00:00+04:00",
+        },
+        {
+            "id": 3,
+            "title": "Lost",
+            "stageId": "LOSE",
+            "stageSemanticId": "F",
+            "categoryId": 0,
+            "assignedById": 8,
+            "opportunity": 500,
+            "createdTime": "2026-02-01T10:00:00+04:00",
+            "movedTime": "2026-05-01T10:00:00+04:00",
+        },
+    ]
+    leads = [
+        {
+            "id": 10,
+            "title": "Active lead",
+            "stageId": "NEW",
+            "stageSemanticId": "P",
+            "assignedById": 8,
+            "sourceId": "WEB",
+            "createdTime": "2026-03-01T10:00:00+04:00",
+            "lastActivityTime": "2026-09-01T10:00:00+04:00",
+            "hasPhone": False,
+            "hasEmail": False,
+        },
+        {
+            "id": 11,
+            "title": "Converted lead",
+            "stageId": "CONVERTED",
+            "stageSemanticId": "S",
+            "assignedById": 7,
+            "sourceId": "WEB",
+            "createdTime": "2026-03-01T10:00:00+04:00",
+            "movedTime": "2026-04-01T10:00:00+04:00",
+        },
+    ]
+
+    monkeypatch.setattr(
+        bitrix_analysis_module,
+        "_fetchAllCrmItemsFast",
+        lambda portalUrl, credential, entityTypeId, requestedFields: deals if entityTypeId == 2 else leads,
+    )
+    monkeypatch.setattr(
+        bitrix_analysis_module,
+        "fetchBitrixUserNames",
+        lambda *args: {7: "Иванов", 8: "Петров"},
+    )
+    monkeypatch.setattr(
+        bitrix_analysis_module,
+        "fetchBitrixDealDictionaries",
+        lambda *args, **kwargs: {
+            "stage_names": {"WORK": "В работе", "WON": "Успех", "LOSE": "Проиграна"},
+            "category_names": {0: "Основная"},
+        },
+    )
+    monkeypatch.setattr(
+        bitrix_analysis_module,
+        "_fetchStatusNames",
+        lambda portalUrl, credential, entityId: (
+            {"NEW": "Новый", "CONVERTED": "Конвертирован"}
+            if entityId == "STATUS"
+            else {"WEB": "Сайт"}
+        ),
+    )
+    monkeypatch.setattr(
+        bitrix_analysis_module,
+        "_fetchPendingActivityOwners",
+        lambda portalUrl, credential, ownerTypeId, asOfDate: ({1}, {1}) if ownerTypeId == 2 else (set(), set()),
+    )
+
+    report = bitrix_analysis_module.buildBitrixSalesAnalysisReport(
+        "https://example.bitrix24.ru",
+        "1/token",
+        2026,
+        asOfDate=date(2026, 10, 27),
+    )
+
+    assert report["deals"]["open_count"] == 1
+    assert report["deals"]["open_amount"] == 1000
+    assert report["deals"]["win_rate_percent"] == 50.0
+    assert report["deals"]["stale_30_count"] == 1
+    assert report["deals"]["with_overdue_activity"] == 1
+    assert report["leads"]["active_count"] == 1
+    assert report["leads"]["conversion_percent"] == 100.0
+    assert report["leads"]["without_phone_and_email"] == 1
+    assert report["leads"]["sources_created_year"][0]["name"] == "Сайт"
 
 
 def testRenderYamlSchedulesWeeklySnapshotCronJobs() -> None:
