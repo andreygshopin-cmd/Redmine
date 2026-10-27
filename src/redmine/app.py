@@ -131,7 +131,6 @@ DEFAULT_ADMIN_LOGINS = (
     "stanislav.shidlovskiy@sms-a.ru",
     "sergey.laptev@sms-a.ru",
 )
-INTERNAL_REPORT_TOKEN_SHA256 = "ec7e494a7bf2591d72c37055b7901fcaf032009c866b5dd5cc6bf1a29f5dbe67"
 DASHBOARD_USER_CONFIGS: dict[str, dict[str, object]] = {
     "andrey.shopin@sms-a.ru": {
         "title": "Dashboard",
@@ -462,28 +461,12 @@ def _getSafeNextPath(nextPath: str | None) -> str:
     return candidate or "/"
 
 
-def _isInternalBitrixReportRequest(request: Request) -> bool:
-    if request.url.path != "/api/internal/bitrix/deal-attention":
-        return False
-    authorization = str(request.headers.get("authorization") or "")
-    scheme, _, token = authorization.partition(" ")
-    if scheme.casefold() != "bearer" or not token:
-        return False
-    if config.renderApiKey and hmac.compare_digest(token, config.renderApiKey):
-        return True
-    tokenHash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    return hmac.compare_digest(tokenHash, INTERNAL_REPORT_TOKEN_SHA256)
-
-
 @app.middleware("http")
 async def authMiddleware(request: Request, call_next):
     if not config.databaseUrl:
         return await call_next(request)
 
     path = request.url.path
-    if _isInternalBitrixReportRequest(request):
-        request.state.internal_service_authorized = True
-        return await call_next(request)
     if _publicPath(path):
         if path.startswith("/api/auth/"):
             _ensureAuthStorage()
@@ -23273,10 +23256,9 @@ def getBitrixDealAttentionReport(
     request: Request,
     year: int = Query(default_factory=lambda: date.today().year, ge=2000, le=2100),
 ) -> dict[str, object]:
-    if not getattr(request.state, "internal_service_authorized", False):
-        user = _requireAuthenticatedUser(request)
-        if not _hasAnyRole(user, (ADMIN_ROLE, FINANCE_ROLE)):
-            raise HTTPException(status_code=403, detail="Bitrix access requires Admin or Finance role")
+    user = _requireAuthenticatedUser(request)
+    if not _hasAnyRole(user, (ADMIN_ROLE, FINANCE_ROLE)):
+        raise HTTPException(status_code=403, detail="Bitrix access requires Admin or Finance role")
     requireBitrixConfig()
     try:
         return buildBitrixDealAttentionReport(

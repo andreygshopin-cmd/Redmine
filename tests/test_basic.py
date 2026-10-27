@@ -199,11 +199,8 @@ def testBitrixDealAttentionReportBuildsBothLists(monkeypatch) -> None:
     assert report["contract_without_invoices"][0]["category"] == "Общая воронка"
 
 
-def testInternalBitrixDealAttentionReportAllowsServiceToken(monkeypatch) -> None:
-    monkeypatch.setattr(app_module.config, "databaseUrl", "postgresql://demo")
-    monkeypatch.setattr(app_module.config, "renderApiKey", "report-token")
+def testBitrixDealAttentionReportEndpointReturnsReportForAdmin(monkeypatch) -> None:
     monkeypatch.setattr(app_module.config, "bitrixCredential", "1/token")
-    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: None)
     monkeypatch.setattr(
         app_module,
         "buildBitrixDealAttentionReport",
@@ -214,10 +211,7 @@ def testInternalBitrixDealAttentionReportAllowsServiceToken(monkeypatch) -> None
         },
     )
 
-    response = client.get(
-        "/api/internal/bitrix/deal-attention?year=2026",
-        headers={"Authorization": "Bearer report-token"},
-    )
+    response = client.get("/api/internal/bitrix/deal-attention?year=2026")
 
     assert response.status_code == 200
     assert response.json()["agreement_without_activities"] == [{"id": 10}]
