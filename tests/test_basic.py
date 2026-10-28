@@ -158,17 +158,21 @@ def testBitrixSalesAnalysisFetchesCompletedActivitiesInRollingWindow(monkeypatch
     def fakeCall(portalUrl, credential, method, payload, timeout):
         captured.update({"method": method, "payload": payload, "timeout": timeout})
         return {
-            "result": [
-                {
-                    "ID": "501",
-                    "OWNER_ID": "14371",
-                    "CREATED": "2026-10-02T14:43:00+04:00",
-                    "LAST_UPDATED": "2026-10-02T14:44:00+04:00",
-                    "START_TIME": "2026-10-02T14:43:00+04:00",
-                    "END_TIME": "2026-10-02T14:44:00+04:00",
-                }
-            ],
-            "total": 1,
+            "result": {
+                "result": {
+                    "owner_14371": [
+                        {
+                            "ID": "501",
+                            "OWNER_ID": "14371",
+                            "CREATED": "2026-10-02T14:43:00+04:00",
+                            "LAST_UPDATED": "2026-10-02T14:44:00+04:00",
+                            "START_TIME": "2026-10-02T14:43:00+04:00",
+                            "END_TIME": "2026-10-02T14:44:00+04:00",
+                        }
+                    ]
+                },
+                "result_error": {},
+            },
         }
 
     monkeypatch.setattr(bitrix_analysis_module, "callBitrixRestMethod", fakeCall)
@@ -178,16 +182,15 @@ def testBitrixSalesAnalysisFetchesCompletedActivitiesInRollingWindow(monkeypatch
         "1/token",
         2,
         date(2026, 10, 27),
+        [14371],
     )
 
     assert result == {14371: "2026-10-02T14:44:00+04:00"}
-    assert captured["method"] == "crm.activity.list"
-    assert captured["payload"]["filter"] == {
-        "OWNER_TYPE_ID": 2,
-        "COMPLETED": "Y",
-        ">=LAST_UPDATED": "2025-10-26T00:00:00+04:00",
-        "<LAST_UPDATED": "2026-10-28T00:00:00+04:00",
-    }
+    assert captured["method"] == "batch"
+    command = captured["payload"]["cmd"]["owner_14371"]
+    assert "filter%5BOWNER_ID%5D=14371" in command
+    assert "filter%5B%3E%3DLAST_UPDATED%5D=2025-10-26" in command
+    assert "filter%5B%3CLAST_UPDATED%5D=2026-10-28" in command
 
 
 def testBitrixInvoiceLookupUsesIssueDateYearFilter(monkeypatch) -> None:
@@ -385,7 +388,7 @@ def testBitrixSalesAnalysisCalculatesCoreMetrics(monkeypatch) -> None:
     monkeypatch.setattr(
         bitrix_analysis_module,
         "_fetchLatestCompletedActivityTimes",
-        lambda portalUrl, credential, ownerTypeId, asOfDate: {},
+        lambda portalUrl, credential, ownerTypeId, asOfDate, ownerIds: {},
     )
 
     report = bitrix_analysis_module.buildBitrixSalesAnalysisReport(

@@ -237,15 +237,16 @@ def _buildActivityListCommand(ownerTypeId: int, start: int) -> str:
     return f"crm.activity.list?{urlencode(parameters)}"
 
 
-def _buildCompletedActivityListCommand(
+def _buildCompletedActivityOwnerCommand(
     ownerTypeId: int,
-    start: int,
+    ownerId: int,
     periodStart: str,
     periodEnd: str,
 ) -> str:
     parameters = [
         ("order[LAST_UPDATED]", "DESC"),
         ("filter[OWNER_TYPE_ID]", ownerTypeId),
+        ("filter[OWNER_ID]", ownerId),
         ("filter[COMPLETED]", "Y"),
         ("filter[>=LAST_UPDATED]", periodStart),
         ("filter[<LAST_UPDATED]", periodEnd),
@@ -255,7 +256,7 @@ def _buildCompletedActivityListCommand(
         ("select[3]", "LAST_UPDATED"),
         ("select[4]", "START_TIME"),
         ("select[5]", "END_TIME"),
-        ("start", start),
+        ("start", 0),
     ]
     return f"crm.activity.list?{urlencode(parameters)}"
 
@@ -265,49 +266,35 @@ def _fetchLatestCompletedActivityTimes(
     credential: str,
     ownerTypeId: int,
     asOfDate: date,
+    ownerIds: list[int],
 ) -> dict[int, str]:
+    normalizedOwnerIds = sorted(
+        {ownerId for ownerId in (_normalizeId(value) for value in ownerIds) if ownerId}
+    )
+    if not normalizedOwnerIds:
+        return {}
+
     windowStart = asOfDate - timedelta(days=366)
     windowEnd = asOfDate + timedelta(days=1)
     periodStart = f"{windowStart.isoformat()}T00:00:00+04:00"
     periodEnd = f"{windowEnd.isoformat()}T00:00:00+04:00"
-    selectFields = ["ID", "OWNER_ID", "CREATED", "LAST_UPDATED", "START_TIME", "END_TIME"]
-    firstPayload = callBitrixRestMethod(
-        portalUrl,
-        credential,
-        "crm.activity.list",
-        {
-            "order": {"LAST_UPDATED": "DESC"},
-            "filter": {
-                "OWNER_TYPE_ID": ownerTypeId,
-                "COMPLETED": "Y",
-                ">=LAST_UPDATED": periodStart,
-                "<LAST_UPDATED": periodEnd,
-            },
-            "select": selectFields,
-            "start": 0,
-        },
-        timeout=90,
-    )
-    activities = [item for item in firstPayload.get("result") or [] if isinstance(item, dict)]
-    total = int(firstPayload.get("total") or len(activities))
-    starts = list(range(BITRIX_PAGE_SIZE, total, BITRIX_PAGE_SIZE))
-
-    for startChunk in _chunks(starts):
+    latestByOwner: dict[int, str] = {}
+    for ownerIdChunk in _chunks(normalizedOwnerIds):
         commands = {
-            f"page_{start}": _buildCompletedActivityListCommand(
+            f"owner_{ownerId}": _buildCompletedActivityOwnerCommand(
                 ownerTypeId,
-                start,
+                ownerId,
                 periodStart,
                 periodEnd,
             )
-            for start in startChunk
+            for ownerId in ownerIdChunk
         }
         batchPayload = callBitrixRestMethod(
             portalUrl,
             credential,
             "batch",
             {"halt": 0, "cmd": commands},
-            timeout=120,
+            timeout=90,
         )
         batchResult = batchPayload.get("result") or {}
         commandResults = batchResult.get("result") if isinstance(batchResult, dict) else {}
@@ -315,24 +302,21 @@ def _fetchLatestCompletedActivityTimes(
         if commandErrors:
             commandName, error = next(iter(commandErrors.items()))
             raise RuntimeError(f"Bitrix completed activity batch failed for {commandName}: {error}")
-        for start in startChunk:
-            pageActivities = (commandResults or {}).get(f"page_{start}") or []
-            activities.extend(item for item in pageActivities if isinstance(item, dict))
-
-    latestByOwner: dict[int, str] = {}
-    for activity in activities:
-        ownerId = _normalizeId(activity.get("OWNER_ID"))
-        if not ownerId:
-            continue
-        activityTime = _latestDateTimeValue(
-            activity.get("END_TIME"),
-            activity.get("START_TIME"),
-            activity.get("LAST_UPDATED"),
-            activity.get("CREATED"),
-        )
-        if not activityTime:
-            continue
-        latestByOwner[ownerId] = _latestDateTimeValue(latestByOwner.get(ownerId), activityTime) or activityTime
+        for ownerId in ownerIdChunk:
+            ownerActivities = (commandResults or {}).get(f"owner_{ownerId}") or []
+            for activity in ownerActivities:
+                if not isinstance(activity, dict):
+                    continue
+                activityTime = _latestDateTimeValue(
+                    activity.get("END_TIME"),
+                    activity.get("START_TIME"),
+                    activity.get("LAST_UPDATED"),
+                    activity.get("CREATED"),
+                )
+                if activityTime:
+                    latestByOwner[ownerId] = (
+                        _latestDateTimeValue(latestByOwner.get(ownerId), activityTime) or activityTime
+                    )
     return latestByOwner
 
 
@@ -476,25 +460,6 @@ def buildBitrixSalesAnalysisReport(
         BITRIX_LEAD_ENTITY_TYPE_ID,
         reportDate,
     )
-    _applyLatestCompletedActivityTimes(
-        deals,
-        _fetchLatestCompletedActivityTimes(
-            portalUrl,
-            credential,
-            BITRIX_DEAL_ENTITY_TYPE_ID,
-            reportDate,
-        ),
-    )
-    _applyLatestCompletedActivityTimes(
-        leads,
-        _fetchLatestCompletedActivityTimes(
-            portalUrl,
-            credential,
-            BITRIX_LEAD_ENTITY_TYPE_ID,
-            reportDate,
-        ),
-    )
-
     openDeals = [item for item in deals if _isOpen(item)]
     openLeads = [item for item in leads if _isOpen(item)]
     dealWinsYear = [item for item in deals if _semantic(item) == "S" and _dateYear(item.get("movedTime")) == year]
@@ -532,6 +497,16 @@ def buildBitrixSalesAnalysisReport(
     controlledOpenDeals = [item for item in openDeals if isControlledDeal(item)]
     controlledOpenDealIds = {_normalizeId(item.get("id")) for item in controlledOpenDeals}
     controlledOpenDealIds.discard(None)
+    _applyLatestCompletedActivityTimes(
+        controlledOpenDeals,
+        _fetchLatestCompletedActivityTimes(
+            portalUrl,
+            credential,
+            BITRIX_DEAL_ENTITY_TYPE_ID,
+            reportDate,
+            [int(dealId) for dealId in controlledOpenDealIds],
+        ),
+    )
 
     def buildDealGroup(name: str, values: list[dict[str, object]]) -> dict[str, object]:
         openValues = [item for item in values if _isOpen(item)]
