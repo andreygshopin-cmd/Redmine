@@ -20737,8 +20737,6 @@ def getBitrixDeals(
         raise HTTPException(status_code=502, detail=detail) from error
     except RuntimeError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
-
-
 @app.get("/api/bitrix/profile")
 def getBitrixProfile() -> dict[str, object]:
     requireBitrixConfig()
@@ -23298,6 +23296,11 @@ def getBitrixSalesAnalysisReport(
         raise HTTPException(status_code=502, detail=detail) from error
     except RuntimeError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Bitrix24 sales analysis failed: {type(error).__name__}: {error}",
+        ) from error
 
 
 @app.get("/health")
