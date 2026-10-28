@@ -136,6 +136,60 @@ def testBitrixActivityLookupUsesBatchesAndYearFilter(monkeypatch) -> None:
     assert "filter%5B%3CCREATED%5D=2027-01-01" in command
 
 
+def testBitrixSalesAnalysisUsesLatestCompletedActivity() -> None:
+    deal = {
+        "id": 14371,
+        "createdTime": "2024-04-25T10:00:00+04:00",
+        "lastActivityTime": "2026-07-24T11:00:00+04:00",
+    }
+
+    bitrix_analysis_module._applyLatestCompletedActivityTimes(
+        [deal],
+        {14371: "2026-10-02T14:44:00+04:00"},
+    )
+
+    assert bitrix_analysis_module._activityTime(deal) == "2026-10-02T14:44:00+04:00"
+    assert bitrix_analysis_module._activityAge(deal, date(2026, 10, 27)) == 25
+
+
+def testBitrixSalesAnalysisFetchesCompletedActivitiesInRollingWindow(monkeypatch) -> None:
+    captured = {}
+
+    def fakeCall(portalUrl, credential, method, payload, timeout):
+        captured.update({"method": method, "payload": payload, "timeout": timeout})
+        return {
+            "result": [
+                {
+                    "ID": "501",
+                    "OWNER_ID": "14371",
+                    "CREATED": "2026-10-02T14:43:00+04:00",
+                    "LAST_UPDATED": "2026-10-02T14:44:00+04:00",
+                    "START_TIME": "2026-10-02T14:43:00+04:00",
+                    "END_TIME": "2026-10-02T14:44:00+04:00",
+                }
+            ],
+            "total": 1,
+        }
+
+    monkeypatch.setattr(bitrix_analysis_module, "callBitrixRestMethod", fakeCall)
+
+    result = bitrix_analysis_module._fetchLatestCompletedActivityTimes(
+        "https://example.bitrix24.ru",
+        "1/token",
+        2,
+        date(2026, 10, 27),
+    )
+
+    assert result == {14371: "2026-10-02T14:44:00+04:00"}
+    assert captured["method"] == "crm.activity.list"
+    assert captured["payload"]["filter"] == {
+        "OWNER_TYPE_ID": 2,
+        "COMPLETED": "Y",
+        ">=LAST_UPDATED": "2025-10-26T00:00:00+04:00",
+        "<LAST_UPDATED": "2026-10-28T00:00:00+04:00",
+    }
+
+
 def testBitrixInvoiceLookupUsesIssueDateYearFilter(monkeypatch) -> None:
     captured = {}
 
@@ -327,6 +381,11 @@ def testBitrixSalesAnalysisCalculatesCoreMetrics(monkeypatch) -> None:
         bitrix_analysis_module,
         "_fetchPendingActivityOwners",
         lambda portalUrl, credential, ownerTypeId, asOfDate: ({1}, {1}) if ownerTypeId == 2 else (set(), set()),
+    )
+    monkeypatch.setattr(
+        bitrix_analysis_module,
+        "_fetchLatestCompletedActivityTimes",
+        lambda portalUrl, credential, ownerTypeId, asOfDate: {},
     )
 
     report = bitrix_analysis_module.buildBitrixSalesAnalysisReport(

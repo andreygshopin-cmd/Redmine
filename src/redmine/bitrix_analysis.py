@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 from src.redmine.bitrix_client import (
@@ -95,11 +95,45 @@ def _daysSince(value: object, asOfDate: date) -> int | None:
 
 
 def _activityAge(item: dict[str, object], asOfDate: date) -> int:
-    activityAge = _daysSince(item.get("lastActivityTime"), asOfDate)
+    activityAge = _daysSince(_activityTime(item), asOfDate)
     if activityAge is not None:
         return activityAge
     createdAge = _daysSince(item.get("createdTime"), asOfDate)
     return createdAge if createdAge is not None else 0
+
+
+def _activityTime(item: dict[str, object]) -> object:
+    return item.get("_analysisLastActivityTime") or item.get("lastActivityTime")
+
+
+def _dateTimeSortKey(value: datetime) -> float:
+    normalized = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return normalized.timestamp()
+
+
+def _latestDateTimeValue(*values: object) -> str | None:
+    candidates = [
+        (parsed, str(value))
+        for value in values
+        if (parsed := _parseDateTime(value)) is not None
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda candidate: _dateTimeSortKey(candidate[0]))[1]
+
+
+def _applyLatestCompletedActivityTimes(
+    items: list[dict[str, object]],
+    latestCompletedTimes: dict[int, str],
+) -> None:
+    for item in items:
+        itemId = _normalizeId(item.get("id"))
+        latestTime = _latestDateTimeValue(
+            item.get("lastActivityTime"),
+            latestCompletedTimes.get(itemId) if itemId else None,
+        )
+        if latestTime:
+            item["_analysisLastActivityTime"] = latestTime
 
 
 def _semantic(item: dict[str, object]) -> str:
@@ -201,6 +235,105 @@ def _buildActivityListCommand(ownerTypeId: int, start: int) -> str:
         ("start", start),
     ]
     return f"crm.activity.list?{urlencode(parameters)}"
+
+
+def _buildCompletedActivityListCommand(
+    ownerTypeId: int,
+    start: int,
+    periodStart: str,
+    periodEnd: str,
+) -> str:
+    parameters = [
+        ("order[LAST_UPDATED]", "DESC"),
+        ("filter[OWNER_TYPE_ID]", ownerTypeId),
+        ("filter[COMPLETED]", "Y"),
+        ("filter[>=LAST_UPDATED]", periodStart),
+        ("filter[<LAST_UPDATED]", periodEnd),
+        ("select[0]", "ID"),
+        ("select[1]", "OWNER_ID"),
+        ("select[2]", "CREATED"),
+        ("select[3]", "LAST_UPDATED"),
+        ("select[4]", "START_TIME"),
+        ("select[5]", "END_TIME"),
+        ("start", start),
+    ]
+    return f"crm.activity.list?{urlencode(parameters)}"
+
+
+def _fetchLatestCompletedActivityTimes(
+    portalUrl: str,
+    credential: str,
+    ownerTypeId: int,
+    asOfDate: date,
+) -> dict[int, str]:
+    windowStart = asOfDate - timedelta(days=366)
+    windowEnd = asOfDate + timedelta(days=1)
+    periodStart = f"{windowStart.isoformat()}T00:00:00+04:00"
+    periodEnd = f"{windowEnd.isoformat()}T00:00:00+04:00"
+    selectFields = ["ID", "OWNER_ID", "CREATED", "LAST_UPDATED", "START_TIME", "END_TIME"]
+    firstPayload = callBitrixRestMethod(
+        portalUrl,
+        credential,
+        "crm.activity.list",
+        {
+            "order": {"LAST_UPDATED": "DESC"},
+            "filter": {
+                "OWNER_TYPE_ID": ownerTypeId,
+                "COMPLETED": "Y",
+                ">=LAST_UPDATED": periodStart,
+                "<LAST_UPDATED": periodEnd,
+            },
+            "select": selectFields,
+            "start": 0,
+        },
+        timeout=90,
+    )
+    activities = [item for item in firstPayload.get("result") or [] if isinstance(item, dict)]
+    total = int(firstPayload.get("total") or len(activities))
+    starts = list(range(BITRIX_PAGE_SIZE, total, BITRIX_PAGE_SIZE))
+
+    for startChunk in _chunks(starts):
+        commands = {
+            f"page_{start}": _buildCompletedActivityListCommand(
+                ownerTypeId,
+                start,
+                periodStart,
+                periodEnd,
+            )
+            for start in startChunk
+        }
+        batchPayload = callBitrixRestMethod(
+            portalUrl,
+            credential,
+            "batch",
+            {"halt": 0, "cmd": commands},
+            timeout=120,
+        )
+        batchResult = batchPayload.get("result") or {}
+        commandResults = batchResult.get("result") if isinstance(batchResult, dict) else {}
+        commandErrors = batchResult.get("result_error") if isinstance(batchResult, dict) else {}
+        if commandErrors:
+            commandName, error = next(iter(commandErrors.items()))
+            raise RuntimeError(f"Bitrix completed activity batch failed for {commandName}: {error}")
+        for start in startChunk:
+            pageActivities = (commandResults or {}).get(f"page_{start}") or []
+            activities.extend(item for item in pageActivities if isinstance(item, dict))
+
+    latestByOwner: dict[int, str] = {}
+    for activity in activities:
+        ownerId = _normalizeId(activity.get("OWNER_ID"))
+        if not ownerId:
+            continue
+        activityTime = _latestDateTimeValue(
+            activity.get("END_TIME"),
+            activity.get("START_TIME"),
+            activity.get("LAST_UPDATED"),
+            activity.get("CREATED"),
+        )
+        if not activityTime:
+            continue
+        latestByOwner[ownerId] = _latestDateTimeValue(latestByOwner.get(ownerId), activityTime) or activityTime
+    return latestByOwner
 
 
 def _fetchPendingActivityOwners(
@@ -343,6 +476,24 @@ def buildBitrixSalesAnalysisReport(
         BITRIX_LEAD_ENTITY_TYPE_ID,
         reportDate,
     )
+    _applyLatestCompletedActivityTimes(
+        deals,
+        _fetchLatestCompletedActivityTimes(
+            portalUrl,
+            credential,
+            BITRIX_DEAL_ENTITY_TYPE_ID,
+            reportDate,
+        ),
+    )
+    _applyLatestCompletedActivityTimes(
+        leads,
+        _fetchLatestCompletedActivityTimes(
+            portalUrl,
+            credential,
+            BITRIX_LEAD_ENTITY_TYPE_ID,
+            reportDate,
+        ),
+    )
 
     openDeals = [item for item in deals if _isOpen(item)]
     openLeads = [item for item in leads if _isOpen(item)]
@@ -478,7 +629,7 @@ def buildBitrixSalesAnalysisReport(
             "responsible": responsibleName(item),
             "amount": _roundAmount(_asFloat(item.get("opportunity"))),
             "days_since_activity": _activityAge(item, reportDate),
-            "last_activity_time": item.get("lastActivityTime"),
+            "last_activity_time": _activityTime(item),
             "has_planned_activity": dealId in pendingDealIds,
             "has_overdue_activity": dealId in overdueDealIds,
             "problem_reasons": dealProblemReasons(item),
@@ -494,7 +645,7 @@ def buildBitrixSalesAnalysisReport(
             "source": sourceNames.get(str(item.get("sourceId") or "")) or str(item.get("sourceId") or "Не указан"),
             "responsible": responsibleName(item),
             "days_since_activity": _activityAge(item, reportDate),
-            "last_activity_time": item.get("lastActivityTime"),
+            "last_activity_time": _activityTime(item),
             "has_planned_activity": leadId in pendingLeadIds,
             "has_overdue_activity": leadId in overdueLeadIds,
             "problem_reasons": leadProblemReasons(item),
@@ -566,8 +717,8 @@ def buildBitrixSalesAnalysisReport(
             reverse=True,
         )
         priorityByResponsible[name] = {
-            "deals": [dealDetails(item) for item in problemDeals[:10]],
-            "leads": [leadDetails(item) for item in problemLeads[:10]],
+            "deals": [dealDetails(item) for item in problemDeals[:20]],
+            "leads": [leadDetails(item) for item in problemLeads[:20]],
         }
 
     dealClosedYearCount = len(dealWinsYear) + len(dealLossesYear)
@@ -577,7 +728,7 @@ def buildBitrixSalesAnalysisReport(
         "as_of_date": reportDate.isoformat(),
         "methodology": {
             "closed_event_date": "movedTime",
-            "staleness_date": "lastActivityTime, with createdTime fallback",
+            "staleness_date": "max(lastActivityTime, latest completed crm.activity), with createdTime fallback",
             "planned_activity": "crm.activity.list with COMPLETED=N",
             "deal_control_excluded_stages": sorted(DEAL_CONTROL_EXCLUDED_STAGES),
         },
