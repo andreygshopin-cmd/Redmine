@@ -1,5 +1,7 @@
 from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
+from html import unescape
+import re
 from urllib.parse import urlencode
 
 from src.redmine.bitrix_client import (
@@ -45,6 +47,25 @@ LEAD_ANALYSIS_FIELDS = [
     "hasEmail",
 ]
 DEAL_CONTROL_EXCLUDED_STAGES = {"договор в работе", "тендер/закупка"}
+PRODUCTIVE_ACTIVITY_TYPE_NAMES = {
+    "1": "Встреча",
+    "2": "Звонок",
+    "4": "Письмо",
+}
+PRODUCTIVE_ACTIVITY_PROVIDER_HINTS = (
+    "CALL",
+    "EMAIL",
+    "MEETING",
+    "VISIT",
+    "OPENLINE",
+    "IMOPENLINES",
+    "SMS",
+    "MESSAGE",
+    "WHATSAPP",
+    "TELEGRAM",
+    "ZOOM",
+)
+NON_PRODUCTIVE_ACTIVITY_PROVIDER_HINTS = ("TODO", "TASK", "WAIT", "REMINDER")
 
 
 def _chunks(values: list[int], size: int = 50) -> list[list[int]]:
@@ -317,6 +338,142 @@ def _fetchLatestCompletedActivityTimes(
                     latestByOwner[ownerId] = (
                         _latestDateTimeValue(latestByOwner.get(ownerId), activityTime) or activityTime
                     )
+    return latestByOwner
+
+
+def _buildProductiveActivityCommand(ownerId: int) -> str:
+    parameters = [
+        ("order[LAST_UPDATED]", "DESC"),
+        ("filter[OWNER_TYPE_ID]", BITRIX_DEAL_ENTITY_TYPE_ID),
+        ("filter[OWNER_ID]", ownerId),
+        ("filter[COMPLETED]", "Y"),
+        ("select[0]", "ID"),
+        ("select[1]", "TYPE_ID"),
+        ("select[2]", "PROVIDER_ID"),
+        ("select[3]", "PROVIDER_TYPE_ID"),
+        ("select[4]", "SUBJECT"),
+        ("select[5]", "CREATED"),
+        ("select[6]", "LAST_UPDATED"),
+        ("select[7]", "START_TIME"),
+        ("select[8]", "END_TIME"),
+        ("start", 0),
+    ]
+    return f"crm.activity.list?{urlencode(parameters)}"
+
+
+def _buildTimelineCommentCommand(ownerId: int) -> str:
+    parameters = [
+        ("order[CREATED]", "DESC"),
+        ("filter[ENTITY_ID]", ownerId),
+        ("filter[ENTITY_TYPE]", "deal"),
+        ("start", 0),
+    ]
+    return f"crm.timeline.comment.list?{urlencode(parameters)}"
+
+
+def _commandRows(payload: object) -> list[dict[str, object]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        return []
+    for key in ("items", "comments", "result"):
+        rows = payload.get(key)
+        if isinstance(rows, list):
+            return [item for item in rows if isinstance(item, dict)]
+    return []
+
+
+def _isProductiveActivity(activity: dict[str, object]) -> bool:
+    typeId = str(activity.get("TYPE_ID") or "").strip()
+    if typeId in PRODUCTIVE_ACTIVITY_TYPE_NAMES:
+        return True
+    provider = " ".join(
+        str(activity.get(key) or "").strip().upper()
+        for key in ("PROVIDER_ID", "PROVIDER_TYPE_ID")
+    )
+    if any(hint in provider for hint in NON_PRODUCTIVE_ACTIVITY_PROVIDER_HINTS):
+        return False
+    return any(hint in provider for hint in PRODUCTIVE_ACTIVITY_PROVIDER_HINTS)
+
+
+def _activityTypeName(activity: dict[str, object]) -> str:
+    typeId = str(activity.get("TYPE_ID") or "").strip()
+    if typeId in PRODUCTIVE_ACTIVITY_TYPE_NAMES:
+        return PRODUCTIVE_ACTIVITY_TYPE_NAMES[typeId]
+    provider = str(activity.get("PROVIDER_TYPE_ID") or activity.get("PROVIDER_ID") or "").strip()
+    return provider or "Коммуникация"
+
+
+def _plainTimelineText(value: object) -> str:
+    normalized = re.sub(r"\[[^\]]+\]", " ", str(value or ""))
+    normalized = re.sub(r"<[^>]+>", " ", normalized)
+    return " ".join(unescape(normalized).split())
+
+
+def _fetchLatestProductiveDealEvents(
+    portalUrl: str,
+    credential: str,
+    ownerIds: list[int],
+) -> dict[int, dict[str, object]]:
+    normalizedOwnerIds = sorted(
+        {ownerId for ownerId in (_normalizeId(value) for value in ownerIds) if ownerId}
+    )
+    latestByOwner: dict[int, dict[str, object]] = {}
+    for ownerIdChunk in _chunks(normalizedOwnerIds, size=25):
+        commands: dict[str, str] = {}
+        for ownerId in ownerIdChunk:
+            commands[f"comment_{ownerId}"] = _buildTimelineCommentCommand(ownerId)
+            commands[f"activity_{ownerId}"] = _buildProductiveActivityCommand(ownerId)
+        batchPayload = callBitrixRestMethod(
+            portalUrl,
+            credential,
+            "batch",
+            {"halt": 0, "cmd": commands},
+            timeout=120,
+        )
+        batchResult = batchPayload.get("result") or {}
+        commandResults = batchResult.get("result") if isinstance(batchResult, dict) else {}
+        commandErrors = batchResult.get("result_error") if isinstance(batchResult, dict) else {}
+        if commandErrors:
+            commandName, error = next(iter(commandErrors.items()))
+            raise RuntimeError(f"Bitrix productive activity batch failed for {commandName}: {error}")
+
+        for ownerId in ownerIdChunk:
+            candidates: list[dict[str, object]] = []
+            for comment in _commandRows((commandResults or {}).get(f"comment_{ownerId}")):
+                eventTime = _latestDateTimeValue(comment.get("CREATED"), comment.get("CREATED_TIME"))
+                if eventTime:
+                    candidates.append(
+                        {
+                            "time": eventTime,
+                            "type": "Комментарий",
+                            "text": _plainTimelineText(comment.get("COMMENT") or comment.get("TEXT")),
+                        }
+                    )
+            for activity in _commandRows((commandResults or {}).get(f"activity_{ownerId}")):
+                if not _isProductiveActivity(activity):
+                    continue
+                eventTime = _latestDateTimeValue(
+                    activity.get("END_TIME"),
+                    activity.get("START_TIME"),
+                    activity.get("LAST_UPDATED"),
+                    activity.get("CREATED"),
+                )
+                if eventTime:
+                    candidates.append(
+                        {
+                            "time": eventTime,
+                            "type": _activityTypeName(activity),
+                            "text": _plainTimelineText(activity.get("SUBJECT")),
+                        }
+                    )
+            if candidates:
+                latestByOwner[ownerId] = max(
+                    candidates,
+                    key=lambda item: _dateTimeSortKey(
+                        _parseDateTime(item["time"]) or datetime.min.replace(tzinfo=timezone.utc)
+                    ),
+                )
     return latestByOwner
 
 
@@ -765,4 +922,104 @@ def buildBitrixSalesAnalysisReport(
             "responsibles": leadResponsibleRows,
             "top_stale": [leadDetails(item) for item in staleLeads[:25]],
         },
+    }
+
+
+def buildBitrixProductiveStaleDealReport(
+    portalUrl: str,
+    credential: str,
+    category: str = "АСУРЭО",
+    days: int = 30,
+    asOfDate: date | None = None,
+) -> dict[str, object]:
+    reportDate = asOfDate or date.today()
+    deals = _fetchAllCrmItemsFast(
+        portalUrl,
+        credential,
+        BITRIX_DEAL_ENTITY_TYPE_ID,
+        DEAL_ANALYSIS_FIELDS,
+    )
+    dictionaries = fetchBitrixDealDictionaries(
+        portalUrl,
+        credential,
+        [int(item.get("categoryId") or 0) for item in deals],
+    )
+    stageNames = dictionaries.get("stage_names") or {}
+    categoryNames = dictionaries.get("category_names") or {}
+
+    def stageName(item: dict[str, object]) -> str:
+        stageId = _stageId(item)
+        categoryId = int(item.get("categoryId") or 0)
+        return str(stageNames.get(f"{categoryId}:{stageId}") or stageNames.get(stageId) or stageId)
+
+    def categoryName(item: dict[str, object]) -> str:
+        categoryId = int(item.get("categoryId") or 0)
+        return str(categoryNames.get(categoryId) or categoryId)
+
+    categoryKey = category.strip().casefold()
+    controlledDeals = [
+        item
+        for item in deals
+        if _isOpen(item)
+        and categoryName(item).strip().casefold() == categoryKey
+        and stageName(item).strip().casefold() not in DEAL_CONTROL_EXCLUDED_STAGES
+    ]
+    dealIds = [dealId for item in controlledDeals if (dealId := _normalizeId(item.get("id")))]
+    latestEvents = _fetchLatestProductiveDealEvents(portalUrl, credential, dealIds)
+    assignedByIds = [
+        userId
+        for item in controlledDeals
+        if (userId := _normalizeId(item.get("assignedById")))
+    ]
+    userNames = fetchBitrixUserNames(portalUrl, credential, assignedByIds)
+    rows: list[dict[str, object]] = []
+    for item in controlledDeals:
+        dealId = _normalizeId(item.get("id"))
+        if not dealId:
+            continue
+        event = latestEvents.get(dealId)
+        eventTime = event.get("time") if event else item.get("createdTime")
+        age = _daysSince(eventTime, reportDate)
+        if age is None or age <= days:
+            continue
+        userId = _normalizeId(item.get("assignedById"))
+        rows.append(
+            {
+                "id": dealId,
+                "title": item.get("title") or "",
+                "pipeline": categoryName(item),
+                "stage": stageName(item),
+                "responsible": userNames.get(userId) or str(userId or ""),
+                "amount": _roundAmount(_asFloat(item.get("opportunity"))),
+                "last_productive_time": eventTime,
+                "last_productive_type": event.get("type") if event else "Создание сделки",
+                "last_productive_text": event.get("text") if event else "",
+                "days_since_productive": age,
+                "has_productive_event": bool(event),
+                "url": f"{portalUrl.rstrip('/')}/crm/deal/details/{dealId}/",
+            }
+        )
+    rows.sort(
+        key=lambda item: (int(item["days_since_productive"]), int(item["amount"])),
+        reverse=True,
+    )
+    return {
+        "as_of_date": reportDate.isoformat(),
+        "category": category,
+        "days": int(days),
+        "controlled_open_count": len(controlledDeals),
+        "stale_count": len(rows),
+        "stale_amount": sum(int(item["amount"]) for item in rows),
+        "methodology": {
+            "productive_events": [
+                "crm.timeline.comment.list",
+                "completed calls",
+                "completed emails",
+                "completed meetings",
+                "completed visits and client messages",
+            ],
+            "excluded_events": ["CRM_TODO", "tasks", "waits", "reminders"],
+            "excluded_stages": sorted(DEAL_CONTROL_EXCLUDED_STAGES),
+        },
+        "deals": rows,
     }

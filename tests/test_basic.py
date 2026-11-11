@@ -152,6 +152,68 @@ def testBitrixSalesAnalysisUsesLatestCompletedActivity() -> None:
     assert bitrix_analysis_module._activityAge(deal, date(2026, 10, 27)) == 25
 
 
+def testBitrixProductiveActivityExcludesTodosAndAcceptsCommunications() -> None:
+    assert not bitrix_analysis_module._isProductiveActivity(
+        {"TYPE_ID": "6", "PROVIDER_ID": "CRM_TODO", "PROVIDER_TYPE_ID": "TODO"}
+    )
+    assert bitrix_analysis_module._isProductiveActivity({"TYPE_ID": "2"})
+    assert bitrix_analysis_module._isProductiveActivity(
+        {"TYPE_ID": "6", "PROVIDER_ID": "IMOPENLINES_SESSION"}
+    )
+
+
+def testBitrixProductiveStaleDealReportUsesCommentInsteadOfReminder(monkeypatch) -> None:
+    deals = [
+        {
+            "id": 9631,
+            "title": "Централизация для Татэнерго",
+            "stageId": "PROPOSAL",
+            "stageSemanticId": "P",
+            "categoryId": 1,
+            "assignedById": 23,
+            "opportunity": 8123480,
+            "createdTime": "2023-08-19T10:00:00+04:00",
+            "lastActivityTime": "2026-11-09T11:00:00+04:00",
+        }
+    ]
+    monkeypatch.setattr(bitrix_analysis_module, "_fetchAllCrmItemsFast", lambda *args, **kwargs: deals)
+    monkeypatch.setattr(
+        bitrix_analysis_module,
+        "fetchBitrixDealDictionaries",
+        lambda *args, **kwargs: {
+            "stage_names": {"1:PROPOSAL": "Выдали ТКП"},
+            "category_names": {1: "АСУРЭО"},
+        },
+    )
+    monkeypatch.setattr(
+        bitrix_analysis_module,
+        "fetchBitrixUserNames",
+        lambda *args, **kwargs: {23: "Роман Шутков"},
+    )
+    monkeypatch.setattr(
+        bitrix_analysis_module,
+        "_fetchLatestProductiveDealEvents",
+        lambda *args, **kwargs: {
+            9631: {
+                "time": "2026-05-19T12:19:00+04:00",
+                "type": "Комментарий",
+                "text": "Намерения выполнить проект сохранились",
+            }
+        },
+    )
+
+    report = bitrix_analysis_module.buildBitrixProductiveStaleDealReport(
+        "https://example.bitrix24.ru",
+        "1/token",
+        asOfDate=date(2026, 11, 11),
+    )
+
+    assert report["stale_count"] == 1
+    assert report["deals"][0]["id"] == 9631
+    assert report["deals"][0]["last_productive_time"] == "2026-05-19T12:19:00+04:00"
+    assert report["deals"][0]["days_since_productive"] == 176
+
+
 def testBitrixSalesAnalysisFetchesCompletedActivitiesInRollingWindow(monkeypatch) -> None:
     captured = {}
 

@@ -39,7 +39,10 @@ from src.redmine.bitrix_client import (
     fetchBitrixProfile,
     fetchBitrixUsers,
 )
-from src.redmine.bitrix_analysis import buildBitrixSalesAnalysisReport
+from src.redmine.bitrix_analysis import (
+    buildBitrixProductiveStaleDealReport,
+    buildBitrixSalesAnalysisReport,
+)
 from src.redmine.config import loadConfig
 from src.redmine.dates import getSnapshotBusinessDateIso
 from src.redmine.db import (
@@ -23301,6 +23304,74 @@ def getBitrixSalesAnalysisReport(
             status_code=502,
             detail=f"Bitrix24 sales analysis failed: {type(error).__name__}: {error}",
         ) from error
+
+
+@app.get("/api/internal/bitrix/productive-stale-deals")
+def getBitrixProductiveStaleDeals(
+    request: Request,
+    days: int = Query(30, ge=1, le=3650),
+    category: str = Query("АСУРЭО", min_length=1, max_length=100),
+) -> dict[str, object]:
+    user = _requireAuthenticatedUser(request)
+    if not _hasAnyRole(user, (ADMIN_ROLE, FINANCE_ROLE)):
+        raise HTTPException(status_code=403, detail="Bitrix access requires Admin or Finance role")
+    requireBitrixConfig()
+    try:
+        return buildBitrixProductiveStaleDealReport(
+            portalUrl=config.bitrixPortalUrl,
+            credential=config.bitrixCredential,
+            category=category,
+            days=days,
+        )
+    except requests.HTTPError as error:
+        detail = "Bitrix24 productive stale deals request failed."
+        if error.response is not None:
+            detail = f"{detail} HTTP {error.response.status_code}."
+        raise HTTPException(status_code=502, detail=detail) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Bitrix24 productive stale deals failed: {type(error).__name__}: {error}",
+        ) from error
+
+
+@app.get("/api/internal/bitrix/productive-stale-deals.csv")
+def downloadBitrixProductiveStaleDeals(
+    request: Request,
+    days: int = Query(30, ge=1, le=3650),
+    category: str = Query("АСУРЭО", min_length=1, max_length=100),
+) -> Response:
+    report = getBitrixProductiveStaleDeals(request, days, category)
+    columns = [
+        ("id", "ID"),
+        ("title", "Сделка"),
+        ("pipeline", "Воронка"),
+        ("stage", "Стадия"),
+        ("responsible", "Ответственный"),
+        ("amount", "Сумма"),
+        ("last_productive_time", "Последнее результативное действие"),
+        ("last_productive_type", "Тип действия"),
+        ("days_since_productive", "Дней без действия"),
+        ("last_productive_text", "Комментарий / тема"),
+        ("url", "Ссылка"),
+    ]
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=[header for _, header in columns])
+    writer.writeheader()
+    for item in report.get("deals") or []:
+        writer.writerow({header: item.get(key, "") for key, header in columns})
+    return Response(
+        content="\ufeff" + output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="bitrix-{report["category"]}-productive-stale-'
+                f'{report["as_of_date"]}.csv"'
+            )
+        },
+    )
 
 
 @app.get("/health")
