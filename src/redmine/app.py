@@ -23317,12 +23317,41 @@ def getBitrixProductiveStaleDeals(
         raise HTTPException(status_code=403, detail="Bitrix access requires Admin or Finance role")
     requireBitrixConfig()
     try:
-        return buildBitrixProductiveStaleDealReport(
+        if not config.databaseUrl:
+            raise RuntimeError("DATABASE_URL is not set")
+        snapshotPayload = enrichBitrixDealSnapshotResponsibleNames(
+            getBitrixDealSnapshotItems(
+                page=1,
+                pageSize=5000,
+                filters={"category_name": category},
+            )
+        )
+        sourceDeals = [
+            {
+                "id": item.get("deal_id"),
+                "title": item.get("title"),
+                "stageId": item.get("stage_id"),
+                "stageName": item.get("stage_name"),
+                "categoryId": item.get("category_id"),
+                "categoryName": item.get("category_name"),
+                "assignedById": item.get("assigned_by_id"),
+                "assignedByName": item.get("assigned_by_name"),
+                "companyName": item.get("company_name"),
+                "opportunity": item.get("opportunity"),
+                "createdTime": item.get("created_time"),
+            }
+            for item in snapshotPayload.get("deals") or []
+            if isinstance(item, dict)
+        ]
+        report = buildBitrixProductiveStaleDealReport(
             portalUrl=config.bitrixPortalUrl,
             credential=config.bitrixCredential,
             category=category,
             days=days,
+            sourceDeals=sourceDeals,
         )
+        report["snapshot_run"] = snapshotPayload.get("snapshot_run")
+        return report
     except requests.HTTPError as error:
         detail = "Bitrix24 productive stale deals request failed."
         if error.response is not None:
@@ -23350,6 +23379,7 @@ def downloadBitrixProductiveStaleDeals(
         ("pipeline", "Воронка"),
         ("stage", "Стадия"),
         ("responsible", "Ответственный"),
+        ("company", "Компания"),
         ("amount", "Сумма"),
         ("last_productive_time", "Последнее результативное действие"),
         ("last_productive_type", "Тип действия"),

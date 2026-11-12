@@ -47,6 +47,12 @@ LEAD_ANALYSIS_FIELDS = [
     "hasEmail",
 ]
 DEAL_CONTROL_EXCLUDED_STAGES = {"договор в работе", "тендер/закупка"}
+DEAL_CONTROL_CLOSED_STAGES = {
+    "договор заключен",
+    "отказ",
+    "нет потребности",
+    "используют решение конкурента",
+}
 PRODUCTIVE_ACTIVITY_TYPE_NAMES = {
     "1": "Встреча",
     "2": "Звонок",
@@ -638,6 +644,9 @@ def buildBitrixSalesAnalysisReport(
         return str(dealStageNames.get(f"{categoryId}:{stageId}") or dealStageNames.get(stageId) or stageId or "Не указано")
 
     def categoryName(item: dict[str, object]) -> str:
+        storedName = str(item.get("categoryName") or "").strip()
+        if storedName:
+            return storedName
         categoryId = int(item.get("categoryId") or 0)
         return str(categoryNames.get(categoryId) or categoryId)
 
@@ -937,28 +946,40 @@ def buildBitrixProductiveStaleDealReport(
     category: str = "АСУРЭО",
     days: int = 30,
     asOfDate: date | None = None,
+    sourceDeals: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     reportDate = asOfDate or date.today()
-    deals = _fetchAllCrmItemsFast(
-        portalUrl,
-        credential,
-        BITRIX_DEAL_ENTITY_TYPE_ID,
-        DEAL_ANALYSIS_FIELDS,
-    )
-    dictionaries = fetchBitrixDealDictionaries(
-        portalUrl,
-        credential,
-        [int(item.get("categoryId") or 0) for item in deals],
-    )
-    stageNames = dictionaries.get("stage_names") or {}
-    categoryNames = dictionaries.get("category_names") or {}
+    deals = sourceDeals
+    if deals is None:
+        deals = _fetchAllCrmItemsFast(
+            portalUrl,
+            credential,
+            BITRIX_DEAL_ENTITY_TYPE_ID,
+            DEAL_ANALYSIS_FIELDS,
+        )
+        dictionaries = fetchBitrixDealDictionaries(
+            portalUrl,
+            credential,
+            [int(item.get("categoryId") or 0) for item in deals],
+        )
+        stageNames = dictionaries.get("stage_names") or {}
+        categoryNames = dictionaries.get("category_names") or {}
+    else:
+        stageNames = {}
+        categoryNames = {}
 
     def stageName(item: dict[str, object]) -> str:
+        storedName = str(item.get("stageName") or "").strip()
+        if storedName:
+            return storedName
         stageId = _stageId(item)
         categoryId = int(item.get("categoryId") or 0)
         return str(stageNames.get(f"{categoryId}:{stageId}") or stageNames.get(stageId) or stageId)
 
     def categoryName(item: dict[str, object]) -> str:
+        storedName = str(item.get("categoryName") or "").strip()
+        if storedName:
+            return storedName
         categoryId = int(item.get("categoryId") or 0)
         return str(categoryNames.get(categoryId) or categoryId)
 
@@ -969,15 +990,17 @@ def buildBitrixProductiveStaleDealReport(
         if _isOpen(item)
         and categoryName(item).strip().casefold() == categoryKey
         and stageName(item).strip().casefold() not in DEAL_CONTROL_EXCLUDED_STAGES
+        and stageName(item).strip().casefold() not in DEAL_CONTROL_CLOSED_STAGES
     ]
     dealIds = [dealId for item in controlledDeals if (dealId := _normalizeId(item.get("id")))]
     latestEvents = _fetchLatestProductiveDealEvents(portalUrl, credential, dealIds)
     assignedByIds = [
         userId
         for item in controlledDeals
+        if not str(item.get("assignedByName") or "").strip()
         if (userId := _normalizeId(item.get("assignedById")))
     ]
-    userNames = fetchBitrixUserNames(portalUrl, credential, assignedByIds)
+    userNames = fetchBitrixUserNames(portalUrl, credential, assignedByIds) if assignedByIds else {}
     rows: list[dict[str, object]] = []
     for item in controlledDeals:
         dealId = _normalizeId(item.get("id"))
@@ -995,7 +1018,12 @@ def buildBitrixProductiveStaleDealReport(
                 "title": item.get("title") or "",
                 "pipeline": categoryName(item),
                 "stage": stageName(item),
-                "responsible": userNames.get(userId) or str(userId or ""),
+                "responsible": (
+                    str(item.get("assignedByName") or "").strip()
+                    or userNames.get(userId)
+                    or str(userId or "")
+                ),
+                "company": str(item.get("companyName") or "").strip(),
                 "amount": _roundAmount(_asFloat(item.get("opportunity"))),
                 "last_productive_time": eventTime,
                 "last_productive_type": event.get("type") if event else "Создание сделки",
@@ -1026,6 +1054,7 @@ def buildBitrixProductiveStaleDealReport(
             ],
             "excluded_events": ["CRM_TODO", "tasks", "waits", "reminders"],
             "excluded_stages": sorted(DEAL_CONTROL_EXCLUDED_STAGES),
+            "excluded_closed_stages": sorted(DEAL_CONTROL_CLOSED_STAGES),
         },
         "deals": rows,
     }

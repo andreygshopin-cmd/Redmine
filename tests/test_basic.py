@@ -214,6 +214,49 @@ def testBitrixProductiveStaleDealReportUsesCommentInsteadOfReminder(monkeypatch)
     assert report["deals"][0]["days_since_productive"] == 176
 
 
+def testBitrixProductiveStaleDealReportUsesStoredSnapshotDeal(monkeypatch) -> None:
+    monkeypatch.setattr(
+        bitrix_analysis_module,
+        "_fetchAllCrmItemsFast",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("live deals must not be fetched")),
+    )
+    monkeypatch.setattr(
+        bitrix_analysis_module,
+        "_fetchLatestProductiveDealEvents",
+        lambda *args, **kwargs: {
+            9631: {
+                "time": "2026-05-19T12:19:00+04:00",
+                "type": "Комментарий",
+                "text": "Намерения выполнить проект сохранились",
+            }
+        },
+    )
+    report = bitrix_analysis_module.buildBitrixProductiveStaleDealReport(
+        "https://example.bitrix24.ru",
+        "1/token",
+        asOfDate=date(2026, 11, 12),
+        sourceDeals=[
+            {
+                "id": 9631,
+                "title": "Централизация для Татэнерго",
+                "stageId": "PROPOSAL",
+                "stageName": "Выдали ТКП",
+                "categoryId": 1,
+                "categoryName": "АСУРЭО",
+                "assignedById": 23,
+                "assignedByName": "Роман Шутков",
+                "companyName": "Татэнерго",
+                "opportunity": 8123480,
+                "createdTime": "2023-08-19T10:00:00+04:00",
+            }
+        ],
+    )
+
+    assert report["controlled_open_count"] == 1
+    assert report["deals"][0]["responsible"] == "Роман Шутков"
+    assert report["deals"][0]["company"] == "Татэнерго"
+
+
 def testBitrixSalesAnalysisFetchesCompletedActivitiesInRollingWindow(monkeypatch) -> None:
     captured = {}
 
