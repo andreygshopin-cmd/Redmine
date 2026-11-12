@@ -419,18 +419,24 @@ def _fetchLatestProductiveDealEvents(
         {ownerId for ownerId in (_normalizeId(value) for value in ownerIds) if ownerId}
     )
     latestByOwner: dict[int, dict[str, object]] = {}
-    for ownerIdChunk in _chunks(normalizedOwnerIds, size=25):
+    for ownerIdChunk in _chunks(normalizedOwnerIds, size=5):
         commands: dict[str, str] = {}
         for ownerId in ownerIdChunk:
             commands[f"comment_{ownerId}"] = _buildTimelineCommentCommand(ownerId)
             commands[f"activity_{ownerId}"] = _buildProductiveActivityCommand(ownerId)
-        batchPayload = callBitrixRestMethod(
-            portalUrl,
-            credential,
-            "batch",
-            {"halt": 0, "cmd": commands},
-            timeout=120,
-        )
+        try:
+            batchPayload = callBitrixRestMethod(
+                portalUrl,
+                credential,
+                "batch",
+                {"halt": 0, "cmd": commands},
+                timeout=60,
+            )
+        except Exception as error:
+            ownerIds = ", ".join(str(ownerId) for ownerId in ownerIdChunk)
+            raise RuntimeError(
+                f"Bitrix productive activity batch failed for deals {ownerIds}: {error}"
+            ) from error
         batchResult = batchPayload.get("result") or {}
         commandResults = batchResult.get("result") if isinstance(batchResult, dict) else {}
         commandErrors = batchResult.get("result_error") if isinstance(batchResult, dict) else {}
