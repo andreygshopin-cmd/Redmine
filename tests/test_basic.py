@@ -257,6 +257,67 @@ def testBitrixProductiveStaleDealReportUsesStoredSnapshotDeal(monkeypatch) -> No
     assert report["deals"][0]["company"] == "Татэнерго"
 
 
+def testBitrixProductiveStaleDealReportRefreshesCurrentStage(monkeypatch) -> None:
+    sourceDeals = [
+        {
+            "id": 35353,
+            "title": "Старая сделка",
+            "stageId": "NEW",
+            "stageName": "Не обработан",
+            "stageSemanticId": "P",
+            "categoryId": 1,
+            "categoryName": "АСУРЭО",
+            "createdTime": "2026-01-01T10:00:00+04:00",
+        },
+        {
+            "id": 9631,
+            "title": "Централизация для Татэнерго",
+            "stageId": "PROPOSAL",
+            "stageName": "Выдали ТКП",
+            "stageSemanticId": "P",
+            "categoryId": 1,
+            "categoryName": "АСУРЭО",
+            "createdTime": "2026-01-01T10:00:00+04:00",
+        },
+    ]
+    monkeypatch.setattr(
+        bitrix_analysis_module,
+        "_fetchCrmItemsByIds",
+        lambda *args, **kwargs: [
+            {
+                **sourceDeals[0],
+                "stageId": "LOSE",
+                "stageSemanticId": "F",
+                "closed": True,
+            },
+            sourceDeals[1],
+        ],
+    )
+    monkeypatch.setattr(
+        bitrix_analysis_module,
+        "fetchBitrixDealDictionaries",
+        lambda *args, **kwargs: {
+            "stage_names": {"1:LOSE": "Нет потребности", "1:PROPOSAL": "Выдали ТКП"},
+            "category_names": {1: "АСУРЭО"},
+        },
+    )
+    monkeypatch.setattr(
+        bitrix_analysis_module,
+        "_fetchLatestProductiveDealEvents",
+        lambda *args, **kwargs: {},
+    )
+
+    report = bitrix_analysis_module.buildBitrixProductiveStaleDealReport(
+        "https://example.bitrix24.ru",
+        "1/token",
+        asOfDate=date(2026, 11, 12),
+        sourceDeals=sourceDeals,
+        refreshSourceDeals=True,
+    )
+
+    assert [deal["id"] for deal in report["deals"]] == [9631]
+
+
 def testBitrixSalesAnalysisFetchesCompletedActivitiesInRollingWindow(monkeypatch) -> None:
     captured = {}
 

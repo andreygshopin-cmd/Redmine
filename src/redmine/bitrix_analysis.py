@@ -251,6 +251,63 @@ def _fetchAllCrmItemsFast(
     return items
 
 
+def _fetchCrmItemsByIds(
+    portalUrl: str,
+    credential: str,
+    entityTypeId: int,
+    itemIds: list[int],
+    requestedFields: list[str],
+) -> list[dict[str, object]]:
+    normalizedIds = sorted(
+        {itemId for itemId in (_normalizeId(value) for value in itemIds) if itemId}
+    )
+    if not normalizedIds:
+        return []
+
+    selectFields = _selectAvailableFields(portalUrl, credential, entityTypeId, requestedFields)
+    items: list[dict[str, object]] = []
+    for itemIdChunk in _chunks(normalizedIds):
+        payload = callBitrixRestMethod(
+            portalUrl,
+            credential,
+            "crm.item.list",
+            {
+                "entityTypeId": entityTypeId,
+                "select": selectFields,
+                "filter": {"id": itemIdChunk},
+                "order": {"id": "DESC"},
+                "start": 0,
+            },
+            timeout=90,
+        )
+        result = payload.get("result") or {}
+        pageItems = result.get("items") if isinstance(result, dict) else []
+        items.extend(item for item in pageItems or [] if isinstance(item, dict))
+    return items
+
+
+def _mergeCurrentCrmItems(
+    sourceItems: list[dict[str, object]],
+    currentItems: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    sourceById = {
+        itemId: item
+        for item in sourceItems
+        if (itemId := _normalizeId(item.get("id")))
+    }
+    mergedItems: list[dict[str, object]] = []
+    for currentItem in currentItems:
+        itemId = _normalizeId(currentItem.get("id"))
+        sourceItem = sourceById.get(itemId)
+        if not itemId or sourceItem is None:
+            continue
+        merged = {**sourceItem, **currentItem}
+        merged.pop("stageName", None)
+        merged.pop("categoryName", None)
+        mergedItems.append(merged)
+    return mergedItems
+
+
 def _buildActivityListCommand(ownerTypeId: int, start: int) -> str:
     parameters = [
         ("order[ID]", "DESC"),
@@ -947,6 +1004,7 @@ def buildBitrixProductiveStaleDealReport(
     days: int = 30,
     asOfDate: date | None = None,
     sourceDeals: list[dict[str, object]] | None = None,
+    refreshSourceDeals: bool = False,
 ) -> dict[str, object]:
     reportDate = asOfDate or date.today()
     deals = sourceDeals
@@ -965,23 +1023,50 @@ def buildBitrixProductiveStaleDealReport(
         stageNames = dictionaries.get("stage_names") or {}
         categoryNames = dictionaries.get("category_names") or {}
     else:
-        stageNames = {}
-        categoryNames = {}
+        if refreshSourceDeals:
+            candidateDeals = [
+                item
+                for item in deals
+                if _isOpen(item)
+                and str(item.get("categoryName") or "").strip().casefold() == category.strip().casefold()
+                and str(item.get("stageName") or "").strip().casefold()
+                not in DEAL_CONTROL_EXCLUDED_STAGES | DEAL_CONTROL_CLOSED_STAGES
+            ]
+            currentDeals = _fetchCrmItemsByIds(
+                portalUrl,
+                credential,
+                BITRIX_DEAL_ENTITY_TYPE_ID,
+                [
+                    dealId
+                    for item in candidateDeals
+                    if (dealId := _normalizeId(item.get("id")))
+                ],
+                DEAL_ANALYSIS_FIELDS,
+            )
+            deals = _mergeCurrentCrmItems(candidateDeals, currentDeals)
+        dictionaries = fetchBitrixDealDictionaries(
+            portalUrl,
+            credential,
+            [int(item.get("categoryId") or 0) for item in deals],
+        )
+        stageNames = dictionaries.get("stage_names") or {}
+        categoryNames = dictionaries.get("category_names") or {}
 
     def stageName(item: dict[str, object]) -> str:
-        storedName = str(item.get("stageName") or "").strip()
-        if storedName:
-            return storedName
         stageId = _stageId(item)
         categoryId = int(item.get("categoryId") or 0)
-        return str(stageNames.get(f"{categoryId}:{stageId}") or stageNames.get(stageId) or stageId)
+        storedName = str(item.get("stageName") or "").strip()
+        return str(
+            stageNames.get(f"{categoryId}:{stageId}")
+            or stageNames.get(stageId)
+            or storedName
+            or stageId
+        )
 
     def categoryName(item: dict[str, object]) -> str:
-        storedName = str(item.get("categoryName") or "").strip()
-        if storedName:
-            return storedName
         categoryId = int(item.get("categoryId") or 0)
-        return str(categoryNames.get(categoryId) or categoryId)
+        storedName = str(item.get("categoryName") or "").strip()
+        return str(categoryNames.get(categoryId) or storedName or categoryId)
 
     categoryKey = category.strip().casefold()
     controlledDeals = [

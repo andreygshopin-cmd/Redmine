@@ -23349,6 +23349,7 @@ def getBitrixProductiveStaleDeals(
             category=category,
             days=days,
             sourceDeals=sourceDeals,
+            refreshSourceDeals=True,
         )
         report["snapshot_run"] = snapshotPayload.get("snapshot_run")
         return report
