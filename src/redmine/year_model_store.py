@@ -1,12 +1,13 @@
 """Append-only annual planning storage, shared by all application users."""
 
 from datetime import UTC, date, datetime, time, timedelta
+import hashlib
 from threading import Lock
 from uuid import uuid4
 
 from sqlalchemy import (
     Column, DateTime, ForeignKey, Index, Integer, JSON, MetaData, String, Table,
-    UniqueConstraint, func, insert, select, text,
+    UniqueConstraint, func, insert, select, text, update,
 )
 
 from src.redmine import db
@@ -37,6 +38,12 @@ imports = Table(
     Column("recorded_at", DateTime(timezone=True), nullable=False),
     Column("actor", String(320), nullable=False),
 )
+view_settings = Table(
+    "year_model_view_settings", metadata,
+    Column("user_login", String(320), primary_key=True),
+    Column("selected_year", Integer, nullable=True),
+    Column("collapsed_directions", JSON, nullable=False),
+)
 _schema_lock = Lock()
 _ready_engine = None
 
@@ -66,6 +73,39 @@ def lock_year(conn, year):
     # Serializes parent/child edits as well as first-time year creation across workers.
     if conn.dialect.name == "postgresql":
         conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": 7260000 + year})
+
+
+def read_view_settings(login):
+    ensure_storage()
+    with get_engine().connect() as conn:
+        row = conn.execute(select(view_settings).where(view_settings.c.user_login == login)).mappings().first()
+    return {"selected_year": row["selected_year"] if row else None,
+            "collapsed_directions": row["collapsed_directions"] if row else []}
+
+
+def save_view_settings(login, selected_year=None, direction_id=None, collapsed=None):
+    ensure_storage()
+    with get_engine().begin() as conn:
+        if conn.dialect.name == "postgresql":
+            # Also serializes the initial INSERT and independent patches from multiple tabs.
+            key = int.from_bytes(hashlib.sha256(("year-model-view:" + login).encode()).digest()[:8], "big", signed=True)
+            conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
+        row = conn.execute(select(view_settings).where(view_settings.c.user_login == login).with_for_update()).mappings().first()
+        saved = {"selected_year": row["selected_year"] if row else None,
+                 "collapsed_directions": list(row["collapsed_directions"]) if row else []}
+        if selected_year is not None:
+            saved["selected_year"] = selected_year
+        if direction_id is not None:
+            if not conn.execute(select(entities.c.id).where(entities.c.id == direction_id, entities.c.kind == "direction")).first():
+                raise LookupError("Направление не найдено")
+            ids = set(saved["collapsed_directions"])
+            ids.add(direction_id) if collapsed else ids.discard(direction_id)
+            saved["collapsed_directions"] = sorted(ids)
+        if row:
+            conn.execute(update(view_settings).where(view_settings.c.user_login == login).values(**saved))
+        else:
+            conn.execute(insert(view_settings).values(user_login=login, **saved))
+        return saved
 
 
 def _create(conn, year, kind, data, actor, now, seed_key=None):

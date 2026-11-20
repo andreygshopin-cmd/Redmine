@@ -62,7 +62,7 @@ def test_seed_and_company_consolidation(environment):
     assert company["summary"]["target"] == [200, 0, 0]
     assert company["summary"]["costs"] == [-80, 0, 0]
     assert company["summary"]["revenue"] == [32.34, 15, 7]
-    assert company["summary"]["balance"] == [152.34, 167.34, 174.34]
+    assert company["summary"]["balance"] == [-47.66, -32.66, -25.66]
     alpha = data["directions"][0]
     assert alpha["summary"]["costs"] == [-60, 0, 0]
     assert alpha["summary"]["revenue"] == [32.34, 15, 0]
@@ -80,7 +80,9 @@ def test_reference_balance_and_decisions():
         items.append({"id": confidence, "kind": "topic", "direction_id": "d", "name": confidence,
                       "confidence": confidence, "amount": amount, "expected_date": "2027-04-01"})
     summary = model.summarize(items, model.DEFAULT_CONFIDENCE)[0]["summary"]
-    assert summary["balance"] == [70, 100, 130]
+    assert summary["balance"] == [-30, 0, 30]
+    items[0]["target"] = "9000"
+    assert model.summarize(items, model.DEFAULT_CONFIDENCE)[0]["summary"]["balance"] == [-30, 0, 30]
     items.extend([
         {"id": "r1", "kind": "decision", "direction_id": "d", "name": "Cost", "confidence": "medium", "amount": "-5", "expected_date": "2027-05-01"},
         {"id": "r2", "kind": "decision", "direction_id": "d", "name": "Return", "confidence": "low", "amount": "2", "expected_date": "2027-05-01"},
@@ -88,14 +90,14 @@ def test_reference_balance_and_decisions():
     summary = model.summarize(items, model.DEFAULT_CONFIDENCE)[0]["summary"]
     assert summary["costs"] == [-90, -5, 0]
     assert summary["revenue"] == [60, 30, 30]
-    assert summary["balance"] == [70, 95, 127]
+    assert summary["balance"] == [-30, -5, 27]
 
 
 @pytest.mark.parametrize("confidence,revenue,balance", [
-    ("fact", [12.34, 0, 0], [140.34, 140.34, 140.34]),
-    ("medium", [0, 15, 0], [128, 143, 143]),
-    ("", [0, 0, 0], [128, 128, 128]),
-    ("none", [0, 0, 0], [128, 128, 128]),
+    ("fact", [12.34, 0, 0], [-59.66, -59.66, -59.66]),
+    ("medium", [0, 15, 0], [-72, -57, -57]),
+    ("", [0, 0, 0], [-72, -72, -72]),
+    ("none", [0, 0, 0], [-72, -72, -72]),
 ])
 def test_confidence_filters_events_and_totals(environment, confidence, revenue, balance):
     data = snapshot(environment[0], confidence=confidence)
@@ -146,8 +148,9 @@ def test_access_on_page_api_history_export_and_writes(environment, roles, allowe
         assert client.get(f"/api/year-model/items/{item_id}/history").status_code == 200
         assert client.get("/api/year-model/export?year=2027").status_code == 200
     else:
-        for path in ["/api/year-model/items/unknown/history", "/api/year-model/export"]:
+        for path in ["/api/year-model/items/unknown/history", "/api/year-model/export", "/api/year-model/view-settings"]:
             assert client.get(path).status_code == 403
+        assert client.put("/api/year-model/view-settings", json={"selected_year": 2027}).status_code == 403
         payload = {"year": 2027, "kind": "direction", "data": {"name": "Forbidden"}}
         assert client.post("/api/year-model/items", json=payload).status_code == 403
         assert client.put("/api/year-model/items/unknown", json=payload).status_code == 403
@@ -223,6 +226,7 @@ def test_defaults_empty_filters_and_export(environment):
     assert book["Темы и решения"]["E2"].value == 12.34
     assert book["Команды"].max_row == 4
     assert book["Резюме"].freeze_panes == "C3"
+    assert list(book["Резюме"].values)[-1][2:] == (-59.66, -59.66, -59.66)
 
 
 def test_initial_import_rolls_back_invalid_batch(environment):
@@ -232,3 +236,34 @@ def test_initial_import_rolls_back_invalid_batch(environment):
     # Event dates do not belong to 2029, so the complete import must roll back.
     assert client.post("/api/year-model/import", json=payload).status_code == 422
     assert snapshot(client, year=2029)["items"] == []
+
+
+def test_view_settings_survive_reopening_and_are_private_per_user(environment):
+    client, user, _ = environment
+    ids = [direction["id"] for direction in snapshot(client)["directions"]]
+    assert client.get("/api/year-model/view-settings").json() == {"selected_year": None, "collapsed_directions": []}
+    user["roles"] = ["Finance"]
+    assert client.put("/api/year-model/view-settings", json={"selected_year": 2027}).status_code == 200
+    for direction_id in ids[:2]:
+        assert client.put("/api/year-model/view-settings", json={"direction_id": direction_id, "collapsed": True}).status_code == 200
+    client.put("/api/year-model/view-settings", json={"selected_year": 2028})
+    client.put("/api/year-model/view-settings", json={"direction_id": ids[0], "collapsed": False})
+    store._ready_engine = None
+    reopened = TestClient(app_module.app)
+    expected = {"selected_year": 2028, "collapsed_directions": [ids[1]]}
+    assert reopened.get("/api/year-model/view-settings").json() == expected
+    user["login"] = "another-user"
+    assert reopened.get("/api/year-model/view-settings").json() == {"selected_year": None, "collapsed_directions": []}
+    reopened.put("/api/year-model/view-settings", json={"selected_year": 2030})
+    user["login"] = "planner"
+    assert reopened.get("/api/year-model/view-settings").json() == expected
+
+
+def test_view_settings_validation_does_not_overwrite_saved_state(environment):
+    client, _, _ = environment
+    client.put("/api/year-model/view-settings", json={"selected_year": 2027})
+    for patch in [{}, {"selected_year": 1999}, {"collapsed": True}, {"direction_id": "missing"}, {"user_login": "someone", "selected_year": 2028}]:
+        assert client.put("/api/year-model/view-settings", json=patch).status_code == 422
+    team = next(item for item in snapshot(client)["items"] if item["kind"] == "team")
+    assert client.put("/api/year-model/view-settings", json={"direction_id": team["id"], "collapsed": True}).status_code == 404
+    assert client.get("/api/year-model/view-settings").json()["selected_year"] == 2027

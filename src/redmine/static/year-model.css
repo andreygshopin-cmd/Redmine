@@ -1,4 +1,4 @@
-:root{color-scheme:light;--text:#16324a;--muted:#64798d;--line:#d9e5eb;--blue:#375d77;--orange:#ff6c0e;--label:210px;--summary:336px;--timeline:1104px}
+:root{color-scheme:light;--text:#16324a;--muted:#64798d;--line:#d9e5eb;--blue:#375d77;--orange:#ff6c0e;--label:clamp(166px,14vw,210px);--summary:clamp(306px,26vw,350px)}
 
 *{box-sizing:border-box}
 body{margin:0;background:#f5f8fa;color:var(--text);font:16px/1.45 "Golos","Segoe UI",sans-serif}
@@ -54,15 +54,15 @@ main{padding:22px 24px 36px}
 #status{font-size:14px;color:var(--muted);margin:8px 0}
 #status:empty{display:none}
 #status.error,.error{color:#b6372b}
-.board-scroll{overflow:auto;max-height:calc(100vh - 250px);min-height:260px;border:1px solid var(--line);border-radius:8px;background:#fff;position:relative;scrollbar-gutter:stable}
-.board{min-width:calc(var(--label) + var(--timeline) + var(--summary))}
-.board-header,.lane{display:grid;grid-template-columns:var(--label) minmax(var(--timeline),1fr) var(--summary)}
-.board-header{position:sticky;top:0;z-index:9;background:var(--blue);color:#fff;height:47px;font-size:14px;font-weight:500}
-.header-label{position:sticky;left:0;z-index:10;background:var(--blue);padding:13px 14px;border-right:1px solid #ffffff30}
+.board-scroll{overflow:visible;min-height:260px;border:1px solid var(--line);border-radius:8px;background:#fff;position:relative}
+.board{min-width:960px}
+.board-header,.lane{display:grid;grid-template-columns:var(--label) minmax(0,1fr) var(--summary)}
+.board-header{position:sticky;top:0;z-index:9;background:var(--blue);color:#fff;height:56px;font-size:14px;font-weight:500}
+.header-label{position:sticky;left:0;z-index:10;background:var(--blue);padding:8px 10px;display:flex;align-items:center;line-height:1.25;border-right:1px solid #ffffff30}
 .months{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));height:100%;align-items:stretch}
 .month{display:flex;justify-content:center;align-items:center;border-right:1px solid #ffffff25}
 .month.quarter{border-left:1px solid #ffffff70}
-.header-summary{position:sticky;right:0;background:var(--blue);padding:13px 16px;border-left:1px solid #ffffff40;z-index:10}
+.header-summary{background:var(--blue);padding:0 8px;border-left:1px solid #ffffff40}
 .lane{border-bottom:2px solid #d9e5eb;position:relative}
 .lane:last-child{border-bottom:0}
 .lane-label{position:sticky;left:0;z-index:5;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column}
@@ -79,7 +79,7 @@ main{padding:22px 24px 36px}
 .timeline{background-image:linear-gradient(to right,transparent calc(100% - 1px),#e6edf2 calc(100% - 1px));background-size:calc(100% / 12) 100%;position:relative}
 .events{height:var(--event-height);position:relative;min-height:126px}
 .empty-events{position:absolute;left:15px;top:48px;color:#8a9ba9;font-size:14px}
-.event{position:absolute;left:var(--left);top:var(--top);width:calc(16.6667% - 10px);height:80px;padding:8px 9px;background:var(--event-bg);border:1px solid #0000000d;border-left:3px solid var(--event-color);border-radius:5px;text-align:left;box-shadow:0 3px 6px #16324a06;overflow:hidden;font-size:14px}
+.event{position:absolute;left:var(--left);top:var(--top);width:calc(var(--width) - 8px);height:80px;padding:8px 9px;background:var(--event-bg);border:1px solid #0000000d;border-left:3px solid var(--event-color);border-radius:5px;text-align:left;box-shadow:0 3px 6px #16324a06;overflow:hidden;font-size:14px}
 .event:hover{box-shadow:0 4px 12px #16324a22;filter:brightness(.98);z-index:3}
 .event-title{font-size:14px;font-weight:500;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;padding-right:3px}
 .event-foot{display:flex;align-items:center;justify-content:space-between;gap:4px;position:absolute;left:9px;right:9px;bottom:6px}
@@ -90,10 +90,10 @@ main{padding:22px 24px 36px}
 .event-stem{position:absolute;left:var(--anchor);top:calc(var(--top) - 4px);height:8px;border-left:1px solid var(--event-color)}
 .team-costs{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));height:40px;border-top:1px solid #edf1f4;background:#f9fbfc80}
 .team-cost{display:flex;align-items:center;justify-content:center;border-right:1px solid #e7edf2;color:#91a0ac;font-size:14px;font-variant-numeric:tabular-nums}
-.lane-summary{position:sticky;right:0;z-index:4;background:#fff;border-left:1px solid var(--line);padding:12px 10px;box-shadow:-5px 0 12px #16324a03;display:flex;align-items:flex-start}
+.lane-summary{position:sticky;right:0;z-index:4;background:#fff;border-left:1px solid var(--line);padding:10px 8px;box-shadow:-5px 0 12px #16324a03;display:flex;align-items:flex-start}
 .summary-table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:14px}
 .summary-table th,.summary-table td{padding:7px 5px;border-bottom:1px solid #e5ecf0;text-align:right;font-variant-numeric:tabular-nums}
-.summary-table th:first-child,.summary-table td:first-child{text-align:left;width:43%}
+.summary-table th:first-child,.summary-table td:first-child{text-align:left;width:40%}
 .summary-table thead th{font-size:13px;font-weight:500;color:var(--muted);background:#f4f8fa}
 .summary-table .balance td{font-weight:600;color:var(--blue);background:#edf5f8;border-bottom:0}
 .negative{color:#a4483e!important}
@@ -105,7 +105,7 @@ main{padding:22px 24px 36px}
 .company .team-costs{background:#edf5f8}
 .company-total{font-weight:500;color:var(--blue)}
 .empty-board{padding:40px;color:var(--muted);min-height:260px}
-.legend{margin-top:18px;padding:14px 18px;background:#fff;border:1px solid var(--line);border-radius:8px;font-size:14px;color:var(--muted)}
+.legend{margin-top:12px;padding:14px 18px;background:#fff;border:1px solid var(--line);border-radius:8px;font-size:14px;color:var(--muted)}
 .legend summary{font-weight:500;color:var(--text);cursor:pointer}
 .legend-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 28px}
 .legend-grid p{line-height:1.55;margin:12px 0 0}
@@ -135,7 +135,7 @@ dialog::backdrop{background:#16324a65;backdrop-filter:blur(2px)}
 .loading{opacity:.5;pointer-events:none}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
 
-@media(min-width:1800px){:root{--label:230px;--summary:366px}
+@media(min-width:1800px){:root{--label:220px;--summary:360px}
 .summary-table{font-size:14px}
 .summary-table thead th{font-size:13px}
 .team-name{font-size:14px}
@@ -147,7 +147,7 @@ dialog::backdrop{background:#16324a65;backdrop-filter:blur(2px)}
 .overview{grid-template-columns:repeat(3,1fr)}
 .legend-grid{grid-template-columns:1fr 1fr}
 .toolbar-actions{margin-left:0}
-.board-scroll{max-height:70vh}
+
 }
 @media(max-width:600px){.page-heading span{display:none}
 .topbar{gap:12px}
@@ -164,3 +164,29 @@ dialog::backdrop{background:#16324a65;backdrop-filter:blur(2px)}
 .toolbar{gap:12px}
 }
 
+
+/* Shared column headings align with every direction summary. Only this header sticks. */
+.summary-columns{display:grid;grid-template-columns:40% repeat(3,20%);height:100%;align-items:center;font-size:13px}
+.summary-columns span{padding:0 5px;text-align:right;white-space:nowrap}
+.summary-columns span:first-child{text-align:left}
+.month-short{display:none}
+.direction-heading{display:flex;align-items:flex-start;gap:7px}
+.lane-toggle{flex:none;width:25px;height:25px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #cbdce5;border-radius:4px;background:#f4f8fa;font-size:18px;line-height:1;padding:0}
+.lane-toggle:hover{background:#dfeef5}
+.direction-heading .direction-name{min-width:0;overflow-wrap:anywhere}
+.direction-label{padding:12px 10px 8px}
+.direction-meta{margin-left:32px}
+.lane-actions{margin-left:32px}
+.is-collapsed .direction-label{min-height:0;height:44px;padding:8px 10px;flex:initial}
+.is-collapsed .direction-heading{align-items:center;height:28px}
+.is-collapsed .direction-name{font-size:14px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.is-collapsed .direction-meta,.is-collapsed .lane-actions,.is-collapsed .team-name{display:none}
+.is-collapsed .lane-summary{padding:0 8px;align-items:center}
+.is-collapsed .summary-table tr:not(.balance){display:none}
+.is-collapsed .summary-table td{height:44px;padding-top:0;padding-bottom:0}
+.mini-months{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));height:44px}
+.mini-month{display:flex;align-items:center;justify-content:center}
+.month-count{min-width:22px;padding:1px 5px;border-radius:4px;background:#e9f3f8;color:var(--blue);font-size:13px;text-align:center}
+#viewStatus{font-size:14px;color:var(--muted);margin:8px 0}
+#viewStatus:empty{display:none}
+@media(max-width:1500px){.month-full{display:none}.month-short{display:inline}}

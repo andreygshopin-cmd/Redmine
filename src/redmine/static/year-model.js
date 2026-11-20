@@ -8,6 +8,24 @@
   const months = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
   const shortMonths = ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
   let model = null, editing = null, controller = null, currentQuery = "", busy = false;
+  let collapsedDirections = new Set(), preferencesReady = false, savedYear = null;
+  let preferenceQueue = Promise.resolve(), preferenceRequest = 0;
+  function saveView(patch) {
+    if (!preferencesReady) return;
+    const request = ++preferenceRequest;
+    $("viewStatus").textContent = "Сохраняем вид…";
+    preferenceQueue = preferenceQueue.then(async () => {
+      try {
+        await api("/api/year-model/view-settings", {
+          method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(patch), keepalive:true,
+        });
+        if (patch.selected_year !== undefined) savedYear = patch.selected_year;
+        if (request === preferenceRequest) $("viewStatus").textContent = "";
+      } catch(error) {
+        $("viewStatus").textContent = `Не удалось сохранить вид: ${error.message}`;
+      }
+    });
+  }
   const isHistorical = () => model && model.as_of < model.today;
   const selectedConfidence = () => [...document.querySelectorAll(".confidence-filter input:checked")].map(input => input.value);
   const dayLabel = item => {
@@ -48,6 +66,7 @@
       $("years").innerHTML = model.years.map(year => `<option value="${year}"></option>`).join("");
       const url = new URL(location.href); url.search = queryFromControls(); history.replaceState(null,"",url);
       render(); $("status").textContent = "";
+      if (model.year !== savedYear) saveView({selected_year:model.year});
     } catch (error) {
       if (error.name !== "AbortError") { $("status").className = "error"; $("status").textContent = `Не удалось загрузить модель. ${error.message}`; }
     } finally {
@@ -58,35 +77,54 @@
     const rows = [["target","Цель по выручке"],["costs","Затраты"],["revenue","Выручка"]];
     if (summary.decisions.some(value => value !== 0)) rows.push(["decisions","Решения (+)"]);
     rows.push(["balance","Баланс"]);
-    return `<table class="summary-table"><thead><tr><th>Уверенность</th><th title="Высокая и факт">Высокая</th><th>Средняя</th><th>Низкая</th></tr></thead><tbody>${rows.map(([key,label]) => `<tr class="${key}"><td>${label}</td>${summary[key].map((value,index) => `<td class="${value < 0 ? 'negative' : ''}">${key === 'target' && index > 0 ? '—' : fmt(value)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    return `<table class="summary-table"><tbody>${rows.map(([key,label]) => `<tr class="${key}"><td>${label}</td>${summary[key].map((value,index) => `<td class="${value < 0 ? 'negative' : ''}">${key === 'target' && index > 0 ? '—' : fmt(value)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   }
   function eventLayout(events, year) {
     const rows = [], placements = [];
+    const width = $("monthHeaders").getBoundingClientRect().width || 720;
+    const span = Math.min(.5, Math.max(2/12, 170/width));
     for (const event of events) {
       const [,month,day] = event.expected_date.split("-").map(Number);
       const days = new Date(year,month,0).getDate();
       const anchor = (month - 1 + (event.date_precision === "month" ? .08 : (day - 1) / days)) / 12;
-      const start = Math.min(anchor, 10/12), end = start + 2/12;
+      const start = Math.min(anchor, 1-span), end = start + span;
       let row = rows.findIndex(value => value <= start);
       if (row < 0) row = rows.length;
       rows[row] = end;
-      placements.push({event,start,anchor,row});
+      placements.push({event,start,anchor,row,span});
     }
-    return {placements,height:Math.max(190,rows.length*92+20)};
+    return {placements,height:Math.max(158,rows.length*92+20)};
   }
   function lane(direction) {
     const layout = eventLayout(direction.events, model.year);
-    if (direction.summary.decisions.some(value => value)) layout.height = Math.max(layout.height,220);
+    if (direction.summary.decisions.some(value => value)) layout.height = Math.max(layout.height,190);
     const title = direction.company ? "Сводно по всем направлениям" : `${direction.teams.length} команд · ${direction.events.length} событий`;
     const disabled = isHistorical() ? "disabled" : "";
     const teamLabels = direction.teams.map(team => `<button class="team-name" data-edit="${esc(team.id)}" title="${esc(team.name)} · ${fmt(team.monthly_cost)} млн ₽/мес"><span>${esc(team.name)}</span></button>`).join("");
     const costs = direction.teams.map(team => `<div class="team-costs">${months.map(() => `<span class="team-cost">${fmt(team.monthly_cost)}</span>`).join("")}</div>`).join("");
-    const cards = layout.placements.map(({event,start,anchor,row}) => {
-      const style = `--left:${start*100}%;--anchor:${anchor*100}%;--top:${20+row*92}px`;
+    const cards = layout.placements.map(({event,start,anchor,row,span}) => {
+      const style = `--left:${start*100}%;--anchor:${anchor*100}%;--top:${20+row*92}px;--width:${span*100}%`;
       return `<span class="event-marker ${event.confidence}" style="${style}" aria-hidden="true"></span><span class="event-stem ${event.confidence}" style="${style}" aria-hidden="true"></span><button class="event ${event.confidence} ${event.kind}" style="${style}" data-edit="${esc(event.id)}" title="${esc(event.name)} · ${confidences[event.confidence]} · ${dayLabel(event)} · ${fmt(event.amount)} млн ₽"><span class="event-title">${event.kind === 'decision' ? '◆ ' : ''}${esc(event.name)}</span><span class="event-foot"><span class="event-date">${dayLabel(event)} · ${confidences[event.confidence]}</span><span class="event-amount">${fmt(event.amount)}</span></span></button>`;
     }).join("");
-    return `<section class="lane ${direction.company ? 'company' : ''}" aria-label="${esc(direction.name)}" style="--event-height:${layout.height}px"><div class="lane-label"><div class="direction-label"><button class="direction-name" data-edit="${esc(direction.id)}">${esc(direction.name)}</button><div class="direction-meta">${title}</div><div class="lane-actions"><button data-add="topic" data-direction="${direction.id}" ${disabled}>+ Тема</button><button data-add="decision" data-direction="${direction.id}" ${disabled}>+ Решение</button>${direction.company ? '' : `<button data-add="team" data-direction="${direction.id}" ${disabled}>+ Команда</button>`}</div></div>${teamLabels}${direction.company ? '<div class="team-name company-total">Затраты команд / месяц</div>' : ''}</div><div class="timeline"><div class="events">${cards || '<span class="empty-events">Нет событий с выбранной уверенностью</span>'}</div>${costs}${direction.company ? `<div class="team-costs">${direction.monthly_costs.map(value=>`<span class="team-cost company-total">${fmt(value)}</span>`).join('')}</div>` : ''}</div><div class="lane-summary">${summaryTable(direction.summary)}</div></section>`;
+    const collapsed = collapsedDirections.has(direction.id);
+    const miniMonths = months.map((month,index) => {
+      const events = direction.events.filter(event => Number(event.expected_date.slice(5,7)) === index+1);
+      return `<span class="mini-month">${events.length ? `<span class="month-count" title="${esc(month+': '+events.map(event=>event.name).join('; '))}" aria-label="${esc(month)}: событий ${events.length}">${events.length}</span>` : ''}</span>`;
+    }).join("");
+    return `<section class="lane ${direction.company ? 'company' : ''} ${collapsed ? 'is-collapsed' : ''}" data-lane="${direction.id}" aria-label="${esc(direction.name)}" style="--event-height:${layout.height}px">
+      <div class="lane-label"><div class="direction-label"><div class="direction-heading">
+        <button class="lane-toggle" data-toggle="${direction.id}" aria-expanded="${!collapsed}" aria-controls="timeline-${direction.id}" aria-label="${collapsed ? 'Развернуть' : 'Свернуть'} направление ${esc(direction.name)}"><span aria-hidden="true">${collapsed ? '+' : '−'}</span></button>
+        <button class="direction-name" data-edit="${esc(direction.id)}" title="${esc(direction.name)}">${esc(direction.name)}</button></div>
+        <div class="direction-meta">${title}</div><div class="lane-actions"><button data-add="topic" data-direction="${direction.id}" ${disabled}>+ Тема</button><button data-add="decision" data-direction="${direction.id}" ${disabled}>+ Решение</button>${direction.company ? '' : `<button data-add="team" data-direction="${direction.id}" ${disabled}>+ Команда</button>`}</div></div>
+        ${teamLabels}${direction.company ? '<div class="team-name company-total">Затраты команд / месяц</div>' : ''}</div>
+      <div class="timeline"><div class="lane-detail" id="timeline-${direction.id}" ${collapsed ? 'hidden' : ''}><div class="events">${cards || '<span class="empty-events">Нет событий с выбранной уверенностью</span>'}</div>${costs}${direction.company ? `<div class="team-costs">${direction.monthly_costs.map(value=>`<span class="team-cost company-total">${fmt(value)}</span>`).join('')}</div>` : ''}</div><div class="mini-months" ${collapsed ? '' : 'hidden'}>${miniMonths}</div></div>
+      <div class="lane-summary">${summaryTable(direction.summary)}</div></section>`;
   }
+  function renderLanes() {
+    if (!model) return;
+    $("lanes").innerHTML = model.directions.length ? model.directions.map(lane).join("") : '<div class="empty-board">Добавьте направление, чтобы начать планирование. Направление «Компания» появится автоматически.</div>';
+  }
+
   function render() {
     $("modelTitle").textContent = `План на ${model.year} год`;
     $("snapshotLabel").textContent = `Состояние на ${model.as_of.split('-').reverse().join('.')}`;
@@ -104,7 +142,7 @@
     $("openSeedYear")?.addEventListener("click",()=>{$("year").value=2027;$("asOf").value=model.today;load();});
     $("addDirection").disabled = isHistorical();
     $("importLabel").hidden = !!model.directions.length || isHistorical();
-    $("board").innerHTML = `<div class="board-header"><div class="header-label">Направления / команды</div><div class="months">${months.map((month,index)=>`<div class="month ${index % 3 === 0 ? 'quarter' : ''}">${month}</div>`).join("")}</div><div class="header-summary">Резюме · млн ₽</div></div>${model.directions.length ? model.directions.map(lane).join("") : '<div class="empty-board">Добавьте направление, чтобы начать планирование. Направление «Компания» появится автоматически.</div>'}`;
+    renderLanes();
   }
   function field(name,label,value="",options={}) {
     const attrs = `${options.required ? 'required' : ''} ${options.readonly ? 'readonly' : ''}`;
@@ -181,6 +219,17 @@
     } catch(error) {$("history").textContent=error.message;}
   }
   $("board").addEventListener("click",event=>{
+    const toggle=event.target.closest("[data-toggle]");
+    if (toggle) {
+      const id=toggle.dataset.toggle;
+      const collapsed=!collapsedDirections.has(id);
+      collapsed ? collapsedDirections.add(id) : collapsedDirections.delete(id);
+      const direction=model.directions.find(item=>item.id===id);
+      toggle.closest(".lane").outerHTML=lane(direction);
+      $("lanes").querySelector(`[data-toggle="${id}"]`).focus({preventScroll:true});
+      saveView({direction_id:id,collapsed});
+      return;
+    }
     const edit=event.target.closest("[data-edit]");
     if (edit) {const item=model.items.find(item=>item.id===edit.dataset.edit);if(item)openEditor(item.kind,item);}
     const add=event.target.closest("[data-add]");
@@ -214,9 +263,28 @@
     } catch(error){$("status").className="error";$("status").textContent=error.message;}
     finally{$("export").disabled=false;}
   });
-  const initial=new URLSearchParams(location.search);
-  if(initial.has("year"))$("year").value=initial.get("year");
-  if(initial.has("as_of"))$("asOf").value=initial.get("as_of");
-  if(initial.has("confidence"))document.querySelectorAll(".confidence-filter input").forEach(input=>input.checked=initial.get("confidence").split(",").includes(input.value));
-  load();
+  $("monthHeaders").innerHTML = months.map((month,index)=>`<div class="month ${index % 3 === 0 ? 'quarter' : ''}" title="${month}"><span class="month-full">${month}</span><span class="month-short">${shortMonths[index][0].toUpperCase()+shortMonths[index].slice(1)}</span></div>`).join("");
+  let lastTimelineWidth = 0, resizeFrame = null;
+  new ResizeObserver(entries => {
+    const width = entries[0].contentRect.width;
+    if (Math.abs(width-lastTimelineWidth)<1) return;
+    lastTimelineWidth = width;
+    cancelAnimationFrame(resizeFrame);
+    resizeFrame = requestAnimationFrame(renderLanes);
+  }).observe($("monthHeaders"));
+  async function initialize() {
+    const initial=new URLSearchParams(location.search);
+    try {
+      const preferences=await (await api("/api/year-model/view-settings")).json();
+      collapsedDirections=new Set(preferences.collapsed_directions);
+      savedYear=preferences.selected_year;
+      preferencesReady=true;
+      if(savedYear)$("year").value=savedYear;
+    } catch(error) {$("viewStatus").textContent=`Не удалось восстановить сохраненный вид: ${error.message}`;}
+    if(initial.has("year"))$("year").value=initial.get("year");
+    if(initial.has("as_of"))$("asOf").value=initial.get("as_of");
+    if(initial.has("confidence"))document.querySelectorAll(".confidence-filter input").forEach(input=>input.checked=initial.get("confidence").split(",").includes(input.value));
+    await load();
+  }
+  initialize();
 })();

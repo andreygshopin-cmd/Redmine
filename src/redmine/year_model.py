@@ -145,7 +145,7 @@ def summarize(items, confidence):
         balance = zero
         summary["balance"] = []
         for index in range(3):
-            balance += sum((summary[key][index] for key in ("target", "costs", "revenue", "decisions")), zero)
+            balance += sum((summary[key][index] for key in ("costs", "revenue", "decisions")), zero)
             summary["balance"].append(balance)
         direction["summary"] = {key: [float(value) for value in values] for key, values in summary.items()}
         direction["monthly_costs"] = [float(value) for value in direction["monthly_costs"]]
@@ -190,6 +190,13 @@ class ImportPayload(BaseModel):
     items: list[ImportItem] = Field(min_length=1, max_length=1000)
 
 
+class ViewSettingsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    selected_year: int | None = Field(default=None, ge=2000, le=2100)
+    direction_id: str | None = Field(default=None, min_length=1, max_length=36)
+    collapsed: bool | None = None
+
+
 def register_year_model(app, require_user, has_roles, render_html):
     def access(request: Request, response: Response):
         response.headers["Cache-Control"] = "private, no-store"
@@ -211,6 +218,21 @@ def register_year_model(app, require_user, has_roles, render_html):
     @app.get("/api/year-model", dependencies=[Depends(access)])
     def model(year: int | None = Query(None, ge=2000, le=2100), as_of: date | None = None, confidence: str | None = None):
         return query_model(year, as_of, confidence)
+
+    @app.get("/api/year-model/view-settings")
+    def get_view(user=Depends(access)):
+        return store.read_view_settings(str(user["login"]))
+
+    @app.put("/api/year-model/view-settings")
+    def save_view(payload: ViewSettingsPayload, user=Depends(access)):
+        if (payload.direction_id is None) != (payload.collapsed is None):
+            raise HTTPException(422, "Передайте направление и его состояние вместе")
+        if payload.selected_year is None and payload.direction_id is None:
+            raise HTTPException(422, "Нет настроек для сохранения")
+        try:
+            return store.save_view_settings(str(user["login"]), **payload.model_dump())
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
 
     @app.get("/api/year-model/items/{entity_id}/history", dependencies=[Depends(access)])
     def history(entity_id: str, as_of: date | None = None):
