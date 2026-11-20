@@ -1,0 +1,234 @@
+from datetime import UTC, date, datetime
+from io import BytesIO
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, select, update
+from sqlalchemy.pool import StaticPool
+
+from src.redmine import app as app_module
+from src.redmine import db
+from src.redmine import year_model as model
+from src.redmine import year_model_store as store
+
+
+def sample_import():
+    # Entirely fictional fixtures: production financial data is imported privately.
+    items = [
+        {"key": "alpha", "kind": "direction", "data": {"name": "Alpha", "target": "120"}},
+        {"key": "beta", "kind": "direction", "data": {"name": "Beta", "target": "80"}},
+    ]
+    for i, (direction, cost) in enumerate([("alpha", "-2"), ("alpha", "-3"), ("beta", "-1")]):
+        items.append({"key": f"team-{i}", "kind": "team", "direction_key": direction,
+                      "data": {"name": f"Team {i}", "monthly_cost": cost}})
+    for i, (confidence, amount) in enumerate([("fact", "12.34"), ("high", "20"), ("medium", "15"), ("low", "7")]):
+        items.append({"key": f"topic-{i}", "kind": "topic", "direction_key": "alpha" if i < 3 else "beta",
+                      "data": {"name": f"Topic {i}", "confidence": confidence, "amount": amount, "expected_date": "2027-04-01"}})
+    items.append({"key": "decision", "kind": "decision", "direction_key": "company",
+                  "data": {"name": "Example decision", "confidence": "high", "amount": "-8", "expected_date": "2027-03-01"}})
+    return {"year": 2027, "items": items}
+
+
+@pytest.fixture
+def environment(monkeypatch):
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    monkeypatch.setattr(db, "engine", engine)
+    monkeypatch.setattr(store, "_ready_engine", None)
+    monkeypatch.setattr(app_module, "_ensureAuthStorage", lambda: None)
+    user = {"login": "planner", "roles": ["Admin"], "must_change_password": False}
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: user)
+    client = TestClient(app_module.app)
+    assert client.post("/api/year-model/import", json=sample_import()).status_code == 200
+    yield client, user, engine
+    engine.dispose()
+
+
+def snapshot(client, **params):
+    response = client.get("/api/year-model", params={"year": 2027, **params})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_seed_and_company_consolidation(environment):
+    client, _, engine = environment
+    data = snapshot(client)
+    assert len(data["directions"]) == 3
+    assert len([item for item in data["items"] if item["kind"] == "team"]) == 3
+    assert len([item for item in data["items"] if item["kind"] == "topic"]) == 4
+    company = data["directions"][-1]
+    assert company["name"] == "Компания"
+    assert company["teams"] == []
+    assert company["monthly_costs"] == [-6] * 12
+    assert company["summary"]["target"] == [200, 0, 0]
+    assert company["summary"]["costs"] == [-80, 0, 0]
+    assert company["summary"]["revenue"] == [32.34, 15, 7]
+    assert company["summary"]["balance"] == [152.34, 167.34, 174.34]
+    alpha = data["directions"][0]
+    assert alpha["summary"]["costs"] == [-60, 0, 0]
+    assert alpha["summary"]["revenue"] == [32.34, 15, 0]
+    # Restart and repeated reads never duplicate seeds, including edited/deleted seeds.
+    store._ready_engine = None
+    assert len(snapshot(client)["items"]) == len(data["items"]) == 11
+    assert client.post("/api/year-model/import", json=sample_import()).json()["already_imported"] is True
+    assert len(snapshot(client)["items"]) == 11
+
+
+def test_reference_balance_and_decisions():
+    items = [{"id": "d", "kind": "direction", "name": "Test", "target": "100"},
+             {"id": "t", "kind": "team", "direction_id": "d", "name": "T", "monthly_cost": "-7.5"}]
+    for confidence, amount in [("high", "60"), ("medium", "30"), ("low", "30")]:
+        items.append({"id": confidence, "kind": "topic", "direction_id": "d", "name": confidence,
+                      "confidence": confidence, "amount": amount, "expected_date": "2027-04-01"})
+    summary = model.summarize(items, model.DEFAULT_CONFIDENCE)[0]["summary"]
+    assert summary["balance"] == [70, 100, 130]
+    items.extend([
+        {"id": "r1", "kind": "decision", "direction_id": "d", "name": "Cost", "confidence": "medium", "amount": "-5", "expected_date": "2027-05-01"},
+        {"id": "r2", "kind": "decision", "direction_id": "d", "name": "Return", "confidence": "low", "amount": "2", "expected_date": "2027-05-01"},
+    ])
+    summary = model.summarize(items, model.DEFAULT_CONFIDENCE)[0]["summary"]
+    assert summary["costs"] == [-90, -5, 0]
+    assert summary["revenue"] == [60, 30, 30]
+    assert summary["balance"] == [70, 95, 127]
+
+
+@pytest.mark.parametrize("confidence,revenue,balance", [
+    ("fact", [12.34, 0, 0], [140.34, 140.34, 140.34]),
+    ("medium", [0, 15, 0], [128, 143, 143]),
+    ("", [0, 0, 0], [128, 128, 128]),
+    ("none", [0, 0, 0], [128, 128, 128]),
+])
+def test_confidence_filters_events_and_totals(environment, confidence, revenue, balance):
+    data = snapshot(environment[0], confidence=confidence)
+    company = data["directions"][-1]
+    assert company["summary"]["revenue"] == revenue
+    assert company["summary"]["balance"] == balance
+    assert all(event["confidence"] in confidence.split(",") for direction in data["directions"] for event in direction["events"])
+
+
+def test_timestamp_snapshot_history_updates_and_deletion(environment):
+    client, _, engine = environment
+    data = snapshot(client)
+    topic = next(item for item in data["items"] if item["kind"] == "topic")
+    with engine.begin() as conn:
+        conn.execute(update(store.versions).values(recorded_at=datetime(2026, 1, 1, tzinfo=UTC)))
+    payload = {"year": 2027, "kind": "topic", "revision": topic["revision"], "data": {**topic, "name": "Новое имя", "amount": "99,25", "expected_date": "2027-06-15"}}
+    result = client.put(f'/api/year-model/items/{topic["id"]}', json=payload)
+    assert result.status_code == 200, result.text
+    # Latest revision is before midnight in Samara, despite being on a different UTC day.
+    with engine.begin() as conn:
+        conn.execute(update(store.versions).where(store.versions.c.entity_id == topic["id"], store.versions.c.revision == 2).values(recorded_at=datetime(2026, 2, 1, 20, 1, tzinfo=UTC)))
+    before = snapshot(client, as_of="2026-02-01")
+    after = snapshot(client, as_of="2026-02-02")
+    assert next(item for item in before["items"] if item["id"] == topic["id"])["name"] == topic["name"]
+    assert next(item for item in after["items"] if item["id"] == topic["id"])["name"] == "Новое имя"
+    assert len(client.get(f'/api/year-model/items/{topic["id"]}/history?as_of=2026-02-01').json()["versions"]) == 1
+    assert client.put(f'/api/year-model/items/{topic["id"]}', json=payload).status_code == 409
+    payload["revision"] = 2
+    assert client.request("DELETE", f'/api/year-model/items/{topic["id"]}', json=payload).status_code == 200
+    assert not any(item["id"] == topic["id"] for item in snapshot(client)["items"])
+    assert any(item["id"] == topic["id"] for item in snapshot(client, as_of="2026-02-02")["items"])
+
+
+@pytest.mark.parametrize("roles,allowed", [(["Admin"],True),(["Finance"],True),(["User"],False),([],False)])
+def test_access_on_page_api_history_export_and_writes(environment, roles, allowed):
+    client, user, _ = environment
+    user["roles"] = roles
+    links = app_module._buildIndexQuickLinks(user)
+    assert ("Модель года" in links) is allowed
+    if "Admin" in roles:
+        assert links.index("Модель года") < links.index("Администрирование")
+    response = client.get("/year-model")
+    assert response.status_code == (200 if allowed else 403)
+    response = client.get("/api/year-model?year=2027")
+    assert response.status_code == (200 if allowed else 403)
+    if allowed:
+        item_id = response.json()["items"][0]["id"]
+        assert client.get(f"/api/year-model/items/{item_id}/history").status_code == 200
+        assert client.get("/api/year-model/export?year=2027").status_code == 200
+    else:
+        for path in ["/api/year-model/items/unknown/history", "/api/year-model/export"]:
+            assert client.get(path).status_code == 403
+        payload = {"year": 2027, "kind": "direction", "data": {"name": "Forbidden"}}
+        assert client.post("/api/year-model/items", json=payload).status_code == 403
+        assert client.put("/api/year-model/items/unknown", json=payload).status_code == 403
+        assert client.request("DELETE", "/api/year-model/items/unknown", json=payload).status_code == 403
+        assert client.post("/api/year-model/import", json=sample_import()).status_code == 403
+
+
+def test_unauthenticated_and_cross_origin_requests(environment, monkeypatch):
+    client, _, _ = environment
+    payload = {"year": 2027, "kind": "direction", "data": {"name": "Unexpected"}}
+    assert client.post("/api/year-model/items", json=payload, headers={"Origin": "https://other.test"}).status_code == 403
+    monkeypatch.setattr(app_module, "_getCurrentUser", lambda request: None)
+    assert client.get("/api/year-model").status_code == 401
+
+
+def test_company_constraints_and_parent_integrity(environment):
+    client, _, _ = environment
+    data = snapshot(client)
+    company = data["directions"][-1]
+    first = data["directions"][0]
+    payload = {"year": 2027, "kind": "team", "data": {"name": "Invalid", "direction_id": company["id"], "monthly_cost": "-1"}}
+    assert client.post("/api/year-model/items", json=payload).status_code == 422
+    payload = {"year": 2027, "kind": "direction", "revision": company["revision"], "data": {"name": "Renamed", "target": 0}}
+    assert client.put(f'/api/year-model/items/{company["id"]}', json=payload).status_code == 422
+    assert client.request("DELETE", f'/api/year-model/items/{company["id"]}', json=payload).status_code == 422
+    payload["revision"] = first["revision"]
+    assert client.request("DELETE", f'/api/year-model/items/{first["id"]}', json=payload).status_code == 422
+    payload = {"year": 2028, "kind": "team", "data": {"name": "Cross year", "direction_id": first["id"], "monthly_cost": "-1"}}
+    assert client.post("/api/year-model/items", json=payload).status_code == 422
+
+
+@pytest.mark.parametrize("change", [{"amount":"NaN"}, {"amount":"Infinity"}, {"amount":"-1"}, {"url":"javascript:alert(1)"}, {"confidence":"unknown"}, {"expected_date":"2028-01-01"}, {"name":" "}])
+def test_invalid_topic_values_rejected(environment, change):
+    client, _, _ = environment
+    direction = snapshot(client)["directions"][0]
+    payload = {"year":2027,"kind":"topic","data":{"name":"Topic","direction_id":direction["id"],"amount":"1","confidence":"high","expected_date":"2027-02-01",**change}}
+    assert client.post("/api/year-model/items", json=payload).status_code == 422
+
+
+def test_create_new_year_and_version_team_and_direction(environment):
+    client, _, _ = environment
+    assert snapshot(client, year=2028)["directions"] == []
+    payload={"year":2028,"kind":"direction","data":{"name":"Новое направление","target":"10"}}
+    response=client.post("/api/year-model/items",json=payload)
+    assert response.status_code == 200
+    data=snapshot(client,year=2028)
+    assert [d["name"] for d in data["directions"]] == ["Новое направление","Компания"]
+    direction=data["directions"][0]
+    payload={"year":2028,"kind":"team","data":{"name":"Team","direction_id":direction["id"],"monthly_cost":"-0,5"}}
+    response=client.post("/api/year-model/items",json=payload)
+    assert response.status_code == 200
+    team_id=response.json()["id"]
+    payload["revision"]=1
+    payload["data"]["monthly_cost"]="-1.25"
+    assert client.put(f"/api/year-model/items/{team_id}",json=payload).status_code == 200
+    assert snapshot(client,year=2028)["directions"][-1]["summary"]["costs"] == [-15,0,0]
+    assert len(client.get(f"/api/year-model/items/{team_id}/history").json()["versions"]) == 2
+
+
+def test_defaults_empty_filters_and_export(environment):
+    from openpyxl import load_workbook
+    client, _, _ = environment
+    data = client.get("/api/year-model").json()
+    assert data["year"] == model.getSnapshotBusinessDate().year
+    assert data["as_of"] == model.getSnapshotBusinessDate().isoformat()
+    assert data["confidence"] == model.DEFAULT_CONFIDENCE
+    assert client.get("/api/year-model?confidence=invalid").status_code == 422
+    assert client.get("/api/year-model?year=100").status_code == 422
+    response=client.get("/api/year-model/export?year=2027&confidence=fact")
+    book=load_workbook(BytesIO(response.content))
+    assert book.sheetnames == ["Резюме","Темы и решения","Команды"]
+    assert book["Темы и решения"].max_row == 2
+    assert book["Темы и решения"]["E2"].value == 12.34
+    assert book["Команды"].max_row == 4
+    assert book["Резюме"].freeze_panes == "C3"
+
+
+def test_initial_import_rolls_back_invalid_batch(environment):
+    client, _, _ = environment
+    payload = sample_import()
+    payload["year"] = 2029
+    # Event dates do not belong to 2029, so the complete import must roll back.
+    assert client.post("/api/year-model/import", json=payload).status_code == 422
+    assert snapshot(client, year=2029)["items"] == []

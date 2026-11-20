@@ -1,0 +1,222 @@
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  const fmt = value => new Intl.NumberFormat("ru-RU", {maximumFractionDigits:1}).format(Number(value) || 0);
+  const confidences = {none:"Нет",low:"Низкая",medium:"Средняя",high:"Высокая",fact:"Факт"};
+  const kinds = {direction:"Направление",team:"Команда",topic:"Тема",decision:"Решение"};
+  const months = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+  const shortMonths = ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
+  let model = null, editing = null, controller = null, currentQuery = "", busy = false;
+  const isHistorical = () => model && model.as_of < model.today;
+  const selectedConfidence = () => [...document.querySelectorAll(".confidence-filter input:checked")].map(input => input.value);
+  const dayLabel = item => {
+    const [, month, day] = item.expected_date.split("-").map(Number);
+    return item.date_precision === "month" ? shortMonths[month-1] : `${day} ${shortMonths[month-1]}`;
+  };
+  const timestamp = value => new Intl.DateTimeFormat("ru-RU", {dateStyle:"short",timeStyle:"medium",timeZone:"Europe/Samara"}).format(new Date(value));
+  async function api(url, options = {}) {
+    const response = await fetch(url, {credentials:"same-origin",cache:"no-store",...options});
+    if (!response.ok) {
+      let detail;
+      try { detail = (await response.json()).detail; } catch { detail = `Ошибка ${response.status}`; }
+      if (response.status === 401) detail = "Сессия завершена. Войдите в приложение и обновите страницу.";
+      throw new Error(typeof detail === "string" ? detail : "Проверьте заполнение полей");
+    }
+    return response;
+  }
+  function queryFromControls() {
+    const params = new URLSearchParams();
+    if ($("year").value) params.set("year", $("year").value);
+    if ($("asOf").value) params.set("as_of", $("asOf").value);
+    params.set("confidence", selectedConfidence().join(","));
+    return params.toString();
+  }
+  async function load() {
+    if (!$('year').checkValidity() || !$('asOf').checkValidity()) {
+      $('year').reportValidity(); $('asOf').reportValidity(); return;
+    }
+    controller?.abort();
+    const active = new AbortController(); controller = active;
+    const query = queryFromControls();
+    $("status").className = ""; $("status").textContent = "Загружаем модель…";
+    $("board").classList.add("loading"); $("apply").disabled = true;
+    try {
+      const result = await (await api(`/api/year-model?${query}`, {signal:active.signal})).json();
+      model = result; currentQuery = query;
+      $("year").value = model.year; $("asOf").value = model.as_of;
+      $("years").innerHTML = model.years.map(year => `<option value="${year}"></option>`).join("");
+      const url = new URL(location.href); url.search = queryFromControls(); history.replaceState(null,"",url);
+      render(); $("status").textContent = "";
+    } catch (error) {
+      if (error.name !== "AbortError") { $("status").className = "error"; $("status").textContent = `Не удалось загрузить модель. ${error.message}`; }
+    } finally {
+      if (controller === active) { $("board").classList.remove("loading"); $("apply").disabled = false; }
+    }
+  }
+  function summaryTable(summary) {
+    const rows = [["target","Цель по выручке"],["costs","Затраты"],["revenue","Выручка"]];
+    if (summary.decisions.some(value => value !== 0)) rows.push(["decisions","Решения (+)"]);
+    rows.push(["balance","Баланс"]);
+    return `<table class="summary-table"><thead><tr><th>Уверенность</th><th title="Высокая и факт">Высокая</th><th>Средняя</th><th>Низкая</th></tr></thead><tbody>${rows.map(([key,label]) => `<tr class="${key}"><td>${label}</td>${summary[key].map((value,index) => `<td class="${value < 0 ? 'negative' : ''}">${key === 'target' && index > 0 ? '—' : fmt(value)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  }
+  function eventLayout(events, year) {
+    const rows = [], placements = [];
+    for (const event of events) {
+      const [,month,day] = event.expected_date.split("-").map(Number);
+      const days = new Date(year,month,0).getDate();
+      const anchor = (month - 1 + (event.date_precision === "month" ? .08 : (day - 1) / days)) / 12;
+      const start = Math.min(anchor, 10/12), end = start + 2/12;
+      let row = rows.findIndex(value => value <= start);
+      if (row < 0) row = rows.length;
+      rows[row] = end;
+      placements.push({event,start,anchor,row});
+    }
+    return {placements,height:Math.max(190,rows.length*92+20)};
+  }
+  function lane(direction) {
+    const layout = eventLayout(direction.events, model.year);
+    if (direction.summary.decisions.some(value => value)) layout.height = Math.max(layout.height,220);
+    const title = direction.company ? "Сводно по всем направлениям" : `${direction.teams.length} команд · ${direction.events.length} событий`;
+    const disabled = isHistorical() ? "disabled" : "";
+    const teamLabels = direction.teams.map(team => `<button class="team-name" data-edit="${esc(team.id)}" title="${esc(team.name)} · ${fmt(team.monthly_cost)} млн ₽/мес"><span>${esc(team.name)}</span></button>`).join("");
+    const costs = direction.teams.map(team => `<div class="team-costs">${months.map(() => `<span class="team-cost">${fmt(team.monthly_cost)}</span>`).join("")}</div>`).join("");
+    const cards = layout.placements.map(({event,start,anchor,row}) => {
+      const style = `--left:${start*100}%;--anchor:${anchor*100}%;--top:${20+row*92}px`;
+      return `<span class="event-marker ${event.confidence}" style="${style}" aria-hidden="true"></span><span class="event-stem ${event.confidence}" style="${style}" aria-hidden="true"></span><button class="event ${event.confidence} ${event.kind}" style="${style}" data-edit="${esc(event.id)}" title="${esc(event.name)} · ${confidences[event.confidence]} · ${dayLabel(event)} · ${fmt(event.amount)} млн ₽"><span class="event-title">${event.kind === 'decision' ? '◆ ' : ''}${esc(event.name)}</span><span class="event-foot"><span class="event-date">${dayLabel(event)} · ${confidences[event.confidence]}</span><span class="event-amount">${fmt(event.amount)}</span></span></button>`;
+    }).join("");
+    return `<section class="lane ${direction.company ? 'company' : ''}" aria-label="${esc(direction.name)}" style="--event-height:${layout.height}px"><div class="lane-label"><div class="direction-label"><button class="direction-name" data-edit="${esc(direction.id)}">${esc(direction.name)}</button><div class="direction-meta">${title}</div><div class="lane-actions"><button data-add="topic" data-direction="${direction.id}" ${disabled}>+ Тема</button><button data-add="decision" data-direction="${direction.id}" ${disabled}>+ Решение</button>${direction.company ? '' : `<button data-add="team" data-direction="${direction.id}" ${disabled}>+ Команда</button>`}</div></div>${teamLabels}${direction.company ? '<div class="team-name company-total">Затраты команд / месяц</div>' : ''}</div><div class="timeline"><div class="events">${cards || '<span class="empty-events">Нет событий с выбранной уверенностью</span>'}</div>${costs}${direction.company ? `<div class="team-costs">${direction.monthly_costs.map(value=>`<span class="team-cost company-total">${fmt(value)}</span>`).join('')}</div>` : ''}</div><div class="lane-summary">${summaryTable(direction.summary)}</div></section>`;
+  }
+  function render() {
+    $("modelTitle").textContent = `План на ${model.year} год`;
+    $("snapshotLabel").textContent = `Состояние на ${model.as_of.split('-').reverse().join('.')}`;
+    const company = model.directions.find(direction=>direction.company);
+    $("overview").hidden = !company;
+    if (company) {
+      const s = company.summary;
+      const metrics = [["Цель по выручке",s.target[0],"Все направления"],["Затраты",s.costs.reduce((a,b)=>a+b,0),"Команды и выбранные решения"],["Выручка",s.revenue[0],"Высокая + факт"],["Потенциал",s.revenue[1]+s.revenue[2],"Средняя + низкая"],["Баланс компании",s.balance[0],`Со средними: ${fmt(s.balance[1])} · с низкими: ${fmt(s.balance[2])}`]];
+      $("overview").innerHTML = metrics.map(([label,value,note])=>`<div class="metric"><span class="metric-label">${label}</span><span class="metric-value">${fmt(value)}</span><small>${note}</small></div>`).join("");
+    }
+    const messages = [];
+    if (isHistorical()) messages.push("Исторический срез: доступен просмотр и история. Для изменений выберите сегодняшнюю дату.");
+    if (!model.directions.length) messages.push(`На выбранную дату данных за ${model.year} год нет. Предварительное заполнение находится в 2027 году.${model.year !== 2027 ? ' <button id="openSeedYear" class="button">Открыть 2027</button>' : ''}`);
+    $("notice").hidden = !messages.length; $("notice").innerHTML = messages.join("<br>");
+    $("openSeedYear")?.addEventListener("click",()=>{$("year").value=2027;$("asOf").value=model.today;load();});
+    $("addDirection").disabled = isHistorical();
+    $("importLabel").hidden = !!model.directions.length || isHistorical();
+    $("board").innerHTML = `<div class="board-header"><div class="header-label">Направления / команды</div><div class="months">${months.map((month,index)=>`<div class="month ${index % 3 === 0 ? 'quarter' : ''}">${month}</div>`).join("")}</div><div class="header-summary">Резюме · млн ₽</div></div>${model.directions.length ? model.directions.map(lane).join("") : '<div class="empty-board">Добавьте направление, чтобы начать планирование. Направление «Компания» появится автоматически.</div>'}`;
+  }
+  function field(name,label,value="",options={}) {
+    const attrs = `${options.required ? 'required' : ''} ${options.readonly ? 'readonly' : ''}`;
+    let input;
+    if (options.choices) input = `<select name="${name}" ${attrs}>${options.choices.map(([key,text])=>`<option value="${esc(key)}" ${String(value) === String(key) ? 'selected' : ''}>${esc(text)}</option>`).join("")}</select>`;
+    else if (options.textarea) input = `<textarea name="${name}" maxlength="10000">${esc(value)}</textarea>`;
+    else input = `<input name="${name}" type="${options.type || 'text'}" value="${esc(value)}" ${attrs} ${options.extra || ''}>`;
+    return `<label class="${options.full ? 'full' : ''}">${label}${input}${options.note ? `<small>${options.note}</small>` : ''}</label>`;
+  }
+  function openEditor(kind, item=null, directionId="") {
+    if (!model) return;
+    editing = {kind,item}; $("editError").textContent=""; $("history").hidden=true; $("history").innerHTML="";
+    const d = item || {}, historical = isHistorical();
+    $("editorTitle").textContent = `${item ? '' : 'Новое: '}${kinds[kind]}${historical ? ' · просмотр' : ''}`;
+    let fields = field("name","Название",d.name,{required:true,full:true,readonly:d.company,extra:'maxlength="250"'});
+    if (kind === "direction") {
+      fields += field("target",d.company ? "Собственная цель компании, млн ₽" : "Целевая выручка, млн ₽", d.target ?? "0", {required:true,full:true,note:d.company ? "При консолидации к ней добавляются цели всех направлений." : ""});
+    } else {
+      const directions = model.directions.filter(dir=>kind!=="team" || !dir.company).map(dir=>[dir.id,dir.name]);
+      fields += field("direction_id","Направление",d.direction_id || directionId,{required:true,full:true,choices:directions});
+      if (kind === "team") fields += field("monthly_cost","Затраты в месяц, млн ₽",d.monthly_cost ?? "0",{required:true,full:true,note:"Отрицательная сумма. Применяется ко всем 12 месяцам выбранного года."});
+      else {
+        fields += field("amount","Стоимость, млн ₽",d.amount ?? "0",{required:true,note:kind === "decision" ? "Затраты — со знаком минус." : ""});
+        fields += field("confidence","Уверенность",d.confidence || "high",{required:true,choices:Object.entries(confidences)});
+        fields += field("expected_date","Ожидаемая дата",d.expected_date || `${model.year}-01-01`,{required:true,type:"date",extra:`min="${model.year}-01-01" max="${model.year}-12-31"`});
+        fields += field("date_precision","Точность даты",d.date_precision || "day",{choices:[["day","Точный день"],["month","Месяц"]]});
+        if (kind === "topic") {
+          fields += field("url","Ссылка на источник (CRM)",d.url,{type:"url",full:true,extra:'maxlength="2000" placeholder="https://…"'});
+          if (d.url) fields += `<a class="source-link full" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">Открыть источник в CRM</a>`;
+        }
+      }
+      fields += field("note","Примечание",d.note,{textarea:true,full:true});
+    }
+    if (item) fields += `<p class="version-note">Версия ${item.revision} · ${timestamp(item.recorded_at)} (Самара)<br>${esc(item.actor)}</p>`;
+    $("editFields").innerHTML=fields;
+    $("deleteItem").hidden=!item || d.company || historical;
+    $("historyButton").hidden=!item;
+    $("saveItem").hidden=historical;
+    $("editFields").querySelectorAll("input,select,textarea").forEach(el=>el.disabled=historical);
+    $("editor").showModal();
+  }
+  async function save(deleted=false) {
+    if (busy || !editing) return;
+    const {kind,item} = editing;
+    if (deleted && !confirm(`Удалить «${item.name}»? Предыдущие версии сохранятся в исторических срезах.`)) return;
+    busy=true;$("saveItem").disabled=true;$("deleteItem").disabled=true;$("editError").textContent="";
+    const data = Object.fromEntries(new FormData($("editForm")));
+    try {
+      await api(`/api/year-model/items${item ? '/'+encodeURIComponent(item.id) : ''}`,{
+        method:deleted ? "DELETE" : item ? "PUT" : "POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({year:model.year,kind,data,revision:item?.revision ?? null}),
+      });
+      $("editor").close(); await load();
+    } catch(error) { $("editError").textContent=error.message; }
+    finally {busy=false;$("saveItem").disabled=false;$("deleteItem").disabled=false;}
+  }
+  async function showHistory() {
+    if (!editing?.item) return;
+    const entityId=editing.item.id;
+    $("history").hidden=false;$("history").textContent="Загружаем историю…";
+    const labels={name:"Название",direction_id:"Направление",target:"Цель",monthly_cost:"Затраты / месяц",amount:"Стоимость",confidence:"Уверенность",expected_date:"Ожидаемая дата",date_precision:"Точность даты",url:"CRM",note:"Примечание",deleted:"Удалено"};
+    try {
+      const data=await (await api(`/api/year-model/items/${encodeURIComponent(entityId)}/history?as_of=${model.as_of}`)).json();
+      if (editing?.item?.id !== entityId) return;
+      $("history").innerHTML=`<h3>История изменений · время Самары</h3>${data.versions.map(version=>`<article><time>${timestamp(version.recorded_at)}</time> · версия ${version.revision}<br>${esc(version.actor)}<dl>${Object.entries(labels).filter(([key])=>version[key]!==undefined && version[key]!=="").map(([key,label])=>{
+        let value=version[key];
+        if (["target","monthly_cost","amount"].includes(key)) value=fmt(value)+" млн ₽";
+        if (key==="confidence") value=confidences[value];
+        if (key==="direction_id") value=model.items.find(item=>item.id===value)?.name || "Направление недоступно в этом срезе";
+        if (key==="date_precision") value=value==="month" ? "Месяц" : "Точный день";
+        if (key==="deleted") value="Да";
+        return `<dt>${label}</dt><dd>${esc(value)}</dd>`;
+      }).join("")}</dl></article>`).join("")}`;
+    } catch(error) {$("history").textContent=error.message;}
+  }
+  $("board").addEventListener("click",event=>{
+    const edit=event.target.closest("[data-edit]");
+    if (edit) {const item=model.items.find(item=>item.id===edit.dataset.edit);if(item)openEditor(item.kind,item);}
+    const add=event.target.closest("[data-add]");
+    if (add)openEditor(add.dataset.add,null,add.dataset.direction);
+  });
+  $("apply").addEventListener("click",load);
+  $("importFile").addEventListener("change",async event=>{
+    const file=event.target.files[0]; if(!file)return;
+    $("status").textContent="Загружаем начальный план…";
+    try {
+      if(file.size>2000000)throw new Error("Файл плана не должен превышать 2 МБ");
+      const payload=JSON.parse(await file.text());
+      if(payload.year !== model.year)throw new Error(`Сначала выберите год ${payload.year}, указанный в плане`);
+      await api("/api/year-model/import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      await load();
+    } catch(error){$("status").className="error";$("status").textContent=`Не удалось загрузить план: ${error.message}`;}
+    finally{event.target.value="";}
+  });
+  $("addDirection").addEventListener("click",()=>openEditor("direction"));
+  $("editForm").addEventListener("submit",event=>{event.preventDefault();save();});
+  $("deleteItem").addEventListener("click",()=>save(true));
+  $("historyButton").addEventListener("click",showHistory);
+  ["closeEditor","cancelEdit"].forEach(id=>$(id).addEventListener("click",()=>$("editor").close()));
+  $("export").addEventListener("click",async()=>{
+    if(!model)return;
+    $("export").disabled=true;
+    try {
+      const response=await api(`/api/year-model/export?${currentQuery}`);
+      const url=URL.createObjectURL(await response.blob());const a=document.createElement("a");
+      a.href=url;a.download=`Модель-${model.year}.xlsx`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
+    } catch(error){$("status").className="error";$("status").textContent=error.message;}
+    finally{$("export").disabled=false;}
+  });
+  const initial=new URLSearchParams(location.search);
+  if(initial.has("year"))$("year").value=initial.get("year");
+  if(initial.has("as_of"))$("asOf").value=initial.get("as_of");
+  if(initial.has("confidence"))document.querySelectorAll(".confidence-filter input").forEach(input=>input.checked=initial.get("confidence").split(",").includes(input.value));
+  load();
+})();

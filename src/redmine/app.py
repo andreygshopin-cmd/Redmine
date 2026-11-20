@@ -43,6 +43,7 @@ from src.redmine.bitrix_analysis import (
     buildBitrixProductiveStaleDealReport,
     buildBitrixSalesAnalysisReport,
 )
+from src.redmine.year_model import register_year_model
 from src.redmine.config import loadConfig
 from src.redmine.dates import getSnapshotBusinessDateIso
 from src.redmine.db import (
@@ -341,6 +342,7 @@ def _buildIndexQuickLinks(user: dict[str, object] | None) -> str:
         links.append(f'<a class="dashboard-nav-button" href="{escape(_buildDashboardUrl(userLogin))}">Dashboard</a>')
     if _hasAnyRole(user, (FINANCE_ROLE, ADMIN_ROLE)):
         links.append('<a class="bitrix-nav-button" href="/Bitrix">Bitrix</a>')
+        links.append('<a class="year-model-nav-button" href="/year-model">Модель года</a>')
     if _hasRole(user, ADMIN_ROLE):
         links.append('<a id="adminPageButton" href="/admin/users">Администрирование</a>')
     return "\n          ".join(links)
@@ -2000,6 +2002,12 @@ PAGE_HTML = """<!doctype html>
       color: var(--text);
       border-color: transparent;
       box-shadow: 0 10px 18px rgba(82, 206, 230, 0.24);
+    }
+
+    .quick-links a.year-model-nav-button {
+      background: var(--orange-1585);
+      color: #ffffff;
+      border-color: transparent;
     }
 
     .quick-links a:hover {
@@ -23444,3 +23452,6 @@ def databaseHealth() -> dict[str, object]:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
     return {"status": "ok" if connected else "down", "connected": connected}
+
+
+register_year_model(app, _requireAuthenticatedUser, _hasAnyRole, _renderHtmlPage)

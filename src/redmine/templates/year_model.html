@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Модель года · СМС</title>
+  <link rel="icon" href="https://sms-it.ru/favicon.ico" sizes="any">
+  <style></style>
+  <link rel="stylesheet" href="/static/year-model.css?v=1">
+  <script src="/static/year-model.js?v=1" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a href="/" class="brand"><img src="https://sms-it.ru/wp-content/themes/smsit_template/images/logo.svg" alt="СМС-ИТ" width="180"></a>
+    <div class="page-heading"><h1>Модель года</h1><span>План изменения компании СМС</span></div>
+    <a class="button home" href="/">К проектам</a>
+  </header>
+  <main>
+    <section class="toolbar" aria-label="Параметры модели">
+      <label class="field">Год<input id="year" type="number" min="2000" max="2100" step="1" list="years" aria-label="Год"><datalist id="years"></datalist></label>
+      <label class="field">Состояние на дату<input id="asOf" type="date" aria-label="Состояние на дату"></label>
+      <fieldset class="confidence-filter"><legend>Уверенность</legend>
+        <label class="chip none"><input type="checkbox" value="none">Нет</label>
+        <label class="chip low"><input type="checkbox" value="low" checked>Низкая</label>
+        <label class="chip medium"><input type="checkbox" value="medium" checked>Средняя</label>
+        <label class="chip high"><input type="checkbox" value="high" checked>Высокая</label>
+        <label class="chip fact"><input type="checkbox" value="fact" checked>Факт</label>
+      </fieldset>
+      <button id="apply" class="button primary">Показать</button>
+      <div class="toolbar-actions"><button id="addDirection" class="button">+ Направление</button><button id="export" class="button">В Excel</button></div>
+    </section>
+    <section id="overview" class="overview" aria-label="Итоги компании"></section>
+    <div class="model-caption"><span><strong id="modelTitle">Годовой план</strong><span id="snapshotLabel"></span></span><span>Все суммы в млн ₽</span></div>
+    <div id="notice" class="notice" hidden></div>
+    <label id="importLabel" class="button" hidden>Загрузить начальный план<input id="importFile" type="file" accept=".json,application/json" hidden></label>
+    <div id="status" role="status" aria-live="polite">Загружаем модель…</div>
+    <div class="board-scroll" id="boardScroll" tabindex="0" aria-label="Временная шкала; доступна горизонтальная прокрутка">
+      <div id="board" class="board"></div>
+    </div>
+    <details class="legend" open><summary>Как читать модель и расчеты</summary>
+      <div class="legend-grid">
+        <p><b>Тема</b> — событие или контракт. <b>◆ Решение</b> — действие компании. Положение маркера соответствует ожидаемой дате. Нажмите карточку, команду или название направления для просмотра и изменения.</p>
+        <p><b>Выручка</b> — сумма стоимости тем. В столбце «Высокая» учитываются только <b>Высокая и Факт</b>; Средняя и Низкая показаны отдельно. Фильтр уверенности влияет на события и резюме. «Нет» отображается на шкале, но не входит в финансовые итоги.</p>
+        <p><b>Затраты</b> — затраты команд за 12 месяцев плюс отрицательные решения в соответствующих столбцах уверенности. Команды не зависят от фильтра. Положительные решения показаны отдельной строкой «Решения (+)» и не включаются в выручку тем.</p>
+        <p><b>Баланс</b> = целевая выручка + затраты + выручка + положительные решения + баланс слева. Целевая выручка включается в баланс согласно заданной модели. «Компания» суммирует все направления и собственные темы и решения, без повторного учета.</p>
+        <p><b>Состояние на дату</b> — последние сохраненные версии до конца указанного дня (Самара, UTC+4). Ожидаемые события будущих месяцев остаются на шкале выбранного года. Изменения записываются текущим временем; исходные версии сохраняются.</p>
+        <p><b>Точность</b> — на экране один знак после запятой, целые без дробной части. Расчеты используют исходные значения без округления. Начальные данные внесены за 2027 год; даты, заданные месяцем, обозначают месяц целиком.</p>
+      </div>
+    </details>
+  </main>
+  <dialog id="editor" aria-labelledby="editorTitle">
+    <form id="editForm">
+      <div class="dialog-heading"><h2 id="editorTitle">Запись</h2><button type="button" class="close" id="closeEditor" aria-label="Закрыть">×</button></div>
+      <div id="editFields" class="edit-fields"></div>
+      <p id="editError" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" id="deleteItem" class="button danger">Удалить</button><button type="button" id="historyButton" class="button">История</button><span class="spacer"></span><button type="button" id="cancelEdit" class="button">Отмена</button><button type="submit" id="saveItem" class="button primary">Сохранить</button></div>
+    </form>
+    <section id="history" class="history" hidden></section>
+  </dialog>
+</body>
+</html>
