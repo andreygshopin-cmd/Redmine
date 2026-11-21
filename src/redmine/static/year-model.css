@@ -85,6 +85,7 @@ main{padding:22px 24px 36px}
 .event{position:absolute;left:var(--left);top:var(--top);width:calc(var(--width) - 8px);height:80px;padding:8px 9px;background:var(--event-bg);border:1px solid #0000000d;border-left:3px solid var(--event-color);border-radius:5px;text-align:left;box-shadow:0 3px 6px #16324a06;overflow:hidden;font-size:14px}
 .event:hover{box-shadow:0 4px 12px #16324a22;filter:brightness(.98);z-index:3}
 .event-title{font-size:14px;font-weight:500;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;padding-right:3px}
+.needs-attention .event-title{color:#c02d24}
 .event-foot{display:flex;align-items:center;justify-content:space-between;gap:4px;position:absolute;left:9px;right:9px;bottom:6px}
 .event-date{font-size:12px;color:var(--muted)}
 .event-amount{font-weight:600;white-space:nowrap;font-size:15px}
@@ -93,10 +94,12 @@ main{padding:22px 24px 36px}
 .event-stem{pointer-events:none;position:absolute;left:var(--anchor);top:calc(var(--top) - 4px);height:8px;border-left:1px solid var(--event-color)}
 .team-costs{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));height:40px;border-top:1px solid #edf1f4;background:#f9fbfc80}
 .team-cost{display:flex;align-items:center;justify-content:center;border-right:1px solid #e7edf2;color:#91a0ac;font-size:14px;font-variant-numeric:tabular-nums}
+button.team-cost{padding:0;border:0;border-right:1px solid #e7edf2;border-radius:0;background:transparent;min-width:0}
+button.team-cost:hover{background:#eaf3f8;color:var(--blue)}
 .lane-summary{position:sticky;right:0;z-index:4;background:#fff;border-left:1px solid var(--line);box-shadow:-5px 0 12px #16324a03}
 .direction-summary{height:var(--event-height);padding:10px 8px}
 .team-total-row{height:40px;border-top:1px solid #edf1f4;background:#f9fbfc;display:grid;grid-template-columns:40% repeat(3,20%);align-items:center;padding:0 8px;font-size:14px;font-variant-numeric:tabular-nums;color:var(--muted)}
-.team-total-row span{text-align:right;padding:0 5px}
+.team-total-row span{text-align:left;padding:0 5px}
 .company .team-total-row{background:#edf5f8;color:var(--blue);font-weight:500}
 .summary-table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:14px}
 .summary-table th,.summary-table td{padding:7px 5px;border-bottom:1px solid #e5ecf0;text-align:right;font-variant-numeric:tabular-nums}
@@ -125,6 +128,10 @@ dialog::backdrop{background:#16324a65;backdrop-filter:blur(2px)}
 .close{border:0;background:none;font-size:28px;line-height:1;padding:0 4px}
 .edit-fields{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .edit-fields label{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:500}
+.edit-fields .checkbox-field{flex-direction:row;align-items:center;gap:9px;cursor:pointer}
+.edit-fields .checkbox-field input{width:17px;height:17px;min-height:0;padding:0;margin:0;accent-color:var(--blue)}
+.field-note{font-size:14px;color:var(--muted);margin:0}
+.cost-team-title{font-weight:500;margin:0 0 4px}
 .edit-fields .full{grid-column:1/-1}
 .edit-fields textarea{min-height:90px;resize:vertical}
 .edit-fields small{font-size:13px;font-weight:400;color:var(--muted)}

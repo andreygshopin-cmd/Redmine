@@ -237,8 +237,8 @@ def test_defaults_empty_filters_and_export(environment):
     for row in summary_rows:
         if row[1] in {"Цель по выручке", "Затраты"}:
             assert row[3:] == (None, None)
-    assert next(row[2:] for row in summary_rows if row[:2] == ("Компания", "Выручка (всего)")) == (12.34, 12.34, 12.34)
-    assert [row[3] for row in list(book["Команды"].values)[1:]] == [-24, -36, -12]
+    assert next(row[2:] for row in summary_rows if row[:2] == ("Компания", "Выручка (нар. итог)")) == (12.34, 12.34, 12.34)
+    assert [row[14] for row in list(book["Команды"].values)[1:]] == [-24, -36, -12]
 
 
 @pytest.mark.parametrize("kind,amount", [("topic", "12,3456"), ("decision", "-2,75")])
@@ -307,3 +307,103 @@ def test_view_settings_validation_does_not_overwrite_saved_state(environment):
     team = next(item for item in snapshot(client)["items"] if item["kind"] == "team")
     assert client.put("/api/year-model/view-settings", json={"direction_id": team["id"], "collapsed": True}).status_code == 404
     assert client.get("/api/year-model/view-settings").json()["selected_year"] == 2027
+
+
+def test_team_month_edits_totals_history_and_metadata(environment):
+    from openpyxl import load_workbook
+    client, _, engine = environment
+    team = next(item for item in snapshot(client)["items"] if item["kind"] == "team" and item["name"] == "Team 0")
+    # Simulate an original stored version that only has the flat monthly amount.
+    legacy = {key: value for key, value in team.items() if key not in {
+        "id", "kind", "year", "revision", "recorded_at", "actor", "monthly_costs",
+    }}
+    with engine.begin() as conn:
+        conn.execute(update(store.versions).where(store.versions.c.entity_id == team["id"]).values(
+            data=legacy, recorded_at=datetime(2026, 1, 1, tzinfo=UTC)))
+    payload = {"year": 2027, "kind": "team", "revision": 1, "data": {
+        "name": team["name"], "direction_id": team["direction_id"],
+        "monthly_cost": "-1,25", "cost_month": 7, "copy_forward": True,
+    }}
+    url = f'/api/year-model/items/{team["id"]}'
+    assert client.put(url, json=payload).status_code == 200
+    assert client.put(url, json=payload).status_code == 409
+    current = snapshot(client)
+    alpha = current["directions"][0]
+    changed = next(item for item in alpha["teams"] if item["id"] == team["id"])
+    assert changed["monthly_costs"] == [-2] * 6 + [-1.25] * 6
+    assert changed["annual_cost"] == -19.5
+    assert alpha["monthly_costs"] == [-5] * 6 + [-4.25] * 6
+    assert current["directions"][-1]["summary"]["costs"] == [-75.5, 0, 0]
+    payload["revision"] = 2
+    payload["data"].update(cost_month=8, monthly_cost="-0,5", copy_forward=False)
+    assert client.put(url, json=payload).status_code == 200
+    payload["revision"] = 3
+    payload["data"] = {"name": "Renamed team", "direction_id": team["direction_id"], "note": "Keep the schedule"}
+    assert client.put(url, json=payload).status_code == 200
+    updated = next(item for item in snapshot(client)["directions"][0]["teams"] if item["id"] == team["id"])
+    expected = [-2] * 6 + [-1.25, -0.5] + [-1.25] * 4
+    assert updated["monthly_costs"] == expected
+    assert updated["annual_cost"] == -18.75
+    old = next(item for item in snapshot(client, as_of="2026-01-02")["items"] if item["id"] == team["id"])
+    assert "monthly_costs" not in old
+    assert model.team_costs(old) == [model.money(-2)] * 12
+    history = client.get(url + "/history").json()["versions"]
+    assert len(history) == 4
+    assert history[1]["monthly_costs"] == history[0]["monthly_costs"]
+    book = load_workbook(BytesIO(client.get("/api/year-model/export?year=2027").content))
+    row = next(row for row in book["Команды"].values if row[1] == "Renamed team")
+    assert row[2:14] == tuple(expected)
+    assert row[14] == -18.75
+
+
+@pytest.mark.parametrize("month,copy_forward,expected", [
+    (1, True, [-0.25] * 12), (12, True, [0] * 11 + [-0.25]),
+    (5, False, [0] * 4 + [-0.25] + [0] * 7),
+])
+def test_new_team_starts_in_selected_month(environment, month, copy_forward, expected):
+    client, _, _ = environment
+    direction = snapshot(client)["directions"][0]
+    response = client.post("/api/year-model/items", json={"year": 2027, "kind": "team", "data": {
+        "name": "New team", "direction_id": direction["id"], "monthly_cost": "-0,25",
+        "cost_month": month, "copy_forward": copy_forward,
+    }})
+    assert response.status_code == 200, response.text
+    team = next(item for item in snapshot(client)["directions"][0]["teams"] if item["id"] == response.json()["id"])
+    assert team["monthly_costs"] == expected
+    assert team["annual_cost"] == sum(expected)
+
+
+@pytest.mark.parametrize("change", [
+    {"cost_month": 0}, {"cost_month": 13}, {"cost_month": 1.5},
+    {"cost_month": True}, {"copy_forward": "false"}, {"monthly_cost": "0,1"},
+    {"monthly_cost": "NaN"},
+])
+def test_invalid_monthly_cost_edits_do_not_create_versions(environment, change):
+    client, _, _ = environment
+    team = next(item for item in snapshot(client)["items"] if item["kind"] == "team")
+    response = client.put(f'/api/year-model/items/{team["id"]}', json={
+        "year": 2027, "kind": "team", "revision": team["revision"],
+        "data": {**team, "cost_month": 7, "copy_forward": True, "monthly_cost": "-1", **change},
+    })
+    assert response.status_code == 422
+    assert len(client.get(f'/api/year-model/items/{team["id"]}/history').json()["versions"]) == 1
+
+
+@pytest.mark.parametrize("kind", ["topic", "decision"])
+def test_attention_default_toggle_history_and_export(environment, kind):
+    from openpyxl import load_workbook
+    client, _, _ = environment
+    item = next(item for item in snapshot(client)["items"] if item["kind"] == kind)
+    assert item["attention"] is False
+    url = f'/api/year-model/items/{item["id"]}'
+    payload = {"year": 2027, "kind": kind, "revision": 1, "data": {**item, "attention": True}}
+    assert client.put(url, json=payload).status_code == 200
+    book = load_workbook(BytesIO(client.get("/api/year-model/export?year=2027").content))
+    assert next(row[8] for row in book["Темы и решения"].values if row[2] == item["name"]) == "Да"
+    payload["revision"] = 2
+    payload["data"]["attention"] = False
+    assert client.put(url, json=payload).status_code == 200
+    assert [row["attention"] for row in client.get(url + "/history").json()["versions"]] == [False, True, False]
+    payload["revision"] = 3
+    payload["data"]["attention"] = "false"
+    assert client.put(url, json=payload).status_code == 422

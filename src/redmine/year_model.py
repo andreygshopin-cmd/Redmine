@@ -17,6 +17,7 @@ CONFIDENCE = {"none": "Нет", "low": "Низкая", "medium": "Средняя
 DEFAULT_CONFIDENCE = ["low", "medium", "high", "fact"]
 KINDS = {"direction", "team", "topic", "decision"}
 TEMPLATE = Path(__file__).with_name("templates") / "year_model.html"
+MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 
 
 def money(value):
@@ -29,6 +30,22 @@ def money(value):
     if amount.as_tuple().exponent < -6:
         raise ValueError("Допустимо не более 6 знаков после запятой")
     return amount
+
+
+def team_costs(item):
+    values = item.get("monthly_costs", [item.get("monthly_cost", 0)] * 12)
+    if not isinstance(values, list) or len(values) != 12:
+        raise ValueError("Укажите затраты для всех 12 месяцев")
+    costs = [money(value) for value in values]
+    if any(value > 0 for value in costs):
+        raise ValueError("Затраты команды указываются отрицательным числом или нулем")
+    return costs
+
+
+def boolean_value(value, label):
+    if not isinstance(value, bool):
+        raise ValueError(f"{label}: укажите логическое значение")
+    return value
 
 
 def validate_item(kind, year, data, items, old, delete):
@@ -70,10 +87,21 @@ def validate_item(kind, year, data, items, old, delete):
     if kind == "team":
         if direction.get("company"):
             raise ValueError("В направлении «Компания» нельзя размещать команды")
-        cost = money(data.get("monthly_cost", 0))
-        if cost > 0:
-            raise ValueError("Затраты команды указываются отрицательным числом или нулем")
-        clean["monthly_cost"] = str(cost)
+        if "cost_month" in data:
+            if str(data["cost_month"]) not in {str(month) for month in range(1, 13)}:
+                raise ValueError("Выберите месяц от января до декабря")
+            month = int(data["cost_month"]) - 1
+            copy_forward = boolean_value(data.get("copy_forward", True), "Копирование на новые месяцы")
+            costs = team_costs(old or {})
+            cost = money(data.get("monthly_cost", 0))
+            for index in range(month, 12 if copy_forward else month + 1):
+                costs[index] = cost
+            costs = team_costs({"monthly_costs": costs})
+        elif "monthly_costs" in data or "monthly_cost" in data:
+            costs = team_costs(data)
+        else:
+            costs = team_costs(old or {})
+        clean.update(monthly_cost=str(costs[0]), monthly_costs=[str(value) for value in costs])
     else:
         confidence = data.get("confidence")
         if confidence not in CONFIDENCE:
@@ -91,6 +119,7 @@ def validate_item(kind, year, data, items, old, delete):
         if kind == "topic" and amount < 0:
             raise ValueError("Стоимость темы не может быть отрицательной")
         clean.update(confidence=confidence, amount=str(amount), expected_date=expected.isoformat(), date_precision=precision)
+        clean["attention"] = boolean_value(data.get("attention", (old or {}).get("attention", False)), "Обратить внимание")
         if kind == "topic":
             url = str(data.get("url") or "").strip()
             try:
@@ -111,12 +140,15 @@ def summarize(items, confidence):
     zero = Decimal(0)
     for direction in directions:
         children = [item for item in items if item.get("direction_id") == direction["id"]]
-        teams = sorted([{**item, "annual_cost": float(money(item["monthly_cost"]) * 12)}
-                        for item in children if item["kind"] == "team"], key=lambda item: item["name"])
+        teams = []
+        monthly = [zero] * 12
+        for item in sorted([item for item in children if item["kind"] == "team"], key=lambda item: item["name"]):
+            values = team_costs(item)
+            monthly = [a + b for a, b in zip(monthly, values)]
+            teams.append({**item, "monthly_costs": [float(value) for value in values], "annual_cost": float(sum(values, zero))})
         events = sorted([item for item in children if item["kind"] in {"topic", "decision"}
                          and item["confidence"] in confidence], key=lambda item: (item["expected_date"], item["name"]))
-        monthly = sum((money(team["monthly_cost"]) for team in teams), zero)
-        costs = [monthly * 12, zero, zero]
+        costs = [sum(monthly, zero), zero, zero]
         revenue = [zero, zero, zero]
         decisions = [zero, zero, zero]
         for event in events:
@@ -130,7 +162,7 @@ def summarize(items, confidence):
                 costs[bucket] += amount
             else:
                 decisions[bucket] += amount
-        direction.update(teams=teams, events=events, monthly_costs=[monthly] * 12,
+        direction.update(teams=teams, events=events, monthly_costs=monthly,
                          summary={"target": [money(direction["target"]), zero, zero],
                                   "costs": costs, "revenue": revenue, "decisions": decisions})
     company = next((direction for direction in directions if direction.get("company")), None)
@@ -294,21 +326,21 @@ def register_year_model(app, require_user, has_roles, render_html):
         summary.append([f"Модель {payload['year']} · на {payload['as_of']} · млн ₽"])
         summary.append(["Направление", "Показатель", "Высокая + факт", "Средняя", "Низкая"])
         events = book.create_sheet("Темы и решения")
-        events.append(["Направление", "Тип", "Название", "Уверенность", "Сумма, млн ₽", "Ожидаемая дата", "CRM", "Примечание"])
+        events.append(["Направление", "Тип", "Название", "Уверенность", "Сумма, млн ₽", "Ожидаемая дата", "CRM", "Примечание", "Обратить внимание"])
         teams = book.create_sheet("Команды")
-        teams.append(["Направление", "Команда", "Затраты в месяц, млн ₽", "Затраты за год, млн ₽", "Примечание"])
+        teams.append(["Направление", "Команда", *[f"{month}, млн ₽" for month in MONTHS], "Затраты за год, млн ₽", "Примечание"])
         for direction in payload["directions"]:
             for key, label in [("target", "Цель по выручке"), ("costs", "Затраты"), ("revenue", "Выручка"),
-                               ("revenue_total", "Выручка (всего)"),
+                               ("revenue_total", "Выручка (нар. итог)"),
                                ("decisions", "Решения (+)"), ("balance", "Баланс")]:
                 values = [None if index > 0 and (key == "target" or key == "costs" and value == 0) else value
                           for index, value in enumerate(direction["summary"][key])]
                 summary.append([direction["name"], label, *values])
             for item in direction["events"]:
                 events.append([direction["name"], "Тема" if item["kind"] == "topic" else "Решение", item["name"],
-                               CONFIDENCE[item["confidence"]], float(money(item["amount"])), item["expected_date"], item.get("url", ""), item.get("note", "")])
+                               CONFIDENCE[item["confidence"]], float(money(item["amount"])), item["expected_date"], item.get("url", ""), item.get("note", ""), "Да" if item.get("attention") else "Нет"])
             for item in direction["teams"]:
-                teams.append([direction["name"], item["name"], float(money(item["monthly_cost"])),
+                teams.append([direction["name"], item["name"], *item["monthly_costs"],
                               item["annual_cost"], item.get("note", "")])
         for sheet in book:
             sheet.freeze_panes = "C3" if sheet is summary else "C2"
