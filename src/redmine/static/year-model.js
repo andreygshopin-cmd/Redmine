@@ -77,7 +77,6 @@
   }
   function summaryTable(summary) {
     const rows = [["target","Цель по выручке"],["costs","Затраты"],["revenue","Выручка"],["revenue_total","Выручка (нар. итог)"]];
-    if (summary.decisions.some(value => value !== 0)) rows.push(["decisions","Решения (+)"]);
     rows.push(["balance","Баланс"]);
     return `<table class="summary-table"><tbody>${rows.map(([key,label]) => `<tr class="${key}"><td>${label}</td>${summary[key].map((value,index) => `<td class="${value < 0 ? 'negative' : ''}">${index > 0 && (key === 'target' || key === 'costs' && value === 0) ? '' : fmt(value)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   }
@@ -99,7 +98,6 @@
   }
   function lane(direction) {
     const layout = eventLayout(direction.events, model.year);
-    if (direction.summary.decisions.some(value => value)) layout.height = Math.max(layout.height,264);
     const title = direction.company ? "Сводно по всем направлениям" : `${direction.teams.length} команд · ${direction.events.length} событий`;
     const disabled = isHistorical() ? "disabled" : "";
     const teamLabels = direction.teams.map(team => `<button class="team-name" data-edit="${esc(team.id)}" title="${esc(team.name)} · ${fmt(team.annual_cost)} млн ₽/год"><span>${esc(team.name)}</span></button>`).join("");

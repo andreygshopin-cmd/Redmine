@@ -161,6 +161,8 @@ def summarize(items, confidence):
             elif amount < 0:
                 costs[bucket] += amount
             else:
+                revenue[bucket] += amount
+                # Keep this subtotal for existing API clients; it is already part of revenue.
                 decisions[bucket] += amount
         direction.update(teams=teams, events=events, monthly_costs=monthly,
                          summary={"target": [money(direction["target"]), zero, zero],
@@ -179,7 +181,7 @@ def summarize(items, confidence):
         summary["balance"] = []
         summary["revenue_total"] = []
         for index in range(3):
-            balance += sum((summary[key][index] for key in ("costs", "revenue", "decisions")), zero)
+            balance += summary["costs"][index] + summary["revenue"][index]
             summary["balance"].append(balance)
             revenue_total += summary["revenue"][index]
             summary["revenue_total"].append(revenue_total)
@@ -331,8 +333,7 @@ def register_year_model(app, require_user, has_roles, render_html):
         teams.append(["Направление", "Команда", *[f"{month}, млн ₽" for month in MONTHS], "Затраты за год, млн ₽", "Примечание"])
         for direction in payload["directions"]:
             for key, label in [("target", "Цель по выручке"), ("costs", "Затраты"), ("revenue", "Выручка"),
-                               ("revenue_total", "Выручка (нар. итог)"),
-                               ("decisions", "Решения (+)"), ("balance", "Баланс")]:
+                               ("revenue_total", "Выручка (нар. итог)"), ("balance", "Баланс")]:
                 values = [None if index > 0 and (key == "target" or key == "costs" and value == 0) else value
                           for index, value in enumerate(direction["summary"][key])]
                 summary.append([direction["name"], label, *values])

@@ -93,9 +93,38 @@ def test_reference_balance_and_decisions():
     ])
     summary = model.summarize(items, model.DEFAULT_CONFIDENCE)[0]["summary"]
     assert summary["costs"] == [-90, -5, 0]
-    assert summary["revenue"] == [60, 30, 30]
-    assert summary["revenue_total"] == [60, 90, 120]
+    assert summary["revenue"] == [60, 30, 32]
+    assert summary["revenue_total"] == [60, 90, 122]
     assert summary["balance"] == [-30, -5, 27]
+
+
+def test_positive_decisions_are_revenue_in_company_filters_and_export(environment):
+    from openpyxl import load_workbook
+    client, _, _ = environment
+    directions = snapshot(client)["directions"]
+    for index, (direction, confidence, amount) in enumerate([
+        (directions[0], "high", "3"), (directions[-1], "high", "4"),
+        (directions[0], "fact", "2"), (directions[0], "medium", "5"),
+        (directions[0], "low", "6"), (directions[0], "none", "100"),
+    ]):
+        response = client.post("/api/year-model/items", json={"year": 2027, "kind": "decision", "data": {
+            "name": f"Income {index}", "direction_id": direction["id"], "confidence": confidence,
+            "amount": amount, "expected_date": "2027-06-01",
+        }})
+        assert response.status_code == 200, response.text
+    summary = snapshot(client)["directions"][-1]["summary"]
+    assert summary["costs"] == [-80, 0, 0]
+    assert summary["revenue"] == [41.34, 20, 13]
+    assert summary["revenue_total"] == [41.34, 61.34, 74.34]
+    assert summary["balance"] == [-38.66, -18.66, -5.66]
+    assert snapshot(client, confidence="fact")["directions"][-1]["summary"]["revenue"] == [14.34, 0, 0]
+    assert snapshot(client, confidence="none")["directions"][-1]["summary"]["revenue"] == [0, 0, 0]
+    book = load_workbook(BytesIO(client.get("/api/year-model/export?year=2027").content))
+    rows = list(book["Резюме"].values)[2:]
+    assert all(row[1] != "Решения (+)" for row in rows)
+    assert next(row[2:] for row in rows if row[:2] == ("Компания", "Выручка")) == (41.34, 20, 13)
+    assert next(row[2:] for row in rows if row[:2] == ("Компания", "Выручка (нар. итог)")) == (41.34, 61.34, 74.34)
+    assert rows[-1][2:] == (-38.66, -18.66, -5.66)
 
 
 @pytest.mark.parametrize("confidence,revenue,balance", [
