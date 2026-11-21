@@ -127,7 +127,7 @@ def import_initial(year, records, actor, validate):
         if snapshot(conn, year, include_deleted=True):
             raise FileExistsError("Первоначальный импорт доступен только для пустого года")
         now = datetime.now(UTC)
-        company_data = {"name": "Компания", "target": "0", "company": True, "order": 9999}
+        company_data = {"name": "Компания", "target": "0", "company": True, "order": 9999, "note": "", "attention": False}
         company_id = _create(conn, year, "direction", company_data, actor, now, f"company-{year}")
         ids = {"company": company_id}
         current = [{**company_data, "id": company_id, "kind": "direction"}]
@@ -214,6 +214,6 @@ def save(year, kind, data, actor, validate, entity_id=None, revision=None, delet
         # Each populated year always has exactly one Company lane.
         if not any(item.get("company") for item in current) and not clean.get("company"):
             _create(conn, year, "direction", {
-                "name": "Компания", "company": True, "order": 9999, "target": "0",
+                "name": "Компания", "company": True, "order": 9999, "target": "0", "note": "", "attention": False,
             }, actor, now, f"company-{year}")
         return entity_id

@@ -256,7 +256,7 @@ def test_defaults_empty_filters_and_export(environment):
     assert client.get("/api/year-model?year=100").status_code == 422
     response=client.get("/api/year-model/export?year=2027&confidence=fact")
     book=load_workbook(BytesIO(response.content))
-    assert book.sheetnames == ["Резюме","Темы и решения","Команды"]
+    assert book.sheetnames == ["Резюме","Темы и решения","Команды","Направления"]
     assert book["Темы и решения"].max_row == 2
     assert book["Темы и решения"]["E2"].value == 12.34
     assert book["Команды"].max_row == 4
@@ -436,3 +436,53 @@ def test_attention_default_toggle_history_and_export(environment, kind):
     payload["revision"] = 3
     payload["data"]["attention"] = "false"
     assert client.put(url, json=payload).status_code == 422
+
+
+@pytest.mark.parametrize("entity", ["direction", "team", "company"])
+def test_direction_and_team_comment_attention_history_and_export(environment, entity):
+    from openpyxl import load_workbook
+    client, _, engine = environment
+    data = snapshot(client)
+    item = next(item for item in data["items"] if (
+        item.get("company") if entity == "company" else item["kind"] == entity and not item.get("company")
+    ))
+    assert item["attention"] is False
+    assert item["note"] == ""
+    original_totals = data["directions"][-1]["summary"]
+    with engine.begin() as conn:
+        conn.execute(update(store.versions).values(recorded_at=datetime(2026, 1, 1, tzinfo=UTC)))
+    comment = '=SUM(1,2)\nПроверить "план" <комментарий>'
+    url = f'/api/year-model/items/{item["id"]}'
+    payload = {"year": 2027, "kind": item["kind"], "revision": 1,
+               "data": {**item, "note": comment, "attention": True}}
+    assert client.put(url, json=payload).status_code == 200
+    current = snapshot(client)
+    assert current["directions"][-1]["summary"] == original_totals
+    before = next(row for row in snapshot(client, as_of="2026-01-02")["items"] if row["id"] == item["id"])
+    assert before["note"] == ""
+    assert before["attention"] is False
+    book = load_workbook(BytesIO(client.get("/api/year-model/export?year=2027").content))
+    sheet = book["Команды" if entity == "team" else "Направления"]
+    name_index, note_index = (1, 15) if entity == "team" else (0, 2)
+    row = next(row for row in sheet if row[name_index].value == item["name"])
+    assert row[note_index].value == comment
+    assert row[note_index].data_type == "s"
+    assert row[note_index + 1].value == "Да"
+    # Saving costs or other properties without these fields preserves both values.
+    payload["revision"] = 2
+    payload["data"] = {key: value for key, value in item.items() if key not in {"note", "attention"}}
+    if entity == "team":
+        payload["data"].update(monthly_cost="-0,5", cost_month=10, copy_forward=False)
+    assert client.put(url, json=payload).status_code == 200
+    changed = next(row for row in snapshot(client)["items"] if row["id"] == item["id"])
+    assert changed["note"] == comment
+    assert changed["attention"] is True
+    payload.update(revision=3, data={**changed, "note": "", "attention": False})
+    assert client.put(url, json=payload).status_code == 200
+    history = client.get(url + "/history").json()["versions"]
+    assert [row["attention"] for row in history] == [False, True, True, False]
+    assert [row["note"] for row in history] == ["", comment, comment, ""]
+    for change in [{"attention": "false"}, {"note": "a" * 10001}]:
+        payload.update(revision=4, data={**changed, **change})
+        assert client.put(url, json=payload).status_code == 422
+    assert len(client.get(url + "/history").json()["versions"]) == 4

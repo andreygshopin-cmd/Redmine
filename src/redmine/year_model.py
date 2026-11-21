@@ -61,7 +61,12 @@ def validate_item(kind, year, data, items, old, delete):
     name = str(data.get("name") or "").strip()
     if not name or len(name) > 250:
         raise ValueError("Название обязательно и должно содержать не более 250 символов")
-    clean = {"name": name}
+    note = str(data.get("note", (old or {}).get("note", "")) or "").strip()
+    if len(note) > 10000:
+        label = "Комментарий" if kind in {"direction", "team"} else "Примечание"
+        raise ValueError(f"{label}: не более 10 000 символов")
+    clean = {"name": name, "note": note,
+             "attention": boolean_value(data.get("attention", (old or {}).get("attention", False)), "Обратить внимание")}
     if kind == "direction":
         company = bool(old and old.get("company"))
         if company and name != "Компания":
@@ -80,10 +85,7 @@ def validate_item(kind, year, data, items, old, delete):
                       and item["id"] == data.get("direction_id")), None)
     if direction is None:
         raise ValueError("Выберите существующее направление этого года")
-    note = str(data.get("note") or "").strip()
-    if len(note) > 10000:
-        raise ValueError("Примечание не должно превышать 10 000 символов")
-    clean.update(direction_id=direction["id"], note=note)
+    clean.update(direction_id=direction["id"])
     if kind == "team":
         if direction.get("company"):
             raise ValueError("В направлении «Компания» нельзя размещать команды")
@@ -119,7 +121,6 @@ def validate_item(kind, year, data, items, old, delete):
         if kind == "topic" and amount < 0:
             raise ValueError("Стоимость темы не может быть отрицательной")
         clean.update(confidence=confidence, amount=str(amount), expected_date=expected.isoformat(), date_precision=precision)
-        clean["attention"] = boolean_value(data.get("attention", (old or {}).get("attention", False)), "Обратить внимание")
         if kind == "topic":
             url = str(data.get("url") or "").strip()
             try:
@@ -330,8 +331,12 @@ def register_year_model(app, require_user, has_roles, render_html):
         events = book.create_sheet("Темы и решения")
         events.append(["Направление", "Тип", "Название", "Уверенность", "Сумма, млн ₽", "Ожидаемая дата", "CRM", "Примечание", "Обратить внимание"])
         teams = book.create_sheet("Команды")
-        teams.append(["Направление", "Команда", *[f"{month}, млн ₽" for month in MONTHS], "Затраты за год, млн ₽", "Примечание"])
+        teams.append(["Направление", "Команда", *[f"{month}, млн ₽" for month in MONTHS], "Затраты за год, млн ₽", "Комментарий", "Обратить внимание"])
+        directions = book.create_sheet("Направления")
+        directions.append(["Направление", "Собственная целевая выручка, млн ₽", "Комментарий", "Обратить внимание"])
         for direction in payload["directions"]:
+            directions.append([direction["name"], float(money(direction["target"])), direction.get("note", ""),
+                               "Да" if direction.get("attention") else "Нет"])
             for key, label in [("target", "Цель по выручке"), ("costs", "Затраты"), ("revenue", "Выручка"),
                                ("revenue_total", "Выручка (нар. итог)"), ("balance", "Баланс")]:
                 values = [None if index > 0 and (key == "target" or key == "costs" and value == 0) else value
@@ -342,7 +347,7 @@ def register_year_model(app, require_user, has_roles, render_html):
                                CONFIDENCE[item["confidence"]], float(money(item["amount"])), item["expected_date"], item.get("url", ""), item.get("note", ""), "Да" if item.get("attention") else "Нет"])
             for item in direction["teams"]:
                 teams.append([direction["name"], item["name"], *item["monthly_costs"],
-                              item["annual_cost"], item.get("note", "")])
+                              item["annual_cost"], item.get("note", ""), "Да" if item.get("attention") else "Нет"])
         for sheet in book:
             sheet.freeze_panes = "C3" if sheet is summary else "C2"
             for row in sheet:

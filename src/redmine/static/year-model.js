@@ -100,7 +100,7 @@
     const layout = eventLayout(direction.events, model.year);
     const title = direction.company ? "Сводно по всем направлениям" : `${direction.teams.length} команд · ${direction.events.length} событий`;
     const disabled = isHistorical() ? "disabled" : "";
-    const teamLabels = direction.teams.map(team => `<button class="team-name" data-edit="${esc(team.id)}" title="${esc(team.name)} · ${fmt(team.annual_cost)} млн ₽/год"><span>${esc(team.name)}</span></button>`).join("");
+    const teamLabels = direction.teams.map(team => `<button class="team-name ${team.attention ? 'needs-attention' : ''}" data-edit="${esc(team.id)}" title="${esc(team.name)} · ${fmt(team.annual_cost)} млн ₽/год${team.attention ? ' · Обратить внимание' : ''}"><span>${esc(team.name)}</span></button>`).join("");
     const costs = direction.teams.map(team => `<div class="team-costs">${team.monthly_costs.map((value,index) => `<button type="button" class="team-cost" data-team-cost="${esc(team.id)}" data-month="${index+1}" aria-label="Затраты: ${esc(team.name)}, ${months[index]} ${model.year}" title="${esc(team.name)} · ${months[index]} · ${fmt(value)} млн ₽">${fmt(value)}</button>`).join("")}</div>`).join("");
     const teamTotal = (value,name) => `<div class="team-total-row" title="${esc(name)} · затраты за 12 месяцев, млн ₽"><span>${fmt(value)}</span></div>`;
     const teamTotals = direction.teams.map(team => teamTotal(team.annual_cost,team.name)).join("");
@@ -117,7 +117,7 @@
     return `<section class="lane ${direction.company ? 'company' : ''} ${collapsed ? 'is-collapsed' : ''}" data-lane="${direction.id}" aria-label="${esc(direction.name)}" style="--event-height:${layout.height}px">
       <div class="lane-label"><div class="direction-label"><div class="direction-heading">
         <button class="lane-toggle" data-toggle="${direction.id}" aria-expanded="${!collapsed}" aria-controls="timeline-${direction.id}" aria-label="${collapsed ? 'Развернуть' : 'Свернуть'} направление ${esc(direction.name)}"><span aria-hidden="true">${collapsed ? '+' : '−'}</span></button>
-        <button class="direction-name" data-edit="${esc(direction.id)}" title="${esc(direction.name)}">${esc(direction.name)}</button></div>
+        <button class="direction-name ${direction.attention ? 'needs-attention' : ''}" data-edit="${esc(direction.id)}" title="${esc(direction.name)}${direction.attention ? ' · Обратить внимание' : ''}">${esc(direction.name)}</button></div>
         <div class="direction-meta">${title}</div><div class="lane-actions"><button data-add="topic" data-direction="${direction.id}" ${disabled}>+ Тема</button><button data-add="decision" data-direction="${direction.id}" ${disabled}>+ Решение</button>${direction.company ? '' : `<button data-add="team" data-direction="${direction.id}" ${disabled}>+ Команда</button>`}</div></div>
         ${teamLabels}${direction.company ? '<div class="team-name company-total">Затраты команд / месяц</div>' : ''}</div>
       <div class="timeline"><div class="lane-detail" id="timeline-${direction.id}" ${collapsed ? 'hidden' : ''}><div class="events">${monthActions}${cards}</div>${costs}${direction.company ? `<div class="team-costs">${direction.monthly_costs.map(value=>`<span class="team-cost company-total">${fmt(value)}</span>`).join('')}</div>` : ''}</div><div class="mini-months" ${collapsed ? '' : 'hidden'}>${miniMonths}</div></div>
@@ -180,14 +180,14 @@
         fields += field("confidence","Уверенность",d.confidence || "high",{required:true,choices:Object.entries(confidences)});
         fields += field("expected_date","Ожидаемая дата",d.expected_date || `${model.year}-01-01`,{required:true,type:"date",extra:`min="${model.year}-01-01" max="${model.year}-12-31"`});
         fields += field("date_precision","Точность даты",d.date_precision || "month",{choices:[["day","Точный день"],["month","Месяц"]]});
-        fields += checkbox("attention","Обратить внимание",d.attention === true);
         if (kind === "topic") {
           fields += field("url","Ссылка на источник (CRM)",d.url,{type:"url",full:true,extra:'maxlength="2000" placeholder="https://…"'});
           if (d.url) fields += `<a class="source-link full" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">Открыть источник в CRM</a>`;
         }
       }
-      fields += field("note","Примечание",d.note,{textarea:true,full:true});
     }
+    fields += checkbox("attention","Обратить внимание",d.attention === true);
+    fields += field("note",kind === "direction" || kind === "team" ? "Комментарий" : "Примечание",d.note,{textarea:true,full:true});
     if (costMonth !== null) {
       $("editorTitle").textContent = `Затраты команды · ${months[costMonth-1]}${historical ? ' · просмотр' : ''}`;
       fields = `<p class="full cost-team-title">${esc(d.name)} · ${model.year}</p>`;
@@ -209,7 +209,7 @@
     if (deleted && !confirm(`Удалить «${item.name}»? Предыдущие версии сохранятся в исторических срезах.`)) return;
     busy=true;$("saveItem").disabled=true;$("deleteItem").disabled=true;$("editError").textContent="";
     const data = Object.fromEntries(new FormData($("editForm")));
-    if (kind === "topic" || kind === "decision") data.attention=$("editForm").elements.attention.checked;
+    if (costMonth === null) data.attention=$("editForm").elements.attention.checked;
     if (kind === "team" && (!item || costMonth !== null)) data.copy_forward=$("editForm").elements.copy_forward.checked;
     if (costMonth !== null) Object.assign(data,{name:item.name,direction_id:item.direction_id,note:item.note,cost_month:costMonth});
     try {
@@ -225,7 +225,7 @@
     if (!editing?.item) return;
     const entityId=editing.item.id;
     $("history").hidden=false;$("history").textContent="Загружаем историю…";
-    const labels={name:"Название",direction_id:"Направление",target:"Цель",monthly_cost:"Затраты / месяц",monthly_costs:"Затраты по месяцам",amount:"Стоимость",confidence:"Уверенность",expected_date:"Ожидаемая дата",date_precision:"Точность даты",attention:"Обратить внимание",url:"CRM",note:"Примечание",deleted:"Удалено"};
+    const labels={name:"Название",direction_id:"Направление",target:"Цель",monthly_cost:"Затраты / месяц",monthly_costs:"Затраты по месяцам",amount:"Стоимость",confidence:"Уверенность",expected_date:"Ожидаемая дата",date_precision:"Точность даты",attention:"Обратить внимание",url:"CRM",note:editing.kind === "direction" || editing.kind === "team" ? "Комментарий" : "Примечание",deleted:"Удалено"};
     try {
       const data=await (await api(`/api/year-model/items/${encodeURIComponent(entityId)}/history?as_of=${model.as_of}`)).json();
       if (editing?.item?.id !== entityId) return;
