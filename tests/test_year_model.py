@@ -62,10 +62,14 @@ def test_seed_and_company_consolidation(environment):
     assert company["summary"]["target"] == [200, 0, 0]
     assert company["summary"]["costs"] == [-80, 0, 0]
     assert company["summary"]["revenue"] == [32.34, 15, 7]
+    assert company["summary"]["revenue_total"] == [32.34, 47.34, 54.34]
     assert company["summary"]["balance"] == [-47.66, -32.66, -25.66]
+    assert company["team_annual_cost"] == -72
     alpha = data["directions"][0]
     assert alpha["summary"]["costs"] == [-60, 0, 0]
     assert alpha["summary"]["revenue"] == [32.34, 15, 0]
+    assert alpha["summary"]["revenue_total"] == [32.34, 47.34, 47.34]
+    assert [team["annual_cost"] for team in alpha["teams"]] == [-24, -36]
     # Restart and repeated reads never duplicate seeds, including edited/deleted seeds.
     store._ready_engine = None
     assert len(snapshot(client)["items"]) == len(data["items"]) == 11
@@ -90,6 +94,7 @@ def test_reference_balance_and_decisions():
     summary = model.summarize(items, model.DEFAULT_CONFIDENCE)[0]["summary"]
     assert summary["costs"] == [-90, -5, 0]
     assert summary["revenue"] == [60, 30, 30]
+    assert summary["revenue_total"] == [60, 90, 120]
     assert summary["balance"] == [-30, -5, 27]
 
 
@@ -103,6 +108,7 @@ def test_confidence_filters_events_and_totals(environment, confidence, revenue, 
     data = snapshot(environment[0], confidence=confidence)
     company = data["directions"][-1]
     assert company["summary"]["revenue"] == revenue
+    assert company["summary"]["revenue_total"] == [round(sum(revenue[:i+1]), 6) for i in range(3)]
     assert company["summary"]["balance"] == balance
     assert all(event["confidence"] in confidence.split(",") for direction in data["directions"] for event in direction["events"])
 
@@ -227,6 +233,40 @@ def test_defaults_empty_filters_and_export(environment):
     assert book["Команды"].max_row == 4
     assert book["Резюме"].freeze_panes == "C3"
     assert list(book["Резюме"].values)[-1][2:] == (-59.66, -59.66, -59.66)
+    summary_rows = list(book["Резюме"].values)[2:]
+    for row in summary_rows:
+        if row[1] in {"Цель по выручке", "Затраты"}:
+            assert row[3:] == (None, None)
+    assert next(row[2:] for row in summary_rows if row[:2] == ("Компания", "Выручка (всего)")) == (12.34, 12.34, 12.34)
+    assert [row[3] for row in list(book["Команды"].values)[1:]] == [-24, -36, -12]
+
+
+@pytest.mark.parametrize("kind,amount", [("topic", "12,3456"), ("decision", "-2,75")])
+def test_event_defaults_to_month_and_preserves_comma_amount(environment, kind, amount):
+    client, _, _ = environment
+    direction = snapshot(client)["directions"][0]
+    payload = {"year": 2027, "kind": kind, "data": {
+        "name": "New event", "direction_id": direction["id"], "amount": amount,
+        "confidence": "medium", "expected_date": "2027-07-01",
+    }}
+    response = client.post("/api/year-model/items", json=payload)
+    assert response.status_code == 200, response.text
+    item_id = response.json()["id"]
+    item = next(item for item in snapshot(client)["items"] if item["id"] == item_id)
+    assert item["date_precision"] == "month"
+    assert item["expected_date"] == "2027-07-01"
+    assert item["amount"] == amount.replace(",", ".")
+    payload.update(revision=item["revision"])
+    payload["data"].update(date_precision="day", expected_date="2027-07-17")
+    assert client.put(f"/api/year-model/items/{item_id}", json=payload).status_code == 200
+    item = next(item for item in snapshot(client)["items"] if item["id"] == item_id)
+    assert item["date_precision"] == "day"
+    assert item["expected_date"] == "2027-07-17"
+    if kind == "decision":
+        from openpyxl import load_workbook
+        book = load_workbook(BytesIO(client.get("/api/year-model/export?year=2027").content))
+        costs = next(row for row in book["Резюме"].values if row[:2] == (direction["name"], "Затраты"))
+        assert costs[3:] == (-2.75, None)
 
 
 def test_initial_import_rolls_back_invalid_batch(environment):

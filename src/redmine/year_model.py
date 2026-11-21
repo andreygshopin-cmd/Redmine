@@ -84,7 +84,7 @@ def validate_item(kind, year, data, items, old, delete):
             raise ValueError("Укажите корректную ожидаемую дату") from None
         if expected.year != year:
             raise ValueError("Ожидаемая дата должна находиться в выбранном году")
-        precision = data.get("date_precision", "day")
+        precision = data.get("date_precision", "month")
         if precision not in {"month", "day"}:
             raise ValueError("Неизвестная точность даты")
         amount = money(data.get("amount", 0))
@@ -111,7 +111,8 @@ def summarize(items, confidence):
     zero = Decimal(0)
     for direction in directions:
         children = [item for item in items if item.get("direction_id") == direction["id"]]
-        teams = sorted([item for item in children if item["kind"] == "team"], key=lambda item: item["name"])
+        teams = sorted([{**item, "annual_cost": float(money(item["monthly_cost"]) * 12)}
+                        for item in children if item["kind"] == "team"], key=lambda item: item["name"])
         events = sorted([item for item in children if item["kind"] in {"topic", "decision"}
                          and item["confidence"] in confidence], key=lambda item: (item["expected_date"], item["name"]))
         monthly = sum((money(team["monthly_cost"]) for team in teams), zero)
@@ -142,12 +143,16 @@ def summarize(items, confidence):
             company["monthly_costs"] = [a + b for a, b in zip(company["monthly_costs"], direction["monthly_costs"])]
     for direction in directions:
         summary = direction["summary"]
-        balance = zero
+        balance = revenue_total = zero
         summary["balance"] = []
+        summary["revenue_total"] = []
         for index in range(3):
             balance += sum((summary[key][index] for key in ("costs", "revenue", "decisions")), zero)
             summary["balance"].append(balance)
+            revenue_total += summary["revenue"][index]
+            summary["revenue_total"].append(revenue_total)
         direction["summary"] = {key: [float(value) for value in values] for key, values in summary.items()}
+        direction["team_annual_cost"] = float(sum(direction["monthly_costs"], zero))
         direction["monthly_costs"] = [float(value) for value in direction["monthly_costs"]]
     return directions
 
@@ -294,14 +299,17 @@ def register_year_model(app, require_user, has_roles, render_html):
         teams.append(["Направление", "Команда", "Затраты в месяц, млн ₽", "Затраты за год, млн ₽", "Примечание"])
         for direction in payload["directions"]:
             for key, label in [("target", "Цель по выручке"), ("costs", "Затраты"), ("revenue", "Выручка"),
+                               ("revenue_total", "Выручка (всего)"),
                                ("decisions", "Решения (+)"), ("balance", "Баланс")]:
-                summary.append([direction["name"], label, *direction["summary"][key]])
+                values = [None if index > 0 and (key == "target" or key == "costs" and value == 0) else value
+                          for index, value in enumerate(direction["summary"][key])]
+                summary.append([direction["name"], label, *values])
             for item in direction["events"]:
                 events.append([direction["name"], "Тема" if item["kind"] == "topic" else "Решение", item["name"],
                                CONFIDENCE[item["confidence"]], float(money(item["amount"])), item["expected_date"], item.get("url", ""), item.get("note", "")])
             for item in direction["teams"]:
                 teams.append([direction["name"], item["name"], float(money(item["monthly_cost"])),
-                              float(money(item["monthly_cost"]) * 12), item.get("note", "")])
+                              item["annual_cost"], item.get("note", "")])
         for sheet in book:
             sheet.freeze_panes = "C3" if sheet is summary else "C2"
             for row in sheet:
