@@ -135,6 +135,8 @@ dialog::backdrop{background:#16324a65;backdrop-filter:blur(2px)}
 .edit-fields .checkbox-field{flex-direction:row;align-items:center;gap:9px;cursor:pointer}
 .edit-fields .checkbox-field input{width:17px;height:17px;min-height:0;padding:0;margin:0;accent-color:var(--blue)}
 .field-note{font-size:14px;color:var(--muted);margin:0}
+.decision-amount{display:flex;flex-direction:column;gap:10px;min-width:0}
+.decision-amount .field-note{font-size:13px;line-height:1.45}
 .cost-team-title{font-weight:500;margin:0 0 4px}
 .edit-fields .full{grid-column:1/-1}
 .edit-fields textarea{min-height:90px;resize:vertical}

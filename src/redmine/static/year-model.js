@@ -176,14 +176,11 @@
         }
       }
       else {
-        fields += field("amount","Стоимость, млн ₽",editAmount(d.amount),{required:true,extra:'inputmode="decimal"',note:kind === "decision" ? "Сумма учитывается со знаком. Расход указывайте отрицательным." : ""});
+        const amountField = field("amount","Стоимость, млн ₽",editAmount(d.amount),{required:true,extra:'inputmode="decimal"'});
+        fields += kind === "decision" ? `<div class="decision-amount">${amountField}${checkbox("adjust_revenue","Включить в выручку",d.adjust_revenue === true)}<p class="field-note">Если галочка стоит, сумма добавляется к выручке, иначе — к затратам. Сумма учитывается со знаком; расход указывайте отрицательным.</p></div>` : amountField;
         fields += field("confidence","Уверенность",d.confidence || "high",{required:true,choices:Object.entries(confidences)});
         fields += field("expected_date","Ожидаемая дата",d.expected_date || `${model.year}-01-01`,{required:true,type:"date",extra:`min="${model.year}-01-01" max="${model.year}-12-31"`});
         fields += field("date_precision","Точность даты",d.date_precision || "month",{choices:[["day","Точный день"],["month","Месяц"]]});
-        if (kind === "decision") {
-          fields += checkbox("adjust_revenue","Корректировать выручку",d.adjust_revenue === true);
-          fields += '<p class="field-note full">С галочкой сумма изменяет выручку, без галочки — затраты.</p>';
-        }
         if (kind === "topic") {
           fields += field("url","Ссылка на источник (CRM)",d.url,{type:"url",full:true,extra:'maxlength="2000" placeholder="https://…"'});
           if (d.url) fields += `<a class="source-link full" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">Открыть источник в CRM</a>`;
@@ -232,7 +229,7 @@
     if (!editing?.item) return;
     const entityId=editing.item.id;
     $("history").hidden=false;$("history").textContent="Загружаем историю…";
-    const labels={name:"Название",direction_id:"Направление",target:"Цель",monthly_cost:"Затраты / месяц",monthly_costs:"Затраты по месяцам",amount:"Стоимость",confidence:"Уверенность",expected_date:"Ожидаемая дата",date_precision:"Точность даты",adjust_revenue:"Корректировать выручку",attention:"Обратить внимание",url:"CRM",note:editing.kind === "direction" || editing.kind === "team" ? "Комментарий" : "Примечание",deleted:"Удалено"};
+    const labels={name:"Название",direction_id:"Направление",target:"Цель",monthly_cost:"Затраты / месяц",monthly_costs:"Затраты по месяцам",amount:"Стоимость",confidence:"Уверенность",expected_date:"Ожидаемая дата",date_precision:"Точность даты",adjust_revenue:"Включить в выручку",attention:"Обратить внимание",url:"CRM",note:editing.kind === "direction" || editing.kind === "team" ? "Комментарий" : "Примечание",deleted:"Удалено"};
     try {
       const data=await (await api(`/api/year-model/items/${encodeURIComponent(entityId)}/history?as_of=${model.as_of}`)).json();
       if (editing?.item?.id !== entityId) return;
