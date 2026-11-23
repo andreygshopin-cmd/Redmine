@@ -121,6 +121,9 @@ def validate_item(kind, year, data, items, old, delete):
         if kind == "topic" and amount < 0:
             raise ValueError("Стоимость темы не может быть отрицательной")
         clean.update(confidence=confidence, amount=str(amount), expected_date=expected.isoformat(), date_precision=precision)
+        if kind == "decision":
+            clean["adjust_revenue"] = boolean_value(
+                data.get("adjust_revenue", (old or {}).get("adjust_revenue", False)), "Корректировать выручку")
         if kind == "topic":
             url = str(data.get("url") or "").strip()
             try:
@@ -157,10 +160,13 @@ def summarize(items, confidence):
             if bucket is None:
                 continue
             amount = money(event["amount"])
-            revenue[bucket] += amount
             if event["kind"] == "decision":
-                # Keep this subtotal for existing API clients; it is already part of revenue.
+                totals = revenue if event.get("adjust_revenue", False) else costs
+                totals[bucket] += amount
+                # Compatibility subtotal; already included in either revenue or costs.
                 decisions[bucket] += amount
+            else:
+                revenue[bucket] += amount
         direction.update(teams=teams, events=events, monthly_costs=monthly,
                          summary={"target": [money(direction["target"]), zero, zero],
                                   "costs": costs, "revenue": revenue, "decisions": decisions})
@@ -325,7 +331,7 @@ def register_year_model(app, require_user, has_roles, render_html):
         summary.append([f"Модель {payload['year']} · на {payload['as_of']} · млн ₽"])
         summary.append(["Направление", "Показатель", "Высокая + факт", "Средняя", "Низкая"])
         events = book.create_sheet("Темы и решения")
-        events.append(["Направление", "Тип", "Название", "Уверенность", "Сумма, млн ₽", "Ожидаемая дата", "CRM", "Примечание", "Обратить внимание"])
+        events.append(["Направление", "Тип", "Название", "Уверенность", "Сумма, млн ₽", "Ожидаемая дата", "CRM", "Примечание", "Обратить внимание", "Корректировать выручку"])
         teams = book.create_sheet("Команды")
         teams.append(["Направление", "Команда", *[f"{month}, млн ₽" for month in MONTHS], "Затраты за год, млн ₽", "Комментарий", "Обратить внимание"])
         directions = book.create_sheet("Направления")
@@ -340,7 +346,8 @@ def register_year_model(app, require_user, has_roles, render_html):
                 summary.append([direction["name"], label, *values])
             for item in direction["events"]:
                 events.append([direction["name"], "Тема" if item["kind"] == "topic" else "Решение", item["name"],
-                               CONFIDENCE[item["confidence"]], float(money(item["amount"])), item["expected_date"], item.get("url", ""), item.get("note", ""), "Да" if item.get("attention") else "Нет"])
+                               CONFIDENCE[item["confidence"]], float(money(item["amount"])), item["expected_date"], item.get("url", ""), item.get("note", ""), "Да" if item.get("attention") else "Нет",
+                               ("Да" if item.get("adjust_revenue") else "Нет") if item["kind"] == "decision" else None])
             for item in direction["teams"]:
                 teams.append([direction["name"], item["name"], *item["monthly_costs"],
                               item["annual_cost"], item.get("note", ""), "Да" if item.get("attention") else "Нет"])

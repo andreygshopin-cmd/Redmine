@@ -60,9 +60,9 @@ def test_seed_and_company_consolidation(environment):
     assert company["teams"] == []
     assert company["monthly_costs"] == [-6] * 12
     assert company["summary"]["target"] == [200, 0, 0]
-    assert company["summary"]["costs"] == [-72, 0, 0]
-    assert company["summary"]["revenue"] == [24.34, 15, 7]
-    assert company["summary"]["revenue_total"] == [24.34, 39.34, 46.34]
+    assert company["summary"]["costs"] == [-80, 0, 0]
+    assert company["summary"]["revenue"] == [32.34, 15, 7]
+    assert company["summary"]["revenue_total"] == [32.34, 47.34, 54.34]
     assert company["summary"]["balance"] == [-47.66, -32.66, -25.66]
     assert company["team_annual_cost"] == -72
     alpha = data["directions"][0]
@@ -89,12 +89,12 @@ def test_reference_balance_and_decisions():
     assert model.summarize(items, model.DEFAULT_CONFIDENCE)[0]["summary"]["balance"] == [-30, 0, 30]
     items.extend([
         {"id": "r1", "kind": "decision", "direction_id": "d", "name": "Cost", "confidence": "medium", "amount": "-5", "expected_date": "2027-05-01"},
-        {"id": "r2", "kind": "decision", "direction_id": "d", "name": "Return", "confidence": "low", "amount": "2", "expected_date": "2027-05-01"},
+        {"id": "r2", "kind": "decision", "direction_id": "d", "name": "Return", "confidence": "low", "amount": "2", "expected_date": "2027-05-01", "adjust_revenue": True},
     ])
     summary = model.summarize(items, model.DEFAULT_CONFIDENCE)[0]["summary"]
-    assert summary["costs"] == [-90, 0, 0]
-    assert summary["revenue"] == [60, 25, 32]
-    assert summary["revenue_total"] == [60, 85, 117]
+    assert summary["costs"] == [-90, -5, 0]
+    assert summary["revenue"] == [60, 30, 32]
+    assert summary["revenue_total"] == [60, 90, 122]
     assert summary["balance"] == [-30, -5, 27]
 
 
@@ -109,52 +109,57 @@ def test_positive_decisions_are_revenue_in_company_filters_and_export(environmen
     ]):
         response = client.post("/api/year-model/items", json={"year": 2027, "kind": "decision", "data": {
             "name": f"Income {index}", "direction_id": direction["id"], "confidence": confidence,
-            "amount": amount, "expected_date": "2027-06-01",
+            "amount": amount, "expected_date": "2027-06-01", "adjust_revenue": True,
         }})
         assert response.status_code == 200, response.text
     summary = snapshot(client)["directions"][-1]["summary"]
-    assert summary["costs"] == [-72, 0, 0]
-    assert summary["revenue"] == [33.34, 20, 13]
-    assert summary["revenue_total"] == [33.34, 53.34, 66.34]
+    assert summary["costs"] == [-80, 0, 0]
+    assert summary["revenue"] == [41.34, 20, 13]
+    assert summary["revenue_total"] == [41.34, 61.34, 74.34]
     assert summary["balance"] == [-38.66, -18.66, -5.66]
     assert snapshot(client, confidence="fact")["directions"][-1]["summary"]["revenue"] == [14.34, 0, 0]
     assert snapshot(client, confidence="none")["directions"][-1]["summary"]["revenue"] == [0, 0, 0]
     book = load_workbook(BytesIO(client.get("/api/year-model/export?year=2027").content))
     rows = list(book["Резюме"].values)[2:]
     assert all(row[1] != "Решения (+)" for row in rows)
-    assert next(row[2:] for row in rows if row[:2] == ("Компания", "Выручка")) == (33.34, 20, 13)
-    assert next(row[2:] for row in rows if row[:2] == ("Компания", "Выручка (нар. итог)")) == (33.34, 53.34, 66.34)
+    assert next(row[2:] for row in rows if row[:2] == ("Компания", "Выручка")) == (41.34, 20, 13)
+    assert next(row[2:] for row in rows if row[:2] == ("Компания", "Выручка (нар. итог)")) == (41.34, 61.34, 74.34)
     assert rows[-1][2:] == (-38.66, -18.66, -5.66)
 
 
 @pytest.mark.parametrize("confidence,bucket", [("high", 0), ("fact", 0), ("medium", 1), ("low", 2), ("none", None)])
-def test_negative_decisions_reduce_revenue_without_changing_team_costs(environment, confidence, bucket):
+@pytest.mark.parametrize("adjust_revenue", [False, True])
+@pytest.mark.parametrize("amount", [-50, 4])
+def test_decisions_change_only_selected_totals(environment, confidence, bucket, adjust_revenue, amount):
     from openpyxl import load_workbook
     client, _, _ = environment
     before = snapshot(client)
     direction = before["directions"][0]
     response = client.post("/api/year-model/items", json={"year": 2027, "kind": "decision", "data": {
         "name": "Revenue adjustment", "direction_id": direction["id"], "confidence": confidence,
-        "amount": "-50", "expected_date": "2027-06-01",
+        "amount": str(amount), "expected_date": "2027-06-01", "adjust_revenue": adjust_revenue,
     }})
     assert response.status_code == 200, response.text
     after = snapshot(client, confidence="none,low,medium,high,fact")
     for old, new in zip(before["directions"], after["directions"]):
-        assert new["summary"]["costs"] == old["summary"]["costs"]
         assert new["monthly_costs"] == old["monthly_costs"]
         assert new["team_annual_cost"] == old["team_annual_cost"]
     for index in (0, -1):
-        expected = before["directions"][index]["summary"]["revenue"].copy()
-        if bucket is not None:
-            expected[bucket] = round(expected[bucket] - 50, 6)
         summary = after["directions"][index]["summary"]
-        assert summary["revenue"] == expected
-        assert summary["revenue_total"] == [round(sum(expected[:i+1]), 6) for i in range(3)]
-        assert summary["balance"] == [round(summary["costs"][0] + sum(expected[:i+1]), 6) for i in range(3)]
+        for key in ("costs", "revenue"):
+            expected = before["directions"][index]["summary"][key].copy()
+            if bucket is not None and key == ("revenue" if adjust_revenue else "costs"):
+                expected[bucket] = round(expected[bucket] + amount, 6)
+            assert summary[key] == expected
+        assert summary["revenue_total"] == [round(sum(summary["revenue"][:i+1]), 6) for i in range(3)]
+        assert summary["balance"] == [round(sum(summary["costs"][:i+1]) + sum(summary["revenue"][:i+1]), 6) for i in range(3)]
+    assert snapshot(client, confidence="")["directions"][-1]["summary"]["costs"] == [-72, 0, 0]
     book = load_workbook(BytesIO(client.get("/api/year-model/export?year=2027&confidence=none,low,medium,high,fact").content))
     rows = list(book["Резюме"].values)
-    assert next(row[2:] for row in rows if row[:2] == ("Компания", "Затраты")) == (-72, None, None)
+    assert next(row[2:] for row in rows if row[:2] == ("Компания", "Затраты")) == tuple(
+        None if index and value == 0 else value for index, value in enumerate(after["directions"][-1]["summary"]["costs"]))
     assert next(row[2:] for row in rows if row[:2] == ("Компания", "Выручка")) == tuple(after["directions"][-1]["summary"]["revenue"])
+    assert next(row[9] for row in book["Темы и решения"].values if row[2] == "Revenue adjustment") == ("Да" if adjust_revenue else "Нет")
 
 
 @pytest.mark.parametrize("confidence,revenue,balance", [
@@ -326,9 +331,9 @@ def test_event_defaults_to_month_and_preserves_comma_amount(environment, kind, a
         from openpyxl import load_workbook
         book = load_workbook(BytesIO(client.get("/api/year-model/export?year=2027").content))
         costs = next(row for row in book["Резюме"].values if row[:2] == (direction["name"], "Затраты"))
-        assert costs[2:] == (-60, None, None)
+        assert costs[2:] == (-60, -2.75, None)
         revenue = next(row for row in book["Резюме"].values if row[:2] == (direction["name"], "Выручка"))
-        assert revenue[3:] == (12.25, 0)
+        assert revenue[3:] == (15, 0)
 
 
 def test_initial_import_rolls_back_invalid_batch(environment):
@@ -395,7 +400,7 @@ def test_team_month_edits_totals_history_and_metadata(environment):
     assert changed["monthly_costs"] == [-2] * 6 + [-1.25] * 6
     assert changed["annual_cost"] == -19.5
     assert alpha["monthly_costs"] == [-5] * 6 + [-4.25] * 6
-    assert current["directions"][-1]["summary"]["costs"] == [-67.5, 0, 0]
+    assert current["directions"][-1]["summary"]["costs"] == [-75.5, 0, 0]
     payload["revision"] = 2
     payload["data"].update(cost_month=8, monthly_cost="-0,5", copy_forward=False)
     assert client.put(url, json=payload).status_code == 200
@@ -449,6 +454,41 @@ def test_invalid_monthly_cost_edits_do_not_create_versions(environment, change):
     })
     assert response.status_code == 422
     assert len(client.get(f'/api/year-model/items/{team["id"]}/history').json()["versions"]) == 1
+
+
+def test_decision_revenue_flag_default_toggle_history_and_export(environment):
+    from openpyxl import load_workbook
+    client, _, engine = environment
+    original = snapshot(client)
+    item = next(item for item in original["items"] if item["kind"] == "decision")
+    assert item["adjust_revenue"] is False
+    with engine.begin() as conn:
+        conn.execute(update(store.versions).values(recorded_at=datetime(2026, 1, 1, tzinfo=UTC)))
+    url = f'/api/year-model/items/{item["id"]}'
+    payload = {"year": 2027, "kind": "decision", "revision": 1, "data": {**item, "adjust_revenue": True}}
+    assert client.put(url, json=payload).status_code == 200
+    current = snapshot(client)["directions"][-1]["summary"]
+    assert current["costs"] == [-72, 0, 0]
+    assert current["revenue"] == [24.34, 15, 7]
+    assert current["balance"] == original["directions"][-1]["summary"]["balance"]
+    before = snapshot(client, as_of="2026-01-02")
+    assert before["directions"][-1]["summary"] == original["directions"][-1]["summary"]
+    assert next(row for row in before["items"] if row["id"] == item["id"])["adjust_revenue"] is False
+    # Older API clients omitting the flag must preserve a previously enabled value.
+    payload["revision"] = 2
+    payload["data"].pop("adjust_revenue")
+    assert client.put(url, json=payload).status_code == 200
+    assert next(row for row in snapshot(client)["items"] if row["id"] == item["id"])["adjust_revenue"] is True
+    payload.update(revision=3, data={**item, "adjust_revenue": False})
+    assert client.put(url, json=payload).status_code == 200
+    assert snapshot(client)["directions"][-1]["summary"] == original["directions"][-1]["summary"]
+    assert [row["adjust_revenue"] for row in client.get(url + "/history").json()["versions"]] == [False, True, True, False]
+    book = load_workbook(BytesIO(client.get("/api/year-model/export?year=2027").content))
+    assert next(row[9] for row in book["Темы и решения"].values if row[2] == item["name"]) == "Нет"
+    assert all(row[9] is None for row in book["Темы и решения"].values if row[1] == "Тема")
+    payload.update(revision=4, data={**item, "adjust_revenue": "false"})
+    assert client.put(url, json=payload).status_code == 422
+    assert len(client.get(url + "/history").json()["versions"]) == 4
 
 
 @pytest.mark.parametrize("kind", ["topic", "decision"])

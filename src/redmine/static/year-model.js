@@ -135,7 +135,7 @@
     $("overview").hidden = !company;
     if (company) {
       const s = company.summary;
-      const metrics = [["Цель по выручке",s.target[0],"Все направления"],["Затраты",s.costs.reduce((a,b)=>a+b,0),"Затраты команд за год"],["Выручка",s.revenue[0],"Высокая + факт"],["Потенциал",s.revenue[1]+s.revenue[2],"Средняя + низкая"],["Баланс компании",s.balance[0],`Со средними: ${fmt(s.balance[1])} · с низкими: ${fmt(s.balance[2])}`]];
+      const metrics = [["Цель по выручке",s.target[0],"Все направления"],["Затраты",s.costs.reduce((a,b)=>a+b,0),"Команды и расходные решения"],["Выручка",s.revenue[0],"Высокая + факт"],["Потенциал",s.revenue[1]+s.revenue[2],"Средняя + низкая"],["Баланс компании",s.balance[0],`Со средними: ${fmt(s.balance[1])} · с низкими: ${fmt(s.balance[2])}`]];
       $("overview").innerHTML = metrics.map(([label,value,note])=>`<div class="metric"><span class="metric-label">${label}</span><span class="metric-value">${fmt(value)}</span><small>${note}</small></div>`).join("");
     }
     const messages = [];
@@ -176,10 +176,14 @@
         }
       }
       else {
-        fields += field("amount","Стоимость, млн ₽",editAmount(d.amount),{required:true,extra:'inputmode="decimal"',note:kind === "decision" ? "Положительная сумма увеличивает выручку, отрицательная уменьшает." : ""});
+        fields += field("amount","Стоимость, млн ₽",editAmount(d.amount),{required:true,extra:'inputmode="decimal"',note:kind === "decision" ? "Сумма учитывается со знаком. Расход указывайте отрицательным." : ""});
         fields += field("confidence","Уверенность",d.confidence || "high",{required:true,choices:Object.entries(confidences)});
         fields += field("expected_date","Ожидаемая дата",d.expected_date || `${model.year}-01-01`,{required:true,type:"date",extra:`min="${model.year}-01-01" max="${model.year}-12-31"`});
         fields += field("date_precision","Точность даты",d.date_precision || "month",{choices:[["day","Точный день"],["month","Месяц"]]});
+        if (kind === "decision") {
+          fields += checkbox("adjust_revenue","Корректировать выручку",d.adjust_revenue === true);
+          fields += '<p class="field-note full">С галочкой сумма изменяет выручку, без галочки — затраты.</p>';
+        }
         if (kind === "topic") {
           fields += field("url","Ссылка на источник (CRM)",d.url,{type:"url",full:true,extra:'maxlength="2000" placeholder="https://…"'});
           if (d.url) fields += `<a class="source-link full" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">Открыть источник в CRM</a>`;
@@ -201,7 +205,9 @@
     $("historyButton").hidden=!item;
     $("saveItem").hidden=historical;
     $("editFields").querySelectorAll("input,select,textarea").forEach(el=>el.disabled=historical);
+    $("editor").classList.toggle("event-editor",kind === "topic" || kind === "decision");
     $("editor").showModal();
+    $("editorBody").scrollTop=0;
   }
   async function save(deleted=false) {
     if (busy || !editing) return;
@@ -210,6 +216,7 @@
     busy=true;$("saveItem").disabled=true;$("deleteItem").disabled=true;$("editError").textContent="";
     const data = Object.fromEntries(new FormData($("editForm")));
     if (costMonth === null) data.attention=$("editForm").elements.attention.checked;
+    if (kind === "decision") data.adjust_revenue=$("editForm").elements.adjust_revenue.checked;
     if (kind === "team" && (!item || costMonth !== null)) data.copy_forward=$("editForm").elements.copy_forward.checked;
     if (costMonth !== null) Object.assign(data,{name:item.name,direction_id:item.direction_id,note:item.note,cost_month:costMonth});
     try {
@@ -225,7 +232,7 @@
     if (!editing?.item) return;
     const entityId=editing.item.id;
     $("history").hidden=false;$("history").textContent="Загружаем историю…";
-    const labels={name:"Название",direction_id:"Направление",target:"Цель",monthly_cost:"Затраты / месяц",monthly_costs:"Затраты по месяцам",amount:"Стоимость",confidence:"Уверенность",expected_date:"Ожидаемая дата",date_precision:"Точность даты",attention:"Обратить внимание",url:"CRM",note:editing.kind === "direction" || editing.kind === "team" ? "Комментарий" : "Примечание",deleted:"Удалено"};
+    const labels={name:"Название",direction_id:"Направление",target:"Цель",monthly_cost:"Затраты / месяц",monthly_costs:"Затраты по месяцам",amount:"Стоимость",confidence:"Уверенность",expected_date:"Ожидаемая дата",date_precision:"Точность даты",adjust_revenue:"Корректировать выручку",attention:"Обратить внимание",url:"CRM",note:editing.kind === "direction" || editing.kind === "team" ? "Комментарий" : "Примечание",deleted:"Удалено"};
     try {
       const data=await (await api(`/api/year-model/items/${encodeURIComponent(entityId)}/history?as_of=${model.as_of}`)).json();
       if (editing?.item?.id !== entityId) return;
@@ -236,7 +243,7 @@
         if (key==="direction_id") value=model.items.find(item=>item.id===value)?.name || "Направление недоступно в этом срезе";
         if (key==="date_precision") value=value==="month" ? "Месяц" : "Точный день";
         if (key==="deleted") value="Да";
-        if (key==="attention") value=value ? "Да" : "Нет";
+        if (key==="attention" || key==="adjust_revenue") value=value ? "Да" : "Нет";
         if (key==="monthly_costs") value=value.map((amount,index)=>`${months[index]}: ${fmt(amount)}`).join('; ')+" млн ₽";
         return `<dt>${label}</dt><dd>${esc(value)}</dd>`;
       }).join("")}</dl></article>`).join("")}`;
