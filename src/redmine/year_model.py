@@ -157,12 +157,8 @@ def summarize(items, confidence):
             if bucket is None:
                 continue
             amount = money(event["amount"])
-            if event["kind"] == "topic":
-                revenue[bucket] += amount
-            elif amount < 0:
-                costs[bucket] += amount
-            else:
-                revenue[bucket] += amount
+            revenue[bucket] += amount
+            if event["kind"] == "decision":
                 # Keep this subtotal for existing API clients; it is already part of revenue.
                 decisions[bucket] += amount
         direction.update(teams=teams, events=events, monthly_costs=monthly,

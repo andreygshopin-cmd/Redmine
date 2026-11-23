@@ -135,7 +135,7 @@
     $("overview").hidden = !company;
     if (company) {
       const s = company.summary;
-      const metrics = [["Цель по выручке",s.target[0],"Все направления"],["Затраты",s.costs.reduce((a,b)=>a+b,0),"Команды и выбранные решения"],["Выручка",s.revenue[0],"Высокая + факт"],["Потенциал",s.revenue[1]+s.revenue[2],"Средняя + низкая"],["Баланс компании",s.balance[0],`Со средними: ${fmt(s.balance[1])} · с низкими: ${fmt(s.balance[2])}`]];
+      const metrics = [["Цель по выручке",s.target[0],"Все направления"],["Затраты",s.costs.reduce((a,b)=>a+b,0),"Затраты команд за год"],["Выручка",s.revenue[0],"Высокая + факт"],["Потенциал",s.revenue[1]+s.revenue[2],"Средняя + низкая"],["Баланс компании",s.balance[0],`Со средними: ${fmt(s.balance[1])} · с низкими: ${fmt(s.balance[2])}`]];
       $("overview").innerHTML = metrics.map(([label,value,note])=>`<div class="metric"><span class="metric-label">${label}</span><span class="metric-value">${fmt(value)}</span><small>${note}</small></div>`).join("");
     }
     const messages = [];
@@ -176,7 +176,7 @@
         }
       }
       else {
-        fields += field("amount","Стоимость, млн ₽",editAmount(d.amount),{required:true,extra:'inputmode="decimal"',note:kind === "decision" ? "Затраты — со знаком минус." : ""});
+        fields += field("amount","Стоимость, млн ₽",editAmount(d.amount),{required:true,extra:'inputmode="decimal"',note:kind === "decision" ? "Положительная сумма увеличивает выручку, отрицательная уменьшает." : ""});
         fields += field("confidence","Уверенность",d.confidence || "high",{required:true,choices:Object.entries(confidences)});
         fields += field("expected_date","Ожидаемая дата",d.expected_date || `${model.year}-01-01`,{required:true,type:"date",extra:`min="${model.year}-01-01" max="${model.year}-12-31"`});
         fields += field("date_precision","Точность даты",d.date_precision || "month",{choices:[["day","Точный день"],["month","Месяц"]]});
